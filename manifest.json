@@ -1,0 +1,23 @@
+[
+  {
+    "name": "TvHeadendApi",
+    "description": "A Jellyfin plugin leveraging the TvHeadend API for seamless integration of live TV, DVR, and EPG features. Manage recordings, stream live TV, and access program guides directly in Jellyfin. Fully configurable, with secure API connections and support for advanced TvHeadend features",
+    "overview": "TvHeadend Api Plugin for Jellyfin",
+    "owner": "john-pierre",
+    "category": "LiveTV",
+    "guid": "ae9f5148-d656-43ab-ab83-94192f9e840a",
+    "imageUrl": "https://repo.jellyfin.org/releases/plugin/images/jellyfin-plugin-tvheadend.png",
+    "versions": [
+      {
+        "version": "1.0.4.0",
+        "changelog": "https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/releases/tag/v1.0.4",
+        "targetAbi": "10.10.3.0",
+        "sourceUrl": "https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/releases/download/v1.0.4/tvheadend_api_1.0.4.0.zip",
+        "checksum": "f0e9ba52c1c13a46efd4b1832039f29a",
+        "timestamp": "2025-01-12T12:48:26Z",
+        "repositoryName": "jellyfin-plugin-tvheadend-api",
+        "repositoryUrl": "https://github.com/john-pierre/jellyfin-plugin-tvheadend-api"
+      }
+    ]
+  }
+]

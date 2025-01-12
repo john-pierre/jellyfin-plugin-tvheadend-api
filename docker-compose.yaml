@@ -1,0 +1,18 @@
+services:
+  jellyfin:
+    build:
+      context: . # Use the current directory containing the Dockerfile
+      dockerfile: Dockerfile # Specify the custom Dockerfile
+    container_name: jellyfin-plugin-tvheadend-api
+    environment:
+      - TZ=Europe/Berlin # Set the timezone
+    ports:
+      - "8096:8096" # HTTP port for Jellyfin
+      - "8920:8920" # HTTPS port for Jellyfin
+    volumes:
+      - ./.docker/config/config:/config/config # Persistent storage for Jellyfin configuration
+      - ./.docker/config/data:/config/data # Persistent storage for Jellyfin configuration
+      - ./.docker/config/metadata:/config/metadata # Persistent storage for Jellyfin configuration
+      - ./.docker/cache:/cache # Persistent storage for Jellyfin cache
+      - ./.docker/media:/media # Mount local media directory
+    restart: unless-stopped # Restart the container unless explicitly stopped
