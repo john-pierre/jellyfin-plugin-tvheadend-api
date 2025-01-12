@@ -1,0 +1,66 @@
+# Ignore build output directories
+bin/
+obj/
+publish/
+
+# Ignore user-specific files
+*.user         # User-specific project settings
+*.rsuser       # Rider-specific settings
+*.suo          # Visual Studio solution options
+*.userosscache # User-specific OSS cache
+*.sln.docstates # Solution user-specific states
+
+# Ignore log files
+*.log          # Log files from builds or debugging
+
+# Ignore Visual Studio Code settings
+.vscode/
+
+# Ignore Visual Studio files
+.vs/
+
+# Ignore package management artifacts
+*.nupkg        # NuGet package files
+*.snupkg       # Symbol NuGet package files
+packages/      # Package cache folder
+*.props        # MSBuild property files
+
+# Ignore temporary and backup files
+[Tt]humbs.db   # Windows thumbnail cache
+*.tmp          # Temporary files
+*.bak          # Backup files
+*.old          # Old version files
+*.swp          # Swap files (e.g., from editors)
+*~             # Other temporary backup files
+
+# Ignore executable files and debug symbols
+*.exe          # Executable files
+*.dll          # Dynamic Link Libraries
+*.pdb          # Program database (debugging info)
+
+# Ignore OS-specific files
+.DS_Store      # macOS Finder metadata
+Icon?          # macOS icon metadata
+Thumbs.db      # Windows thumbnail cache
+ehthumbs.db    # Windows media thumbnail cache
+desktop.ini    # Windows desktop configuration
+
+# Ignore JetBrains Rider and IDE settings
+.idea/         # Rider project settings
+*.sln.iml      # Rider-generated solution metadata
+
+# Ignore test results
+TestResults/   # Visual Studio test result output
+
+# Ignore NuGet files
+project.lock.json         # Legacy project lock file
+project.fragment.lock.json # Legacy lock fragments
+artifacts/                # Build artifacts
+
+# Ignore local configuration and secrets
+appsettings.*.json       # App settings files for local development
+
+# Ignore misc files
+*.cache        # Cache files
+*.ide          # IDE-generated files
+/.docker/

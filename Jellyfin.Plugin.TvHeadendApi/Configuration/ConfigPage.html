@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>TvHeadend Api Configuration</title>
+</head>
+<body>
+<div id="TvHeadendApiConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="TvHeadendApiConfigForm">
+
+                <!-- Connection Settings -->
+                <div class="section">
+                    <h2>Connection Settings</h2>
+                    <p class="sectionDescription">Configure how the plugin connects to your TVHeadend server.</p>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="Host">Server Hostname or IP Address</label>
+                        <input id="Host" name="Host" type="text" is="emby-input" placeholder="e.g., 192.168.0.28" />
+                        <div class="fieldDescription">Specifies the hostname or IP address of your TVHeadend server. Example: 192.168.0.28 or tvheadend.example.com.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="Port">Server Port</label>
+                        <input id="Port" name="Port" type="number" is="emby-input" min="1" placeholder="e.g., 9981" />
+                        <div class="fieldDescription">Defines the port on which the TVHeadend server is listening. Default: 9981.</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="UseSSL" name="UseSSL" type="checkbox" is="emby-checkbox" />
+                            <span>Use SSL</span>
+                        </label>
+                        <div class="fieldDescription">Enables or disables SSL (Secure Sockets Layer) for secure communication with the TVHeadend server. Check this option if your server uses HTTPS.</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="IgnoreCertificateErrors" name="IgnoreCertificateErrors" type="checkbox" is="emby-checkbox" />
+                            <span>Ignore Certificate Errors</span>
+                        </label>
+                        <div class="fieldDescription">When enabled, the plugin ignores SSL certificate validation errors, such as self-signed certificates. Use with caution.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="Webroot">Web Root</label>
+                        <input id="Webroot" name="Webroot" type="text" is="emby-input" placeholder="e.g., /" />
+                        <div class="fieldDescription">Specifies the base web path of your TVHeadend server if it uses a custom path. Default: / (root directory).</div>
+                    </div>
+                </div>
+
+                <!-- Authentication -->
+                <div class="section">
+                    <h2>Authentication</h2>
+                    <p class="sectionDescription">Provide credentials for authenticating with your TVHeadend server.</p>
+
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="AllowAnonymousAccess" name="AllowAnonymousAccess" type="checkbox" is="emby-checkbox" />
+                            <span>Allow Anonymous Access</span>
+                        </label>
+                        <div class="fieldDescription">Enables access to the TVHeadend server without authentication. Use only if your server allows unauthenticated connections.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="Username">Username</label>
+                        <input id="Username" name="Username" type="text" is="emby-input" placeholder="e.g., admin" />
+                        <div class="fieldDescription">The username for authenticating with the TVHeadend server. Required if Allow Anonymous Access is disabled.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="Password">Password</label>
+                        <input id="Password" name="Password" type="password" is="emby-input" />
+                        <div class="fieldDescription">The password for authenticating with the TVHeadend server. Required if Allow Anonymous Access is disabled.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="AuthToken">Auth Token</label>
+                        <input id="AuthToken" name="AuthToken" type="password" is="emby-input" placeholder="e.g., Token" />
+                        <div class="fieldDescription">A specific authentication token used to access the TVHeadend API. Overrides username/password if provided.</div>
+                    </div>
+                </div>
+
+                <!-- Streaming Settings -->
+                <div class="section">
+                    <h2>Streaming Settings</h2>
+                    <p class="sectionDescription">Configure settings related to live streaming and playback quality.</p>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="StreamingProfile">Streaming Profile</label>
+                        <input id="StreamingProfile" name="StreamingProfile" type="text" is="emby-input" placeholder="e.g., high-quality" />
+                        <div class="fieldDescription">Defines the streaming profile to use for playback. Example: high-quality, pass-through.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="BufferMs">Buffer Size (ms)</label>
+                        <input id="BufferMs" name="BufferMs" type="number" is="emby-input" placeholder="e.g., 500" />
+                        <div class="fieldDescription">Specifies the buffer size in milliseconds for streaming data. Example: 500 ms.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="FallbackMaxStreamingBitrate">Fallback Max Bitrate (kbps)</label>
+                        <input id="FallbackMaxStreamingBitrate" name="FallbackMaxStreamingBitrate" type="number" is="emby-input" placeholder="e.g., 30000" />
+                        <div class="fieldDescription">Maximum bitrate to fall back on if no specific bitrate is configured. Example: 30000 kbps (30 Mbps).</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="AnalyzeDurationMs">Analyze Duration (ms)</label>
+                        <input id="AnalyzeDurationMs" name="AnalyzeDurationMs" type="number" is="emby-input" placeholder="e.g., 500" />
+                        <div class="fieldDescription">The duration in milliseconds to analyze the stream before playback starts. Example: 500 ms.</div>
+                    </div>
+                </div>
+
+                <!-- Features -->
+                <div class="section">
+                    <h2>Features</h2>
+                    <p class="sectionDescription">Enable or disable specific playback features for streaming.</p>
+
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="SupportsTranscoding" name="SupportsTranscoding" type="checkbox" is="emby-checkbox" />
+                            <span>Supports Transcoding</span>
+                        </label>
+                        <div class="fieldDescription">Enables transcoding support to adapt streams to the capabilities of the playback device.</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="SupportsProbing" name="SupportsProbing" type="checkbox" is="emby-checkbox" />
+                            <span>Supports Probing</span>
+                        </label>
+                        <div class="fieldDescription">Allows stream probing to detect and analyze properties before playback starts.</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="SupportsDirectPlay" name="SupportsDirectPlay" type="checkbox" is="emby-checkbox" />
+                            <span>Supports Direct Play</span>
+                        </label>
+                        <div class="fieldDescription">Enables playback without transcoding when the stream is compatible with the playback device.</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="SupportsDirectStream" name="SupportsDirectStream" type="checkbox" is="emby-checkbox" />
+                            <span>Supports Direct Stream</span>
+                        </label>
+                        <div class="fieldDescription">Allows streams to be played with minimal modifications, such as re-muxing instead of re-encoding.</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="IsInfiniteStream" name="IsInfiniteStream" type="checkbox" is="emby-checkbox" />
+                            <span>Is Infinite Stream</span>
+                        </label>
+                        <div class="fieldDescription">Specifies whether the stream is continuous (e.g., for live TV channels).</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="IgnoreDts" name="IgnoreDts" type="checkbox" is="emby-checkbox" />
+                            <span>Ignore DTS</span>
+                        </label>
+                        <div class="fieldDescription">Ignores Decode Time Stamps (DTS) to resolve compatibility issues with certain streams.</div>
+                    </div>
+                </div>
+
+                <!-- Recording Settings -->
+                <div class="section">
+                    <h2>Recording Settings</h2>
+                    <p class="sectionDescription">Adjust the preferences for scheduled recordings.</p>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="Priority">Priority</label>
+                        <input id="Priority" name="Priority" type="number" is="emby-input" placeholder="e.g., 5" />
+                        <div class="fieldDescription">Sets the priority for scheduled recordings. A lower value indicates higher priority. Example: 5.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="PrePaddingSeconds">Pre-Padding (seconds)</label>
+                        <input id="PrePaddingSeconds" name="PrePaddingSeconds" type="number" is="emby-input" placeholder="e.g., 5" />
+                        <div class="fieldDescription">Specifies the number of seconds to start recording before the scheduled time. Example: 5 seconds.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="PostPaddingSeconds">Post-Padding (seconds)</label>
+                        <input id="PostPaddingSeconds" name="PostPaddingSeconds" type="number" is="emby-input" placeholder="e.g., 5" />
+                        <div class="fieldDescription">Specifies the number of seconds to continue recording after the scheduled end time. Example: 5 seconds.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="RecordingProfile">Recording Profile</label>
+                        <input id="RecordingProfile" name="RecordingProfile" type="text" is="emby-input" placeholder="e.g., high-quality" />
+                        <div class="fieldDescription">Defines the recording profile to use (e.g., high-quality, low-bitrate). The profile must exist in the TVHeadend configuration.</div>
+                    </div>
+                </div>
+
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                        <span>Save</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script type="text/javascript">
+        const TvHeadendApiConfig = {
+            pluginUniqueId: 'ae9f5148-d656-43ab-ab83-94192f9e840a'
+        };
+
+        document.querySelector('#TvHeadendApiConfigPage').addEventListener('pageshow', function () {
+            Dashboard.showLoadingMsg();
+            ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
+                document.querySelector('#Host').value = config.Host || '';
+                document.querySelector('#Port').value = config.Port || '';
+                document.querySelector('#UseSSL').checked = config.UseSSL || false;
+                document.querySelector('#IgnoreCertificateErrors').checked = config.IgnoreCertificateErrors || false;
+                document.querySelector('#Webroot').value = config.Webroot || '';
+                document.querySelector('#AllowAnonymousAccess').checked = config.AllowAnonymousAccess || false;
+                document.querySelector('#Username').value = config.Username || '';
+                document.querySelector('#Password').value = config.Password || '';
+                document.querySelector('#AuthToken').value = config.AuthToken || '';
+                document.querySelector('#StreamingProfile').value = config.StreamingProfile || '';
+                document.querySelector('#BufferMs').value = config.BufferMs || '';
+                document.querySelector('#FallbackMaxStreamingBitrate').value = config.FallbackMaxStreamingBitrate || '';
+                document.querySelector('#AnalyzeDurationMs').value = config.AnalyzeDurationMs || '';
+                document.querySelector('#SupportsTranscoding').checked = config.SupportsTranscoding || false;
+                document.querySelector('#SupportsProbing').checked = config.SupportsProbing || false;
+                document.querySelector('#SupportsDirectPlay').checked = config.SupportsDirectPlay || false;
+                document.querySelector('#SupportsDirectStream').checked = config.SupportsDirectStream || false;
+                document.querySelector('#IsInfiniteStream').checked = config.IsInfiniteStream || false;
+                document.querySelector('#IgnoreDts').checked = config.IgnoreDts || false;
+                document.querySelector('#Priority').value = config.Priority || '';
+                document.querySelector('#PrePaddingSeconds').value = config.PrePaddingSeconds || '';
+                document.querySelector('#PostPaddingSeconds').value = config.PostPaddingSeconds || '';
+                document.querySelector('#RecordingProfile').value = config.RecordingProfile || '';
+                Dashboard.hideLoadingMsg();
+            });
+        });
+
+        document.querySelector('#TvHeadendApiConfigForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            Dashboard.showLoadingMsg();
+            ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
+                config.Host = document.querySelector('#Host').value;
+                config.Port = parseInt(document.querySelector('#Port').value, 10);
+                config.UseSSL = document.querySelector('#UseSSL').checked;
+                config.IgnoreCertificateErrors = document.querySelector('#IgnoreCertificateErrors').checked;
+                config.Webroot = document.querySelector('#Webroot').value;
+                config.AllowAnonymousAccess = document.querySelector('#AllowAnonymousAccess').checked;
+                config.Username = document.querySelector('#Username').value;
+                config.Password = document.querySelector('#Password').value;
+                config.AuthToken = document.querySelector('#AuthToken').value;
+                config.StreamingProfile = document.querySelector('#StreamingProfile').value;
+                config.BufferMs = parseInt(document.querySelector('#BufferMs').value, 10);
+                config.FallbackMaxStreamingBitrate = parseInt(document.querySelector('#FallbackMaxStreamingBitrate').value, 10);
+                config.AnalyzeDurationMs = parseInt(document.querySelector('#AnalyzeDurationMs').value, 10);
+                config.SupportsTranscoding = document.querySelector('#SupportsTranscoding').checked;
+                config.SupportsProbing = document.querySelector('#SupportsProbing').checked;
+                config.SupportsDirectPlay = document.querySelector('#SupportsDirectPlay').checked;
+                config.SupportsDirectStream = document.querySelector('#SupportsDirectStream').checked;
+                config.IsInfiniteStream = document.querySelector('#IsInfiniteStream').checked;
+                config.IgnoreDts = document.querySelector('#IgnoreDts').checked;
+                config.Priority = parseInt(document.querySelector('#Priority').value, 10);
+                config.PrePaddingSeconds = parseInt(document.querySelector('#PrePaddingSeconds').value, 10);
+                config.PostPaddingSeconds = parseInt(document.querySelector('#PostPaddingSeconds').value, 10);
+                config.RecordingProfile = document.querySelector('#RecordingProfile').value;
+
+                ApiClient.updatePluginConfiguration(TvHeadendApiConfig.pluginUniqueId, config).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                });
+            });
+            return false;
+        });
+    </script>
+</div>
+</body>
+</html>

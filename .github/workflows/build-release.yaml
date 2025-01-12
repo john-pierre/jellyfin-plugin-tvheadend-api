@@ -1,0 +1,223 @@
+# GitHub Actions Workflow: Combined CI/CD and PR Validation Pipeline
+#
+# Description:
+# This workflow combines the build, release, and pull request validation processes for the Jellyfin plugin.
+# It runs on pull requests for validation (including PR title checks) and on pushes to the main branch to trigger releases.
+#
+# Key Features:
+# - Uses Release Please to manage versioning and changelogs.
+# - Validates PR titles against a predefined format to ensure semantic versioning compliance.
+# - Builds the plugin, runs tests, and packages the artifacts.
+# - Uploads artifacts for pull requests and creates releases for main branch pushes.
+# - Provides immediate feedback to contributors about PR title compliance and build/test results.
+#
+# Use Cases:
+# - CI/CD for Jellyfin plugin development, combining validation and deployment processes.
+# - Enforcing high-quality standards for PR titles, commit history, and release management.
+# - Ensuring reliable, automated builds and releases with minimal manual intervention.
+
+name: Build and Release
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'manifest.json'
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-24.04
+    steps:
+      # Step 1: Validate PR Title (only for pull requests)
+      - name: Check PR Title
+        uses: thehanimo/pr-title-checker@v1.4.3
+        if: ${{ github.event_name == 'pull_request' }}
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          pass_on_octokit_error: false
+          configuration_path: .github/pr-title-checker-config.json
+
+      # Step 2: Run Release Please (only for pushes)
+      - name: Release Please
+        id: release-please
+        if: ${{ github.event_name == 'push' }}
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: .github/release-please-config.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 3: Determine Ref for Checkout
+      - name: Determine Ref for Checkout
+        id: determine_ref
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "ref=${{ github.head_ref || github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "ref=${{ steps.release-please.outputs.tag_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      # Step 4: Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.determine_ref.outputs.ref }}
+
+      # Step 5: Generate Version
+      - name: Generate Version
+        id: version
+        run: |
+          if [ -n "${{ steps.release-please.outputs.tag_name }}" ]; then
+            VERSION_WITHOUT_V=$(echo "${{ steps.release-please.outputs.tag_name }}" | sed 's/^v//')
+            echo "version=$VERSION_WITHOUT_V.0" >> $GITHUB_OUTPUT
+          else
+            COMMIT_HASH=$(git rev-parse --short HEAD)
+            echo "version=$COMMIT_HASH" >> $GITHUB_OUTPUT
+          fi
+
+      # Step 6: Setup .NET
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0
+
+      # Step 7: Restore Dependencies
+      - name: Restore Dependencies
+        run: dotnet restore
+
+      # Step 8: Run Unit Tests
+      - name: Run Unit Tests
+        run: dotnet test --configuration Release --no-build --collect:"XPlat Code Coverage"
+
+      # Step 9: Upload Test Results
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: "**/TestResults/"
+
+      # Step 10: Build Plugin
+      - name: Build Plugin
+        run: dotnet build --configuration Release --no-restore
+
+      # Step 11: Create Package
+      - name: Create Package
+        id: create_package
+        run: |
+          mkdir -p tvheadend_api_${{ steps.version.outputs.version }}
+          cp /home/runner/work/jellyfin-plugin-tvheadend-api/jellyfin-plugin-tvheadend-api/Jellyfin.Plugin.TvHeadendApi/bin/Release/net8.0/*.dll tvheadend_api_${{ steps.version.outputs.version }}/
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          MANIFEST=$(cat manifest.json)
+          jq -n --argjson manifest "$MANIFEST" \
+                 --arg changelog "Package Build for Version ${{ steps.version.outputs.version }}" \
+                 --arg timestamp "$TIMESTAMP" \
+                 --arg targetAbi "10.10.3.0" \
+                 --arg version "${{ steps.version.outputs.version }}" \
+                 '{
+                    category: $manifest[0].category,
+                    changelog: $changelog,
+                    description: $manifest[0].description,
+                    guid: $manifest[0].guid,
+                    imageUrl: $manifest[0].imageUrl,
+                    name: $manifest[0].name,
+                    overview: $manifest[0].overview,
+                    owner: $manifest[0].owner,
+                    targetAbi: $targetAbi,
+                    timestamp: $timestamp,
+                    version: $version
+                 }' > \
+                 tvheadend_api_${{ steps.version.outputs.version }}/meta.json
+          zip -j tvheadend_api_${{ steps.version.outputs.version }}.zip tvheadend_api_${{ steps.version.outputs.version }}/*
+
+      # Step 12: Calculate Checksums
+      - name: Calculate Checksums
+        id: calculate_checksums
+        run: |
+          md5sum tvheadend_api_${{ steps.version.outputs.version }}.zip > tvheadend_api_${{ steps.version.outputs.version }}.md5
+          sha256sum tvheadend_api_${{ steps.version.outputs.version }}.zip > tvheadend_api_${{ steps.version.outputs.version }}.sha256
+          CHECKSUM_MD5=$(awk '{print $1}' tvheadend_api_${{ steps.version.outputs.version }}.md5)
+          CHECKSUM_SHA256=$(awk '{print $1}' tvheadend_api_${{ steps.version.outputs.version }}.sha256)
+          echo "artifact_md5=$CHECKSUM_MD5" >> $GITHUB_OUTPUT
+          echo "artifact_sha256=$CHECKSUM_SHA256" >> $GITHUB_OUTPUT
+
+      # Step 13: Upload Artifacts (for pull requests)
+      - name: Upload ZIP Artifact
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tvheadend_api_${{ steps.version.outputs.version }}
+          path: tvheadend_api_${{ steps.version.outputs.version }}/*
+
+      # Step 14: Upload Artifacts to GitHub Release
+      - name: Upload ZIP Artifact to GitHub Release
+        if: ${{ steps.release-please.outputs.release_created }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.release-please.outputs.upload_url }}
+          asset_path: tvheadend_api_${{ steps.version.outputs.version }}.zip
+          asset_name: tvheadend_api_${{ steps.version.outputs.version }}.zip
+          asset_content_type: application/zip
+
+      - name: Upload MD5 Checksum to GitHub Release
+        if: ${{ steps.release-please.outputs.release_created }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.release-please.outputs.upload_url }}
+          asset_path: tvheadend_api_${{ steps.version.outputs.version }}.md5
+          asset_name: tvheadend_api_${{ steps.version.outputs.version }}.md5
+          asset_content_type: text/plain
+
+      - name: Upload SHA256 Checksum to GitHub Release
+        if: ${{ steps.release-please.outputs.release_created }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.release-please.outputs.upload_url }}
+          asset_path: tvheadend_api_${{ steps.version.outputs.version }}.sha256
+          asset_name: tvheadend_api_${{ steps.version.outputs.version }}.sha256
+          asset_content_type: text/plain
+
+      # Step 15: Update manifest.json
+      - name: Update manifest.json
+        if: ${{ steps.release-please.outputs.release_created }}
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          CHANGELOG="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/releases/tag/${{ steps.release-please.outputs.tag_name }}"
+          SOURCE_URL="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/releases/download/${{ steps.release-please.outputs.tag_name }}/tvheadend_api_${{ steps.version.outputs.version }}.zip"
+          TARGET_ABI="10.10.3.0"
+          REPOSITORY_NAME="jellyfin-plugin-tvheadend-api"
+          REPOSITORY_URL="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api"
+          
+          jq --arg version "${{ steps.version.outputs.version }}" \
+             --arg checksum "${{ steps.calculate_checksums.outputs.artifact_md5 }}" \
+             --arg changelog "$CHANGELOG" \
+             --arg timestamp "$TIMESTAMP" \
+             --arg source_url "$SOURCE_URL" \
+             --arg target_abi "$TARGET_ABI" \
+             --arg repository_name "$REPOSITORY_NAME" \
+             --arg repository_url "$REPOSITORY_URL" \
+             '.[0].versions += [{"version": $version, "changelog": $changelog, "targetAbi": $target_abi, "sourceUrl": $source_url, "checksum": $checksum, "timestamp": $timestamp, "repositoryName": $repository_name, "repositoryUrl": $repository_url}]' manifest.json > updated_manifest.json
+          mv updated_manifest.json manifest.json
+
+      # Step 16: Commit manifest.json
+      - name: Commit manifest.json
+        if: ${{ steps.release-please.outputs.release_created }}
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          branch: main
+          commit_message: Add Release Bundle ${{ steps.release-please.outputs.tag_name }} to manifest.json
+          file_pattern: 'manifest.json'

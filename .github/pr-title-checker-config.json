@@ -1,0 +1,15 @@
+{
+    "LABEL": {
+      "name": "title not by convention",
+      "color": "FF0000"
+    },
+    "CHECKS": {
+      "regexp": "^(?<type>build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test){1}(\\((?<scope>.+){1}\\))?(?<breakingchange>!)?: (?<message>[\\w ]+)([\\s\\S]*)",
+      "ignoreLabels" : ["dont check pr title", "meta"]
+    },
+    "MESSAGES": {
+      "success": "✅ PR title meets conventional commit style",
+      "failure": "⛔ PR title doesn't meet conventional commit style",
+      "notice": "👉 Look at https://www.conventionalcommits.org/en/v1.0.0/#specification"
+    }
+  }
