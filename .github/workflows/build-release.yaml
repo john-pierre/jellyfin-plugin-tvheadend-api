@@ -127,7 +127,6 @@ jobs:
                     changelog: $changelog,
                     description: $manifest[0].description,
                     guid: $manifest[0].guid,
-                    imageUrl: $manifest[0].imageUrl,
                     name: $manifest[0].name,
                     overview: $manifest[0].overview,
                     owner: $manifest[0].owner,

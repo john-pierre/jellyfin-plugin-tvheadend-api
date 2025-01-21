@@ -6,7 +6,6 @@
     "owner": "john-pierre",
     "category": "LiveTV",
     "guid": "ae9f5148-d656-43ab-ab83-94192f9e840a",
-    "imageUrl": "https://repo.jellyfin.org/releases/plugin/images/jellyfin-plugin-tvheadend.png",
     "versions": [
       {
         "version": "1.0.0.0",
