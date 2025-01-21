@@ -26,6 +26,16 @@
         "timestamp": "2025-01-12T16:35:50Z",
         "repositoryName": "jellyfin-plugin-tvheadend-api",
         "repositoryUrl": "https://github.com/john-pierre/jellyfin-plugin-tvheadend-api"
+      },
+      {
+        "version": "1.0.2.0",
+        "changelog": "https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/releases/tag/v1.0.2",
+        "targetAbi": "10.10.3.0",
+        "sourceUrl": "https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/releases/download/v1.0.2/tvheadend_api_1.0.2.0.zip",
+        "checksum": "e52ad89fd95046533974e12bc958c7da",
+        "timestamp": "2025-01-21T12:16:11Z",
+        "repositoryName": "jellyfin-plugin-tvheadend-api",
+        "repositoryUrl": "https://github.com/john-pierre/jellyfin-plugin-tvheadend-api"
       }
     ]
   }
