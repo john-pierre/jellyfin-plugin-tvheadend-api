@@ -328,7 +328,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             // Define the query limit and construct the API URL
             const int limit = 10000;
             // Build the URL for the API endpoint
-            var url = ConstructUrl("api/channel/grid?limit={limit}");
+            var url = ConstructUrl($"api/channel/grid?limit={limit}");
 
             // Log the URL being used for the API call (sensitive data is masked)
             _logger.LogInformation("Fetching channels from TVHeadEnd at {Url}...", MaskSensitiveData(url));
