@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/compare/v1.0.2...v1.0.3) (2025-01-22)
+
+
+### Fixes
+
+* Add new version to the top of manifest.json ([#9](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/issues/9)) ([327ce7a](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/commit/327ce7a61cd228939752b349d59c29e1f8a68a9e))
+
 ## [1.0.2](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/compare/v1.0.1...v1.0.2) (2025-01-21)
 
 
