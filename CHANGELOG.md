@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/compare/v1.0.3...v1.0.4) (2025-01-22)
+
+
+### Fixes
+
+* Ensure new version is added to manifest.json without overwriting… ([#11](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/issues/11)) ([09b6449](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/commit/09b64497e7f45dcca4db2e902dec2089d1bb0a65))
+
 ## [1.0.3](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/compare/v1.0.2...v1.0.3) (2025-01-22)
 
 
