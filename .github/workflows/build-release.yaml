@@ -209,7 +209,7 @@ jobs:
              --arg target_abi "$TARGET_ABI" \
              --arg repository_name "$REPOSITORY_NAME" \
              --arg repository_url "$REPOSITORY_URL" \
-             '.[0].versions |= [{"version": $version, "changelog": $changelog, "targetAbi": $target_abi, "sourceUrl": $source_url, "checksum": $checksum, "timestamp": $timestamp, "repositoryName": $repository_name, "repositoryUrl": $repository_url}]' manifest.json > updated_manifest.json
+             '.[0].versions += [{"version": $version, "changelog": $changelog, "targetAbi": $target_abi, "sourceUrl": $source_url, "checksum": $checksum, "timestamp": $timestamp, "repositoryName": $repository_name, "repositoryUrl": $repository_url}] | .[0].versions |= (sort_by(.version) | reverse)' manifest.json > updated_manifest.json
           mv updated_manifest.json manifest.json
 
       # Step 16: Commit manifest.json
