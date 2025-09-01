@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using Jellyfin.Plugin.TvHeadendApi.JsonConverters;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Model;
 

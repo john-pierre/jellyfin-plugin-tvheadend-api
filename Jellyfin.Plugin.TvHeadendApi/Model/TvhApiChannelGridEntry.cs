@@ -29,7 +29,7 @@ public class TvhApiChannelGridEntry
     /// This number is used to sort and access the channel in a TV guide or user interface.
     /// Example: 101.
     /// </summary>
-    public int Number { get; init; }
+    public string Number { get; init; } = string.Empty;
 
     /// <summary>
     /// Gets the URL to the channel's icon image.

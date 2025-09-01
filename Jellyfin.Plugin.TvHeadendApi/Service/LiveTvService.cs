@@ -6,7 +6,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.JsonConverters;
 using Jellyfin.Plugin.TvHeadendApi.Model;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
@@ -174,6 +174,8 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
         };
 
         _httpClient = new HttpClient(handler);
+
+        JsonOptions.Converters.Add(new IntToStringConverter());
     }
 
     /// <summary>
@@ -347,7 +349,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
                 {
                     Id = channel.Uuid, // Unique identifier for the channel
                     Name = channel.Name, // Display name of the channel
-                    Number = channel.Number.ToString(CultureInfo.InvariantCulture), // Logical number of the channel
+                    Number = channel.Number, // Logical number of the channel
                     ImageUrl = !string.IsNullOrWhiteSpace(channel.IconPublicUrl)
                         ? ConstructUrl(channel.IconPublicUrl.TrimStart('/'), "parameter")
                         : null, // URL to the channel's icon image
