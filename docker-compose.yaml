@@ -10,9 +10,9 @@ services:
       - "8096:8096" # HTTP port for Jellyfin
       - "8920:8920" # HTTPS port for Jellyfin
     volumes:
-      - ./.docker/config/config:/config/config # Persistent storage for Jellyfin configuration
-      - ./.docker/config/data:/config/data # Persistent storage for Jellyfin configuration
-      - ./.docker/config/metadata:/config/metadata # Persistent storage for Jellyfin configuration
+      - ./.docker/config:/config/config # Persistent storage for Jellyfin configuration
+      - ./.docker/data:/config/data # Persistent storage for Jellyfin configuration
+      - ./.docker/metadata:/config/metadata # Persistent storage for Jellyfin configuration
       - ./.docker/cache:/cache # Persistent storage for Jellyfin cache
       - ./.docker/media:/media # Mount local media directory
     restart: unless-stopped # Restart the container unless explicitly stopped
