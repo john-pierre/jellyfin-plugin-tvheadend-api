@@ -1,5 +1,5 @@
 # Jellyfin Base Image
-FROM jellyfin/jellyfin:10.10.3
+FROM jellyfin/jellyfin:10.10.7
 
 # Set timezone
 ENV TZ=Europe/Berlin
@@ -36,7 +36,7 @@ RUN TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ") && \
     echo "Building plugin version $VERSION" && \
     mkdir -p /config/plugins/tvheadend_api_$VERSION && \
     dotnet build -c Release -o /config/plugins/tvheadend_api_$VERSION && \
-    jq 'del(.versions) | . + {"timestamp": "'$TIMESTAMP'", "version": "'$VERSION'"}' manifest.json > /config/plugins/tvheadend_api_$VERSION/meta.json
+    jq '.[0] | del(.versions) | . + {"timestamp": "'$TIMESTAMP'", "version": "'$VERSION'"}' manifest.json > /config/plugins/tvheadend_api_$VERSION/meta.json
 
 # Clean up build directory
 WORKDIR /
@@ -45,5 +45,6 @@ RUN rm -rf /build
 # Expose Jellyfin ports
 EXPOSE 8096 8920
 
+ENV JELLYFIN_FFmpeg__probesize=1M
 # Start Jellyfin server
 CMD ["/usr/lib/jellyfin/bin/jellyfin", "--datadir", "/config", "--cachedir", "/cache"]

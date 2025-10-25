@@ -1240,37 +1240,47 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
                 Path = streamUrl,
                 Protocol = MediaProtocol.Http,
                 IsRemote = true,
-                SupportsDirectPlay = config.SupportsDirectPlay,
-                SupportsDirectStream = config.SupportsDirectStream,
-                SupportsTranscoding = config.SupportsTranscoding,
-                AnalyzeDurationMs = config.AnalyzeDurationMs,
-                SupportsProbing = true,
+                SupportsDirectPlay = true,
+                SupportsDirectStream = true,
+                SupportsTranscoding = false,
+                AnalyzeDurationMs = 1,
+                SupportsProbing = false,
                 IsInfiniteStream = true,
                 IgnoreDts = true,
                 RequiresOpening = true,
                 RequiresClosing = true,
                 ReadAtNativeFramerate = false,
                 BufferMs = config.BufferMs,
-                FallbackMaxStreamingBitrate = config.FallbackMaxStreamingBitrate,
-                UseMostCompatibleTranscodingProfile = true,
+                FallbackMaxStreamingBitrate = 5000000,
+                UseMostCompatibleTranscodingProfile = false,
                 MediaStreams = new List<MediaStream>
                 {
                     new MediaStream
                     {
                         Type = MediaStreamType.Video,
-                        // Set the index to -1 because we don't know the exact index of the video stream within the container
-                        Index = -1,
-                        // Set to true if unknown to enable deinterlacing
-                        IsInterlaced = true,
-                        RealFrameRate = 50.0F
+                        Codec = "h264",
+                        Index = 0,
+                        IsInterlaced = false,
+                        BitRate = 5000000,
+                        Width = 1920,
+                        Height = 1080,
+                        RealFrameRate = 25.0f,
+                        Profile = "high",
+                        Level = 4.1,
+                        AspectRatio = "16:9"
                     },
                     new MediaStream
                     {
                         Type = MediaStreamType.Audio,
-                        // Set the index to -1 because we don't know the exact index of the audio stream within the container
-                        Index = -1
+                        Codec = "aac",
+                        Index = 1,
+                        Channels = 2,
+                        BitRate = 128000,
+                        SampleRate = 48000,
+                        Profile = "LC"
                     }
-                }
+                },
+                Container = "mp4",
             };
 
             mediaSourceInfo.InferTotalBitrate(true);
