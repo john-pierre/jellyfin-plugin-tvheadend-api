@@ -10,10 +10,8 @@ services:
       - "8096:8096"   # Jellyfin HTTP
       - "8920:8920"   # Jellyfin HTTPS
     volumes:
-      # Persistent Jellyfin data – survives rebuilds
-      - ./.docker/config:/config/config
-      - ./.docker/data:/config/data
-      - ./.docker/metadata:/config/metadata
+      # Persist the entire Jellyfin data directory (users, plugins, plugin config, DB)
+      - ./.docker/config:/config
       - ./.docker/cache:/cache
       - ./.docker/media:/media
     restart: unless-stopped

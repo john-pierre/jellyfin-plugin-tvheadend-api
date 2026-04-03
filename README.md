@@ -146,13 +146,39 @@ To install it manually, copy the DLL (along with a `meta.json`) into a versioned
 
 ### Docker Development Environment
 
-A `Dockerfile` and `docker-compose.yaml` are provided to spin up a Jellyfin instance with the plugin pre-installed. This is intended for **development and testing only** — it does not include a TVHeadend backend.
+A `Dockerfile` and `docker-compose.yaml` are provided to spin up a Jellyfin instance with the plugin pre-installed. This is intended for **development and testing only** - it does not include a TVHeadend backend.
+
+The Compose setup persists the full Jellyfin data directory:
+
+- `./.docker/config:/config` (users, DB, plugins, plugin config)
+- `./.docker/cache:/cache`
+- `./.docker/media:/media`
+
+This means plugin settings (Host, credentials, Fast Switching settings, etc.) survive container rebuilds and restarts.
 
 ```bash
 docker compose up -d --build
 ```
 
 Jellyfin will be available at `http://localhost:8096`.
+
+#### Migration for older local Docker data
+
+If you previously used `./.docker/config:/config/config`, move existing data once so Jellyfin finds it under `/config`:
+
+```powershell
+New-Item -ItemType Directory -Force .\.docker\config | Out-Null
+if (Test-Path .\.docker\config\config) {
+    Copy-Item .\.docker\config\config\* .\.docker\config\ -Recurse -Force
+}
+```
+
+Then recreate the container:
+
+```bash
+docker compose down
+docker compose up -d --build
+```
 
 ### Project Structure
 

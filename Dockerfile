@@ -37,12 +37,17 @@ FROM jellyfin/jellyfin:10.10.7
 
 ENV TZ=Europe/Berlin
 
-# Copy the built plugin into the Jellyfin plugin directory
+# Keep a copy of the built plugin in the immutable image layer.
+# At container start, we sync it into /config/plugins so bind-mounted /config works.
 ARG VERSION=1.0.0.0
-COPY --from=build /plugin/ /config/plugins/tvheadend_api_${VERSION}/
+COPY --from=build /plugin/ /opt/tvheadend-plugin/tvheadend_api_${VERSION}/
 
 # Create persistent directories
 RUN mkdir -p /config /cache /media
+
+# Startup script copies plugin into /config/plugins when needed, then starts Jellyfin.
+COPY docker/start-jellyfin.sh /usr/local/bin/start-jellyfin.sh
+RUN chmod +x /usr/local/bin/start-jellyfin.sh
 
 EXPOSE 8096 8920
 
@@ -50,4 +55,4 @@ EXPOSE 8096 8920
 ENV JELLYFIN_FFmpeg__probesize=1M
 ENV JELLYFIN_FFmpeg__analyzeduration=1M
 
-CMD ["/usr/lib/jellyfin/bin/jellyfin", "--datadir", "/config", "--cachedir", "/cache"]
+CMD ["/usr/local/bin/start-jellyfin.sh"]
