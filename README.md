@@ -6,146 +6,226 @@
 [![License](https://img.shields.io/github/license/john-pierre/jellyfin-plugin-tvheadend-api)](LICENSE)
 [![Issues](https://img.shields.io/github/issues/john-pierre/jellyfin-plugin-tvheadend-api)](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/issues)
 [![Target Framework](https://img.shields.io/badge/.NET-8.0-purple)](https://dotnet.microsoft.com/en-us/)
-[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org)
 
-This repository contains the `jellyfin-plugin-tvheadend-api`, a Jellyfin plugin that integrates with the TVHeadend API to provide seamless live TV, EPG (Electronic Program Guide), and recording functionality. The plugin is built to leverage the powerful TVHeadend backend while ensuring a smooth experience within Jellyfin.
+A Jellyfin plugin that integrates [TVHeadend](https://tvheadend.org) exclusively through its HTTP/JSON API. It provides live TV, EPG (Electronic Program Guide), and DVR functionality without relying on the HTSP protocol.
 
-**Note**: This plugin exclusively uses the TVHeadend API and does not support the custom HTSP protocol.
+> **Note:** This plugin does **not** use the HTSP protocol. All authentication and streaming is handled via TVHeadend's web API endpoints.
 
 ## Table of Contents
 
 - [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
-- [Usage](#usage)
 - [Configuration](#configuration)
-    - [Connection Settings](#connection-settings)
-    - [Authentication](#authentication)
-    - [Streaming Settings](#streaming-settings)
-    - [Recording Settings](#recording-settings)
+  - [Connection](#connection)
+  - [Authentication](#authentication)
+  - [Streaming](#streaming)
+  - [Recording](#recording)
 - [Developer Guide](#developer-guide)
-    - [Running with Docker](#running-with-docker)
-- [License](#license)
+  - [Prerequisites](#prerequisites)
+  - [Building from Source](#building-from-source)
+  - [Docker Development Environment](#docker-development-environment)
+  - [Project Structure](#project-structure)
+- [Release Process](#release-process)
 - [Contributing](#contributing)
-- [Acknowledgments](#acknowledgments)
-- [Contact](#contact)
+- [Known Limitations](#known-limitations)
+- [Security](#security)
+- [License](#license)
 
 ## Features
 
-- **Live TV Support**: Fetch and stream live TV channels from TVHeadend.
-- **EPG Integration**: Display an electronic program guide with detailed program metadata.
-- **Recording Management**: Schedule, update, and manage recordings directly from Jellyfin.
-- **Automatic Series Timers**: Create automatic recording rules for series.
-- **Content Filtering**: Leverage TVHeadend content types and tags for advanced filtering.
+- **Live TV** — Stream live TV channels from TVHeadend in Jellyfin.
+- **EPG** — Import the electronic program guide with genre mapping (ETSI EN 300 468).
+- **Timers** — Create, update, and cancel single recording timers.
+- **Series Timers** — Manage automatic recording rules (autorec) from Jellyfin.
+- **Channel Metadata** — Channel icons and tags from TVHeadend.
 
 ## Requirements
 
-- **Jellyfin 10.10 or later**
-- **TVHeadend 4.3 or later**
-- A configured TVHeadend server with accessible API endpoints.
+- **Jellyfin 10.10.3** or later
+- **TVHeadend 4.3** or later
+- A TVHeadend user account with access to the API, EPG, streaming, and DVR features
 
 ## Installation
 
-1. Add the following repository to your Jellyfin plugin settings:
+1. In Jellyfin, navigate to **Dashboard → Plugins → Repositories**.
+2. Add the following repository URL:
+
+   ```text
+   https://raw.githubusercontent.com/john-pierre/jellyfin-plugin-tvheadend-api/main/manifest.json
    ```
-   https://raw.githubusercontent.com/john-pierre/jellyfin-plugin-tvheadend-api/refs/heads/main/manifest.json
-   ```
-2. Install the `TVHeadend API` plugin from the repository.
-3. Set up your TVHeadend server, ensuring the API is enabled and accessible.
-4. Configure the plugin via the Jellyfin admin interface:
-    - Navigate to `Dashboard > Plugins > TVHeadend API`.
-    - Provide your TVHeadend server details (host, port, credentials, etc.).
-    - Click `Save` and ensure the status reports `OK`.
 
-## Usage
-
-1. Ensure your TVHeadend instance is set up and running.
-2. Fill in the URL to your TVHeadend instance in the plugin settings.
-3. Provide additional configuration, such as:
-    - **Username** and **Password** for TVHeadend API access.
-    - **Auth Token** for accessing images (not streams).
-4. Click `Save` and confirm that the plugin status reports `OK`.
-5. Navigate to the Jellyfin live TV section or EPG to access your channels and recordings.
-
-**Note**: All configuration changes are applied at runtime without restarting the plugin.
+3. Go to the **Catalog** tab and install the **TVHeadend API** plugin.
+4. Restart Jellyfin when prompted.
+5. Open the plugin configuration at **Dashboard → Plugins → My Plugins → TVHeadend API**.
 
 ## Configuration
 
-The following settings are configurable within the plugin:
+### Connection
 
-### Connection Settings
-- **Host**: TVHeadend server hostname or IP address.
-- **Port**: TVHeadend API port.
-- **Use SSL**: Enable for HTTPS connections.
-- **Ignore Certificate Errors**: Useful for self-signed certificates.
-- **Webroot**: Specify the webroot path.
+| Setting                    | Description                                                                 | Default     |
+|----------------------------|-----------------------------------------------------------------------------|-------------|
+| **Host**                   | Hostname or IP address of your TVHeadend server.                            | `127.0.0.1` |
+| **Port**                   | TVHeadend HTTP API port.                                                    | `9981`      |
+| **Use SSL**                | Enable if TVHeadend is accessible via HTTPS.                                | `false`     |
+| **Ignore Certificate Errors** | Accept self-signed certificates. **Not recommended for production.**     | `false`     |
+| **Webroot**                | Only required if TVHeadend is published under a sub-path (e.g. `/tvh/`).   | `/`         |
 
 ### Authentication
-- **Allow Anonymous Access**: If enabled, no authentication is required.
-- **Username**: TVHeadend username.
-- **Password**: TVHeadend password.
-- **Auth Token**: Required only for accessing channel images.
 
-**Note**:
-- API requests use Basic Authentication via HTTP headers.
-- Streams use Basic Authentication embedded in the URL.
+| Setting                  | Description                                                                 | Default |
+|--------------------------|-----------------------------------------------------------------------------|---------|
+| **Allow Anonymous Access** | Enable only if TVHeadend permits unauthenticated connections.             | `false` |
+| **Username**             | TVHeadend username for Basic Auth.                                          | *(empty)* |
+| **Password**             | TVHeadend password for Basic Auth.                                          | *(empty)* |
+| **Auth Token**           | Optional token appended as `?auth=` to image/query-parameter URLs.          | *(empty)* |
 
-### Streaming Settings
-- **Streaming Profile**: Profile for streaming.
-- **BufferMs**: Buffer size in milliseconds.
-- **FallbackMaxStreamingBitrate**: Maximum streaming bitrate in kbps.
-- **AnalyzeDurationMs**: Stream analysis duration in milliseconds.
-- **Supports Transcoding**: Enable transcoding support.
-- **Supports Probing**: Enable stream probing.
-- **Supports Direct Play**: Enable direct playback.
-- **Supports Direct Stream**: Enable direct streaming.
-- **Is Infinite Stream**: Treat stream as infinite.
-- **Ignore DTS**: Ignore DTS timestamps.
+**How authentication works:**
+- Regular API calls use **HTTP Basic Auth headers**.
+- Stream URLs embed credentials **in the URL** (`http://user:pass@host/…`).
+- Image and icon URLs use the **auth token** as a query parameter.
 
-### Recording Settings
-- **Priority**: Priority for recordings.
-- **PrePaddingSeconds**: Pre-padding time in seconds.
-- **PostPaddingSeconds**: Post-padding time in seconds.
-- **Recording Profile**: Profile for recordings.
+### Streaming
+
+| Setting                        | Description                                      | Default      |
+|--------------------------------|--------------------------------------------------|--------------|
+| **Streaming Profile**          | TVHeadend stream profile name.                   | `pass`       |
+| **BufferMs**                   | Stream buffer size in milliseconds.              | `500`        |
+| **FallbackMaxStreamingBitrate**| Fallback maximum bitrate in bits per second.     | `30000000`   |
+| **AnalyzeDurationMs**          | Stream analysis duration before playback starts. | `500`        |
+| **Supports Direct Play**       | Allow direct playback without transcoding.       | `true`       |
+| **Supports Direct Stream**     | Allow remuxing without re-encoding.              | `true`       |
+| **Supports Transcoding**       | Allow full transcoding.                          | `false`      |
+| **Supports Probing**           | Probe stream properties before playback.         | `false`      |
+| **Is Infinite Stream**         | Treat the stream as infinite (live TV).          | `true`       |
+| **Ignore DTS**                 | Ignore Decode Time Stamps for compatibility.     | `false`      |
+
+### Recording
+
+| Setting              | Description                                          | Default   |
+|----------------------|------------------------------------------------------|-----------|
+| **Priority**         | Recording priority (lower = higher priority).        | `5`       |
+| **PrePaddingSeconds**| Seconds to start recording before scheduled time.    | `5`       |
+| **PostPaddingSeconds**| Seconds to continue recording after scheduled end.  | `5`       |
+| **Recording Profile**| TVHeadend DVR configuration profile name.            | `default` |
 
 ## Developer Guide
 
-### Running with Docker
+### Prerequisites
 
-To simplify the development process, you can use Docker to set up Jellyfin with the TVHeadend plugin.
+- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or later
+- (Optional) [Docker](https://www.docker.com/) for the containerized development environment
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/john-pierre/jellyfin-plugin-tvheadend-api.git
-   cd jellyfin-plugin-tvheadend-api
-   ```
+### Building from Source
 
-2. Use the provided `docker-compose.yml` file to build and start the environment:
-   ```bash
-   docker-compose -p jellyfin-plugin-tvheadend-api up --always-recreate-deps --renew-anon-volumes --force-recreate -d --build
-   ```
+```bash
+# Clone the repository
+git clone https://github.com/john-pierre/jellyfin-plugin-tvheadend-api.git
+cd jellyfin-plugin-tvheadend-api
 
-3. Access Jellyfin at `http://localhost:8096`.
+# Restore NuGet packages
+dotnet restore Jellyfin.Plugin.TvHeadendApi.sln
 
-## Logs and Security
+# Build in Release mode
+dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release --no-restore
+```
 
-- Logs automatically filter sensitive information, such as passwords and authentication tokens, to ensure data security.
-- Ensure debug logs do not expose unnecessary details in production environments.
+The compiled plugin DLL can be found at:
 
-## License
+```
+Jellyfin.Plugin.TvHeadendApi/bin/Release/net8.0/Jellyfin.Plugin.TvHeadendApi.dll
+```
 
-This project is licensed under the GNU General Public License v3.0 (GPL-3.0). See the [LICENSE](LICENSE) file for details.
+To install it manually, copy the DLL (along with a `meta.json`) into a versioned folder under your Jellyfin plugins directory — for example:
+
+```
+<jellyfin-data>/plugins/tvheadend_api_1.0.0.0/
+  ├── Jellyfin.Plugin.TvHeadendApi.dll
+  └── meta.json
+```
+
+### Docker Development Environment
+
+A `Dockerfile` and `docker-compose.yaml` are provided to spin up a Jellyfin instance with the plugin pre-installed. This is intended for **development and testing only** — it does not include a TVHeadend backend.
+
+```bash
+docker compose up -d --build
+```
+
+Jellyfin will be available at `http://localhost:8096`.
+
+### Project Structure
+
+```
+jellyfin-plugin-tvheadend-api/
+├── .github/
+│   ├── workflows/build-release.yaml   # CI/CD pipeline
+│   ├── release-please-config.json     # Release Please configuration
+│   └── pr-title-checker-config.json   # Conventional commit PR title check
+├── Jellyfin.Plugin.TvHeadendApi/
+│   ├── Configuration/
+│   │   ├── ConfigPage.html            # Plugin settings page (embedded resource)
+│   │   └── PluginConfiguration.cs     # Configuration model
+│   ├── Model/                         # TVHeadend API response models
+│   ├── Service/
+│   │   └── LiveTvService.cs           # Core ILiveTvService implementation
+│   ├── Plugin.cs                      # Plugin entry point
+│   └── ServiceRegistrator.cs          # DI registration
+├── manifest.json                      # Jellyfin plugin repository manifest
+├── .release-please-manifest.json      # Current version tracker
+├── docker-compose.yaml                # Development Compose file
+├── Dockerfile                         # Development image
+└── CONTRIBUTING.md                    # Contribution guidelines
+```
+
+## Release Process
+
+This repository uses [Release Please](https://github.com/googleapis/release-please) and a GitHub Actions pipeline defined in `.github/workflows/build-release.yaml`.
+
+**Workflow overview:**
+
+1. **Pull Requests** — The pipeline validates the PR title against [Conventional Commits](https://www.conventionalcommits.org/) and runs a full build.
+2. **Push to `main`** — Release Please analyzes commit messages and opens a release PR when there are releasable changes.
+3. **Release created** — When the release PR is merged, the pipeline:
+   - Builds the plugin
+   - Packages the DLL and `meta.json` into a ZIP archive
+   - Calculates MD5 and SHA-256 checksums
+   - Uploads all artifacts to the GitHub release
+   - Updates `manifest.json` with the new version entry and commits it to `main`
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `manifest.json` | Jellyfin plugin repository metadata (consumed by Jellyfin clients) |
+| `.release-please-manifest.json` | Current version state for Release Please |
+| `.github/release-please-config.json` | Release Please configuration |
+| `.github/workflows/build-release.yaml` | CI/CD pipeline definition |
 
 ## Contributing
 
-Contributions are welcome! Please submit issues, feature requests, or pull requests to improve the plugin.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
-## Acknowledgments
+**Quick summary:**
 
-- [Jellyfin](https://jellyfin.org): The open-source media server.
-- [TVHeadend](https://tvheadend.org): A powerful TV streaming backend.
+1. Fork the repository and create a feature branch.
+2. Follow [Conventional Commits](https://www.conventionalcommits.org/) for all commit messages.
+3. Ensure the project builds without warnings: `dotnet build -c Release`.
+4. Submit a pull request against `main`.
 
----
+## Known Limitations
 
-### Contact
-For questions or support, please open an issue or contact the repository maintainers.
+- There is currently **no test project** in the repository. Unit tests for URL construction, response mapping, and configuration handling are a planned addition.
+- The plugin is purely API-based; HTSP-specific features (e.g. subscription weight, low-latency streaming) are not available.
+- Stream metadata (codec, resolution, bitrate) depends on the TVHeadend streaming profile and cannot be reliably detected at the plugin level.
+- The Docker development environment is a convenience tool for plugin loading — it does not include a TVHeadend instance or mock backend.
+
+## Security
+
+- Default configuration ships with **no pre-filled credentials** or tokens.
+- Sensitive information (passwords, auth tokens) is automatically masked in log output.
+- The **Ignore Certificate Errors** option should not be enabled in production environments.
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**. See the [LICENSE](LICENSE) file for details.

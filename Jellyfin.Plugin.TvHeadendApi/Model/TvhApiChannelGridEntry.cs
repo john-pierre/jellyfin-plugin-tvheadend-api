@@ -27,9 +27,9 @@ public class TvhApiChannelGridEntry
     /// <summary>
     /// Gets the logical number of the channel.
     /// This number is used to sort and access the channel in a TV guide or user interface.
-    /// Example: 101.
+    /// TVHeadend may return integer values (e.g. 101) or decimal values (e.g. 7.1).
     /// </summary>
-    public int Number { get; init; }
+    public double Number { get; init; }
 
     /// <summary>
     /// Gets the URL to the channel's icon image.

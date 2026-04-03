@@ -8,6 +8,10 @@
     <Nullable>enable</Nullable>
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
     <CodeAnalysisRuleSet>./Jellyfin.ruleset</CodeAnalysisRuleSet>
+    <!-- Plugin version: pass via -p:AssemblyVersion=x.y.z.0 during CI builds -->
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>$(AssemblyVersion)</FileVersion>
+    <InformationalVersion>$(AssemblyVersion)</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

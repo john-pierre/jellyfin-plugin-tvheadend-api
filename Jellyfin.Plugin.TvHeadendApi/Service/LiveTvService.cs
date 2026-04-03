@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -24,7 +24,9 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service;
 public sealed class LiveTvService : ILiveTvService, IDisposable
 {
     private readonly ILogger<LiveTvService> _logger;
+    private readonly object _httpClientSync = new();
     private HttpClient _httpClient;
+    private string? _httpClientConfigurationKey;
     private bool _disposed;
     private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
     {
@@ -191,6 +193,12 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     public string HomePageUrl => "https://tvheadend.org";
 
     /// <summary>
+    /// Gets a value indicating whether TVHeadend DVR functionality is enabled in the plugin configuration.
+    /// </summary>
+    private static bool IsTvhDvrEnabled =>
+        Plugin.Instance?.Configuration.EnableTvhDvr ?? true;
+
+    /// <summary>
     /// Releases the resources used by the <see cref="LiveTvService"/> class, including
     /// the HTTP client used for communication with the TVHeadEnd server.
     ///
@@ -209,6 +217,59 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
         }
     }
 
+    private void EnsureHttpClientConfigured(PluginConfiguration config)
+    {
+        var configurationKey = string.Join(
+            "|",
+            config.UseSSL,
+            config.IgnoreCertificateErrors,
+            config.AllowAnonymousAccess,
+            config.Host,
+            config.Port,
+            config.Username,
+            config.Password);
+
+        if (string.Equals(_httpClientConfigurationKey, configurationKey, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        lock (_httpClientSync)
+        {
+            if (string.Equals(_httpClientConfigurationKey, configurationKey, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var handler = new HttpClientHandler
+            {
+                CheckCertificateRevocationList = true
+            };
+
+            if (config.UseSSL && config.IgnoreCertificateErrors)
+            {
+                _logger.LogWarning("Ignoring SSL certificate errors. This is not recommended for production environments.");
+                handler.ServerCertificateCustomValidationCallback = static (_, _, _, _) => true;
+            }
+
+            var httpClient = new HttpClient(handler)
+            {
+                BaseAddress = new Uri($"{(config.UseSSL ? "https" : "http")}://{config.Host}:{config.Port}/")
+            };
+
+            if (!config.AllowAnonymousAccess && !string.IsNullOrWhiteSpace(config.Username))
+            {
+                var headerCredentials = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{config.Username}:{config.Password}"));
+                httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", headerCredentials);
+            }
+
+            var previousClient = _httpClient;
+            _httpClient = httpClient;
+            _httpClientConfigurationKey = configurationKey;
+            previousClient.Dispose();
+        }
+    }
+
     /// <summary>
     /// Constructs a complete API URL for the TVHeadEnd service.
     /// This method supports different authentication methods (Basic Auth in URL, Header, or URL parameter).
@@ -222,6 +283,8 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
         // Dynamically fetch the current configuration
         var config = Plugin.Instance?.Configuration
             ?? throw new InvalidOperationException("Plugin configuration is not available.");
+
+        EnsureHttpClientConfigured(config);
 
         // Ensure the web root is properly formatted with a single trailing slash
         var webRoot = string.IsNullOrWhiteSpace(config.Webroot) ? "/" : config.Webroot.TrimEnd('/') + "/";
@@ -246,30 +309,16 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
 
             case "parameter":
                 // Append the authentication token as a query parameter
-                baseUrl = string.IsNullOrWhiteSpace(config.AuthToken) ? baseUrl : $"{baseUrl}?auth={config.AuthToken}";
+                if (!string.IsNullOrWhiteSpace(config.AuthToken))
+                {
+                    var separator = baseUrl.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+                    baseUrl = $"{baseUrl}{separator}auth={Uri.EscapeDataString(config.AuthToken)}";
+                }
+
                 break;
 
             case "header":
             default:
-                // Use default HTTP header-based authentication
-                var handler = new HttpClientHandler
-                {
-                    CheckCertificateRevocationList = true
-                };
-
-                if (config.UseSSL && config.IgnoreCertificateErrors)
-                {
-                    _logger.LogWarning("Ignoring SSL certificate errors. This is not recommended for production environments.");
-                    handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true;
-                }
-
-                _httpClient = new HttpClient(handler)
-                {
-                    BaseAddress = new Uri($"{(config.UseSSL ? "https" : "http")}://{config.Host}:{config.Port}/")
-                };
-
-                var headerCredentials = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{config.Username}:{config.Password}"));
-                _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", headerCredentials);
                 break;
         }
 
@@ -333,11 +382,11 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             // Log the URL being used for the API call (sensitive data is masked)
             _logger.LogInformation("Fetching channels from TVHeadEnd at {Url}...", MaskSensitiveData(url));
 
-            // Make an HTTP GET request to the TVHeadEnd server and retrieve the response as a string
-            var response = await _httpClient.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
-
-            // Deserialize the JSON response into a ChannelApiResponse object
-            var result = JsonSerializer.Deserialize<TvhApiChannelGridResponse>(response, JsonOptions);
+            // Make an HTTP GET request and deserialize directly from the response stream
+            using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<TvhApiChannelGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
 
             // Check if the response contains valid channel entries
             if (result?.Entries != null && result.Entries.Any())
@@ -347,7 +396,9 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
                 {
                     Id = channel.Uuid, // Unique identifier for the channel
                     Name = channel.Name, // Display name of the channel
-                    Number = channel.Number.ToString(CultureInfo.InvariantCulture), // Logical number of the channel
+                    Number = channel.Number % 1 == 0
+                        ? ((int)channel.Number).ToString(CultureInfo.InvariantCulture)
+                        : channel.Number.ToString(CultureInfo.InvariantCulture),
                     ImageUrl = !string.IsNullOrWhiteSpace(channel.IconPublicUrl)
                         ? ConstructUrl(channel.IconPublicUrl.TrimStart('/'), "parameter")
                         : null, // URL to the channel's icon image
@@ -386,6 +437,12 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// <exception cref="InvalidOperationException">Thrown if the API request to cancel the timer fails.</exception>
     public async Task CancelTimerAsync(string timerId, CancellationToken cancellationToken)
     {
+        if (!IsTvhDvrEnabled)
+        {
+            _logger.LogInformation("TVHeadend DVR is disabled. Skipping CancelTimerAsync.");
+            throw new NotSupportedException("TVHeadend DVR is disabled in the plugin configuration.");
+        }
+
         try
         {
             // Validate the timerId parameter to ensure it is not null or empty
@@ -440,6 +497,12 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// <exception cref="InvalidOperationException">Thrown if the API request to cancel the series timer fails.</exception>
     public async Task CancelSeriesTimerAsync(string timerId, CancellationToken cancellationToken)
     {
+        if (!IsTvhDvrEnabled)
+        {
+            _logger.LogInformation("TVHeadend DVR is disabled. Skipping CancelSeriesTimerAsync.");
+            throw new NotSupportedException("TVHeadend DVR is disabled in the plugin configuration.");
+        }
+
         try
         {
             // Validate the timerId parameter to ensure it is not null or empty
@@ -496,6 +559,12 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// <exception cref="InvalidOperationException">Thrown if the API request fails.</exception>
     public async Task CreateTimerAsync(TimerInfo info, CancellationToken cancellationToken)
     {
+        if (!IsTvhDvrEnabled)
+        {
+            _logger.LogInformation("TVHeadend DVR is disabled. Skipping CreateTimerAsync.");
+            throw new NotSupportedException("TVHeadend DVR is disabled in the plugin configuration.");
+        }
+
         try
         {
             // Validate the TimerInfo parameter
@@ -604,6 +673,12 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// <exception cref="InvalidOperationException">Thrown if the API request to create the series timer fails.</exception>
     public async Task CreateSeriesTimerAsync(SeriesTimerInfo info, CancellationToken cancellationToken)
     {
+        if (!IsTvhDvrEnabled)
+        {
+            _logger.LogInformation("TVHeadend DVR is disabled. Skipping CreateSeriesTimerAsync.");
+            throw new NotSupportedException("TVHeadend DVR is disabled in the plugin configuration.");
+        }
+
         try
         {
             // Validate the SeriesTimerInfo parameter
@@ -713,6 +788,12 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// <exception cref="InvalidOperationException">Thrown if the API request fails.</exception>
     public async Task UpdateTimerAsync(TimerInfo updatedTimer, CancellationToken cancellationToken)
     {
+        if (!IsTvhDvrEnabled)
+        {
+            _logger.LogInformation("TVHeadend DVR is disabled. Skipping UpdateTimerAsync.");
+            throw new NotSupportedException("TVHeadend DVR is disabled in the plugin configuration.");
+        }
+
         try
         {
             // Validate the TimerInfo parameter to ensure it contains valid data
@@ -781,6 +862,12 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// <exception cref="InvalidOperationException">Thrown if the API request fails.</exception>
     public async Task UpdateSeriesTimerAsync(SeriesTimerInfo info, CancellationToken cancellationToken)
     {
+        if (!IsTvhDvrEnabled)
+        {
+            _logger.LogInformation("TVHeadend DVR is disabled. Skipping UpdateSeriesTimerAsync.");
+            throw new NotSupportedException("TVHeadend DVR is disabled in the plugin configuration.");
+        }
+
         try
         {
             // Validate the SeriesTimerInfo parameter to ensure it contains valid data
@@ -850,75 +937,51 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// </returns>
     public async Task<IEnumerable<TimerInfo>> GetTimersAsync(CancellationToken cancellationToken)
     {
+        if (!IsTvhDvrEnabled)
+        {
+            _logger.LogInformation("TVHeadend DVR is disabled. Returning empty timer list.");
+            return Enumerable.Empty<TimerInfo>();
+        }
+
         try
         {
-            // Define the relative path for the API endpoint
-            var url = ConstructUrl("api/dvr/entry/grid_upcoming");
+            const int limit = 10000;
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var url = ConstructUrl($"api/dvr/entry/grid?limit={limit}");
 
-            // Log the request for debugging purposes
             _logger.LogInformation("Fetching timers from TVHeadEnd at {Url}...", MaskSensitiveData(url));
 
-            // Send an HTTP GET request to the TVHeadEnd API
-            var response = await _httpClient.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<TvhApiDvrEntryGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
 
-            // Deserialize the JSON response into a list of recordings from TVHeadEnd
-            var result = JsonSerializer.Deserialize<TvhApiDvrEntryGridResponse>(response, JsonOptions);
-
-            // Check if the response contains valid timer entries
-            if (result?.Entries != null && result.Entries.Any())
-            {
-                // Map TVHeadEnd recordings to Jellyfin's TimerInfo format
-                var timers = result.Entries.Select(recording => new TimerInfo
+            var timers = result?.Entries?
+                .Where(entry => entry.Enabled && entry.FileRemoved == 0 && entry.Stop >= now)
+                .Select(entry => new TimerInfo
                 {
-                    Id = recording.Uuid,
-                    Name = recording.DispTitle,
-                    Overview = recording.DispDescription,
-                    ChannelId = recording.Channel,
-                    StartDate = DateTimeOffset.FromUnixTimeSeconds(recording.Start).UtcDateTime,
-                    EndDate = DateTimeOffset.FromUnixTimeSeconds(recording.Stop).UtcDateTime,
-                    Priority = recording.Priority,
-                    RecordingPath = recording.Filename,
-                    OfficialRating = recording.RatingLabel,
-                    CommunityRating = null, // No direct mapping available
-                    Genres = recording.Genre?
-                        .Select(genreId =>
-                            EtsiGenreMapping.TryGetValue(genreId, out var genreDescription)
-                                ? genreDescription
-                                : $"Unknown ({genreId})")
-                        .ToArray() ?? Array.Empty<string>(),
-                    Tags = new[]
-                    {
-                        recording.NoReRecord ? "NoReRecord" : null,
-                        recording.NoResched ? "NoResched" : null,
-                        recording.Enabled ? "Enabled" : null
-                    }.Where(tag => !string.IsNullOrEmpty(tag)).ToArray(),
-                    IsRepeat = recording.Duplicate > 0,
-                    SeriesTimerId = recording.AutoRec,
-                    ShowId = recording.Parent,
-                    OriginalAirDate = recording.FirstAired > 0
-                        ? DateTimeOffset.FromUnixTimeSeconds(recording.FirstAired).UtcDateTime
-                        : null as DateTime?,
-                    EpisodeTitle = recording.DispSubtitle,
-                    Status = recording.SchedStatus switch
-                    {
-                        "scheduled" => RecordingStatus.New,
-                        "recording" => RecordingStatus.InProgress,
-                        "completed" => RecordingStatus.Completed,
-                        "completedError" => RecordingStatus.Error,
-                        "cancelled" => RecordingStatus.Cancelled,
-                        "conflictedOk" => RecordingStatus.ConflictedOk,
-                        "conflictedNotOk" => RecordingStatus.ConflictedNotOk,
-                        _ => RecordingStatus.Error
-                    }
-                }).ToList();
+                    Id = entry.Uuid,
+                    ProgramId = entry.Broadcast > 0 ? entry.Broadcast.ToString(CultureInfo.InvariantCulture) : null,
+                    ChannelId = entry.Channel,
+                    Name = string.IsNullOrWhiteSpace(entry.DispTitle) ? entry.ChannelName : entry.DispTitle,
+                    Overview = string.IsNullOrWhiteSpace(entry.DispDescription)
+                        ? string.IsNullOrWhiteSpace(entry.DispExtraText)
+                            ? entry.DispSummary
+                            : entry.DispExtraText
+                        : entry.DispDescription,
+                    StartDate = DateTimeOffset.FromUnixTimeSeconds(entry.Start).UtcDateTime,
+                    EndDate = DateTimeOffset.FromUnixTimeSeconds(entry.Stop).UtcDateTime,
+                    PrePaddingSeconds = Math.Max(0, entry.StartExtra * 60),
+                    PostPaddingSeconds = Math.Max(0, entry.StopExtra * 60)
+                })
+                .ToList();
 
-                // Log the number of timers successfully retrieved and mapped
+            if (timers != null && timers.Count != 0)
+            {
                 _logger.LogInformation("Successfully retrieved {Count} timers from TVHeadEnd.", timers.Count);
-
                 return timers;
             }
 
-            // If no timers were found, log and return an empty list
             _logger.LogInformation("No timers retrieved from TVHeadEnd.");
             return Enumerable.Empty<TimerInfo>();
         }
@@ -942,6 +1005,12 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// </returns>
     public Task<SeriesTimerInfo> GetNewTimerDefaultsAsync(CancellationToken cancellationToken, ProgramInfo program)
     {
+        if (!IsTvhDvrEnabled)
+        {
+            _logger.LogInformation("TVHeadend DVR is disabled. Returning minimal timer defaults.");
+            return Task.FromResult(new SeriesTimerInfo());
+        }
+
         // Log the generation of default timer settings
         _logger.LogInformation("Generating default timer settings...");
 
@@ -983,6 +1052,12 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// </returns>
     public async Task<IEnumerable<SeriesTimerInfo>> GetSeriesTimersAsync(CancellationToken cancellationToken)
     {
+        if (!IsTvhDvrEnabled)
+        {
+            _logger.LogInformation("TVHeadend DVR is disabled. Returning empty series timer list.");
+            return Enumerable.Empty<SeriesTimerInfo>();
+        }
+
         try
         {
             // Define the relative path for the API endpoint
@@ -991,11 +1066,11 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             // Log the request for debugging purposes
             _logger.LogInformation("Fetching series timers from TVHeadEnd at {Url}...", MaskSensitiveData(url));
 
-            // Send an HTTP GET request to the TVHeadEnd API
-            var response = await _httpClient.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
-
-            // Deserialize the JSON response into a list of series timers from TVHeadEnd
-            var result = JsonSerializer.Deserialize<TvhApiDvrAutoRecGridResponse>(response, JsonOptions);
+            // Send an HTTP GET request and deserialize directly from the response stream
+            using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<TvhApiDvrAutoRecGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
 
             // Check if the response contains valid series timer entries
             if (result?.Entries != null && result.Entries.Any())
@@ -1068,7 +1143,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             _logger.LogInformation("Fetching EPG data from TVHeadEnd at {Url} for channel ID: {ChannelId}, between {StartDate} and {EndDate}.", MaskSensitiveData(url), channelId, startDateUtc, endDateUtc);
 
             // Send the GET request to the TVHeadEnd API
-            var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
             // Handle unsuccessful responses
             if (!response.IsSuccessStatusCode)
@@ -1078,8 +1153,9 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
                 return Enumerable.Empty<ProgramInfo>();
             }
 
-            // Deserialize the JSON response into a list of EPG events from TVHeadEnd
-            var result = JsonSerializer.Deserialize<TvhApiEpgEventsGridResponse>(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false), JsonOptions);
+            // Deserialize the JSON response directly from the response stream
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<TvhApiEpgEventsGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
 
             // Filter and map the results
             var filteredPrograms = result?.Entries?
@@ -1087,7 +1163,9 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
                 {
                     var programStart = DateTimeOffset.FromUnixTimeSeconds(entry.Start).UtcDateTime;
                     var programEnd = DateTimeOffset.FromUnixTimeSeconds(entry.Stop).UtcDateTime;
-                    return entry.ChannelUuid == channelId && programEnd <= endDateUtc;
+                    return entry.ChannelUuid == channelId
+                        && programStart < endDateUtc
+                        && programEnd > startDateUtc;
                 })
                 .Select(entry =>
                 {
@@ -1146,6 +1224,159 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     }
 
     /// <summary>
+    /// Builds a <see cref="MediaSourceInfo"/> for a given channel using the current plugin configuration.
+    /// When Fast Channel Switching is enabled, the returned object includes pre-filled
+    /// <see cref="MediaStream"/> hints so that Jellyfin can skip probing entirely.
+    /// </summary>
+    private MediaSourceInfo BuildMediaSourceInfo(string channelId, PluginConfiguration config)
+    {
+        var streamUrl = ConstructUrl($"stream/channel/{channelId}?profile={config.StreamingProfile}", "url");
+        _logger.LogInformation("Generated stream URL {Url} for channel ID {ChannelId}", MaskSensitiveData(streamUrl), channelId);
+
+        var mediaSource = new MediaSourceInfo
+        {
+            Id = channelId,
+            Path = streamUrl,
+
+            // Always Http – this plugin exclusively uses TVHeadend's HTTP API.
+            Protocol = MediaProtocol.Http,
+
+            // Always remote – TVHeadend is a network service accessed via HTTP.
+            IsRemote = true,
+
+            // Configurable playback capabilities
+            SupportsDirectPlay = config.SupportsDirectPlay,
+            SupportsDirectStream = config.SupportsDirectStream,
+            SupportsTranscoding = config.SupportsTranscoding,
+            SupportsProbing = config.EnableFastChannelSwitching ? false : config.SupportsProbing,
+            IsInfiniteStream = config.IsInfiniteStream,
+            IgnoreDts = config.IgnoreDts,
+            FallbackMaxStreamingBitrate = config.FallbackMaxStreamingBitrate,
+
+            // Only relevant when Jellyfin actually transcodes; pick the safest profile.
+            UseMostCompatibleTranscodingProfile = config.SupportsTranscoding,
+
+            // HTTP streams must be opened/closed explicitly on channel switch.
+            RequiresOpening = true,
+            RequiresClosing = true,
+
+            // Live TV delivers data in real-time; throttling would cause buffering.
+            ReadAtNativeFramerate = false,
+        };
+
+        if (config.BufferMs > 0)
+        {
+            mediaSource.BufferMs = config.BufferMs;
+        }
+
+        if (config.AnalyzeDurationMs > 0 && !config.EnableFastChannelSwitching)
+        {
+            mediaSource.AnalyzeDurationMs = config.AnalyzeDurationMs;
+        }
+
+        if (config.EnableFastChannelSwitching)
+        {
+            mediaSource.Container = config.StreamContainer;
+            mediaSource.AnalyzeDurationMs = 0;
+
+            var mediaStreams = new List<MediaStream>();
+
+            // Video stream hint
+            if (!string.IsNullOrWhiteSpace(config.VideoCodec))
+            {
+                var videoStream = new MediaStream
+                {
+                    Type = MediaStreamType.Video,
+                    Index = 0,
+                    Codec = config.VideoCodec,
+                    IsInterlaced = config.VideoIsInterlaced,
+                };
+
+                if (config.VideoWidth > 0)
+                {
+                    videoStream.Width = config.VideoWidth;
+                }
+
+                if (config.VideoHeight > 0)
+                {
+                    videoStream.Height = config.VideoHeight;
+                }
+
+                if (config.VideoFramerate > 0)
+                {
+                    videoStream.RealFrameRate = config.VideoFramerate;
+                    videoStream.AverageFrameRate = config.VideoFramerate;
+                }
+
+                if (config.VideoBitrate > 0)
+                {
+                    videoStream.BitRate = config.VideoBitrate;
+                }
+
+                if (config.VideoWidth > 0 && config.VideoHeight > 0)
+                {
+                    videoStream.AspectRatio = $"{config.VideoWidth}:{config.VideoHeight}";
+                }
+
+                mediaStreams.Add(videoStream);
+            }
+
+            // Audio stream hint
+            if (!string.IsNullOrWhiteSpace(config.AudioCodec))
+            {
+                var audioStream = new MediaStream
+                {
+                    Type = MediaStreamType.Audio,
+                    Index = string.IsNullOrWhiteSpace(config.VideoCodec) ? 0 : 1,
+                    Codec = config.AudioCodec,
+                };
+
+                if (config.AudioChannels > 0)
+                {
+                    audioStream.Channels = config.AudioChannels;
+                    audioStream.ChannelLayout = config.AudioChannels switch
+                    {
+                        1 => "mono",
+                        2 => "stereo",
+                        6 => "5.1",
+                        8 => "7.1",
+                        _ => $"{config.AudioChannels}.0"
+                    };
+                }
+
+                if (config.AudioSampleRate > 0)
+                {
+                    audioStream.SampleRate = config.AudioSampleRate;
+                }
+
+                if (config.AudioBitrate > 0)
+                {
+                    audioStream.BitRate = config.AudioBitrate;
+                }
+
+                mediaStreams.Add(audioStream);
+            }
+
+            if (mediaStreams.Count > 0)
+            {
+                mediaSource.MediaStreams = mediaStreams;
+            }
+
+            _logger.LogInformation(
+                "Fast Channel Switching enabled: Container={Container}, Video={VideoCodec} {Width}x{Height}@{Fps}, Audio={AudioCodec} {Channels}ch",
+                config.StreamContainer,
+                config.VideoCodec,
+                config.VideoWidth,
+                config.VideoHeight,
+                config.VideoFramerate,
+                config.AudioCodec,
+                config.AudioChannels);
+        }
+
+        return mediaSource;
+    }
+
+    /// <summary>
     /// Fetches the streaming URL for a specific channel from TVHeadEnd.
     /// Constructs the URL based on the channel ID and returns it as a <see cref="MediaSourceInfo"/> object.
     /// </summary>
@@ -1154,145 +1385,52 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// <param name="cancellationToken">A token to cancel the operation if necessary.</param>
     /// <returns>A task that represents the asynchronous operation. The task result contains a <see cref="MediaSourceInfo"/> object with the streaming information.</returns>
     /// <exception cref="ArgumentException">Thrown if <paramref name="channelId"/> is null or empty.</exception>
-    /// <exception cref="Exception">Thrown if there is an error while generating the stream URL.</exception>
     public Task<MediaSourceInfo> GetChannelStream(string channelId, string streamId, CancellationToken cancellationToken)
     {
         try
         {
-            // Validate the channelId parameter
             if (string.IsNullOrWhiteSpace(channelId))
             {
                 throw new ArgumentException("Channel ID cannot be null or empty.", nameof(channelId));
             }
 
-            // Dynamically fetch the current configuration
             var config = Plugin.Instance?.Configuration
                 ?? throw new InvalidOperationException("Plugin configuration is not available.");
 
-            // Construct the streaming URL using ConstructUrl
-            var streamUrl = ConstructUrl($"stream/channel/{channelId}?profile={config.StreamingProfile}", "url");
-
-            // Log the streaming URL without sensitive information
-            _logger.LogInformation("Generated stream URL {Url} for channel ID {ChannelId}", MaskSensitiveData(streamUrl), channelId);
-
-            // Construct the MediaSourceInfo object using all configuration parameters
-            var mediaSourceInfo = new MediaSourceInfo
-            {
-                Id = channelId,
-                Path = streamUrl,
-                Protocol = MediaProtocol.Http,
-                IsRemote = true,
-                SupportsDirectPlay = config.SupportsDirectPlay,
-                SupportsDirectStream = config.SupportsDirectStream,
-                SupportsTranscoding = config.SupportsTranscoding,
-                AnalyzeDurationMs = config.AnalyzeDurationMs,
-                FallbackMaxStreamingBitrate = config.FallbackMaxStreamingBitrate,
-                UseMostCompatibleTranscodingProfile = true,
-                RequiresOpening = true,
-                RequiresClosing = true
-            };
-
-            // Return the constructed MediaSourceInfo object
-            return Task.FromResult(mediaSourceInfo);
+            return Task.FromResult(BuildMediaSourceInfo(channelId, config));
         }
         catch (Exception ex)
         {
-            // Log any errors that occur while generating the stream URL
             _logger.LogError(ex, "Error occurred while generating stream URL for channel ID {ChannelId}.", channelId);
-            throw; // Re-throw the exception to ensure the caller is aware of the failure
+            throw;
         }
     }
 
     /// <summary>
     /// Fetches the available media sources for streaming a specific channel from TVHeadEnd.
-    /// This method constructs the media source information for a given channel ID and returns it as a list of <see cref="MediaSourceInfo"/> objects.
     /// </summary>
     /// <param name="channelId">The unique identifier of the channel to stream.</param>
     /// <param name="cancellationToken">A token to cancel the operation if necessary.</param>
-    /// <returns>
-    /// A task that represents the asynchronous operation. The task result contains a list of <see cref="MediaSourceInfo"/> objects representing the available media sources.
-    /// </returns>
+    /// <returns>A task containing a list of <see cref="MediaSourceInfo"/> objects.</returns>
     /// <exception cref="ArgumentException">Thrown if <paramref name="channelId"/> is null or empty.</exception>
     public Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
     {
         try
         {
-            // Validate the channelId parameter to ensure it is not null or empty
             if (string.IsNullOrWhiteSpace(channelId))
             {
                 throw new ArgumentException("Channel ID cannot be null or empty.", nameof(channelId));
             }
 
-            // Dynamically fetch the current configuration
             var config = Plugin.Instance?.Configuration
                 ?? throw new InvalidOperationException("Plugin configuration is not available.");
 
-            // Build the streaming URL using ConstructUrl
-            var streamUrl = ConstructUrl($"stream/channel/{channelId}?profile={config.StreamingProfile}", "url");
-
-            // Log the streaming URL for debugging purposes
-            _logger.LogInformation("Generated media source URL {Url} for channel ID {ChannelId}: {StreamUrl}", MaskSensitiveData(streamUrl), channelId, streamUrl);
-
-            // Construct the MediaSourceInfo object to describe the media source
-            var mediaSourceInfo = new MediaSourceInfo
-            {
-                Id = channelId,
-                Path = streamUrl,
-                Protocol = MediaProtocol.Http,
-                IsRemote = true,
-                SupportsDirectPlay = true,
-                SupportsDirectStream = true,
-                SupportsTranscoding = false,
-                AnalyzeDurationMs = 1,
-                SupportsProbing = false,
-                IsInfiniteStream = true,
-                IgnoreDts = true,
-                RequiresOpening = true,
-                RequiresClosing = true,
-                ReadAtNativeFramerate = false,
-                BufferMs = config.BufferMs,
-                FallbackMaxStreamingBitrate = 5000000,
-                UseMostCompatibleTranscodingProfile = false,
-                MediaStreams = new List<MediaStream>
-                {
-                    new MediaStream
-                    {
-                        Type = MediaStreamType.Video,
-                        Codec = "h264",
-                        Index = 0,
-                        IsInterlaced = false,
-                        BitRate = 5000000,
-                        Width = 1920,
-                        Height = 1080,
-                        RealFrameRate = 25.0f,
-                        Profile = "high",
-                        Level = 4.1,
-                        AspectRatio = "16:9"
-                    },
-                    new MediaStream
-                    {
-                        Type = MediaStreamType.Audio,
-                        Codec = "aac",
-                        Index = 1,
-                        Channels = 2,
-                        BitRate = 128000,
-                        SampleRate = 48000,
-                        Profile = "LC"
-                    }
-                },
-                Container = "mp4",
-            };
-
-            mediaSourceInfo.InferTotalBitrate(true);
-
-            // Return the media source information as a list containing a single source
-            return Task.FromResult(new List<MediaSourceInfo> { mediaSourceInfo });
+            return Task.FromResult(new List<MediaSourceInfo> { BuildMediaSourceInfo(channelId, config) });
         }
         catch (Exception ex)
         {
-            // Log any errors that occur while constructing the media source information
             _logger.LogError(ex, "Error occurred while generating media sources for channel ID {ChannelId}.", channelId);
-            throw; // Re-throw the exception to ensure the caller is aware of the failure
+            throw;
         }
     }
 
@@ -1364,7 +1502,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             _logger.LogInformation("Fetching content types from TVHeadEnd at {Url}.", MaskSensitiveData(url));
 
             // Send the GET request to the TVHeadEnd API
-            var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
             // Ensure the response indicates success (HTTP status code 200-299)
             if (!response.IsSuccessStatusCode)
@@ -1374,8 +1512,9 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
                 return new Dictionary<int, string>();
             }
 
-            // Deserialize the JSON response
-            var result = JsonSerializer.Deserialize<TvhApiEpgContentTypeListResponse>(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false), JsonOptions);
+            // Deserialize the JSON response directly from the response stream
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<TvhApiEpgContentTypeListResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
 
             // Convert the list to a dictionary
             var contentTypes = result?.Entries?.ToDictionary(entry => entry.Key, entry => entry.Val) ?? new Dictionary<int, string>();
@@ -1412,7 +1551,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             _logger.LogInformation("Fetching channel tags from TVHeadEnd at {Url}.", MaskSensitiveData(url));
 
             // Send the GET request to the TVHeadEnd API
-            var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
             // Ensure the response indicates success (HTTP status code 200-299)
             if (!response.IsSuccessStatusCode)
@@ -1422,8 +1561,9 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
                 return new Dictionary<string, string>();
             }
 
-            // Deserialize the JSON response
-            var result = JsonSerializer.Deserialize<TvhApiChannelTagResponse>(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false), JsonOptions);
+            // Deserialize the JSON response directly from the response stream
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<TvhApiChannelTagResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
 
             // Convert the list to a dictionary
             var channelTags = result?.Entries?.ToDictionary(entry => entry.Key, entry => entry.Val) ?? new Dictionary<string, string>();
@@ -1466,11 +1606,11 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             // Log the request to fetch recording profiles
             _logger.LogInformation("Fetching recording profiles from TVHeadEnd at {Url}...", MaskSensitiveData(url));
 
-            // Fetch the recording profiles from TVHeadEnd
-            var response = await _httpClient.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
-
-            // Deserialize the response into TvhApiDvrConfigGridResponse
-            var result = JsonSerializer.Deserialize<TvhApiDvrConfigGridResponse>(response, JsonOptions);
+            // Fetch and deserialize the recording profiles directly from the response stream
+            using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<TvhApiDvrConfigGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
 
             // Check if profiles are returned
             if (result?.Entries == null || !result.Entries.Any())

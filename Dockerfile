@@ -1,50 +1,53 @@
-# Jellyfin Base Image
+# ── Stage 1: Build the plugin ───────────────────────────────────────
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+
+WORKDIR /src
+
+# Copy solution + project file first for layer-cached restore
+COPY Jellyfin.Plugin.TvHeadendApi.sln ./
+COPY Jellyfin.Plugin.TvHeadendApi/Jellyfin.Plugin.TvHeadendApi.csproj Jellyfin.Plugin.TvHeadendApi/
+
+RUN dotnet restore Jellyfin.Plugin.TvHeadendApi.sln
+
+# Copy the rest of the source code
+COPY Jellyfin.Plugin.TvHeadendApi/ Jellyfin.Plugin.TvHeadendApi/
+COPY manifest.json ./
+
+# Build version – overridable via --build-arg
+ARG VERSION=1.0.0.0
+
+RUN dotnet build Jellyfin.Plugin.TvHeadendApi.sln \
+      --configuration Release \
+      --no-restore \
+      -p:AssemblyVersion=${VERSION} \
+      -p:FileVersion=${VERSION} \
+      -p:InformationalVersion=${VERSION}
+
+# Create the plugin directory with DLL + meta.json
+RUN apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/* \
+    && TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+    && mkdir -p /plugin \
+    && cp Jellyfin.Plugin.TvHeadendApi/bin/Release/net8.0/Jellyfin.Plugin.TvHeadendApi.dll /plugin/ \
+    && jq --arg ts "$TIMESTAMP" --arg v "$VERSION" \
+       '.[0] | del(.versions) | . + {timestamp: $ts, version: $v}' \
+       manifest.json > /plugin/meta.json
+
+# ── Stage 2: Jellyfin runtime with plugin installed ─────────────────
 FROM jellyfin/jellyfin:10.10.7
 
-# Set timezone
 ENV TZ=Europe/Berlin
 
-# Install required dependencies and add Microsoft package repository for .NET
-RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    apt-transport-https \
-    software-properties-common \
-    jq && \
-    wget https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb && \
-    dpkg -i packages-microsoft-prod.deb && \
-    apt-get update && apt-get install -y \
-    dotnet-sdk-8.0 \
-    unzip && \
-    rm -rf /var/lib/apt/lists/*
+# Copy the built plugin into the Jellyfin plugin directory
+ARG VERSION=1.0.0.0
+COPY --from=build /plugin/ /config/plugins/tvheadend_api_${VERSION}/
 
-# Create necessary directories for plugins and configuration
-RUN mkdir -p /config/plugins /cache /media /build
+# Create persistent directories
+RUN mkdir -p /config /cache /media
 
-# Set the working directory to /build for plugin compilation
-WORKDIR /build
-
-# Copy plugin source code and manifest.json
-COPY ./Jellyfin.Plugin.TvHeadendApi/ /build/
-COPY ./manifest.json /build/
-
-# Set a fixed version for the development build
-ENV VERSION=1.0.0.0
-
-# Dynamically create meta.json without the 'versions' field and build the plugin
-RUN TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ") && \
-    echo "Building plugin version $VERSION" && \
-    mkdir -p /config/plugins/tvheadend_api_$VERSION && \
-    dotnet build -c Release -o /config/plugins/tvheadend_api_$VERSION && \
-    jq '.[0] | del(.versions) | . + {"timestamp": "'$TIMESTAMP'", "version": "'$VERSION'"}' manifest.json > /config/plugins/tvheadend_api_$VERSION/meta.json
-
-# Clean up build directory
-WORKDIR /
-RUN rm -rf /build
-
-# Expose Jellyfin ports
 EXPOSE 8096 8920
 
+# FFmpeg tuning for live TV – reduce probing to speed up channel switches
 ENV JELLYFIN_FFmpeg__probesize=1M
-# Start Jellyfin server
+ENV JELLYFIN_FFmpeg__analyzeduration=1M
+
 CMD ["/usr/lib/jellyfin/bin/jellyfin", "--datadir", "/config", "--cachedir", "/cache"]
