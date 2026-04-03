@@ -17,5 +17,4 @@ if [ -d "$PLUGIN_SOURCE_ROOT" ]; then
     done
 fi
 
-exec /usr/lib/jellyfin/bin/jellyfin --datadir /config --cachedir /cache
-
+exec /jellyfin/jellyfin

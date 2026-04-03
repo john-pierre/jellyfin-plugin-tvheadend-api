@@ -55,4 +55,5 @@ EXPOSE 8096 8920
 ENV JELLYFIN_FFmpeg__probesize=1M
 ENV JELLYFIN_FFmpeg__analyzeduration=1M
 
-CMD ["/usr/local/bin/start-jellyfin.sh"]
+# Override the base image entrypoint so our bootstrap script runs first.
+ENTRYPOINT ["/usr/local/bin/start-jellyfin.sh"]

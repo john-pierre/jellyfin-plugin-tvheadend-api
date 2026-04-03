@@ -160,7 +160,22 @@ This means plugin settings (Host, credentials, Fast Switching settings, etc.) su
 docker compose up -d --build
 ```
 
-Jellyfin will be available at `http://localhost:8096`.
+#### Quick dev build helper (auto version bump)
+
+Use the script below to auto-increment the 4th version number for development builds
+(e.g. `1.0.0.1` -> `1.0.0.2`), rebuild the image and recreate Jellyfin:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev-build.ps1
+```
+
+Optional dry-run (shows commands only):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev-build.ps1 -DryRun
+```
+
+The current dev version state is stored in `./.docker/dev-version.txt`.
 
 #### Migration for older local Docker data
 
