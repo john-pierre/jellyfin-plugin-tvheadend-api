@@ -1233,6 +1233,12 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
         var streamUrl = ConstructUrl($"stream/channel/{channelId}?profile={config.StreamingProfile}", "url");
         _logger.LogInformation("Generated stream URL {Url} for channel ID {ChannelId}", MaskSensitiveData(streamUrl), channelId);
 
+        var effectiveSupportsTranscoding = config.EnableFastChannelSwitching ? false : config.SupportsTranscoding;
+        if (config.EnableFastChannelSwitching && config.SupportsTranscoding)
+        {
+            _logger.LogWarning("Fast Channel Switching is enabled while SupportsTranscoding is true. Overriding SupportsTranscoding to false for this media source.");
+        }
+
         var mediaSource = new MediaSourceInfo
         {
             Id = channelId,
@@ -1247,14 +1253,14 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             // Configurable playback capabilities
             SupportsDirectPlay = config.SupportsDirectPlay,
             SupportsDirectStream = config.SupportsDirectStream,
-            SupportsTranscoding = config.SupportsTranscoding,
+            SupportsTranscoding = effectiveSupportsTranscoding,
             SupportsProbing = config.EnableFastChannelSwitching ? false : config.SupportsProbing,
             IsInfiniteStream = config.IsInfiniteStream,
             IgnoreDts = config.IgnoreDts,
             FallbackMaxStreamingBitrate = config.FallbackMaxStreamingBitrate,
 
             // Only relevant when Jellyfin actually transcodes; pick the safest profile.
-            UseMostCompatibleTranscodingProfile = config.SupportsTranscoding,
+            UseMostCompatibleTranscodingProfile = effectiveSupportsTranscoding,
 
             // HTTP streams must be opened/closed explicitly on channel switch.
             RequiresOpening = true,

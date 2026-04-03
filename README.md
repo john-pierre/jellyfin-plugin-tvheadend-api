@@ -156,9 +156,19 @@ The Compose setup persists the full Jellyfin data directory:
 
 This means plugin settings (Host, credentials, Fast Switching settings, etc.) survive container rebuilds and restarts.
 
+For troubleshooting, the development `docker-compose.yaml` enables more verbose Jellyfin logging by default for:
+
+- `Jellyfin.Plugin.TvHeadendApi`
+- `MediaBrowser.MediaEncoding.Transcoding`
+- `MediaBrowser.MediaEncoding.Encoder`
+
+Global logging remains at `Information` to keep noise manageable.
+
 ```bash
 docker compose up -d --build
 ```
+
+If you want quieter logs again, remove or adjust the `JELLYFIN_Logging__LogLevel__...` environment variables in `docker-compose.yaml` and recreate the container.
 
 #### Quick dev build helper (auto version bump)
 
