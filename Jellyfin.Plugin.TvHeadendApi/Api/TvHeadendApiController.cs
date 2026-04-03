@@ -332,10 +332,11 @@ public class TvHeadendApiController : ControllerBase
     }
 
     /// <summary>
-    /// Creates an optimised transcode streaming profile called "jellyfin" in TVHeadend.
-    /// The profile uses H.264 (veryfast preset) + AAC in an MPEG-TS container and is
-    /// designed for the fastest possible channel switching in Jellyfin.
-    /// If a profile with that name already exists, the endpoint returns a hint instead.
+    /// Creates an optimised set of profiles in TVHeadend for fast channel switching:
+    /// 1. A video codec profile "jellyfin-h264" (H.264 / libx264, 5 Mbps cap, faster preset, zerolatency tune, deinterlace)
+    /// 2. An audio codec profile "jellyfin-aac" (AAC, 128 kbps)
+    /// 3. A streaming transcode profile "jellyfin" that references both codec profiles in an MPEG-TS container.
+    /// If any of these already exist, they are skipped.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A status message indicating success or failure.</returns>
@@ -354,88 +355,190 @@ public class TvHeadendApiController : ControllerBase
             var baseUrl = $"{(config.UseSSL ? "https" : "http")}://{config.Host}:{config.Port}";
             var webRoot = string.IsNullOrWhiteSpace(config.Webroot) ? "/" : config.Webroot.TrimEnd('/') + "/";
 
-            // Check if a profile named "jellyfin" already exists
+            var createdParts = new List<string>();
+
+            // ── Step 1: Create video codec profile "jellyfin-h264" ──────
+            const string videoCodecProfileName = "jellyfin-h264";
+            var videoCodecExists = await CodecProfileExistsAsync(httpClient, baseUrl, webRoot, videoCodecProfileName, cancellationToken).ConfigureAwait(false);
+
+            if (!videoCodecExists)
+            {
+                _logger.LogInformation("Creating video codec profile '{Name}' in TVHeadend.", videoCodecProfileName);
+
+                var videoConf = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["name"] = videoCodecProfileName,
+                    ["description"] = "Auto-created by Jellyfin plugin. H.264 with 5 Mbps cap for fast channel switching.",
+                    ["deinterlace"] = true,
+                    ["height"] = 0,
+                    ["scaling_mode"] = 0,
+                    ["hwaccel"] = false,
+                    ["bit_rate"] = 5000,
+                    ["crf"] = 0,
+                    ["profile"] = -99,
+                    ["pix_fmt"] = -1,
+                    ["preset"] = "faster",
+                    ["tune"] = "zerolatency",
+                    ["params"] = string.Empty,
+                };
+
+                var created = await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "libx264", videoConf, cancellationToken).ConfigureAwait(false);
+                if (created)
+                {
+                    createdParts.Add("video codec profile 'jellyfin-h264' (H.264 libx264, 5 Mbps)");
+                }
+                else
+                {
+                    _logger.LogWarning("Could not create video codec profile '{Name}'. The streaming profile will fall back to default libx264 settings.", videoCodecProfileName);
+                }
+            }
+            else
+            {
+                createdParts.Add("video codec profile 'jellyfin-h264' (already exists)");
+            }
+
+            // ── Step 2: Create audio codec profile "jellyfin-aac" ───────
+            const string audioCodecProfileName = "jellyfin-aac";
+            var audioCodecExists = await CodecProfileExistsAsync(httpClient, baseUrl, webRoot, audioCodecProfileName, cancellationToken).ConfigureAwait(false);
+
+            if (!audioCodecExists)
+            {
+                _logger.LogInformation("Creating audio codec profile '{Name}' in TVHeadend.", audioCodecProfileName);
+
+                var audioConf = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["name"] = audioCodecProfileName,
+                    ["description"] = "Auto-created by Jellyfin plugin. AAC 128 kbps for fast channel switching.",
+                    ["bit_rate"] = 128,
+                    ["profile"] = -99,
+                };
+
+                var created = await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "aac", audioConf, cancellationToken).ConfigureAwait(false);
+                if (created)
+                {
+                    createdParts.Add("audio codec profile 'jellyfin-aac' (AAC 128 kbps)");
+                }
+                else
+                {
+                    _logger.LogWarning("Could not create audio codec profile '{Name}'. The streaming profile will fall back to default AAC settings.", audioCodecProfileName);
+                }
+            }
+            else
+            {
+                createdParts.Add("audio codec profile 'jellyfin-aac' (already exists)");
+            }
+
+            // ── Step 3: Create streaming profile "jellyfin" ─────────────
             var listUrl = $"{baseUrl}{webRoot}api/profile/list";
             var listResponse = await httpClient.GetStringAsync(listUrl, cancellationToken).ConfigureAwait(false);
             var profileList = JsonSerializer.Deserialize<ProfileListResponse>(listResponse, JsonOptions);
 
-            var existing = profileList?.Entries?.FirstOrDefault(e =>
+            var existingStreamProfile = profileList?.Entries?.FirstOrDefault(e =>
                 string.Equals(e.Val, "jellyfin", StringComparison.OrdinalIgnoreCase));
 
-            if (existing != null)
+            if (existingStreamProfile != null)
             {
-                return Ok(new ProfileDetectionResult
+                createdParts.Add("streaming profile 'jellyfin' (already exists)");
+            }
+            else
+            {
+                var createUrl = $"{baseUrl}{webRoot}api/profile/create";
+                _logger.LogInformation("Creating streaming profile 'jellyfin' in TVHeadend at {Url}.", createUrl);
+
+                // Reference the codec profiles by name so TVHeadend uses their
+                // bitrate/preset/tune settings instead of defaults.
+                var useVideoCodec = videoCodecExists || createdParts.Any(p => p.Contains("jellyfin-h264", StringComparison.Ordinal) && !p.Contains("Could not", StringComparison.Ordinal))
+                    ? videoCodecProfileName
+                    : "libx264";
+                var useAudioCodec = audioCodecExists || createdParts.Any(p => p.Contains("jellyfin-aac", StringComparison.Ordinal) && !p.Contains("Could not", StringComparison.Ordinal))
+                    ? audioCodecProfileName
+                    : "aac";
+
+                var confNode = new System.Text.Json.Nodes.JsonObject
                 {
-                    Success = true,
-                    ProfileName = "jellyfin",
-                    IsTranscodeProfile = true,
-                    Message = "A profile named 'jellyfin' already exists in TVHeadend. "
-                        + "Set the Streaming Profile field to 'jellyfin' and click 'Detect Profile' to read its settings."
+                    ["enabled"] = true,
+                    ["name"] = "jellyfin",
+                    ["comment"] = "Auto-created by Jellyfin TvHeadendApi plugin for fast channel switching.",
+                    ["container"] = 2,
+                    ["vcodec"] = useVideoCodec,
+                    ["acodec"] = useAudioCodec,
+                    ["resolution"] = 0,
+                    ["channels"] = 0,
+                    ["vbitrate"] = 0,
+                    ["abitrate"] = 0,
+                };
+
+                var jsonConf = confNode.ToJsonString();
+                _logger.LogDebug("Streaming profile creation payload: class=profile-transcode, conf={Json}", jsonConf);
+
+                var content = new FormUrlEncodedContent(new[]
+                {
+                    new KeyValuePair<string, string>("class", "profile-transcode"),
+                    new KeyValuePair<string, string>("conf", jsonConf)
                 });
+
+                var response = await httpClient.PostAsync(createUrl, content, cancellationToken).ConfigureAwait(false);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    // Retry with minimal fields
+                    _logger.LogWarning("First streaming profile attempt failed (HTTP {Status}). Retrying with minimal config.", response.StatusCode);
+
+                    var minimalConf = new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["enabled"] = true,
+                        ["name"] = "jellyfin",
+                        ["container"] = 2,
+                        ["vcodec"] = useVideoCodec,
+                        ["acodec"] = useAudioCodec,
+                    };
+
+                    var retryContent = new FormUrlEncodedContent(new[]
+                    {
+                        new KeyValuePair<string, string>("class", "profile-transcode"),
+                        new KeyValuePair<string, string>("conf", minimalConf.ToJsonString())
+                    });
+
+                    response = await httpClient.PostAsync(createUrl, retryContent, cancellationToken).ConfigureAwait(false);
+                }
+
+                if (response.IsSuccessStatusCode)
+                {
+                    createdParts.Add("streaming profile 'jellyfin'");
+                }
+                else
+                {
+                    var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    _logger.LogError("Failed to create streaming profile. HTTP {Status}: {Body}", response.StatusCode, errorBody);
+                    return Ok(new ProfileDetectionResult
+                    {
+                        Success = false,
+                        Message = $"Codec profiles were processed but the streaming profile creation failed (HTTP {(int)response.StatusCode}). "
+                            + "Make sure the TVHeadend user has admin privileges. "
+                            + $"Response: {errorBody}"
+                    });
+                }
             }
 
-            // Create the profile via TVHeadend API
-            var createUrl = $"{baseUrl}{webRoot}api/profile/create";
-            _logger.LogInformation("Creating 'jellyfin' transcode profile in TVHeadend at {Url}.", createUrl);
+            _logger.LogInformation("Profile setup complete: {Parts}", string.Join("; ", createdParts));
 
-            // Optimised settings for fast channel switching:
-            // - MPEG-TS container: lowest mux overhead, instant-start friendly
-            // - libx264 / veryfast: fast encode, wide client compatibility
-            // - AAC stereo 128 kbps: universally supported audio
-            // - Resolution 0 = keep original; no unnecessary scaling
-            var profileConf = new Dictionary<string, object>
-            {
-                { "class", "profile-transcode" },
-                { "enabled", true },
-                { "name", "jellyfin" },
-                { "comment", "Auto-created by Jellyfin TvHeadendApi plugin for fast channel switching." },
-                { "container", 2 },           // MPEG-TS
-                { "vcodec", "libx264" },
-                { "vcodec_preset", "veryfast" },
-                { "acodec", "aac" },
-                { "resolution", 0 },          // keep original
-                { "channels", 0 },            // keep original audio channels
-                { "vbitrate", 0 },            // auto / source bitrate
-                { "abitrate", 128 },          // 128 kbps AAC
-            };
-
-            var jsonConf = JsonSerializer.Serialize(profileConf, JsonOptions);
-            var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("conf", jsonConf)
-            });
-
-            var response = await httpClient.PostAsync(createUrl, content, cancellationToken).ConfigureAwait(false);
-
-            if (response.IsSuccessStatusCode)
-            {
-                _logger.LogInformation("Successfully created 'jellyfin' transcode profile in TVHeadend.");
-                return Ok(new ProfileDetectionResult
-                {
-                    Success = true,
-                    ProfileName = "jellyfin",
-                    ProfileClass = "profile-transcode",
-                    IsTranscodeProfile = true,
-                    Container = "mpegts",
-                    VideoCodec = "h264",
-                    AudioCodec = "aac",
-                    AudioBitrate = 128000,
-                    AudioChannels = 0,
-                    VideoHeight = 0,
-                    VideoBitrate = 0,
-                    Message = "Profile 'jellyfin' created successfully in TVHeadend (H.264 veryfast + AAC in MPEG-TS). "
-                        + "Set the Streaming Profile field to 'jellyfin', then click Save."
-                });
-            }
-
-            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            _logger.LogError("Failed to create profile. HTTP {Status}: {Body}", response.StatusCode, errorBody);
             return Ok(new ProfileDetectionResult
             {
-                Success = false,
-                Message = $"TVHeadend rejected the profile creation (HTTP {(int)response.StatusCode}). "
-                    + "Make sure the TVHeadend user has admin privileges. "
-                    + $"Response: {errorBody}"
+                Success = true,
+                ProfileName = "jellyfin",
+                ProfileClass = "profile-transcode",
+                IsTranscodeProfile = true,
+                Container = "mpegts",
+                VideoCodec = "h264",
+                AudioCodec = "aac",
+                VideoBitrate = 5000000,
+                AudioBitrate = 128000,
+                AudioChannels = 0,
+                VideoHeight = 0,
+                VideoCodecProfile = videoCodecProfileName,
+                AudioCodecProfile = audioCodecProfileName,
+                Message = "Created: " + string.Join(", ", createdParts) + ". "
+                    + "Set the Streaming Profile field to 'jellyfin', then click Save."
             });
         }
         catch (HttpRequestException ex)
@@ -449,8 +552,70 @@ public class TvHeadendApiController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating streaming profile.");
+            _logger.LogError(ex, "Error creating profiles.");
             return Ok(new ProfileDetectionResult { Success = false, Message = $"Unexpected error: {ex.Message}" });
+        }
+    }
+
+    /// <summary>
+    /// Checks whether a codec profile with the given name already exists in TVHeadend.
+    /// </summary>
+    private async Task<bool> CodecProfileExistsAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var listUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
+            var response = await httpClient.GetStringAsync(listUrl, cancellationToken).ConfigureAwait(false);
+            var list = JsonSerializer.Deserialize<CodecProfileListResponse>(response, JsonOptions);
+            return list?.Entries?.Any(e => string.Equals(e.Val, profileName, StringComparison.OrdinalIgnoreCase)) == true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not list codec profiles from TVHeadend.");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Creates a codec profile in TVHeadend via <c>api/codec_profile/create</c>.
+    /// </summary>
+    /// <param name="httpClient">The HTTP client.</param>
+    /// <param name="baseUrl">TVHeadend base URL.</param>
+    /// <param name="webRoot">TVHeadend web root.</param>
+    /// <param name="codecClass">The codec class name (e.g. "libx264", "aac").</param>
+    /// <param name="conf">The configuration JSON object.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True if creation succeeded.</returns>
+    private async Task<bool> CreateCodecProfileAsync(HttpClient httpClient, string baseUrl, string webRoot, string codecClass, System.Text.Json.Nodes.JsonObject conf, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var createUrl = $"{baseUrl}{webRoot}api/codec_profile/create";
+            var jsonConf = conf.ToJsonString();
+            _logger.LogDebug("Codec profile creation: class={Class}, conf={Json}", codecClass, jsonConf);
+
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("class", codecClass),
+                new KeyValuePair<string, string>("conf", jsonConf)
+            });
+
+            var response = await httpClient.PostAsync(createUrl, content, cancellationToken).ConfigureAwait(false);
+
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Successfully created codec profile (class={Class}).", codecClass);
+                return true;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogWarning("Codec profile creation failed (class={Class}, HTTP {Status}): {Body}", codecClass, response.StatusCode, body);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Exception creating codec profile (class={Class}).", codecClass);
+            return false;
         }
     }
 
@@ -570,6 +735,27 @@ public class TvHeadendApiController : ControllerBase
         public string Key { get; init; } = string.Empty;
 
         /// <summary>Gets the profile display name.</summary>
+        public string Val { get; init; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Response model for TVHeadend's api/codec_profile/list endpoint.
+    /// </summary>
+    private sealed class CodecProfileListResponse
+    {
+        /// <summary>Gets the codec profile entries.</summary>
+        public IReadOnlyList<CodecProfileListEntry>? Entries { get; init; }
+    }
+
+    /// <summary>
+    /// A single entry in the codec profile list.
+    /// </summary>
+    private sealed class CodecProfileListEntry
+    {
+        /// <summary>Gets the codec profile UUID.</summary>
+        public string Key { get; init; } = string.Empty;
+
+        /// <summary>Gets the codec profile display name.</summary>
         public string Val { get; init; } = string.Empty;
     }
 }

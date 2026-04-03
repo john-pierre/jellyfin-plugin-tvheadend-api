@@ -40,4 +40,10 @@ public class ProfileDetectionResult
 
     /// <summary>Gets or sets the detected number of audio channels. 0 = not specified.</summary>
     public int AudioChannels { get; set; }
+
+    /// <summary>Gets or sets the name of the created/detected video codec profile in TVHeadend.</summary>
+    public string VideoCodecProfile { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the name of the created/detected audio codec profile in TVHeadend.</summary>
+    public string AudioCodecProfile { get; set; } = string.Empty;
 }

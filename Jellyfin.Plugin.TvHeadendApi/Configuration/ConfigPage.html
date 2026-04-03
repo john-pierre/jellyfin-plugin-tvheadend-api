@@ -193,7 +193,7 @@
                             <span>Detect Profile from TVHeadend</span>
                         </button>
                         <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button" style="margin-left:0.5em;">
-                            <span>Create &quot;jellyfin&quot; Profile in TVHeadend</span>
+                            <span>Create &quot;jellyfin&quot; Profiles in TVHeadend</span>
                         </button>
                         <div id="DetectProfileMsg" style="margin-top:0.5em; font-style:italic;"></div>
                     </div>
@@ -493,6 +493,7 @@
                 if (result.Container) document.querySelector('#StreamContainer').value = result.Container;
                 if (result.VideoCodec) document.querySelector('#VideoCodec').value = result.VideoCodec;
                 if (result.AudioCodec) document.querySelector('#AudioCodec').value = result.AudioCodec;
+                if (result.VideoBitrate > 0) document.querySelector('#VideoBitrate').value = result.VideoBitrate;
                 if (result.AudioBitrate > 0) document.querySelector('#AudioBitrate').value = result.AudioBitrate;
 
                 // Enable fast switching and show the fields
