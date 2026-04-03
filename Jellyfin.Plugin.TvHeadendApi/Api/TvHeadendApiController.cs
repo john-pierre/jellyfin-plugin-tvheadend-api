@@ -558,6 +558,235 @@ public class TvHeadendApiController : ControllerBase
     }
 
     /// <summary>
+    /// One-click Fast Channel Switching setup.
+    /// Creates all required TVHeadend profiles (codec + streaming) and configures the
+    /// Jellyfin plugin for optimal fast channel switching in a single operation.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A status message indicating what was done.</returns>
+    [HttpPost("SetupFastSwitching")]
+    public async Task<ActionResult<ProfileDetectionResult>> SetupFastSwitching(CancellationToken cancellationToken)
+    {
+        var plugin = Plugin.Instance;
+        if (plugin?.Configuration == null)
+        {
+            return BadRequest(new ProfileDetectionResult { Success = false, Message = "Plugin configuration is not available." });
+        }
+
+        var config = plugin.Configuration;
+        var steps = new List<string>();
+
+        try
+        {
+            using var httpClient = BuildHttpClient(config);
+            var baseUrl = $"{(config.UseSSL ? "https" : "http")}://{config.Host}:{config.Port}";
+            var webRoot = string.IsNullOrWhiteSpace(config.Webroot) ? "/" : config.Webroot.TrimEnd('/') + "/";
+
+            // ── 1. Verify connectivity ──────────────────────────────────
+            try
+            {
+                var infoUrl = $"{baseUrl}{webRoot}api/serverinfo";
+                await httpClient.GetStringAsync(infoUrl, cancellationToken).ConfigureAwait(false);
+                steps.Add("TVHeadend connection OK");
+            }
+            catch (HttpRequestException ex)
+            {
+                return Ok(new ProfileDetectionResult
+                {
+                    Success = false,
+                    Message = $"Cannot reach TVHeadend at {config.Host}:{config.Port}: {ex.Message}. Configure connection settings first."
+                });
+            }
+
+            // ── 2. Create video codec profile ──────────────────────────
+            const string videoCodecProfileName = "jellyfin-h264";
+            var videoCodecOk = await CodecProfileExistsAsync(httpClient, baseUrl, webRoot, videoCodecProfileName, cancellationToken).ConfigureAwait(false);
+
+            if (!videoCodecOk)
+            {
+                var videoConf = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["name"] = videoCodecProfileName,
+                    ["description"] = "Auto-created by Jellyfin plugin. H.264 with 5 Mbps cap for fast channel switching.",
+                    ["deinterlace"] = true,
+                    ["height"] = 0,
+                    ["scaling_mode"] = 0,
+                    ["hwaccel"] = false,
+                    ["bit_rate"] = 5000,
+                    ["crf"] = 0,
+                    ["profile"] = -99,
+                    ["pix_fmt"] = -1,
+                    ["preset"] = "faster",
+                    ["tune"] = "zerolatency",
+                    ["params"] = string.Empty,
+                };
+
+                videoCodecOk = await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "libx264", videoConf, cancellationToken).ConfigureAwait(false);
+                steps.Add(videoCodecOk ? "Created codec profile 'jellyfin-h264' (H.264, 5 Mbps)" : "WARNING: Could not create video codec profile");
+            }
+            else
+            {
+                steps.Add("Codec profile 'jellyfin-h264' already exists");
+            }
+
+            // ── 3. Create audio codec profile ──────────────────────────
+            const string audioCodecProfileName = "jellyfin-aac";
+            var audioCodecOk = await CodecProfileExistsAsync(httpClient, baseUrl, webRoot, audioCodecProfileName, cancellationToken).ConfigureAwait(false);
+
+            if (!audioCodecOk)
+            {
+                var audioConf = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["name"] = audioCodecProfileName,
+                    ["description"] = "Auto-created by Jellyfin plugin. AAC 128 kbps for fast channel switching.",
+                    ["bit_rate"] = 128,
+                    ["profile"] = -99,
+                };
+
+                audioCodecOk = await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "aac", audioConf, cancellationToken).ConfigureAwait(false);
+                steps.Add(audioCodecOk ? "Created codec profile 'jellyfin-aac' (AAC, 128 kbps)" : "WARNING: Could not create audio codec profile");
+            }
+            else
+            {
+                steps.Add("Codec profile 'jellyfin-aac' already exists");
+            }
+
+            // ── 4. Create streaming profile ────────────────────────────
+            var listUrl = $"{baseUrl}{webRoot}api/profile/list";
+            var listResponse = await httpClient.GetStringAsync(listUrl, cancellationToken).ConfigureAwait(false);
+            var profileList = JsonSerializer.Deserialize<ProfileListResponse>(listResponse, JsonOptions);
+
+            var existingStreamProfile = profileList?.Entries?.FirstOrDefault(e =>
+                string.Equals(e.Val, "jellyfin", StringComparison.OrdinalIgnoreCase));
+
+            if (existingStreamProfile != null)
+            {
+                steps.Add("Streaming profile 'jellyfin' already exists");
+            }
+            else
+            {
+                var useVideoCodec = videoCodecOk ? videoCodecProfileName : "libx264";
+                var useAudioCodec = audioCodecOk ? audioCodecProfileName : "aac";
+
+                var confNode = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["enabled"] = true,
+                    ["name"] = "jellyfin",
+                    ["comment"] = "Auto-created by Jellyfin TvHeadendApi plugin for fast channel switching.",
+                    ["container"] = 2,
+                    ["vcodec"] = useVideoCodec,
+                    ["acodec"] = useAudioCodec,
+                    ["resolution"] = 0,
+                    ["channels"] = 0,
+                    ["vbitrate"] = 0,
+                    ["abitrate"] = 0,
+                };
+
+                var content = new FormUrlEncodedContent(new[]
+                {
+                    new KeyValuePair<string, string>("class", "profile-transcode"),
+                    new KeyValuePair<string, string>("conf", confNode.ToJsonString())
+                });
+
+                var createUrl = $"{baseUrl}{webRoot}api/profile/create";
+                var response = await httpClient.PostAsync(createUrl, content, cancellationToken).ConfigureAwait(false);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var minimalConf = new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["enabled"] = true,
+                        ["name"] = "jellyfin",
+                        ["container"] = 2,
+                        ["vcodec"] = useVideoCodec,
+                        ["acodec"] = useAudioCodec,
+                    };
+
+                    var retryContent = new FormUrlEncodedContent(new[]
+                    {
+                        new KeyValuePair<string, string>("class", "profile-transcode"),
+                        new KeyValuePair<string, string>("conf", minimalConf.ToJsonString())
+                    });
+
+                    response = await httpClient.PostAsync(createUrl, retryContent, cancellationToken).ConfigureAwait(false);
+                }
+
+                if (response.IsSuccessStatusCode)
+                {
+                    steps.Add("Created streaming profile 'jellyfin' (MPEG-TS)");
+                }
+                else
+                {
+                    var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    return Ok(new ProfileDetectionResult
+                    {
+                        Success = false,
+                        Message = "TVHeadend profiles partially created but streaming profile failed (HTTP "
+                            + $"{(int)response.StatusCode}). Check admin privileges. Response: {errorBody}"
+                    });
+                }
+            }
+
+            // ── 5. Update and save plugin configuration ────────────────
+            config.StreamingProfile = "jellyfin";
+            config.EnableFastChannelSwitching = true;
+            config.SupportsProbing = false;
+            config.SupportsDirectPlay = true;
+            config.SupportsDirectStream = true;
+            config.SupportsTranscoding = false;
+            config.IgnoreDts = false;
+            config.IsInfiniteStream = true;
+            config.StreamContainer = "mpegts";
+            config.VideoCodec = "h264";
+            config.AudioCodec = "aac";
+            config.VideoBitrate = 5000000;
+            config.AudioBitrate = 128000;
+            config.AudioChannels = 2;
+            config.AudioSampleRate = 48000;
+            config.VideoFramerate = 25;
+            config.BufferMs = 0;
+            config.AnalyzeDurationMs = 0;
+
+            plugin.SaveConfiguration();
+            steps.Add("Plugin configuration saved (Fast Channel Switching enabled)");
+
+            _logger.LogInformation("Fast Switching setup complete: {Steps}", string.Join("; ", steps));
+
+            return Ok(new ProfileDetectionResult
+            {
+                Success = true,
+                ProfileName = "jellyfin",
+                ProfileClass = "profile-transcode",
+                IsTranscodeProfile = true,
+                Container = "mpegts",
+                VideoCodec = "h264",
+                AudioCodec = "aac",
+                VideoBitrate = 5000000,
+                AudioBitrate = 128000,
+                AudioChannels = 2,
+                VideoHeight = 0,
+                VideoCodecProfile = videoCodecProfileName,
+                AudioCodecProfile = audioCodecProfileName,
+                Message = string.Join(" → ", steps)
+            });
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Failed to connect to TVHeadend during fast switching setup.");
+            return Ok(new ProfileDetectionResult
+            {
+                Success = false,
+                Message = $"Cannot connect to TVHeadend: {ex.Message}. Check your connection and authentication settings."
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during fast switching setup.");
+            return Ok(new ProfileDetectionResult { Success = false, Message = $"Unexpected error: {ex.Message}" });
+        }
+    }
+
+    /// <summary>
     /// Checks whether a codec profile with the given name already exists in TVHeadend.
     /// </summary>
     private async Task<bool> CodecProfileExistsAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)

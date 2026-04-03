@@ -10,10 +10,20 @@
         <div class="content-primary">
             <form id="TvHeadendApiConfigForm">
 
-                <!-- ── 0. Health Check / Status ─────────────────────────── -->
+                <!-- ── 0. Quick Setup & Health Check ──────────────────────── -->
                 <div class="section" id="HealthCheckSection">
-                    <h2>Status &amp; Health Check</h2>
-                    <p class="sectionDescription">Test your TVHeadend connection and review the current configuration at a glance.</p>
+                    <h2>Quick Setup &amp; Status</h2>
+                    <p class="sectionDescription">
+                        One-click setup creates all required TVHeadend profiles (codec + streaming) and configures the plugin for fast channel switching.
+                        Make sure your <strong>connection and authentication settings below are correct</strong> before clicking.
+                    </p>
+
+                    <div style="margin-bottom:1em;">
+                        <button id="SetupFastSwitchingBtn" is="emby-button" type="button" class="raised emby-button" style="background:#00a4dc; color:#fff; font-weight:bold; padding:0.6em 1.5em;">
+                            <span>⚡ Enable Fast Channel Switching (One-Click Setup)</span>
+                        </button>
+                        <div id="SetupFastSwitchingMsg" style="margin-top:0.5em; font-style:italic;"></div>
+                    </div>
 
                     <button id="HealthCheckBtn" is="emby-button" type="button" class="raised emby-button">
                         <span>Run Health Check</span>
