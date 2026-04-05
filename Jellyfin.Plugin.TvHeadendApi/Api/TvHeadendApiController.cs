@@ -271,6 +271,17 @@ public class TvHeadendApiController : ControllerBase
         report.PluginSettings.Add($"Fast Channel Switching: {(config.EnableFastChannelSwitching ? "enabled" : "disabled")}");
         report.PluginSettings.Add($"Direct Play: {config.SupportsDirectPlay}, Direct Stream: {config.SupportsDirectStream}, Transcoding: {config.SupportsTranscoding}");
         report.PluginSettings.Add($"Probing: {config.SupportsProbing}, Infinite Stream: {config.IsInfiniteStream}, Ignore DTS: {config.IgnoreDts}");
+
+        // ── Analyze Duration / Probing details ─────────────────────────
+        var effectiveAnalyzeDurationMs = config.AnalyzeDurationMs > 0 ? config.AnalyzeDurationMs : 200;
+        var ffmpegMicroseconds = effectiveAnalyzeDurationMs * 1000;
+        report.PluginSettings.Add(
+            config.AnalyzeDurationMs > 0
+                ? $"AnalyzeDuration: {config.AnalyzeDurationMs} ms (explicit) → ffmpeg receives -analyzeduration {ffmpegMicroseconds} µs"
+                : $"AnalyzeDuration: 0 (auto) → plugin will default to 200 ms when stream details are available → ffmpeg receives -analyzeduration 200000 µs. When probing, Jellyfin's global FFmpeg analyzeduration is used.");
+        report.PluginSettings.Add($"BufferMs: {(config.BufferMs > 0 ? $"{config.BufferMs} ms" : "0 (Jellyfin default)")}");
+        report.PluginSettings.Add("ProbeSize: controlled by Jellyfin's global FFmpeg settings (Dashboard → Playback → FFmpeg). Not overridable by this plugin.");
+
         report.PluginSettings.Add($"DVR enabled: {config.EnableTvhDvr}, Recording Profile: {config.RecordingProfile}");
 
         if (config.EnableFastChannelSwitching)
@@ -504,6 +515,24 @@ public class TvHeadendApiController : ControllerBase
         {
             report.Recommendations.Add($"Buffer is set to {config.BufferMs} ms which is quite high. Consider lowering it to reduce channel-switch latency.");
         }
+
+        // ── AnalyzeDuration / ProbeSize recommendations ─────────────────
+        if (config.AnalyzeDurationMs > 1000)
+        {
+            report.Warnings.Add($"AnalyzeDuration is set to {config.AnalyzeDurationMs} ms ({config.AnalyzeDurationMs * 1000} µs for ffmpeg) which is very high. This slows down channel switching. Consider 200 ms or less.");
+        }
+
+        if (config.AnalyzeDurationMs > 0 && config.AnalyzeDurationMs < 50)
+        {
+            report.Warnings.Add($"AnalyzeDuration is set to {config.AnalyzeDurationMs} ms ({config.AnalyzeDurationMs * 1000} µs for ffmpeg) which is very low. FFmpeg may not detect all streams. Recommended minimum: 100 ms.");
+        }
+
+        if (!config.SupportsProbing && config.AnalyzeDurationMs == 0 && !config.EnableFastChannelSwitching)
+        {
+            report.Recommendations.Add("Probing is off, Fast Channel Switching is off, and AnalyzeDuration is 0. The plugin will query TVHeadend for stream details at runtime and default AnalyzeDuration to 200 ms. If this fails, playback may be slow. Consider setting an explicit AnalyzeDuration (e.g. 200 ms).");
+        }
+
+        report.Recommendations.Add("ProbeSize tip: For fast channel switching, set Jellyfin's global FFmpeg probe size to 300000 (300 KB) or lower via Dashboard → Playback → FFmpeg. The plugin cannot override this value.");
 
         if (config.EnableTvhDvr && !string.IsNullOrWhiteSpace(config.RecordingProfile) && !configuredDvrProfileExists)
         {

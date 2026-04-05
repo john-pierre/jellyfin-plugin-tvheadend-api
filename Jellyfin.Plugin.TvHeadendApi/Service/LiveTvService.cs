@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -32,6 +33,18 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     {
         PropertyNameCaseInsensitive = true
     };
+
+    /// <summary>
+    /// In-memory cache for channel elementary-stream details queried from TVHeadend.
+    /// Key = channel UUID, Value = (timestamp, list of elementary streams).
+    /// Entries older than <see cref="StreamDetailsCacheTtl"/> are refreshed on next access.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, (DateTime Timestamp, List<TvhElementaryStream> Streams)> _streamDetailsCache = new();
+
+    /// <summary>
+    /// Time-to-live for cached stream details. After this period the plugin re-queries TVHeadend.
+    /// </summary>
+    private static readonly TimeSpan StreamDetailsCacheTtl = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// A static dictionary mapping ETSI EN 300 468 content type IDs to their human-readable descriptions.
@@ -186,7 +199,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     public string Name => "TvHeadendApi";
 
     /// <summary>
-    /// Gets the base URL of the TVHeadEnd server as configured in the plugin settings.
+    /// Gets the base URL of the TVHeadend server as configured in the plugin settings.
     /// This property retrieves the host name or IP address of the server, which is used as the
     /// starting point for API calls and user-facing links.
     /// </summary>
@@ -271,11 +284,11 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     }
 
     /// <summary>
-    /// Constructs a complete API URL for the TVHeadEnd service.
+    /// Constructs a complete API URL for the TVHeadend service.
     /// This method supports different authentication methods (Basic Auth in URL, Header, or URL parameter).
     /// If anonymous access is allowed, no authentication is used regardless of the specified method.
     /// </summary>
-    /// <param name="endpoint">The API endpoint relative to the TVHeadEnd base URL. Example: "stream/channel/1234".</param>
+    /// <param name="endpoint">The API endpoint relative to the TVHeadend base URL. Example: "stream/channel/1234".</param>
     /// <param name="authMethod">The authentication method to use: "url", "header", or "parameter". Default is "header".</param>
     /// <returns>A fully constructed URL including the web root and authentication token or credentials, if applicable.</returns>
     public string ConstructUrl(string endpoint, string authMethod = "header")
@@ -1224,49 +1237,274 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     }
 
     /// <summary>
-    /// Builds a <see cref="MediaSourceInfo"/> for a given channel using the current plugin configuration.
-    /// When Fast Channel Switching is enabled, the returned object includes pre-filled
-    /// <see cref="MediaStream"/> hints so that Jellyfin can skip probing entirely.
+    /// Maps a TVHeadend elementary stream type string to its FFmpeg codec name.
     /// </summary>
-    private MediaSourceInfo BuildMediaSourceInfo(string channelId, PluginConfiguration config)
+    private static string MapTvhStreamTypeToFfmpeg(string tvhType)
+    {
+        return tvhType.ToUpperInvariant() switch
+        {
+            // Video
+            "MPEG2VIDEO" => "mpeg2video",
+            "H264" => "h264",
+            "HEVC" => "hevc",
+            "VP8" => "vp8",
+            "VP9" => "vp9",
+            "THEORA" => "theora",
+            "AV1" => "av1",
+
+            // Audio
+            "AC3" or "A52" => "ac3",
+            "AAC" or "MP4A" => "aac",
+            "EAC3" => "eac3",
+            "MPEG2AUDIO" => "mp2",
+            "VORBIS" => "vorbis",
+            "OPUS" => "opus",
+            "AC-4" => "ac4",
+            "MP3" or "LIBMP3LAME" => "mp3",
+
+            // Subtitles
+            "TELETEXT" => "teletext",
+            "DVBSUB" => "dvb_subtitle",
+
+            _ => tvhType.ToLowerInvariant()
+        };
+    }
+
+    /// <summary>
+    /// Classifies a TVHeadend stream type string into the Jellyfin <see cref="MediaStreamType"/>.
+    /// </summary>
+    private static MediaStreamType ClassifyTvhStreamType(string tvhType)
+    {
+        return tvhType.ToUpperInvariant() switch
+        {
+            "MPEG2VIDEO" or "H264" or "HEVC" or "VP8" or "VP9" or "THEORA" or "AV1" => MediaStreamType.Video,
+            "AC3" or "A52" or "AAC" or "MP4A" or "EAC3" or "MPEG2AUDIO" or "VORBIS" or "OPUS" or "AC-4" or "MP3" or "LIBMP3LAME" => MediaStreamType.Audio,
+            "TELETEXT" or "DVBSUB" => MediaStreamType.Subtitle,
+            _ => MediaStreamType.Data
+        };
+    }
+
+    /// <summary>
+    /// Reads a string property from a <see cref="JsonElement"/>. Returns null when the property is missing.
+    /// </summary>
+    private static string? GetJsonStringProp(JsonElement element, string name)
+    {
+        if (element.TryGetProperty(name, out var prop))
+        {
+            return prop.ValueKind == JsonValueKind.String ? prop.GetString() : prop.ToString();
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Reads an integer property from a <see cref="JsonElement"/>. Returns null when the property is missing.
+    /// </summary>
+    private static int? GetJsonIntProp(JsonElement element, string name)
+    {
+        if (element.TryGetProperty(name, out var prop))
+        {
+            if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var intVal))
+            {
+                return intVal;
+            }
+
+            if (prop.ValueKind == JsonValueKind.String && int.TryParse(prop.GetString(), out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Queries the TVHeadend API to discover the elementary streams (video, audio, subtitle)
+    /// for a given channel UUID. The result is cached for <see cref="StreamDetailsCacheTtl"/>.
+    /// <para>
+    /// Flow:
+    /// 1. Load the channel via <c>api/idnode/load?uuid=channelId</c> to find its service UUIDs.
+    /// 2. Load the first service via <c>api/idnode/load?uuid=serviceId</c> to read its <c>stream</c> array.
+    /// 3. Parse each entry into a <see cref="TvhElementaryStream"/>.
+    /// </para>
+    /// </summary>
+    /// <param name="channelId">The UUID of the TVHeadend channel.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A list of elementary streams, or an empty list on failure.</returns>
+    private async Task<List<TvhElementaryStream>> GetChannelElementaryStreamsAsync(string channelId, CancellationToken cancellationToken)
+    {
+        // Check cache first
+        if (_streamDetailsCache.TryGetValue(channelId, out var cached) && DateTime.UtcNow - cached.Timestamp < StreamDetailsCacheTtl)
+        {
+            _logger.LogDebug("Using cached stream details for channel {ChannelId} ({Count} streams).", channelId, cached.Streams.Count);
+            return cached.Streams;
+        }
+
+        try
+        {
+            // Step 1: Load channel to find its service UUID(s)
+            var channelUrl = ConstructUrl($"api/idnode/load?uuid={Uri.EscapeDataString(channelId)}");
+            _logger.LogDebug("Loading channel node from TVHeadend for channel {ChannelId}.", channelId);
+
+            using var channelResponse = await _httpClient.GetAsync(channelUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            channelResponse.EnsureSuccessStatusCode();
+            var channelBody = await channelResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+            string? serviceUuid = null;
+            using (var channelDoc = JsonDocument.Parse(channelBody))
+            {
+                if (!channelDoc.RootElement.TryGetProperty("entries", out var channelEntries) || channelEntries.GetArrayLength() == 0)
+                {
+                    _logger.LogWarning("TVHeadend returned no data for channel UUID {ChannelId}.", channelId);
+                    return new List<TvhElementaryStream>();
+                }
+
+                var channelEntry = channelEntries[0];
+                if (channelEntry.TryGetProperty("services", out var servicesEl) &&
+                    servicesEl.ValueKind == JsonValueKind.Array && servicesEl.GetArrayLength() > 0)
+                {
+                    serviceUuid = servicesEl[0].GetString();
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(serviceUuid))
+            {
+                _logger.LogWarning("Channel {ChannelId} has no services associated.", channelId);
+                return new List<TvhElementaryStream>();
+            }
+
+            // Step 2: Load the service to get its elementary stream descriptors
+            var serviceUrl = ConstructUrl($"api/idnode/load?uuid={Uri.EscapeDataString(serviceUuid)}");
+            _logger.LogDebug("Loading service node from TVHeadend for service {ServiceUuid} (channel {ChannelId}).", serviceUuid, channelId);
+
+            using var serviceResponse = await _httpClient.GetAsync(serviceUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            serviceResponse.EnsureSuccessStatusCode();
+            var serviceBody = await serviceResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+            var streams = new List<TvhElementaryStream>();
+            using (var serviceDoc = JsonDocument.Parse(serviceBody))
+            {
+                if (!serviceDoc.RootElement.TryGetProperty("entries", out var serviceEntries) || serviceEntries.GetArrayLength() == 0)
+                {
+                    _logger.LogWarning("TVHeadend returned no data for service UUID {ServiceUuid}.", serviceUuid);
+                    return streams;
+                }
+
+                var serviceEntry = serviceEntries[0];
+
+                // The "stream" property contains the elementary stream descriptors from the PMT
+                if (serviceEntry.TryGetProperty("stream", out var streamsEl) && streamsEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var sEl in streamsEl.EnumerateArray())
+                    {
+                        var tvhType = GetJsonStringProp(sEl, "type") ?? string.Empty;
+                        if (string.IsNullOrWhiteSpace(tvhType))
+                        {
+                            continue;
+                        }
+
+                        streams.Add(new TvhElementaryStream
+                        {
+                            Index = GetJsonIntProp(sEl, "index") ?? 0,
+                            TvhType = tvhType,
+                            FfmpegCodec = MapTvhStreamTypeToFfmpeg(tvhType),
+                            JellyfinStreamType = ClassifyTvhStreamType(tvhType),
+                            Width = GetJsonIntProp(sEl, "width") ?? 0,
+                            Height = GetJsonIntProp(sEl, "height") ?? 0,
+                            Duration = GetJsonIntProp(sEl, "duration") ?? 0,
+                            AspectNum = GetJsonIntProp(sEl, "aspect_num") ?? 0,
+                            AspectDen = GetJsonIntProp(sEl, "aspect_den") ?? 0,
+                            Language = GetJsonStringProp(sEl, "language") ?? string.Empty,
+                            AudioChannels = GetJsonIntProp(sEl, "channels") ?? 0,
+                            SampleRate = GetJsonIntProp(sEl, "rate") ?? 0,
+                            AudioType = GetJsonIntProp(sEl, "audio_type") ?? 0,
+                        });
+                    }
+                }
+            }
+
+            // Update cache
+            _streamDetailsCache[channelId] = (DateTime.UtcNow, streams);
+
+            _logger.LogInformation(
+                "Queried TVHeadend service {ServiceUuid} for channel {ChannelId}: {Total} elementary streams " +
+                "({Video} video, {Audio} audio, {Sub} subtitle, {Data} data).",
+                serviceUuid,
+                channelId,
+                streams.Count,
+                streams.Count(s => s.JellyfinStreamType == MediaStreamType.Video),
+                streams.Count(s => s.JellyfinStreamType == MediaStreamType.Audio),
+                streams.Count(s => s.JellyfinStreamType == MediaStreamType.Subtitle),
+                streams.Count(s => s.JellyfinStreamType == MediaStreamType.Data));
+
+            return streams;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to query TVHeadend for elementary streams of channel {ChannelId}. Will fall back to probing.", channelId);
+            return new List<TvhElementaryStream>();
+        }
+    }
+
+    /// <summary>
+    /// Builds a <see cref="MediaSourceInfo"/> for a given channel.
+    /// <para>
+    /// The method queries TVHeadend's API (<c>api/idnode/load</c>) for the channel's service
+    /// elementary streams and uses the discovered codec, resolution, bitrate, and audio details
+    /// to build an extremely detailed <see cref="MediaSourceInfo"/> so that Jellyfin can start
+    /// playback without stream probing.
+    /// </para>
+    /// <para>
+    /// When the API query fails or no streams are found, the method falls back to enabling
+    /// probing so Jellyfin can still discover the format on its own.
+    /// </para>
+    /// </summary>
+    private async Task<MediaSourceInfo> BuildMediaSourceInfoAsync(string channelId, PluginConfiguration config, CancellationToken cancellationToken)
     {
         var streamUrl = ConstructUrl($"stream/channel/{channelId}?profile={config.StreamingProfile}", "url");
         _logger.LogInformation("Generated stream URL {Url} for channel ID {ChannelId}", MaskSensitiveData(streamUrl), channelId);
 
+        // ── Query TVHeadend for the actual elementary streams ────────────
+        var elementaryStreams = await GetChannelElementaryStreamsAsync(channelId, cancellationToken).ConfigureAwait(false);
+        var hasStreamDetails = elementaryStreams.Count > 0 && elementaryStreams.Any(s => s.JellyfinStreamType == MediaStreamType.Video || s.JellyfinStreamType == MediaStreamType.Audio);
+
+        // ── Container ───────────────────────────────────────────────────
+        // With profile "pass" the output is always MPEG-TS (raw DVB transport stream).
+        // Transcode profiles may use matroska/mp4; honour config when FastChannelSwitching is on.
+        var container = config.EnableFastChannelSwitching && !string.IsNullOrWhiteSpace(config.StreamContainer)
+            ? config.StreamContainer
+            : "mpegts";
+
         var effectiveSupportsTranscoding = config.EnableFastChannelSwitching ? false : config.SupportsTranscoding;
-        if (config.EnableFastChannelSwitching && config.SupportsTranscoding)
-        {
-            _logger.LogWarning("Fast Channel Switching is enabled while SupportsTranscoding is true. Overriding SupportsTranscoding to false for this media source.");
-        }
 
         var mediaSource = new MediaSourceInfo
         {
             Id = channelId,
             Path = streamUrl,
+            Name = $"LiveTV {channelId}",
 
-            // Always Http – this plugin exclusively uses TVHeadend's HTTP API.
+            // Always HTTP – TVHeadend's streaming API is HTTP-based.
             Protocol = MediaProtocol.Http,
+            Container = container,
 
-            // Always remote – TVHeadend is a network service accessed via HTTP.
+            // Always remote – TVHeadend is a network service.
             IsRemote = true,
 
-            // Configurable playback capabilities
+            // Playback capabilities
             SupportsDirectPlay = config.SupportsDirectPlay,
             SupportsDirectStream = config.SupportsDirectStream,
             SupportsTranscoding = effectiveSupportsTranscoding,
-            SupportsProbing = config.EnableFastChannelSwitching ? false : config.SupportsProbing,
             IsInfiniteStream = config.IsInfiniteStream,
             IgnoreDts = config.IgnoreDts,
             FallbackMaxStreamingBitrate = config.FallbackMaxStreamingBitrate,
 
-            // Only relevant when Jellyfin actually transcodes; pick the safest profile.
             UseMostCompatibleTranscodingProfile = effectiveSupportsTranscoding,
 
-            // HTTP streams must be opened/closed explicitly on channel switch.
+            // HTTP streams must be opened/closed on channel switch.
             RequiresOpening = true,
             RequiresClosing = true,
 
-            // Live TV delivers data in real-time; throttling would cause buffering.
+            // Live TV delivers in real-time; throttling causes buffering.
             ReadAtNativeFramerate = false,
         };
 
@@ -1275,111 +1513,325 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             mediaSource.BufferMs = config.BufferMs;
         }
 
-        if (config.AnalyzeDurationMs > 0 && !config.EnableFastChannelSwitching)
+        // ── Build detailed MediaStreams from TVH service data ────────────
+        if (hasStreamDetails)
         {
-            mediaSource.AnalyzeDurationMs = config.AnalyzeDurationMs;
-        }
-
-        if (config.EnableFastChannelSwitching)
-        {
-            mediaSource.Container = config.StreamContainer;
-            mediaSource.AnalyzeDurationMs = 0;
+            // We have real stream information – disable probing.
+            mediaSource.SupportsProbing = false;
+            mediaSource.AnalyzeDurationMs = config.AnalyzeDurationMs > 0 ? config.AnalyzeDurationMs : 200;
 
             var mediaStreams = new List<MediaStream>();
+            int jellyfinIndex = 0;
+            bool firstVideo = true;
+            bool firstAudio = true;
+            int totalBitrate = 0;
 
-            // Video stream hint
-            if (!string.IsNullOrWhiteSpace(config.VideoCodec))
+            // ── Video streams ───────────────────────────────────────────
+            foreach (var video in elementaryStreams.Where(s => s.JellyfinStreamType == MediaStreamType.Video))
             {
-                var videoStream = new MediaStream
+                var vs = new MediaStream
                 {
                     Type = MediaStreamType.Video,
-                    Index = 0,
-                    Codec = config.VideoCodec,
-                    IsInterlaced = config.VideoIsInterlaced,
+                    Index = jellyfinIndex++,
+                    Codec = video.FfmpegCodec,
+                    IsDefault = firstVideo,
                 };
 
-                if (config.VideoWidth > 0)
+                firstVideo = false;
+
+                if (video.Width > 0)
                 {
-                    videoStream.Width = config.VideoWidth;
+                    vs.Width = video.Width;
                 }
 
-                if (config.VideoHeight > 0)
+                if (video.Height > 0)
                 {
-                    videoStream.Height = config.VideoHeight;
+                    vs.Height = video.Height;
                 }
 
-                if (config.VideoFramerate > 0)
+                // Frame rate: TVH reports frame duration in 90 kHz PTS ticks
+                if (video.Duration > 0)
                 {
-                    videoStream.RealFrameRate = config.VideoFramerate;
-                    videoStream.AverageFrameRate = config.VideoFramerate;
+                    var fps = 90000.0f / video.Duration;
+                    vs.RealFrameRate = fps;
+                    vs.AverageFrameRate = fps;
                 }
 
-                if (config.VideoBitrate > 0)
+                // Aspect ratio
+                if (video.AspectNum > 0 && video.AspectDen > 0)
                 {
-                    videoStream.BitRate = config.VideoBitrate;
+                    vs.AspectRatio = $"{video.AspectNum}:{video.AspectDen}";
+                }
+                else if (video.Width > 0 && video.Height > 0)
+                {
+                    vs.AspectRatio = $"{video.Width}:{video.Height}";
                 }
 
-                if (config.VideoWidth > 0 && config.VideoHeight > 0)
+                // Interlaced detection: common DVB resolutions that are typically interlaced
+                vs.IsInterlaced = video.Height switch
                 {
-                    videoStream.AspectRatio = $"{config.VideoWidth}:{config.VideoHeight}";
+                    576 => true,  // 576i (SD PAL)
+                    480 => true,  // 480i (SD NTSC)
+                    1080 when video.FfmpegCodec is "mpeg2video" => true, // 1080i common for MPEG-2
+                    _ => false
+                };
+
+                // Codec profile / level hints
+                switch (video.FfmpegCodec)
+                {
+                    case "h264":
+                        vs.Profile = video.Height >= 720 ? "High" : "Main";
+                        vs.Level = video.Height >= 1080 ? 41 : video.Height >= 720 ? 40 : 31;
+                        vs.PixelFormat = "yuv420p";
+                        vs.BitDepth = 8;
+                        break;
+                    case "hevc":
+                        vs.Profile = "Main";
+                        vs.Level = video.Height >= 2160 ? 150 : video.Height >= 1080 ? 120 : 90;
+                        vs.PixelFormat = "yuv420p";
+                        vs.BitDepth = 8;
+                        break;
+                    case "mpeg2video":
+                        vs.Profile = video.Height >= 720 ? "High" : "Main";
+                        vs.Level = video.Height >= 1080 ? 4 : video.Height >= 720 ? 3 : 2;
+                        vs.PixelFormat = "yuv420p";
+                        vs.BitDepth = 8;
+                        break;
                 }
 
-                mediaStreams.Add(videoStream);
+                // Bitrate estimation when not known
+                var videoBitrate = video.Height switch
+                {
+                    >= 2160 => 25000000,  // 4K UHD: ~25 Mbps
+                    >= 1080 => 15000000,  // 1080: ~15 Mbps
+                    >= 720 => 8000000,    // 720: ~8 Mbps
+                    >= 576 => 4000000,    // SD PAL: ~4 Mbps
+                    >= 480 => 3000000,    // SD NTSC: ~3 Mbps
+                    _ => config.FallbackMaxStreamingBitrate
+                };
+                vs.BitRate = videoBitrate;
+                totalBitrate += videoBitrate;
+
+                mediaStreams.Add(vs);
             }
 
-            // Audio stream hint
-            if (!string.IsNullOrWhiteSpace(config.AudioCodec))
+            // ── Audio streams ───────────────────────────────────────────
+            foreach (var audio in elementaryStreams.Where(s => s.JellyfinStreamType == MediaStreamType.Audio))
             {
                 var audioStream = new MediaStream
                 {
                     Type = MediaStreamType.Audio,
-                    Index = string.IsNullOrWhiteSpace(config.VideoCodec) ? 0 : 1,
-                    Codec = config.AudioCodec,
+                    Index = jellyfinIndex++,
+                    Codec = audio.FfmpegCodec,
+                    IsDefault = firstAudio,
+                    Language = string.IsNullOrWhiteSpace(audio.Language) ? null : audio.Language,
                 };
 
-                if (config.AudioChannels > 0)
+                firstAudio = false;
+
+                // Channel count
+                if (audio.AudioChannels > 0)
                 {
-                    audioStream.Channels = config.AudioChannels;
-                    audioStream.ChannelLayout = config.AudioChannels switch
+                    audioStream.Channels = audio.AudioChannels;
+                }
+                else
+                {
+                    // Default channel count by codec type
+                    audioStream.Channels = audio.FfmpegCodec switch
                     {
-                        1 => "mono",
-                        2 => "stereo",
-                        6 => "5.1",
-                        8 => "7.1",
-                        _ => $"{config.AudioChannels}.0"
+                        "ac3" or "eac3" => 6, // Surround codecs default to 5.1
+                        _ => 2 // Stereo default
                     };
                 }
 
-                if (config.AudioSampleRate > 0)
+                audioStream.ChannelLayout = audioStream.Channels switch
                 {
-                    audioStream.SampleRate = config.AudioSampleRate;
+                    1 => "mono",
+                    2 => "stereo",
+                    6 => "5.1",
+                    8 => "7.1",
+                    _ => $"{audioStream.Channels}.0"
+                };
+
+                // Sample rate
+                audioStream.SampleRate = audio.SampleRate > 0 ? audio.SampleRate : 48000;
+
+                // Codec profile
+                if (audio.FfmpegCodec == "aac")
+                {
+                    audioStream.Profile = "LC";
                 }
 
-                if (config.AudioBitrate > 0)
+                // Bitrate estimation by codec
+                var audioBitrate = audio.FfmpegCodec switch
                 {
-                    audioStream.BitRate = config.AudioBitrate;
+                    "ac3" => 384000,
+                    "eac3" => 640000,
+                    "aac" => 128000,
+                    "mp2" => 192000,
+                    "mp3" => 128000,
+                    "opus" => 128000,
+                    "vorbis" => 128000,
+                    _ => 128000
+                };
+                audioStream.BitRate = audioBitrate;
+                totalBitrate += audioBitrate;
+
+                // Audio type hint from DVB
+                if (audio.AudioType == 3)
+                {
+                    audioStream.Title = "Audio Description";
                 }
 
                 mediaStreams.Add(audioStream);
             }
 
-            if (mediaStreams.Count > 0)
+            // ── Subtitle streams ────────────────────────────────────────
+            foreach (var sub in elementaryStreams.Where(s => s.JellyfinStreamType == MediaStreamType.Subtitle))
             {
-                mediaSource.MediaStreams = mediaStreams;
+                mediaStreams.Add(new MediaStream
+                {
+                    Type = MediaStreamType.Subtitle,
+                    Index = jellyfinIndex++,
+                    Codec = sub.FfmpegCodec,
+                    Language = string.IsNullOrWhiteSpace(sub.Language) ? null : sub.Language,
+                    IsDefault = false,
+                    IsForced = false,
+                    IsExternal = false,
+                });
+            }
+
+            mediaSource.MediaStreams = mediaStreams;
+
+            // Total bitrate
+            if (totalBitrate > 0)
+            {
+                mediaSource.Bitrate = totalBitrate;
             }
 
             _logger.LogInformation(
-                "Fast Channel Switching enabled: Container={Container}, Video={VideoCodec} {Width}x{Height}@{Fps}, Audio={AudioCodec} {Channels}ch",
-                config.StreamContainer,
-                config.VideoCodec,
-                config.VideoWidth,
-                config.VideoHeight,
-                config.VideoFramerate,
-                config.AudioCodec,
-                config.AudioChannels);
+                "Built detailed MediaSourceInfo for channel {ChannelId}: Container={Container}, " +
+                "{VideoCount} video, {AudioCount} audio, {SubCount} subtitle streams, " +
+                "total bitrate ≈ {Bitrate} bps. Probing disabled.",
+                channelId,
+                container,
+                mediaStreams.Count(s => s.Type == MediaStreamType.Video),
+                mediaStreams.Count(s => s.Type == MediaStreamType.Audio),
+                mediaStreams.Count(s => s.Type == MediaStreamType.Subtitle),
+                totalBitrate);
+        }
+        else
+        {
+            // No stream details available – fall back to probing or Fast Channel Switching config
+            if (config.EnableFastChannelSwitching)
+            {
+                // Use the static hints from the plugin configuration
+                mediaSource.SupportsProbing = false;
+                mediaSource.AnalyzeDurationMs = config.AnalyzeDurationMs > 0 ? config.AnalyzeDurationMs : 200;
+                mediaSource.MediaStreams = BuildStaticMediaStreams(config);
+                _logger.LogInformation("No TVH service data available for channel {ChannelId}. Using Fast Channel Switching config hints.", channelId);
+            }
+            else
+            {
+                // Let Jellyfin probe the stream
+                mediaSource.SupportsProbing = true;
+                if (config.AnalyzeDurationMs > 0)
+                {
+                    mediaSource.AnalyzeDurationMs = config.AnalyzeDurationMs;
+                }
+
+                _logger.LogWarning("No stream details from TVHeadend for channel {ChannelId} and Fast Channel Switching is off. Jellyfin will probe the stream.", channelId);
+            }
         }
 
         return mediaSource;
+    }
+
+    /// <summary>
+    /// Builds <see cref="MediaStream"/> hints from static plugin configuration values.
+    /// Used as fallback when TVHeadend API query fails and Fast Channel Switching is enabled.
+    /// </summary>
+    private static List<MediaStream> BuildStaticMediaStreams(PluginConfiguration config)
+    {
+        var mediaStreams = new List<MediaStream>();
+
+        if (!string.IsNullOrWhiteSpace(config.VideoCodec))
+        {
+            var videoStream = new MediaStream
+            {
+                Type = MediaStreamType.Video,
+                Index = 0,
+                Codec = config.VideoCodec,
+                IsInterlaced = config.VideoIsInterlaced,
+                IsDefault = true,
+            };
+
+            if (config.VideoWidth > 0)
+            {
+                videoStream.Width = config.VideoWidth;
+            }
+
+            if (config.VideoHeight > 0)
+            {
+                videoStream.Height = config.VideoHeight;
+            }
+
+            if (config.VideoFramerate > 0)
+            {
+                videoStream.RealFrameRate = config.VideoFramerate;
+                videoStream.AverageFrameRate = config.VideoFramerate;
+            }
+
+            if (config.VideoBitrate > 0)
+            {
+                videoStream.BitRate = config.VideoBitrate;
+            }
+
+            if (config.VideoWidth > 0 && config.VideoHeight > 0)
+            {
+                videoStream.AspectRatio = $"{config.VideoWidth}:{config.VideoHeight}";
+            }
+
+            mediaStreams.Add(videoStream);
+        }
+
+        if (!string.IsNullOrWhiteSpace(config.AudioCodec))
+        {
+            var audioStream = new MediaStream
+            {
+                Type = MediaStreamType.Audio,
+                Index = string.IsNullOrWhiteSpace(config.VideoCodec) ? 0 : 1,
+                Codec = config.AudioCodec,
+                IsDefault = true,
+            };
+
+            if (config.AudioChannels > 0)
+            {
+                audioStream.Channels = config.AudioChannels;
+                audioStream.ChannelLayout = config.AudioChannels switch
+                {
+                    1 => "mono",
+                    2 => "stereo",
+                    6 => "5.1",
+                    8 => "7.1",
+                    _ => $"{config.AudioChannels}.0"
+                };
+            }
+
+            if (config.AudioSampleRate > 0)
+            {
+                audioStream.SampleRate = config.AudioSampleRate;
+            }
+
+            if (config.AudioBitrate > 0)
+            {
+                audioStream.BitRate = config.AudioBitrate;
+            }
+
+            mediaStreams.Add(audioStream);
+        }
+
+        return mediaStreams;
     }
 
     /// <summary>
@@ -1391,7 +1843,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// <param name="cancellationToken">A token to cancel the operation if necessary.</param>
     /// <returns>A task that represents the asynchronous operation. The task result contains a <see cref="MediaSourceInfo"/> object with the streaming information.</returns>
     /// <exception cref="ArgumentException">Thrown if <paramref name="channelId"/> is null or empty.</exception>
-    public Task<MediaSourceInfo> GetChannelStream(string channelId, string streamId, CancellationToken cancellationToken)
+    public async Task<MediaSourceInfo> GetChannelStream(string channelId, string streamId, CancellationToken cancellationToken)
     {
         try
         {
@@ -1403,7 +1855,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             var config = Plugin.Instance?.Configuration
                 ?? throw new InvalidOperationException("Plugin configuration is not available.");
 
-            return Task.FromResult(BuildMediaSourceInfo(channelId, config));
+            return await BuildMediaSourceInfoAsync(channelId, config, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1419,7 +1871,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// <param name="cancellationToken">A token to cancel the operation if necessary.</param>
     /// <returns>A task containing a list of <see cref="MediaSourceInfo"/> objects.</returns>
     /// <exception cref="ArgumentException">Thrown if <paramref name="channelId"/> is null or empty.</exception>
-    public Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
+    public async Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
     {
         try
         {
@@ -1431,7 +1883,8 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             var config = Plugin.Instance?.Configuration
                 ?? throw new InvalidOperationException("Plugin configuration is not available.");
 
-            return Task.FromResult(new List<MediaSourceInfo> { BuildMediaSourceInfo(channelId, config) });
+            var mediaSource = await BuildMediaSourceInfoAsync(channelId, config, cancellationToken).ConfigureAwait(false);
+            return new List<MediaSourceInfo> { mediaSource };
         }
         catch (Exception ex)
         {
@@ -1643,5 +2096,51 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             _logger.LogError(ex, "Error occurred while mapping recording profile.");
             throw; // Re-throw the exception to notify the caller
         }
+    }
+
+    /// <summary>
+    /// Represents a single elementary stream (video, audio, subtitle, data) within a TVHeadend service.
+    /// Populated from the <c>stream</c> array returned by <c>api/idnode/load</c> for a service UUID.
+    /// </summary>
+    private sealed class TvhElementaryStream
+    {
+        /// <summary>Gets the PID / stream index.</summary>
+        public int Index { get; init; }
+
+        /// <summary>Gets the TVHeadend codec type string, e.g. "H264", "AC3", "DVBSUB".</summary>
+        public string TvhType { get; init; } = string.Empty;
+
+        /// <summary>Gets the FFmpeg-compatible codec name, e.g. "h264", "ac3", "dvb_subtitle".</summary>
+        public string FfmpegCodec { get; init; } = string.Empty;
+
+        /// <summary>Gets the Jellyfin stream type classification.</summary>
+        public MediaStreamType JellyfinStreamType { get; init; }
+
+        /// <summary>Gets the video width in pixels (0 if unknown or not video).</summary>
+        public int Width { get; init; }
+
+        /// <summary>Gets the video height in pixels (0 if unknown or not video).</summary>
+        public int Height { get; init; }
+
+        /// <summary>Gets the video frame duration in 90 kHz PTS ticks (0 if unknown). fps = 90000 / Duration.</summary>
+        public int Duration { get; init; }
+
+        /// <summary>Gets the aspect ratio numerator (e.g. 16).</summary>
+        public int AspectNum { get; init; }
+
+        /// <summary>Gets the aspect ratio denominator (e.g. 9).</summary>
+        public int AspectDen { get; init; }
+
+        /// <summary>Gets the ISO 639 language code, e.g. "deu", "eng".</summary>
+        public string Language { get; init; } = string.Empty;
+
+        /// <summary>Gets the number of audio channels (0 if unknown or not audio).</summary>
+        public int AudioChannels { get; init; }
+
+        /// <summary>Gets the audio sample rate in Hz (0 if unknown).</summary>
+        public int SampleRate { get; init; }
+
+        /// <summary>Gets the DVB audio type field (0 = undefined).</summary>
+        public int AudioType { get; init; }
     }
 }

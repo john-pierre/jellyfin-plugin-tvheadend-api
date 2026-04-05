@@ -199,7 +199,18 @@
                     <div class="inputContainer">
                         <label class="inputLabel" for="AnalyzeDurationMs">FFmpeg Analyze Duration (ms)</label>
                         <input id="AnalyzeDurationMs" name="AnalyzeDurationMs" type="number" is="emby-input" min="0" placeholder="0" />
-                        <div class="fieldDescription">Time FFmpeg spends analyzing the stream before playback starts. <code>0</code> = Jellyfin default. Overridden to 0 when Fast Channel Switching is active.</div>
+                        <div class="fieldDescription">
+                            Time FFmpeg spends analysing the stream before playback starts, in <strong>milliseconds</strong>.
+                            Jellyfin converts this to microseconds internally (<code>value × 1 000</code>) and passes it as
+                            <code>-analyzeduration</code> to ffmpeg. Example: <code>200</code> ms → <code>-analyzeduration 200000</code> µs.<br><br>
+                            <code>0</code> = automatic: the plugin defaults to <strong>200 ms</strong> when TVHeadend stream details are available
+                            (probing disabled). If no stream details are found and probing is active, Jellyfin's global FFmpeg
+                            <em>analyzeduration</em> setting is used as fallback.<br><br>
+                            <strong>This plugin value takes precedence</strong> over Jellyfin's global FFmpeg analyzeduration when set &gt; 0.<br>
+                            <em>Note: <code>-probesize</code> is controlled by Jellyfin's global FFmpeg settings
+                            (Dashboard → Playback → FFmpeg) and cannot be changed from this plugin.
+                            For fast channel switching, set probesize to <code>300000</code> (300 KB) or lower in Jellyfin's FFmpeg settings.</em>
+                        </div>
                     </div>
                 </div>
 

@@ -174,8 +174,14 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>
     /// Gets or sets the FFmpeg analyze duration in milliseconds.
-    /// Lower values speed up the start of playback but may miss some stream details.
-    /// Set to 0 to let Jellyfin use its default.
+    /// Jellyfin multiplies this value by 1 000 and passes it to ffmpeg as
+    /// <c>-analyzeduration {value × 1000}</c> (i.e. in microseconds).
+    /// Example: 200 ms → <c>-analyzeduration 200000</c> (200 000 µs).
+    /// This plugin value takes precedence over Jellyfin's global FFmpeg analyzeduration setting.
+    /// When set to 0 and stream details are available from TVHeadend, the plugin defaults to 200 ms.
+    /// When set to 0 and no stream details are available, Jellyfin's global FFmpeg config is used as fallback.
+    /// Note: <c>-probesize</c> is controlled by Jellyfin's global FFmpeg settings and cannot be
+    /// overridden by this plugin.
     /// </summary>
     public int AnalyzeDurationMs { get; set; }
 

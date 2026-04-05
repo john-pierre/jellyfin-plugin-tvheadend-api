@@ -168,6 +168,36 @@ Global logging remains at `Information` to keep noise manageable.
 docker compose up -d --build
 ```
 
+#### Intel Quick Sync (VAAPI) in Docker
+
+Für Hardware-Transcoding mit Intel Quick Sync benötigt der Container Zugriff auf `/dev/dri` und die Host-Gruppen für `video` und `render`.
+
+1. Ermittle auf dem Linux-Host die GIDs:
+
+```bash
+getent group video
+getent group render
+```
+
+2. Lege im Projekt eine `.env` an (oder exportiere die Variablen in deiner Shell):
+
+```bash
+VIDEO_GID=44
+RENDER_GID=109
+LIBVA_DRIVER_NAME=iHD
+```
+
+Hinweise:
+
+- `iHD` ist der Standard für neuere Intel iGPUs; bei älteren Generationen ggf. `LIBVA_DRIVER_NAME=i965` setzen.
+- Die Compose-Datei mapped `/dev/dri:/dev/dri` und nutzt `group_add` für `video`/`render`.
+- Danach Container neu erstellen:
+
+```bash
+docker compose down
+docker compose up -d --build
+```
+
 If you want quieter logs again, remove or adjust the `JELLYFIN_Logging__LogLevel__...` environment variables in `docker-compose.yaml` and recreate the container.
 
 #### Quick dev build helper (auto version bump)

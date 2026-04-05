@@ -18,3 +18,4 @@ if [ -d "$PLUGIN_SOURCE_ROOT" ]; then
 fi
 
 exec /jellyfin/jellyfin
+

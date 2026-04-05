@@ -4,10 +4,10 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: jellyfin-tvheadend-dev
+    user: "0:0"
+    privileged: true
     environment:
       - TZ=Europe/Berlin
-      # Verbose troubleshooting defaults for development
-      - JELLYFIN_Logging__LogLevel__Default=Debug
     ports:
       - "8096:8096"   # Jellyfin HTTP
       - "8920:8920"   # Jellyfin HTTPS

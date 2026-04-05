@@ -52,8 +52,8 @@ RUN chmod +x /usr/local/bin/start-jellyfin.sh
 EXPOSE 8096 8920
 
 # FFmpeg tuning for live TV – reduce probing to speed up channel switches
-ENV JELLYFIN_FFmpeg__probesize=1M
-ENV JELLYFIN_FFmpeg__analyzeduration=1M
+#ENV JELLYFIN_FFmpeg__probesize=300000
+#ENV JELLYFIN_FFmpeg__analyzeduration=1M
 
 # Override the base image entrypoint so our bootstrap script runs first.
 ENTRYPOINT ["/usr/local/bin/start-jellyfin.sh"]
