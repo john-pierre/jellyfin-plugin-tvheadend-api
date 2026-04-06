@@ -29,21 +29,18 @@
         <div class="content-primary">
             <form id="TvHeadendApiConfigForm">
 
-                <!-- ── 0. Quick Setup & Health Check ──────────────────────── -->
-                <div class="section" id="HealthCheckSection">
-                    <h2>Quick Setup &amp; Status</h2>
+                <!-- ── 0. Status & Diagnose ────────────────────────────── -->
+                <div class="section" id="DiagnoseSection">
+                    <h2>Status &amp; Diagnose</h2>
                     <p class="sectionDescription" id="PluginVersionLabel" style="margin-bottom:0.5em; opacity:0.85;">Plugin version: loading…</p>
                     <p class="sectionDescription">
-                        One-click setup creates all required TVHeadend profiles (codec + streaming) and configures the plugin for fast channel switching.
-                        Make sure your <strong>connection and authentication settings below are correct</strong> before clicking.
+                        Automatic diagnostics check your TVHeadend connection, validate configuration
+                        and show compatibility recommendations.
                     </p>
 
                     <div style="display:flex; flex-wrap:wrap; gap:0.75em; margin-bottom:0.75em; align-items:stretch;">
-                        <button id="SetupFastSwitchingBtn" is="emby-button" type="button" class="raised emby-button" style="background:#00a4dc; color:#fff; font-weight:bold; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
-                            <span>⚡ Fast Setup</span>
-                        </button>
-                        <button id="HealthCheckBtn" is="emby-button" type="button" class="raised emby-button" style="min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
-                            <span>Health Check</span>
+                        <button id="DiagnoseBtn" is="emby-button" type="button" class="raised emby-button" style="min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
+                            <span>🔍 Run Diagnose</span>
                         </button>
                         <button id="ResetDefaultsBtn" is="emby-button" type="button" class="raised emby-button" style="background:#444; color:#fff; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
                             <span>Reset Config</span>
@@ -51,9 +48,9 @@
                     </div>
 
                     <div id="ResetDefaultsMsg" style="margin-top:0.25em; font-style:italic;"></div>
-                    <div id="SetupFastSwitchingMsg" style="margin-top:0.25em; font-style:italic;"></div>
 
-                    <div id="HealthCheckReport" style="display:none; margin-top:1em; padding:1em; border:1px solid #444; border-radius:6px; background:#1a1a2e; font-family:monospace; font-size:0.9em; line-height:1.6;">
+                    <div id="DiagnoseReport" style="margin-top:1em; padding:1em; border:1px solid #444; border-radius:6px; background:#1a1a2e; font-family:monospace; font-size:0.9em; line-height:1.6;">
+                        <em>Diagnose wird geladen…</em>
                     </div>
                 </div>
 
@@ -129,18 +126,19 @@
 
                     <div class="inputContainer">
                         <label class="inputLabel" for="StreamingProfile">Streaming Profile</label>
-                        <input id="StreamingProfile" name="StreamingProfile" type="text" is="emby-input" placeholder="e.g., pass" />
+                        <select id="StreamingProfile" name="StreamingProfile" is="emby-select" style="width: 100%;">
+                            <option value="">-- Select a profile --</option>
+                        </select>
                         <div class="fieldDescription">
                             Name of the TVHeadend stream profile to use for live TV.
                             <code>pass</code> delivers the original broadcast stream without transcoding.
-                            If you want fast channel switching, create a dedicated transcoding profile in TVHeadend
-                            (e.g. <code>webtv-h264-aac-mpegts</code>) and enter its name here.
+                            Use a transcode profile (e.g. <code>jellyfin</code>) for consistent output format.
                         </div>
                     </div>
                     <div class="inputContainer">
                         <label class="inputLabel" for="FallbackMaxStreamingBitrate">Fallback Max Bitrate (bps)</label>
-                        <input id="FallbackMaxStreamingBitrate" name="FallbackMaxStreamingBitrate" type="number" is="emby-input" placeholder="30000000" />
-                        <div class="fieldDescription">Fallback maximum bitrate in <strong>bits per second</strong> when no stream-level bitrate is known. Default: 30 000 000 (≈ 30 Mbps).</div>
+                        <input id="FallbackMaxStreamingBitrate" name="FallbackMaxStreamingBitrate" type="number" is="emby-input" placeholder="3000000" />
+                        <div class="fieldDescription">Fallback maximum bitrate in <strong>bits per second</strong> when no stream-level bitrate is known. Default: 3 000 000 (≈ 3 Mbps).</div>
                     </div>
                     <div class="checkboxContainer">
                         <label>
@@ -182,7 +180,18 @@
                             <input id="SupportsProbing" name="SupportsProbing" type="checkbox" is="emby-checkbox" />
                             <span>Stream Probing</span>
                         </label>
-                        <div class="fieldDescription">Let Jellyfin analyse (probe) the stream to detect codecs and format before playback. Disabling this reduces channel-switch time but requires that the format is known in advance (see "Fast Channel Switching" below).</div>
+                        <div class="fieldDescription">
+                            Let Jellyfin analyse (probe) the stream with FFmpeg to detect codecs and format before playback.
+                            <strong>Recommended: OFF.</strong> The plugin queries TVHeadend for stream details automatically, which is faster and avoids probing entirely.<br>
+                            <em>⚠️ Jellyfin core behaviour when probing is ON:</em>
+                            <ul style="margin:0.3em 0 0 1.5em; padding:0;">
+                                <li>Jellyfin always waits <strong>at least 3 seconds</strong> before probing (<code>Math.Max(3000, AnalyzeDurationMs)</code>).</li>
+                                <li>Jellyfin <strong>overrides</strong> the AnalyzeDuration to <strong>3000 ms</strong> for all live streams, regardless of what this plugin sets.</li>
+                                <li>Jellyfin <strong>caches</strong> probe results on disk (under <code>&lt;data&gt;/cache/mediainfo/</code>). The first probe takes 3+ seconds;
+                                    subsequent opens of the same channel use the cache and complete in milliseconds.</li>
+                                <li>The cache key is derived from the stream's LiveStreamId. It persists until Jellyfin clears its cache.</li>
+                            </ul>
+                        </div>
                     </div>
                     <div class="checkboxContainer">
                         <label>
@@ -196,117 +205,58 @@
                         <input id="BufferMs" name="BufferMs" type="number" is="emby-input" min="0" placeholder="0" />
                         <div class="fieldDescription">Stream buffer in milliseconds. <code>0</code> = Jellyfin default. Lower values reduce latency but may cause stuttering on slow connections.</div>
                     </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="EnableMediaInfoCache" name="EnableMediaInfoCache" type="checkbox" is="emby-checkbox" />
+                            <span>Use Jellyfin Probe Cache</span>
+                        </label>
+                        <div class="fieldDescription">
+                            When enabled, the plugin reads Jellyfin's mediainfo probe cache files
+                            (<code>&lt;data&gt;/cache/mediainfo/*.json</code>) and uses the detailed
+                            stream data from previous FFmpeg probes (ColorRange, ColorSpace, Profile,
+                            Level, PixelFormat, RealFrameRate, DisplayTitle, etc.) instead of the
+                            synthetic streams built from TVHeadend's basic service API.<br>
+                            <em>Requires at least one prior probe run per channel to populate the cache.
+                            You can trigger this by temporarily enabling Stream Probing, opening each
+                            channel once, then disabling probing again.</em>
+                        </div>
+                    </div>
                     <div class="inputContainer">
                         <label class="inputLabel" for="AnalyzeDurationMs">FFmpeg Analyze Duration (ms)</label>
                         <input id="AnalyzeDurationMs" name="AnalyzeDurationMs" type="number" is="emby-input" min="0" placeholder="0" />
                         <div class="fieldDescription">
                             Time FFmpeg spends analysing the stream before playback starts, in <strong>milliseconds</strong>.
-                            Jellyfin converts this to microseconds internally (<code>value × 1 000</code>) and passes it as
-                            <code>-analyzeduration</code> to ffmpeg. Example: <code>200</code> ms → <code>-analyzeduration 200000</code> µs.<br><br>
-                            <code>0</code> = automatic: the plugin defaults to <strong>200 ms</strong> when TVHeadend stream details are available
-                            (probing disabled). If no stream details are found and probing is active, Jellyfin's global FFmpeg
-                            <em>analyzeduration</em> setting is used as fallback.<br><br>
-                            <strong>This plugin value takes precedence</strong> over Jellyfin's global FFmpeg analyzeduration when set &gt; 0.<br>
+                            <code>0</code> = automatic: the plugin defaults to <strong>200 ms</strong> when TVHeadend stream details are available.
+                            If no stream details are found and probing is active, Jellyfin's global FFmpeg setting is used as fallback.<br>
+                            <em>⚠️ Important: When <strong>Stream Probing</strong> is enabled, Jellyfin's core always overrides this value
+                            to <strong>3000 ms</strong> for live streams. This plugin's value only takes effect reliably when probing is <strong>OFF</strong>
+                            and the plugin provides stream details from TVHeadend.</em><br>
                             <em>Note: <code>-probesize</code> is controlled by Jellyfin's global FFmpeg settings
-                            (Dashboard → Playback → FFmpeg) and cannot be changed from this plugin.
-                            For fast channel switching, set probesize to <code>300000</code> (300 KB) or lower in Jellyfin's FFmpeg settings.</em>
+                            (Dashboard → Playback → FFmpeg) and cannot be changed from this plugin.</em>
                         </div>
                     </div>
                 </div>
 
-                <!-- ── 5. Fast Channel Switching ────────────────────────── -->
+                <!-- ── 5. TVHeadend Profile Management ─────────────────── -->
                 <div class="section">
-                    <h2>Fast Channel Switching</h2>
+                    <h2>TVHeadend Profiles</h2>
                     <p class="sectionDescription">
-                        <strong>Speed up channel changes dramatically</strong> by telling Jellyfin exactly what format the stream uses.
-                        This eliminates the need for probing / analysis before playback can start.<br><br>
-                        <strong>Prerequisite:</strong> You must configure a TVHeadend streaming profile that transcodes
-                        <em>every</em> channel into the <em>same</em> fixed output format (e.g. H.264 + AAC in MPEG-TS).
-                        Enter that profile name in "Streaming Profile" above, then describe its output here.
+                        Create optimised streaming profiles in TVHeadend directly from this plugin,
+                        or detect the configuration of your current profile.
                     </p>
 
-                    <div class="checkboxContainer">
-                        <label>
-                            <input id="EnableFastChannelSwitching" name="EnableFastChannelSwitching" type="checkbox" is="emby-checkbox" />
-                            <span>Enable Fast Channel Switching</span>
-                        </label>
-                        <div class="fieldDescription">When enabled, stream probing is skipped and the format hints below are sent to Jellyfin instead. <strong>Only enable this when every channel delivers the same format.</strong></div>
-                    </div>
-
-                    <div style="margin:1em 0;">
+                    <div style="display:flex; flex-wrap:wrap; gap:0.75em; margin-bottom:0.75em;">
+                        <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button" style="background:#00a4dc; color:#fff; font-weight:bold;">
+                            <span>Create &quot;jellyfin&quot; Profile</span>
+                        </button>
+                        <button id="CreateTestProfilesBtn" is="emby-button" type="button" class="raised emby-button">
+                            <span>Create Benchmark Profiles</span>
+                        </button>
                         <button id="DetectProfileBtn" is="emby-button" type="button" class="raised emby-button">
-                            <span>Detect Profile from TVHeadend</span>
+                            <span>Detect Current Profile</span>
                         </button>
-                        <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button" style="margin-left:0.5em;">
-                            <span>Create &quot;jellyfin&quot; Profiles in TVHeadend</span>
-                        </button>
-                        <div id="DetectProfileMsg" style="margin-top:0.5em; font-style:italic;"></div>
                     </div>
-
-                    <div id="FastSwitchFields">
-                        <h3 style="margin-top:1em;">Container</h3>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="StreamContainer">Container Format</label>
-                            <input id="StreamContainer" name="StreamContainer" type="text" is="emby-input" placeholder="mpegts" />
-                            <div class="fieldDescription">The container format output by TVHeadend. Common values: <code>mpegts</code>, <code>matroska</code>, <code>mp4</code>.</div>
-                        </div>
-
-                        <h3 style="margin-top:1em;">Video</h3>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="VideoCodec">Video Codec</label>
-                            <input id="VideoCodec" name="VideoCodec" type="text" is="emby-input" placeholder="h264" />
-                            <div class="fieldDescription">Video codec name as FFmpeg knows it. Common: <code>h264</code>, <code>hevc</code>, <code>mpeg2video</code>. Leave empty to omit the video hint.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="VideoWidth">Width (px)</label>
-                            <input id="VideoWidth" name="VideoWidth" type="number" is="emby-input" min="0" placeholder="1920" />
-                            <div class="fieldDescription">Horizontal resolution in pixels. 0 = unspecified.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="VideoHeight">Height (px)</label>
-                            <input id="VideoHeight" name="VideoHeight" type="number" is="emby-input" min="0" placeholder="1080" />
-                            <div class="fieldDescription">Vertical resolution in pixels. 0 = unspecified.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="VideoFramerate">Framerate (fps)</label>
-                            <input id="VideoFramerate" name="VideoFramerate" type="number" is="emby-input" min="0" placeholder="25" />
-                            <div class="fieldDescription">Frames per second. PAL regions typically use 25, NTSC use 30. 0 = unspecified.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="VideoBitrate">Video Bitrate (bps)</label>
-                            <input id="VideoBitrate" name="VideoBitrate" type="number" is="emby-input" min="0" placeholder="0" />
-                            <div class="fieldDescription">Video bitrate in bits per second. 0 = unknown / let Jellyfin estimate.</div>
-                        </div>
-                        <div class="checkboxContainer">
-                            <label>
-                                <input id="VideoIsInterlaced" name="VideoIsInterlaced" type="checkbox" is="emby-checkbox" />
-                                <span>Interlaced Video</span>
-                            </label>
-                            <div class="fieldDescription">Check if the TVHeadend profile outputs interlaced video. Transcoded streams are usually progressive (unchecked).</div>
-                        </div>
-
-                        <h3 style="margin-top:1em;">Audio</h3>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="AudioCodec">Audio Codec</label>
-                            <input id="AudioCodec" name="AudioCodec" type="text" is="emby-input" placeholder="aac" />
-                            <div class="fieldDescription">Audio codec name. Common: <code>aac</code>, <code>ac3</code>, <code>eac3</code>, <code>mp2</code>. Leave empty to omit the audio hint.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="AudioChannels">Channels</label>
-                            <input id="AudioChannels" name="AudioChannels" type="number" is="emby-input" min="0" placeholder="2" />
-                            <div class="fieldDescription">Number of audio channels. 1 = mono, 2 = stereo, 6 = 5.1 surround. 0 = unspecified.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="AudioSampleRate">Sample Rate (Hz)</label>
-                            <input id="AudioSampleRate" name="AudioSampleRate" type="number" is="emby-input" min="0" placeholder="48000" />
-                            <div class="fieldDescription">Audio sample rate in Hz. Most streams use 48000. 0 = unspecified.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="AudioBitrate">Audio Bitrate (bps)</label>
-                            <input id="AudioBitrate" name="AudioBitrate" type="number" is="emby-input" min="0" placeholder="0" />
-                            <div class="fieldDescription">Audio bitrate in bits per second. 0 = unknown / let Jellyfin estimate.</div>
-                        </div>
-                    </div>
+                    <div id="ProfileActionMsg" style="margin-top:0.5em; font-style:italic;"></div>
                 </div>
 
                 <!-- ── 6. Recording (DVR) ───────────────────────────────── -->
@@ -338,7 +288,9 @@
                     </div>
                     <div class="inputContainer">
                         <label class="inputLabel" for="RecordingProfile">Recording Profile</label>
-                        <input id="RecordingProfile" name="RecordingProfile" type="text" is="emby-input" placeholder="default" />
+                        <select id="RecordingProfile" name="RecordingProfile" is="emby-select" style="width: 100%;">
+                            <option value="">-- Select a profile --</option>
+                        </select>
                         <div class="fieldDescription">Name of the TVHeadend DVR configuration profile. Must exist in your TVHeadend setup.</div>
                     </div>
                 </div>
@@ -362,11 +314,6 @@
             return Number.isNaN(parsedValue) ? fallbackValue : parsedValue;
         }
 
-        function toggleFastSwitchFields() {
-            const enabled = document.querySelector('#EnableFastChannelSwitching').checked;
-            document.querySelector('#FastSwitchFields').style.display = enabled ? '' : 'none';
-        }
-
         function escapeHtml(text) {
             var div = document.createElement('div');
             div.appendChild(document.createTextNode(text));
@@ -381,6 +328,109 @@
                 document.querySelector('#PluginVersionLabel').textContent = 'Plugin version: unavailable';
             });
         }
+
+        function saveCurrentFormToConfig() {
+            return ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
+                config.Host = document.querySelector('#Host').value;
+                config.Port = parseIntegerOrDefault('#Port', config.Port);
+                config.UseSSL = document.querySelector('#UseSSL').checked;
+                config.IgnoreCertificateErrors = document.querySelector('#IgnoreCertificateErrors').checked;
+                config.Webroot = document.querySelector('#Webroot').value;
+                config.AllowAnonymousAccess = document.querySelector('#AllowAnonymousAccess').checked;
+                config.Username = document.querySelector('#Username').value;
+                config.Password = document.querySelector('#Password').value;
+                config.AuthToken = document.querySelector('#AuthToken').value;
+
+                // Protect dropdown values: only overwrite if the dropdown actually has a selection.
+                // An empty dropdown value means the options haven't loaded yet — keep the server value.
+                var formStreaming = document.querySelector('#StreamingProfile').value;
+                if (formStreaming) config.StreamingProfile = formStreaming;
+
+                config.FallbackMaxStreamingBitrate = parseIntegerOrDefault('#FallbackMaxStreamingBitrate', config.FallbackMaxStreamingBitrate);
+                config.IsInfiniteStream = document.querySelector('#IsInfiniteStream').checked;
+                config.SupportsDirectPlay = document.querySelector('#SupportsDirectPlay').checked;
+                config.SupportsDirectStream = document.querySelector('#SupportsDirectStream').checked;
+                config.SupportsTranscoding = document.querySelector('#SupportsTranscoding').checked;
+                config.SupportsProbing = document.querySelector('#SupportsProbing').checked;
+                config.IgnoreDts = document.querySelector('#IgnoreDts').checked;
+                config.BufferMs = parseIntegerOrDefault('#BufferMs', config.BufferMs);
+                config.AnalyzeDurationMs = parseIntegerOrDefault('#AnalyzeDurationMs', config.AnalyzeDurationMs);
+                config.EnableMediaInfoCache = document.querySelector('#EnableMediaInfoCache').checked;
+                config.EnableTvhDvr = document.querySelector('#EnableTvhDvr').checked;
+                config.Priority = parseIntegerOrDefault('#Priority', config.Priority);
+                config.PrePaddingSeconds = parseIntegerOrDefault('#PrePaddingSeconds', config.PrePaddingSeconds);
+                config.PostPaddingSeconds = parseIntegerOrDefault('#PostPaddingSeconds', config.PostPaddingSeconds);
+
+                var formRecording = document.querySelector('#RecordingProfile').value;
+                if (formRecording) config.RecordingProfile = formRecording;
+
+                return ApiClient.updatePluginConfiguration(TvHeadendApiConfig.pluginUniqueId, config);
+            });
+        }
+
+        // ── Diagnose ────────────────────────────────────────────────────
+        function loadDiagnose() {
+            var reportEl = document.querySelector('#DiagnoseReport');
+            reportEl.innerHTML = '<em>Running diagnostics…</em>';
+
+            saveCurrentFormToConfig().then(function () {
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Diagnose'), dataType: 'json' });
+            }).then(function (r) {
+                var html = '';
+                var scoreColor = r.CompatibilityScore >= 80 ? '#4caf50' : r.CompatibilityScore >= 50 ? '#f0ad4e' : '#e74c3c';
+                var statusIcon = r.OverallStatus === 'OK' ? '✅' : r.OverallStatus === 'WARNING' ? '⚠️' : '❌';
+
+                html += '<div style="font-size:1.2em; margin-bottom:0.8em;">';
+                html += statusIcon + ' <strong>Compatibility: <span style="color:' + scoreColor + ';">' + r.CompatibilityScore + '/100</span></strong>';
+                html += '</div>';
+
+                html += '<div style="margin-bottom:0.5em;">' + escapeHtml(r.Connection);
+                if (r.LatencyMs > 0) html += ' <span style="opacity:0.7;">(' + r.LatencyMs + 'ms)</span>';
+                html += '</div>';
+                if (r.ServerVersion) html += '<div style="margin-bottom:0.5em;">' + escapeHtml(r.ServerVersion) + '</div>';
+
+                var stats = [];
+                if (r.ChannelCount !== undefined) stats.push(r.ChannelCount + ' channels');
+                if (r.DvrEntryCount !== undefined && r.DvrEntryCount > 0) stats.push(r.DvrEntryCount + ' DVR entries');
+                if (r.AvailableProfiles && r.AvailableProfiles.length > 0) stats.push(r.AvailableProfiles.length + ' profiles');
+                if (stats.length > 0) html += '<div style="margin-bottom:0.8em; opacity:0.85;">' + escapeHtml(stats.join(' · ')) + '</div>';
+
+                if (r.Checks && r.Checks.length > 0) {
+                    html += '<div style="margin-bottom:0.8em;"><strong>Checks:</strong>';
+                    r.Checks.forEach(function (check) {
+                        var icon = check.Status === 'OK' ? '✅' : check.Status === 'WARNING' ? '⚠️' : check.Status === 'ERROR' ? '❌' : 'ℹ️';
+                        html += '<div style="margin:0.2em 0 0 1em;">' + icon + ' <strong>' + escapeHtml(check.Name) + ':</strong> ' + escapeHtml(check.Message);
+                        if (check.Recommendation) html += ' <em style="color:#aaa;">→ ' + escapeHtml(check.Recommendation) + '</em>';
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                }
+
+                if (r.PluginSettings && r.PluginSettings.length > 0) {
+                    html += '<details style="margin-bottom:0.8em;"><summary style="cursor:pointer;"><strong>Plugin Config Details</strong></summary><ul style="margin:0.2em 0 0 1.5em;">';
+                    r.PluginSettings.forEach(function (s) { html += '<li>' + escapeHtml(s) + '</li>'; });
+                    html += '</ul></details>';
+                }
+
+                if (r.Warnings && r.Warnings.length > 0) {
+                    html += '<div style="margin-bottom:0.8em; color:#f0ad4e;"><strong>⚠️ Warnings:</strong><ul style="margin:0.2em 0 0 1.5em;">';
+                    r.Warnings.forEach(function (w) { html += '<li>' + escapeHtml(w) + '</li>'; });
+                    html += '</ul></div>';
+                }
+
+                if (r.Recommendations && r.Recommendations.length > 0) {
+                    html += '<div style="margin-bottom:0.4em;"><strong>💡 Recommendations:</strong><ul style="margin:0.2em 0 0 1.5em;">';
+                    r.Recommendations.forEach(function (rec) { html += '<li>' + escapeHtml(rec) + '</li>'; });
+                    html += '</ul></div>';
+                }
+
+                reportEl.innerHTML = html;
+            }).catch(function (err) {
+                reportEl.innerHTML = '<span style="color:red;">Diagnose failed: ' + escapeHtml(err.statusText || err.message || 'Unknown error') + '</span>';
+            });
+        }
+
+        document.querySelector('#DiagnoseBtn').addEventListener('click', loadDiagnose);
 
         // ── Reset defaults ─────────────────────────────────────────────
         document.querySelector('#ResetDefaultsBtn').addEventListener('click', function () {
@@ -398,358 +448,184 @@
                 msgEl.style.color = 'green';
                 msgEl.textContent = '✓ ' + (result.Message || 'Configuration reset to defaults.');
 
-                // Reload page data so all fields reflect defaults.
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
-                    document.querySelector('#Host').value = config.Host || '';
-                    document.querySelector('#Port').value = config.Port || '';
-                    document.querySelector('#UseSSL').checked = config.UseSSL || false;
-                    document.querySelector('#IgnoreCertificateErrors').checked = config.IgnoreCertificateErrors || false;
-                    document.querySelector('#Webroot').value = config.Webroot || '';
-                    document.querySelector('#AllowAnonymousAccess').checked = config.AllowAnonymousAccess || false;
-                    document.querySelector('#Username').value = config.Username || '';
-                    document.querySelector('#Password').value = config.Password || '';
-                    document.querySelector('#AuthToken').value = config.AuthToken || '';
-                    document.querySelector('#StreamingProfile').value = config.StreamingProfile || '';
-                    document.querySelector('#FallbackMaxStreamingBitrate').value = config.FallbackMaxStreamingBitrate || '';
-                    document.querySelector('#IsInfiniteStream').checked = config.IsInfiniteStream !== false;
-                    document.querySelector('#SupportsDirectPlay').checked = config.SupportsDirectPlay !== false;
-                    document.querySelector('#SupportsDirectStream').checked = config.SupportsDirectStream !== false;
-                    document.querySelector('#SupportsTranscoding').checked = config.SupportsTranscoding || false;
-                    document.querySelector('#SupportsProbing').checked = config.SupportsProbing || false;
-                    document.querySelector('#IgnoreDts').checked = config.IgnoreDts || false;
-                    document.querySelector('#BufferMs').value = config.BufferMs || '0';
-                    document.querySelector('#AnalyzeDurationMs').value = config.AnalyzeDurationMs || '0';
-                    document.querySelector('#EnableFastChannelSwitching').checked = config.EnableFastChannelSwitching || false;
-                    document.querySelector('#StreamContainer').value = config.StreamContainer || 'mpegts';
-                    document.querySelector('#VideoCodec').value = config.VideoCodec || 'h264';
-                    document.querySelector('#VideoWidth').value = config.VideoWidth || '1920';
-                    document.querySelector('#VideoHeight').value = config.VideoHeight || '1080';
-                    document.querySelector('#VideoFramerate').value = config.VideoFramerate || '25';
-                    document.querySelector('#VideoBitrate').value = config.VideoBitrate || '0';
-                    document.querySelector('#VideoIsInterlaced').checked = config.VideoIsInterlaced || false;
-                    document.querySelector('#AudioCodec').value = config.AudioCodec || 'aac';
-                    document.querySelector('#AudioChannels').value = config.AudioChannels || '2';
-                    document.querySelector('#AudioSampleRate').value = config.AudioSampleRate || '48000';
-                    document.querySelector('#AudioBitrate').value = config.AudioBitrate || '0';
-                    document.querySelector('#EnableTvhDvr').checked = config.EnableTvhDvr !== false;
-                    document.querySelector('#Priority').value = config.Priority || '';
-                    document.querySelector('#PrePaddingSeconds').value = config.PrePaddingSeconds || '';
-                    document.querySelector('#PostPaddingSeconds').value = config.PostPaddingSeconds || '';
-                    document.querySelector('#RecordingProfile').value = config.RecordingProfile || '';
-                    toggleFastSwitchFields();
+                    loadFormFromConfig(config);
                     Dashboard.hideLoadingMsg();
+                    loadDiagnose();
                 });
             }).catch(function (err) {
                 msgEl.style.color = 'red';
                 msgEl.textContent = 'Request failed: ' + (err.statusText || err.message || 'Unknown error');
-            });
-        });
-
-        // ── One-Click Fast Switching Setup ────────────────────────
-        document.querySelector('#SetupFastSwitchingBtn').addEventListener('click', function () {
-            var msgEl = document.querySelector('#SetupFastSwitchingMsg');
-            msgEl.style.color = '';
-            msgEl.textContent = 'Setting up Fast Channel Switching… Creating TVHeadend profiles and saving config…';
-
-            // Save current connection + auth settings first so the server sees them
-            var saveFirst = ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
-                config.Host = document.querySelector('#Host').value;
-                config.Port = parseIntegerOrDefault('#Port', config.Port);
-                config.UseSSL = document.querySelector('#UseSSL').checked;
-                config.IgnoreCertificateErrors = document.querySelector('#IgnoreCertificateErrors').checked;
-                config.Webroot = document.querySelector('#Webroot').value;
-                config.AllowAnonymousAccess = document.querySelector('#AllowAnonymousAccess').checked;
-                config.Username = document.querySelector('#Username').value;
-                config.Password = document.querySelector('#Password').value;
-                config.AuthToken = document.querySelector('#AuthToken').value;
-                return ApiClient.updatePluginConfiguration(TvHeadendApiConfig.pluginUniqueId, config);
-            });
-
-            saveFirst.then(function () {
-                return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/SetupFastSwitching'), dataType: 'json' });
-            }).then(function (result) {
-                if (!result.Success) {
-                    msgEl.style.color = 'red';
-                    msgEl.textContent = '❌ ' + result.Message;
-                    return;
-                }
-
-                // Reload the saved config into the form
-                ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
-                    document.querySelector('#StreamingProfile').value = config.StreamingProfile || '';
-                    document.querySelector('#EnableFastChannelSwitching').checked = config.EnableFastChannelSwitching || false;
-                    document.querySelector('#SupportsProbing').checked = config.SupportsProbing || false;
-                    document.querySelector('#SupportsDirectPlay').checked = config.SupportsDirectPlay !== false;
-                    document.querySelector('#SupportsDirectStream').checked = config.SupportsDirectStream !== false;
-                    document.querySelector('#SupportsTranscoding').checked = config.SupportsTranscoding || false;
-                    document.querySelector('#IsInfiniteStream').checked = config.IsInfiniteStream !== false;
-                    document.querySelector('#IgnoreDts').checked = config.IgnoreDts || false;
-                    document.querySelector('#BufferMs').value = config.BufferMs || '0';
-                    document.querySelector('#AnalyzeDurationMs').value = config.AnalyzeDurationMs || '0';
-                    document.querySelector('#StreamContainer').value = config.StreamContainer || 'mpegts';
-                    document.querySelector('#VideoCodec').value = config.VideoCodec || 'h264';
-                    document.querySelector('#AudioCodec').value = config.AudioCodec || 'aac';
-                    document.querySelector('#VideoBitrate').value = config.VideoBitrate || '0';
-                    document.querySelector('#AudioBitrate').value = config.AudioBitrate || '0';
-                    document.querySelector('#AudioChannels').value = config.AudioChannels || '2';
-                    document.querySelector('#AudioSampleRate').value = config.AudioSampleRate || '48000';
-                    document.querySelector('#VideoFramerate').value = config.VideoFramerate || '25';
-                    toggleFastSwitchFields();
-                });
-
-                msgEl.style.color = 'green';
-                msgEl.textContent = '✅ ' + result.Message;
-            }).catch(function (err) {
-                msgEl.style.color = 'red';
-                msgEl.textContent = '❌ Request failed: ' + (err.statusText || err.message || 'Unknown error');
-            });
-        });
-
-        // ── Health Check ───────────────────────────────────────────────
-        document.querySelector('#HealthCheckBtn').addEventListener('click', function () {
-            var reportEl = document.querySelector('#HealthCheckReport');
-            reportEl.style.display = 'block';
-            reportEl.innerHTML = '<em>Running health check…</em>';
-
-            // Save current settings first so the server sees them
-            var saveFirst = ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
-                config.Host = document.querySelector('#Host').value;
-                config.Port = parseIntegerOrDefault('#Port', config.Port);
-                config.UseSSL = document.querySelector('#UseSSL').checked;
-                config.IgnoreCertificateErrors = document.querySelector('#IgnoreCertificateErrors').checked;
-                config.Webroot = document.querySelector('#Webroot').value;
-                config.AllowAnonymousAccess = document.querySelector('#AllowAnonymousAccess').checked;
-                config.Username = document.querySelector('#Username').value;
-                config.Password = document.querySelector('#Password').value;
-                config.StreamingProfile = document.querySelector('#StreamingProfile').value;
-                config.EnableFastChannelSwitching = document.querySelector('#EnableFastChannelSwitching').checked;
-                config.SupportsProbing = document.querySelector('#SupportsProbing').checked;
-                config.SupportsDirectPlay = document.querySelector('#SupportsDirectPlay').checked;
-                config.SupportsDirectStream = document.querySelector('#SupportsDirectStream').checked;
-                config.SupportsTranscoding = document.querySelector('#SupportsTranscoding').checked;
-                config.EnableTvhDvr = document.querySelector('#EnableTvhDvr').checked;
-                config.RecordingProfile = document.querySelector('#RecordingProfile').value;
-                config.VideoCodec = document.querySelector('#VideoCodec').value;
-                config.BufferMs = parseIntegerOrDefault('#BufferMs', config.BufferMs);
-                return ApiClient.updatePluginConfiguration(TvHeadendApiConfig.pluginUniqueId, config);
-            });
-
-            saveFirst.then(function () {
-                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/HealthCheck'), dataType: 'json' });
-            }).then(function (r) {
-                var html = '';
-
-                // Connection
-                html += '<div style="margin-bottom:0.8em;"><strong>Connection:</strong> ' + escapeHtml(r.Connection) + '</div>';
-                if (r.ServerVersion) html += '<div style="margin-bottom:0.8em;"><strong>Server:</strong> ' + escapeHtml(r.ServerVersion) + '</div>';
-
-                // Stats
-                var stats = [];
-                if (r.ChannelCount !== undefined) stats.push(r.ChannelCount + ' channels');
-                if (r.DvrEntryCount !== undefined && r.DvrEntryCount > 0) stats.push(r.DvrEntryCount + ' DVR entries');
-                if (r.AvailableProfiles && r.AvailableProfiles.length > 0) stats.push(r.AvailableProfiles.length + ' profiles: ' + r.AvailableProfiles.join(', '));
-                if (stats.length > 0) html += '<div style="margin-bottom:0.8em;"><strong>TVHeadend:</strong> ' + escapeHtml(stats.join(' · ')) + '</div>';
-
-                // Plugin settings
-                if (r.PluginSettings && r.PluginSettings.length > 0) {
-                    html += '<div style="margin-bottom:0.8em;"><strong>Plugin Config:</strong><ul style="margin:0.2em 0 0 1.5em;">';
-                    r.PluginSettings.forEach(function (s) { html += '<li>' + escapeHtml(s) + '</li>'; });
-                    html += '</ul></div>';
-                }
-
-                // Warnings
-                if (r.Warnings && r.Warnings.length > 0) {
-                    html += '<div style="margin-bottom:0.8em; color:#f0ad4e;"><strong>⚠️ Warnings:</strong><ul style="margin:0.2em 0 0 1.5em;">';
-                    r.Warnings.forEach(function (w) { html += '<li>' + escapeHtml(w) + '</li>'; });
-                    html += '</ul></div>';
-                }
-
-                // Recommendations
-                if (r.Recommendations && r.Recommendations.length > 0) {
-                    html += '<div style="margin-bottom:0.4em;"><strong>💡 Recommendations:</strong><ul style="margin:0.2em 0 0 1.5em;">';
-                    r.Recommendations.forEach(function (rec) { html += '<li>' + escapeHtml(rec) + '</li>'; });
-                    html += '</ul></div>';
-                }
-
-                reportEl.innerHTML = html;
-            }).catch(function (err) {
-                reportEl.innerHTML = '<span style="color:red;">Health check failed: ' + escapeHtml(err.statusText || err.message || 'Unknown error') + '</span>';
-            });
-        });
-
-        // ── Load config ────────────────────────────────────────────────
-        document.querySelector('#TvHeadendApiConfigPage').addEventListener('pageshow', function () {
-            loadPluginInfo();
-            Dashboard.showLoadingMsg();
-            ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
-                // Connection
-                document.querySelector('#Host').value = config.Host || '';
-                document.querySelector('#Port').value = config.Port || '';
-                document.querySelector('#UseSSL').checked = config.UseSSL || false;
-                document.querySelector('#IgnoreCertificateErrors').checked = config.IgnoreCertificateErrors || false;
-                document.querySelector('#Webroot').value = config.Webroot || '';
-
-                // Authentication
-                document.querySelector('#AllowAnonymousAccess').checked = config.AllowAnonymousAccess || false;
-                document.querySelector('#Username').value = config.Username || '';
-                document.querySelector('#Password').value = config.Password || '';
-                document.querySelector('#AuthToken').value = config.AuthToken || '';
-
-                // Streaming
-                document.querySelector('#StreamingProfile').value = config.StreamingProfile || '';
-                document.querySelector('#FallbackMaxStreamingBitrate').value = config.FallbackMaxStreamingBitrate || '';
-                document.querySelector('#IsInfiniteStream').checked = config.IsInfiniteStream !== false;
-
-                // Playback Behaviour
-                document.querySelector('#SupportsDirectPlay').checked = config.SupportsDirectPlay !== false;
-                document.querySelector('#SupportsDirectStream').checked = config.SupportsDirectStream !== false;
-                document.querySelector('#SupportsTranscoding').checked = config.SupportsTranscoding || false;
-                document.querySelector('#SupportsProbing').checked = config.SupportsProbing || false;
-                document.querySelector('#IgnoreDts').checked = config.IgnoreDts || false;
-                document.querySelector('#BufferMs').value = config.BufferMs || '0';
-                document.querySelector('#AnalyzeDurationMs').value = config.AnalyzeDurationMs || '0';
-
-                // Fast Channel Switching
-                document.querySelector('#EnableFastChannelSwitching').checked = config.EnableFastChannelSwitching || false;
-                document.querySelector('#StreamContainer').value = config.StreamContainer || 'mpegts';
-                document.querySelector('#VideoCodec').value = config.VideoCodec || 'h264';
-                document.querySelector('#VideoWidth').value = config.VideoWidth || '1920';
-                document.querySelector('#VideoHeight').value = config.VideoHeight || '1080';
-                document.querySelector('#VideoFramerate').value = config.VideoFramerate || '25';
-                document.querySelector('#VideoBitrate').value = config.VideoBitrate || '0';
-                document.querySelector('#VideoIsInterlaced').checked = config.VideoIsInterlaced || false;
-                document.querySelector('#AudioCodec').value = config.AudioCodec || 'aac';
-                document.querySelector('#AudioChannels').value = config.AudioChannels || '2';
-                document.querySelector('#AudioSampleRate').value = config.AudioSampleRate || '48000';
-                document.querySelector('#AudioBitrate').value = config.AudioBitrate || '0';
-
-                // Recording
-                document.querySelector('#EnableTvhDvr').checked = config.EnableTvhDvr !== false;
-                document.querySelector('#Priority').value = config.Priority || '';
-                document.querySelector('#PrePaddingSeconds').value = config.PrePaddingSeconds || '';
-                document.querySelector('#PostPaddingSeconds').value = config.PostPaddingSeconds || '';
-                document.querySelector('#RecordingProfile').value = config.RecordingProfile || '';
-
-                toggleFastSwitchFields();
-                Dashboard.hideLoadingMsg();
             });
         });
 
         // ── Create "jellyfin" Profile in TVHeadend ─────────────────────
         document.querySelector('#CreateProfileBtn').addEventListener('click', function () {
-            var msgEl = document.querySelector('#DetectProfileMsg');
+            var msgEl = document.querySelector('#ProfileActionMsg');
             msgEl.style.color = '';
-            msgEl.textContent = 'Creating profile in TVHeadend…';
+            msgEl.textContent = 'Creating "jellyfin" profiles in TVHeadend…';
 
-            // Save current connection settings first
-            var saveFirst = ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
-                config.Host = document.querySelector('#Host').value;
-                config.Port = parseIntegerOrDefault('#Port', config.Port);
-                config.UseSSL = document.querySelector('#UseSSL').checked;
-                config.IgnoreCertificateErrors = document.querySelector('#IgnoreCertificateErrors').checked;
-                config.Webroot = document.querySelector('#Webroot').value;
-                config.AllowAnonymousAccess = document.querySelector('#AllowAnonymousAccess').checked;
-                config.Username = document.querySelector('#Username').value;
-                config.Password = document.querySelector('#Password').value;
-                config.AuthToken = document.querySelector('#AuthToken').value;
-                return ApiClient.updatePluginConfiguration(TvHeadendApiConfig.pluginUniqueId, config);
-            });
-
-            saveFirst.then(function () {
+            saveCurrentFormToConfig().then(function () {
                 return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/CreateProfile'), dataType: 'json' });
             }).then(function (result) {
-                if (!result.Success) {
-                    msgEl.style.color = 'red';
-                    msgEl.textContent = result.Message;
-                    return;
-                }
-
-                // Auto-fill streaming profile name
+                if (!result.Success) { msgEl.style.color = 'red'; msgEl.textContent = '❌ ' + result.Message; return; }
                 document.querySelector('#StreamingProfile').value = 'jellyfin';
-
-                // Auto-fill format hints if returned
-                if (result.Container) document.querySelector('#StreamContainer').value = result.Container;
-                if (result.VideoCodec) document.querySelector('#VideoCodec').value = result.VideoCodec;
-                if (result.AudioCodec) document.querySelector('#AudioCodec').value = result.AudioCodec;
-                if (result.VideoBitrate > 0) document.querySelector('#VideoBitrate').value = result.VideoBitrate;
-                if (result.AudioBitrate > 0) document.querySelector('#AudioBitrate').value = result.AudioBitrate;
-                document.querySelector('#VideoIsInterlaced').checked = !!result.VideoIsInterlaced;
-
-                // Enable fast switching and show the fields
-                document.querySelector('#EnableFastChannelSwitching').checked = true;
-                toggleFastSwitchFields();
-
                 msgEl.style.color = 'green';
-                msgEl.textContent = '✓ ' + result.Message;
+                msgEl.textContent = '✅ ' + result.Message;
+                loadDiagnose();
             }).catch(function (err) {
                 msgEl.style.color = 'red';
                 msgEl.textContent = 'Request failed: ' + (err.statusText || err.message || 'Unknown error');
             });
         });
 
-        // Toggle visibility when checkbox changes
-        document.querySelector('#EnableFastChannelSwitching').addEventListener('change', toggleFastSwitchFields);
-
-        // ── Detect Profile from TVHeadend ──────────────────────────────
-        document.querySelector('#DetectProfileBtn').addEventListener('click', function () {
-            var msgEl = document.querySelector('#DetectProfileMsg');
+        // ── Create Benchmark Test Profiles ─────────────────────────────
+        document.querySelector('#CreateTestProfilesBtn').addEventListener('click', function () {
+            var msgEl = document.querySelector('#ProfileActionMsg');
             msgEl.style.color = '';
-            msgEl.textContent = 'Contacting TVHeadend…';
+            msgEl.textContent = 'Creating benchmark profiles in TVHeadend…';
 
-            // First save the current config so the server-side endpoint sees the latest streaming profile
-            var saveFirst = ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
-                config.Host = document.querySelector('#Host').value;
-                config.Port = parseIntegerOrDefault('#Port', config.Port);
-                config.UseSSL = document.querySelector('#UseSSL').checked;
-                config.IgnoreCertificateErrors = document.querySelector('#IgnoreCertificateErrors').checked;
-                config.Webroot = document.querySelector('#Webroot').value;
-                config.AllowAnonymousAccess = document.querySelector('#AllowAnonymousAccess').checked;
-                config.Username = document.querySelector('#Username').value;
-                config.Password = document.querySelector('#Password').value;
-                config.AuthToken = document.querySelector('#AuthToken').value;
-                config.StreamingProfile = document.querySelector('#StreamingProfile').value;
-                return ApiClient.updatePluginConfiguration(TvHeadendApiConfig.pluginUniqueId, config);
-            });
-
-            saveFirst.then(function () {
-                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/DetectProfile'), dataType: 'json' });
+            saveCurrentFormToConfig().then(function () {
+                return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/CreateTestProfiles'), dataType: 'json' });
             }).then(function (result) {
-                if (!result.Success) {
-                    msgEl.style.color = 'red';
-                    msgEl.textContent = result.Message;
-                    return;
-                }
-
-                if (!result.IsTranscodeProfile) {
-                    msgEl.style.color = 'orange';
-                    msgEl.textContent = result.Message;
-                    return;
-                }
-
-                // Auto-fill the fields
-                if (result.Container) document.querySelector('#StreamContainer').value = result.Container;
-                if (result.VideoCodec) document.querySelector('#VideoCodec').value = result.VideoCodec;
-                if (result.AudioCodec) document.querySelector('#AudioCodec').value = result.AudioCodec;
-                if (result.VideoHeight > 0) {
-                    document.querySelector('#VideoHeight').value = result.VideoHeight;
-                    // Estimate width from common aspect ratios
-                    document.querySelector('#VideoWidth').value = Math.round(result.VideoHeight * 16 / 9);
-                }
-                if (result.VideoBitrate > 0) document.querySelector('#VideoBitrate').value = result.VideoBitrate;
-                if (result.AudioBitrate > 0) document.querySelector('#AudioBitrate').value = result.AudioBitrate;
-                if (result.AudioChannels > 0) document.querySelector('#AudioChannels').value = result.AudioChannels;
-                document.querySelector('#VideoIsInterlaced').checked = !!result.VideoIsInterlaced;
-
-                // Enable fast switching and show the fields
-                document.querySelector('#EnableFastChannelSwitching').checked = true;
-                toggleFastSwitchFields();
-
+                if (!result.Success) { msgEl.style.color = 'red'; msgEl.textContent = '❌ ' + (result.Message || 'Creation failed.'); return; }
                 msgEl.style.color = 'green';
-                msgEl.textContent = '✓ ' + result.Message + ' Review the values below and click Save.';
+                msgEl.textContent = '✅ ' + result.Message;
+                loadDiagnose();
             }).catch(function (err) {
                 msgEl.style.color = 'red';
                 msgEl.textContent = 'Request failed: ' + (err.statusText || err.message || 'Unknown error');
+            });
+        });
+
+        // ── Detect Profile from TVHeadend ──────────────────────────────
+        document.querySelector('#DetectProfileBtn').addEventListener('click', function () {
+            var msgEl = document.querySelector('#ProfileActionMsg');
+            msgEl.style.color = '';
+            msgEl.textContent = 'Detecting profile from TVHeadend…';
+
+            saveCurrentFormToConfig().then(function () {
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/DetectProfile'), dataType: 'json' });
+            }).then(function (result) {
+                if (!result.Success) { msgEl.style.color = 'red'; msgEl.textContent = '❌ ' + result.Message; return; }
+                var info = result.ProfileName + ' (' + result.ProfileClass + ')';
+                if (result.IsTranscodeProfile) {
+                    info += ' — Container: ' + (result.Container || '?') + ', Video: ' + (result.VideoCodec || '?') + ', Audio: ' + (result.AudioCodec || '?');
+                }
+                msgEl.style.color = result.IsTranscodeProfile ? 'green' : 'orange';
+                msgEl.textContent = (result.IsTranscodeProfile ? '✅ ' : 'ℹ️ ') + result.Message + ' [' + info + ']';
+            }).catch(function (err) {
+                msgEl.style.color = 'red';
+                msgEl.textContent = 'Request failed: ' + (err.statusText || err.message || 'Unknown error');
+            });
+        });
+
+        // ── Load config into form ───────────────────────────────────────
+        function loadFormFromConfig(config) {
+            document.querySelector('#Host').value = config.Host || '';
+            document.querySelector('#Port').value = config.Port || '';
+            document.querySelector('#UseSSL').checked = config.UseSSL || false;
+            document.querySelector('#IgnoreCertificateErrors').checked = config.IgnoreCertificateErrors || false;
+            document.querySelector('#Webroot').value = config.Webroot || '';
+            document.querySelector('#AllowAnonymousAccess').checked = config.AllowAnonymousAccess || false;
+            document.querySelector('#Username').value = config.Username || '';
+            document.querySelector('#Password').value = config.Password || '';
+            document.querySelector('#AuthToken').value = config.AuthToken || '';
+            document.querySelector('#StreamingProfile').value = config.StreamingProfile || '';
+            document.querySelector('#FallbackMaxStreamingBitrate').value = config.FallbackMaxStreamingBitrate || '';
+            document.querySelector('#IsInfiniteStream').checked = config.IsInfiniteStream !== false;
+            document.querySelector('#SupportsDirectPlay').checked = config.SupportsDirectPlay !== false;
+            document.querySelector('#SupportsDirectStream').checked = config.SupportsDirectStream !== false;
+            document.querySelector('#SupportsTranscoding').checked = config.SupportsTranscoding || false;
+            document.querySelector('#SupportsProbing').checked = config.SupportsProbing || false;
+            document.querySelector('#IgnoreDts').checked = config.IgnoreDts || false;
+            document.querySelector('#BufferMs').value = config.BufferMs || '0';
+            document.querySelector('#AnalyzeDurationMs').value = config.AnalyzeDurationMs || '0';
+            document.querySelector('#EnableMediaInfoCache').checked = config.EnableMediaInfoCache !== false;
+            document.querySelector('#EnableTvhDvr').checked = config.EnableTvhDvr !== false;
+            document.querySelector('#Priority').value = config.Priority || '';
+            document.querySelector('#PrePaddingSeconds').value = config.PrePaddingSeconds || '';
+            document.querySelector('#PostPaddingSeconds').value = config.PostPaddingSeconds || '';
+            document.querySelector('#RecordingProfile').value = config.RecordingProfile || '';
+        }
+
+        // ── Load available profiles from TVHeadend ──────────────────────
+        function loadAvailableProfiles(config) {
+            var streamingSelect = document.querySelector('#StreamingProfile');
+            var recordingSelect = document.querySelector('#RecordingProfile');
+
+            var configuredStreaming = (config.StreamingProfile || '').trim();
+            var configuredRecording = (config.RecordingProfile || '').trim();
+            console.log('[TVH-Profiles] Config received — StreamingProfile:', JSON.stringify(configuredStreaming), 'RecordingProfile:', JSON.stringify(configuredRecording));
+
+            return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Diagnose'), dataType: 'json' }).then(function (diag) {
+                console.log('[TVH-Profiles] Diagnose — AvailableStreamingProfiles:', diag.AvailableStreamingProfiles, 'AvailableRecordingProfiles:', diag.AvailableRecordingProfiles);
+
+                // Collect streaming profiles: from TVHeadend + currently configured
+                var streamingProfiles = new Set();
+                if (diag.AvailableStreamingProfiles && diag.AvailableStreamingProfiles.length > 0) {
+                    diag.AvailableStreamingProfiles.forEach(function (p) { if (p && p.trim()) streamingProfiles.add(p); });
+                }
+                if (configuredStreaming) streamingProfiles.add(configuredStreaming);
+
+                // Collect recording/DVR profiles: from TVHeadend + currently configured
+                var recordingProfiles = new Set();
+                if (diag.AvailableRecordingProfiles && diag.AvailableRecordingProfiles.length > 0) {
+                    diag.AvailableRecordingProfiles.forEach(function (p) { if (p && p.trim()) recordingProfiles.add(p); });
+                }
+                if (configuredRecording) recordingProfiles.add(configuredRecording);
+
+                var sortedStreaming = Array.from(streamingProfiles).sort();
+                var sortedRecording = Array.from(recordingProfiles).sort();
+                console.log('[TVH-Profiles] Merged streaming profiles:', sortedStreaming);
+                console.log('[TVH-Profiles] Merged recording profiles:', sortedRecording);
+
+                function equalsIgnoreCase(a, b) { return (a || '').toLowerCase() === (b || '').toLowerCase(); }
+
+                // Rebuild streaming profile dropdown
+                streamingSelect.innerHTML = '<option value="">-- Select a profile --</option>';
+                sortedStreaming.forEach(function (profile) {
+                    var opt = document.createElement('option');
+                    opt.value = profile;
+                    opt.textContent = profile;
+                    var isMatch = configuredStreaming && equalsIgnoreCase(profile, configuredStreaming);
+                    if (isMatch) opt.selected = true;
+                    console.log('[TVH-Profiles]   Streaming option:', JSON.stringify(profile), 'selected:', isMatch);
+                    streamingSelect.appendChild(opt);
+                });
+
+                // Rebuild recording profile dropdown
+                recordingSelect.innerHTML = '<option value="">-- Select a profile --</option>';
+                sortedRecording.forEach(function (profile) {
+                    var opt = document.createElement('option');
+                    opt.value = profile;
+                    opt.textContent = profile;
+                    var isMatch = configuredRecording && equalsIgnoreCase(profile, configuredRecording);
+                    if (isMatch) opt.selected = true;
+                    console.log('[TVH-Profiles]   Recording option:', JSON.stringify(profile), 'selected:', isMatch);
+                    recordingSelect.appendChild(opt);
+                });
+
+                console.log('[TVH-Profiles] Final streamingSelect.value:', JSON.stringify(streamingSelect.value));
+                console.log('[TVH-Profiles] Final recordingSelect.value:', JSON.stringify(recordingSelect.value));
+            }).catch(function (err) {
+                console.warn('[TVH-Profiles] Could not load available profiles:', err);
+            });
+        }
+
+        document.querySelector('#TvHeadendApiConfigPage').addEventListener('pageshow', function () {
+            loadPluginInfo();
+            Dashboard.showLoadingMsg();
+            ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
+                loadFormFromConfig(config);
+                return loadAvailableProfiles(config);
+            }).then(function () {
+                Dashboard.hideLoadingMsg();
+                loadDiagnose();
+            }).catch(function (err) {
+                Dashboard.hideLoadingMsg();
+                console.error('Error loading configuration:', err);
             });
         });
 
@@ -757,58 +633,9 @@
         document.querySelector('#TvHeadendApiConfigForm').addEventListener('submit', function (e) {
             e.preventDefault();
             Dashboard.showLoadingMsg();
-            ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
-                // Connection
-                config.Host = document.querySelector('#Host').value;
-                config.Port = parseIntegerOrDefault('#Port', config.Port);
-                config.UseSSL = document.querySelector('#UseSSL').checked;
-                config.IgnoreCertificateErrors = document.querySelector('#IgnoreCertificateErrors').checked;
-                config.Webroot = document.querySelector('#Webroot').value;
-
-                // Authentication
-                config.AllowAnonymousAccess = document.querySelector('#AllowAnonymousAccess').checked;
-                config.Username = document.querySelector('#Username').value;
-                config.Password = document.querySelector('#Password').value;
-                config.AuthToken = document.querySelector('#AuthToken').value;
-
-                // Streaming
-                config.StreamingProfile = document.querySelector('#StreamingProfile').value;
-                config.FallbackMaxStreamingBitrate = parseIntegerOrDefault('#FallbackMaxStreamingBitrate', config.FallbackMaxStreamingBitrate);
-                config.IsInfiniteStream = document.querySelector('#IsInfiniteStream').checked;
-
-                // Playback Behaviour
-                config.SupportsDirectPlay = document.querySelector('#SupportsDirectPlay').checked;
-                config.SupportsDirectStream = document.querySelector('#SupportsDirectStream').checked;
-                config.SupportsTranscoding = document.querySelector('#SupportsTranscoding').checked;
-                config.SupportsProbing = document.querySelector('#SupportsProbing').checked;
-                config.IgnoreDts = document.querySelector('#IgnoreDts').checked;
-                config.BufferMs = parseIntegerOrDefault('#BufferMs', config.BufferMs);
-                config.AnalyzeDurationMs = parseIntegerOrDefault('#AnalyzeDurationMs', config.AnalyzeDurationMs);
-
-                // Fast Channel Switching
-                config.EnableFastChannelSwitching = document.querySelector('#EnableFastChannelSwitching').checked;
-                config.StreamContainer = document.querySelector('#StreamContainer').value;
-                config.VideoCodec = document.querySelector('#VideoCodec').value;
-                config.VideoWidth = parseIntegerOrDefault('#VideoWidth', config.VideoWidth);
-                config.VideoHeight = parseIntegerOrDefault('#VideoHeight', config.VideoHeight);
-                config.VideoFramerate = parseIntegerOrDefault('#VideoFramerate', config.VideoFramerate);
-                config.VideoBitrate = parseIntegerOrDefault('#VideoBitrate', config.VideoBitrate);
-                config.VideoIsInterlaced = document.querySelector('#VideoIsInterlaced').checked;
-                config.AudioCodec = document.querySelector('#AudioCodec').value;
-                config.AudioChannels = parseIntegerOrDefault('#AudioChannels', config.AudioChannels);
-                config.AudioSampleRate = parseIntegerOrDefault('#AudioSampleRate', config.AudioSampleRate);
-                config.AudioBitrate = parseIntegerOrDefault('#AudioBitrate', config.AudioBitrate);
-
-                // Recording
-                config.EnableTvhDvr = document.querySelector('#EnableTvhDvr').checked;
-                config.Priority = parseIntegerOrDefault('#Priority', config.Priority);
-                config.PrePaddingSeconds = parseIntegerOrDefault('#PrePaddingSeconds', config.PrePaddingSeconds);
-                config.PostPaddingSeconds = parseIntegerOrDefault('#PostPaddingSeconds', config.PostPaddingSeconds);
-                config.RecordingProfile = document.querySelector('#RecordingProfile').value;
-
-                ApiClient.updatePluginConfiguration(TvHeadendApiConfig.pluginUniqueId, config).then(function (result) {
-                    Dashboard.processPluginConfigurationUpdateResult(result);
-                });
+            saveCurrentFormToConfig().then(function (result) {
+                Dashboard.processPluginConfigurationUpdateResult(result);
+                loadDiagnose();
             });
             return false;
         });

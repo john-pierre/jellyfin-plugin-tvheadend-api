@@ -30,7 +30,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
         // Streaming settings
         this.StreamingProfile = "pass";
-        this.FallbackMaxStreamingBitrate = 30000000;
+        this.FallbackMaxStreamingBitrate = 3000000;
         this.IsInfiniteStream = true;
 
         // Playback behaviour
@@ -41,20 +41,7 @@ public class PluginConfiguration : BasePluginConfiguration
         this.IgnoreDts = false;
         this.BufferMs = 0;
         this.AnalyzeDurationMs = 0;
-
-        // Fast channel switching / stream format hints
-        this.EnableFastChannelSwitching = false;
-        this.StreamContainer = "mpegts";
-        this.VideoCodec = "h264";
-        this.VideoWidth = 1920;
-        this.VideoHeight = 1080;
-        this.VideoFramerate = 25;
-        this.VideoBitrate = 0;
-        this.VideoIsInterlaced = false;
-        this.AudioCodec = "aac";
-        this.AudioChannels = 2;
-        this.AudioSampleRate = 48000;
-        this.AudioBitrate = 0;
+        this.EnableMediaInfoCache = true;
 
         // Recording settings
         this.EnableTvhDvr = true;
@@ -157,6 +144,19 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets a value indicating whether Jellyfin should probe the stream
     /// to detect codec, resolution and other properties before playback.
     /// Disabling this speeds up channel switching when the format is known.
+    /// <para>
+    /// <strong>Jellyfin core behaviour when enabled:</strong>
+    /// Jellyfin's <c>AddMediaInfoWithProbe</c> always waits at least 3 000 ms before probing
+    /// (<c>Math.Max(3000, AnalyzeDurationMs)</c>) and then overrides <see cref="AnalyzeDurationMs"/>
+    /// to 3 000 ms for all live streams, regardless of the value set by this plugin.
+    /// Probe results are cached on disk under <c>&lt;data&gt;/cache/mediainfo/&lt;md5&gt;.json</c>,
+    /// keyed by the stream's LiveStreamId. The first probe takes 3+ seconds; subsequent opens
+    /// of the same channel use the disk cache and complete in milliseconds.
+    /// </para>
+    /// <para>
+    /// <strong>Recommended: <c>false</c>.</strong> The plugin queries TVHeadend for stream details
+    /// automatically, which avoids probing entirely and provides near-instant channel switching.
+    /// </para>
     /// </summary>
     public bool SupportsProbing { get; set; }
 
@@ -180,75 +180,31 @@ public class PluginConfiguration : BasePluginConfiguration
     /// This plugin value takes precedence over Jellyfin's global FFmpeg analyzeduration setting.
     /// When set to 0 and stream details are available from TVHeadend, the plugin defaults to 200 ms.
     /// When set to 0 and no stream details are available, Jellyfin's global FFmpeg config is used as fallback.
+    /// <para>
+    /// <strong>Important:</strong> When <see cref="SupportsProbing"/> is <c>true</c>, Jellyfin's core
+    /// (<c>MediaSourceManager.AddMediaInfoWithProbe</c>) unconditionally overrides this value to
+    /// <c>3000</c> ms for live streams. The plugin value only takes effect reliably when probing is
+    /// disabled and the plugin supplies stream details from TVHeadend.
+    /// </para>
     /// Note: <c>-probesize</c> is controlled by Jellyfin's global FFmpeg settings and cannot be
     /// overridden by this plugin.
     /// </summary>
     public int AnalyzeDurationMs { get; set; }
 
-    // ── Fast Channel Switching / Stream Format Hints ───────────────────
-
     /// <summary>
-    /// Gets or sets a value indicating whether Fast Channel Switching is enabled.
-    /// When enabled the plugin tells Jellyfin exactly which codecs and format
-    /// the stream uses so that probing can be skipped entirely.
-    /// Only enable this when TVHeadend uses a fixed transcoding profile.
+    /// Gets or sets a value indicating whether the plugin should read Jellyfin's mediainfo
+    /// probe cache files (<c>&lt;data&gt;/cache/mediainfo/*.json</c>) and use the detailed
+    /// stream data from previous FFmpeg probes when building <c>MediaSourceInfo</c>.
+    /// <para>
+    /// When enabled, if a cache file exists for a channel (created by a prior probe run),
+    /// the plugin uses the probe-quality <c>MediaStreams</c> (with ColorRange, ColorSpace,
+    /// Profile, Level, PixelFormat, BitDepth, RealFrameRate, DisplayTitle, etc.)
+    /// instead of the synthetically constructed streams from TVHeadend's service API.
+    /// This provides the best of both worlds: probe-quality metadata without the 3+ second
+    /// probe delay on every channel open.
+    /// </para>
     /// </summary>
-    public bool EnableFastChannelSwitching { get; set; }
-
-    /// <summary>
-    /// Gets or sets the container format delivered by TVHeadend (e.g. "mpegts", "matroska").
-    /// </summary>
-    public string StreamContainer { get; set; }
-
-    /// <summary>
-    /// Gets or sets the video codec (e.g. "h264", "hevc", "mpeg2video").
-    /// </summary>
-    public string VideoCodec { get; set; }
-
-    /// <summary>
-    /// Gets or sets the horizontal video resolution in pixels.
-    /// </summary>
-    public int VideoWidth { get; set; }
-
-    /// <summary>
-    /// Gets or sets the vertical video resolution in pixels.
-    /// </summary>
-    public int VideoHeight { get; set; }
-
-    /// <summary>
-    /// Gets or sets the video frame rate. Typical PAL value: 25.
-    /// </summary>
-    public int VideoFramerate { get; set; }
-
-    /// <summary>
-    /// Gets or sets the video bitrate in bits per second. 0 = unknown.
-    /// </summary>
-    public int VideoBitrate { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether the video is interlaced.
-    /// </summary>
-    public bool VideoIsInterlaced { get; set; }
-
-    /// <summary>
-    /// Gets or sets the audio codec (e.g. "aac", "ac3", "eac3", "mp2").
-    /// </summary>
-    public string AudioCodec { get; set; }
-
-    /// <summary>
-    /// Gets or sets the number of audio channels (2 = stereo, 6 = 5.1).
-    /// </summary>
-    public int AudioChannels { get; set; }
-
-    /// <summary>
-    /// Gets or sets the audio sample rate in Hz (e.g. 48000).
-    /// </summary>
-    public int AudioSampleRate { get; set; }
-
-    /// <summary>
-    /// Gets or sets the audio bitrate in bits per second. 0 = unknown.
-    /// </summary>
-    public int AudioBitrate { get; set; }
+    public bool EnableMediaInfoCache { get; set; }
 
     // ── Recording (DVR) ────────────────────────────────────────────────
 

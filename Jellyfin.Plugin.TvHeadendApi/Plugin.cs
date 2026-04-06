@@ -55,6 +55,12 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public static Plugin? Instance { get; private set; }
 
     /// <summary>
+    /// Gets the Jellyfin application cache directory path.
+    /// Used by <see cref="LiveTvService"/> to read Jellyfin's mediainfo probe cache files.
+    /// </summary>
+    public string CachePath => ApplicationPaths.CachePath;
+
+    /// <summary>
     /// Gets the name of the plugin.
     /// This property provides a human-readable name that identifies the plugin within the Jellyfin server.
     /// The name is displayed in the Jellyfin web UI, allowing users to distinguish this plugin from others.

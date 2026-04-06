@@ -23,8 +23,10 @@ A Jellyfin plugin that integrates [TVHeadend](https://tvheadend.org) exclusively
   - [Recording](#recording)
 - [Developer Guide](#developer-guide)
   - [Prerequisites](#prerequisites)
+  - [AI Agent Instructions](#ai-agent-instructions)
   - [Building from Source](#building-from-source)
   - [Docker Development Environment](#docker-development-environment)
+  - [Analyzer Test Plan Preview](#analyzer-test-plan-preview)
   - [Project Structure](#project-structure)
 - [Release Process](#release-process)
 - [Contributing](#contributing)
@@ -39,6 +41,7 @@ A Jellyfin plugin that integrates [TVHeadend](https://tvheadend.org) exclusively
 - **Timers** — Create, update, and cancel single recording timers.
 - **Series Timers** — Manage automatic recording rules (autorec) from Jellyfin.
 - **Channel Metadata** — Channel icons and tags from TVHeadend.
+- **Dynamic Profile Selection** — Streaming and Recording profiles are auto-populated from available TVHeadend profiles.
 
 ## Requirements
 
@@ -100,6 +103,25 @@ A Jellyfin plugin that integrates [TVHeadend](https://tvheadend.org) exclusively
 | **Is Infinite Stream**         | Treat the stream as infinite (live TV).          | `true`       |
 | **Ignore DTS**                 | Ignore Decode Time Stamps for compatibility.     | `false`      |
 
+#### How Probing and Caching Work (Jellyfin Core Behaviour)
+
+Understanding how Jellyfin handles live TV stream probing is critical for optimal channel-switch speed:
+
+| Step | What Jellyfin does | Time cost |
+|------|--------------------|-----------|
+| 1 | Check disk cache (`<data>/cache/mediainfo/<md5>.json`) | ~0 ms |
+| 2 | If cache miss: wait `Math.Max(3000, AnalyzeDurationMs)` ms | **≥ 3 000 ms** |
+| 3 | Override `AnalyzeDurationMs` to `3000` for all live streams | — |
+| 4 | Run FFmpeg probe (`-analyzeduration 3000000`) | ~1–5 s |
+| 5 | Save result to disk cache for future opens | ~0 ms |
+
+**Key takeaways:**
+
+- **First open of a channel with probing enabled always takes ≥ 3 seconds** because of the hard-coded `Math.Max(3000, ...)` delay in Jellyfin's `AddMediaInfoWithProbe`.
+- **Subsequent opens** of the same channel hit the **disk cache** and complete in milliseconds (the probe result is stored as `<data>/cache/mediainfo/<md5>.json`).
+- Jellyfin **always overrides** the plugin's `AnalyzeDurationMs` to `3000` ms for live streams when probing is active — the plugin value has no effect in that case.
+- **Recommended approach:** Leave **Stream Probing OFF** (`SupportsProbing = false`). The plugin queries TVHeadend's service API for codec, resolution, and bitrate data, builds a detailed `MediaSourceInfo`, and tells Jellyfin to skip probing entirely. This gives near-instant channel switching on every open, not just cached ones.
+
 ### Recording
 
 | Setting              | Description                                          | Default   |
@@ -115,6 +137,23 @@ A Jellyfin plugin that integrates [TVHeadend](https://tvheadend.org) exclusively
 
 - [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or later
 - (Optional) [Docker](https://www.docker.com/) for the containerized development environment
+
+### AI Agent Instructions
+
+This repository includes explicit guidance for coding agents and Copilot-based workflows.
+
+- `AGENTS.md` - canonical quick-start for any AI coding agent in this repo.
+- `.github/copilot-instructions.md` - GitHub Copilot-specific coding and testing guidance.
+- `docs/ai/README.md` - AI docs index.
+- `docs/ai/SKILLS.md` - plugin domain skills and task playbooks.
+- `docs/ai/INSTRUCTIONS.md` - step-by-step implementation and validation flow.
+
+If AI guidance and other docs ever conflict, follow this order:
+
+1. Security and policy constraints from the active environment.
+2. `AGENTS.md`.
+3. `.github/copilot-instructions.md`.
+4. `docs/ai/*.md`.
 
 ### Building from Source
 
@@ -216,6 +255,29 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev-build.ps1 -DryRun
 ```
 
 The current dev version state is stored in `./.docker/dev-version.txt`.
+
+### Analyzer Test Plan Preview
+
+Before channel tests start, `scripts/analyze-tvh.ps1` now prints a pre-run overview that shows exactly what will be tested and where outputs are written.
+
+It includes:
+
+- selected channels (number, name, TVHeadend id)
+- planned run matrix (`profile x scenario`)
+- scenario mode per run (DirectPlay/DirectStream/Transcoding/Probing/AnalyzeDuration where applicable)
+- artifact directories per run under `reports/artifacts_<timestamp>/...`
+- report output path and a minimum runtime estimate
+
+Example run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\analyze-tvh.ps1 -MaxChannels 3 -Scenarios current -StreamingProfiles jellyfin,pass -SkipBuild
+```
+
+Generated outputs are written under:
+
+- `reports/report_<timestamp>.md`
+- `reports/artifacts_<timestamp>/...`
 
 #### Migration for older local Docker data
 
