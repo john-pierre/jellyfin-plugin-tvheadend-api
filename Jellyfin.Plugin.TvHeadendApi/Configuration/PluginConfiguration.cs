@@ -37,11 +37,11 @@ public class PluginConfiguration : BasePluginConfiguration
         this.SupportsDirectPlay = true;
         this.SupportsDirectStream = true;
         this.SupportsTranscoding = false;
-        this.SupportsProbing = false;
+        this.SupportsProbing = true;
         this.IgnoreDts = false;
         this.BufferMs = 0;
-        this.AnalyzeDurationMs = 0;
-        this.EnableMediaInfoCache = true;
+        this.AnalyzeDurationMs = 200;
+        this.EnableMediaInfoCacheWrite = true;
 
         // Recording settings
         this.EnableTvhDvr = true;
@@ -143,19 +143,19 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>
     /// Gets or sets a value indicating whether Jellyfin should probe the stream
     /// to detect codec, resolution and other properties before playback.
-    /// Disabling this speeds up channel switching when the format is known.
     /// <para>
-    /// <strong>Jellyfin core behaviour when enabled:</strong>
-    /// Jellyfin's <c>AddMediaInfoWithProbe</c> always waits at least 3 000 ms before probing
-    /// (<c>Math.Max(3000, AnalyzeDurationMs)</c>) and then overrides <see cref="AnalyzeDurationMs"/>
-    /// to 3 000 ms for all live streams, regardless of the value set by this plugin.
-    /// Probe results are cached on disk under <c>&lt;data&gt;/cache/mediainfo/&lt;md5&gt;.json</c>,
-    /// keyed by the stream's LiveStreamId. The first probe takes 3+ seconds; subsequent opens
-    /// of the same channel use the disk cache and complete in milliseconds.
+    /// <strong>Recommended: <c>true</c></strong> when using the "jellyfin" transcode profile
+    /// together with <see cref="EnableMediaInfoCacheWrite"/>. The plugin pre-creates cache files
+    /// so Jellyfin finds probe data instantly without actually running FFmpeg — resulting in
+    /// channel switching under 3 seconds even on the very first tune.
     /// </para>
     /// <para>
-    /// <strong>Recommended: <c>false</c>.</strong> The plugin queries TVHeadend for stream details
-    /// automatically, which avoids probing entirely and provides near-instant channel switching.
+    /// <strong>Jellyfin core behaviour when enabled:</strong>
+    /// Jellyfin's <c>AddMediaInfoWithProbe</c> checks the on-disk cache
+    /// (<c>&lt;data&gt;/cache/mediainfo/&lt;md5&gt;.json</c>) first. If a cache file exists
+    /// (written by the plugin or by a previous FFmpeg probe), it is used immediately.
+    /// Only when no cache file exists does Jellyfin fall back to an actual FFmpeg probe
+    /// (which adds 3+ seconds).
     /// </para>
     /// </summary>
     public bool SupportsProbing { get; set; }
@@ -174,11 +174,12 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>
     /// Gets or sets the FFmpeg analyze duration in milliseconds.
+    /// Default: 200 ms for fast live TV startup.
     /// Jellyfin multiplies this value by 1 000 and passes it to ffmpeg as
     /// <c>-analyzeduration {value × 1000}</c> (i.e. in microseconds).
     /// Example: 200 ms → <c>-analyzeduration 200000</c> (200 000 µs).
     /// This plugin value takes precedence over Jellyfin's global FFmpeg analyzeduration setting.
-    /// When set to 0 and stream details are available from TVHeadend, the plugin defaults to 200 ms.
+    /// When set to 0 and stream details are available from TVHeadend, the plugin falls back to 200 ms.
     /// When set to 0 and no stream details are available, Jellyfin's global FFmpeg config is used as fallback.
     /// <para>
     /// <strong>Important:</strong> When <see cref="SupportsProbing"/> is <c>true</c>, Jellyfin's core
@@ -192,19 +193,20 @@ public class PluginConfiguration : BasePluginConfiguration
     public int AnalyzeDurationMs { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether the plugin should read Jellyfin's mediainfo
-    /// probe cache files (<c>&lt;data&gt;/cache/mediainfo/*.json</c>) and use the detailed
-    /// stream data from previous FFmpeg probes when building <c>MediaSourceInfo</c>.
+    /// Gets or sets a value indicating whether the plugin should pre-create Jellyfin mediainfo
+    /// cache files when no cache entry exists for a channel.
     /// <para>
-    /// When enabled, if a cache file exists for a channel (created by a prior probe run),
-    /// the plugin uses the probe-quality <c>MediaStreams</c> (with ColorRange, ColorSpace,
-    /// Profile, Level, PixelFormat, BitDepth, RealFrameRate, DisplayTitle, etc.)
-    /// instead of the synthetically constructed streams from TVHeadend's service API.
-    /// This provides the best of both worlds: probe-quality metadata without the 3+ second
-    /// probe delay on every channel open.
+    /// When enabled, the plugin writes a cache file with H264+AAC stream metadata
+    /// (matching the output of TVHeadend's "jellyfin" transcode profile) so that Jellyfin
+    /// can skip actual FFmpeg probing. This makes even the very first tune to a channel fast.
+    /// </para>
+    /// <para>
+    /// <strong>Requires:</strong> The TVHeadend streaming profile must produce MP4/H264/AAC
+    /// output (e.g. the "jellyfin" profile). Do not enable this with "pass" or other
+    /// variable-output profiles.
     /// </para>
     /// </summary>
-    public bool EnableMediaInfoCache { get; set; }
+    public bool EnableMediaInfoCacheWrite { get; set; }
 
     // ── Recording (DVR) ────────────────────────────────────────────────
 

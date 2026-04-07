@@ -103,6 +103,27 @@ A Jellyfin plugin that integrates [TVHeadend](https://tvheadend.org) exclusively
 | **Is Infinite Stream**         | Treat the stream as infinite (live TV).          | `true`       |
 | **Ignore DTS**                 | Ignore Decode Time Stamps for compatibility.     | `false`      |
 
+#### Auto-Created Transcoding Profiles
+
+The plugin can automatically create optimized transcoding profiles in TVHeadend for fast channel switching. Click **"Create 'jellyfin' Profile"** in the plugin configuration page to automatically create the following profiles:
+
+| Profile Name | Type | Codec | Hardware Acceleration | Use Case |
+|--------------|------|-------|----------------------|----------|
+| **jellyfin-h264** | Video (libx264) | H.264 | None | CPU-based transcoding for any system |
+| **jellyfin-h264-intel** | Video (Intel QSV) | H.264 | Intel Quick Sync Video | **Recommended for Intel CPUs** (7th gen or newer with iGPU) |
+| **jellyfin-aac** | Audio | AAC | None | Audio codec profile (48 kHz, 3-channel layout) |
+| **jellyfin** | Streaming Profile | H.264 + AAC | Depends on video profile | Main streaming profile that uses the codec profiles above |
+
+**Which video profile should I use?**
+
+- **If you have an Intel CPU with integrated graphics (iGPU):** Use the `jellyfin-h264-intel` profile. It leverages Intel Quick Sync Video for hardware-accelerated encoding, reducing CPU load significantly.
+  - Supported: 7th gen Intel Core or newer with iGPU
+  - Requires device path: `/dev/dri/renderD128` (adjust if different on your system)
+  
+- **If you don't have Intel Quick Sync or prefer CPU encoding:** Use the `jellyfin-h264` profile with the standard libx264 encoder.
+
+After creating the profiles, set **Streaming Profile** to `jellyfin` in the plugin configuration.
+
 #### How Probing and Caching Work (Jellyfin Core Behaviour)
 
 Understanding how Jellyfin handles live TV stream probing is critical for optimal channel-switch speed:

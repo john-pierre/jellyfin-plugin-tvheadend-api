@@ -46,15 +46,6 @@ public class TvHeadendApiController : ControllerBase
         "AC-4"
     };
 
-    private static readonly string[] AvailableTestProfiles =
-    {
-        "pass",
-        "jellyfin",
-        "jellyfin-ultrafast",
-        "jellyfin-fast",
-        "jellyfin-balanced"
-    };
-
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -127,140 +118,6 @@ public class TvHeadendApiController : ControllerBase
     }
 
     /// <summary>
-    /// Detects the configured TVHeadend streaming profile and returns its format settings
-    /// for diagnostic purposes (profile type, container, codecs, bitrate, etc.).
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A JSON object describing the detected profile, or an error message.</returns>
-    [HttpGet("DetectProfile")]
-    public async Task<ActionResult<ProfileDetectionResult>> DetectProfile(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var config = Plugin.Instance?.Configuration;
-            if (config == null)
-            {
-                return BadRequest(new ProfileDetectionResult { Success = false, Message = "Plugin configuration is not available." });
-            }
-
-            if (string.IsNullOrWhiteSpace(config.StreamingProfile))
-            {
-                return BadRequest(new ProfileDetectionResult { Success = false, Message = "No streaming profile configured." });
-            }
-
-            using var httpClient = BuildHttpClient(config);
-            var baseUrl = $"{(config.UseSSL ? "https" : "http")}://{config.Host}:{config.Port}";
-            var webRoot = string.IsNullOrWhiteSpace(config.Webroot) ? "/" : config.Webroot.TrimEnd('/') + "/";
-
-            // Step 1: Fetch profile list to find the UUID
-            var listUrl = $"{baseUrl}{webRoot}api/profile/list";
-            _logger.LogInformation("Fetching profile list from TVHeadend at {Url}.", listUrl);
-
-            var listResponse = await httpClient.GetStringAsync(listUrl, cancellationToken).ConfigureAwait(false);
-            var profileList = JsonSerializer.Deserialize<ProfileListResponse>(listResponse, JsonOptions);
-
-            var matchingProfile = profileList?.Entries?.FirstOrDefault(e =>
-                string.Equals(e.Val, config.StreamingProfile, StringComparison.OrdinalIgnoreCase));
-
-            if (matchingProfile == null)
-            {
-                return Ok(new ProfileDetectionResult
-                {
-                    Success = false,
-                    Message = $"Profile '{config.StreamingProfile}' not found in TVHeadend. Available profiles: {string.Join(", ", profileList?.Entries?.Select(e => e.Val) ?? Array.Empty<string>())}."
-                });
-            }
-
-            // Step 2: Load the full profile details via idnode/load
-            var loadUrl = $"{baseUrl}{webRoot}api/idnode/load?uuid={matchingProfile.Key}";
-            _logger.LogInformation("Loading profile details from TVHeadend at {Url}.", loadUrl);
-
-            var loadResponse = await httpClient.GetStringAsync(loadUrl, cancellationToken).ConfigureAwait(false);
-
-            using var doc = JsonDocument.Parse(loadResponse);
-            var entries = doc.RootElement.GetProperty("entries");
-            if (entries.GetArrayLength() == 0)
-            {
-                return Ok(new ProfileDetectionResult { Success = false, Message = "TVHeadend returned empty profile data." });
-            }
-
-            var entry = entries[0];
-
-            // Determine profile class
-            var profileClass = GetStringProp(entry, "class") ?? string.Empty;
-            var profileName = GetStringProp(entry, "name") ?? config.StreamingProfile;
-
-            var result = new ProfileDetectionResult
-            {
-                Success = true,
-                ProfileName = profileName,
-                ProfileClass = profileClass,
-            };
-
-            if (profileClass.Contains("transcode", StringComparison.OrdinalIgnoreCase))
-            {
-                var videoCodecProfileRef = GetStringProp(entry, "pro_vcodec") ?? string.Empty;
-                var audioCodecProfileRef = GetStringProp(entry, "pro_acodec") ?? string.Empty;
-                var rawVideoCodec = GetStringProp(entry, "vcodec") ?? string.Empty;
-                var rawAudioCodec = GetStringProp(entry, "acodec") ?? string.Empty;
-                var videoCodecProfileDetails = await GetCodecProfileDetailsByNameAsync(httpClient, baseUrl, webRoot, videoCodecProfileRef, cancellationToken).ConfigureAwait(false);
-                var audioCodecProfileDetails = await GetCodecProfileDetailsByNameAsync(httpClient, baseUrl, webRoot, audioCodecProfileRef, cancellationToken).ConfigureAwait(false);
-
-                if (string.IsNullOrWhiteSpace(rawVideoCodec) && !string.IsNullOrWhiteSpace(videoCodecProfileDetails?.CodecClass))
-                {
-                    rawVideoCodec = videoCodecProfileDetails.CodecClass;
-                }
-
-                if (string.IsNullOrWhiteSpace(rawAudioCodec) && !string.IsNullOrWhiteSpace(audioCodecProfileDetails?.CodecClass))
-                {
-                    rawAudioCodec = audioCodecProfileDetails.CodecClass;
-                }
-
-                result.IsTranscodeProfile = true;
-                result.Container = MapContainer(GetStringProp(entry, "container") ?? GetIntProp(entry, "container")?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
-                result.VideoCodecProfile = videoCodecProfileRef;
-                result.AudioCodecProfile = audioCodecProfileRef;
-                result.VideoCodec = ResolveVideoCodec(rawVideoCodec, videoCodecProfileRef);
-                result.AudioCodec = ResolveAudioCodec(rawAudioCodec, audioCodecProfileRef);
-                // Prefer codec-profile deinterlace flag because stream profile itself often doesn't carry it.
-                var deinterlaceEnabled = videoCodecProfileDetails?.Deinterlace ?? GetBoolProp(entry, "deinterlace") ?? false;
-                result.VideoIsInterlaced = !deinterlaceEnabled;
-
-                var streamVideoBitrate = GetIntProp(entry, "vbitrate") ?? 0;
-                var streamAudioBitrate = GetIntProp(entry, "abitrate") ?? 0;
-                result.VideoBitrate = (streamVideoBitrate > 0 ? streamVideoBitrate : videoCodecProfileDetails?.BitRateKbps ?? 0) * 1000;
-                result.AudioBitrate = (streamAudioBitrate > 0 ? streamAudioBitrate : audioCodecProfileDetails?.BitRateKbps ?? 0) * 1000;
-                result.VideoHeight = GetIntProp(entry, "resolution") ?? 0;
-                result.AudioChannels = GetIntProp(entry, "channels") ?? 0;
-                result.Message = $"Transcode profile '{profileName}' detected. Format hints have been extracted.";
-            }
-            else
-            {
-                result.IsTranscodeProfile = false;
-                result.Message = $"Profile '{profileName}' is of type '{profileClass}'. "
-                    + "This is NOT a transcode profile � the output format varies per channel. "
-                    + "The plugin will query TVHeadend for stream details per channel at runtime.";
-            }
-
-            return Ok(result);
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError(ex, "Failed to connect to TVHeadend.");
-            return Ok(new ProfileDetectionResult
-            {
-                Success = false,
-                Message = $"Cannot connect to TVHeadend: {ex.Message}. Check your connection and authentication settings."
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error detecting streaming profile.");
-            return Ok(new ProfileDetectionResult { Success = false, Message = $"Unexpected error: {ex.Message}" });
-        }
-    }
-
-    /// <summary>
     /// Performs a comprehensive system diagnostic: tests TVHeadend connectivity, measures
     /// latency, reports server info, channel count, available profiles, DVR entries,
     /// validates configuration for best compatibility, and returns a scored result
@@ -297,7 +154,7 @@ public class TvHeadendApiController : ControllerBase
         report.PluginSettings.Add(
             config.AnalyzeDurationMs > 0
                 ? $"AnalyzeDuration: {config.AnalyzeDurationMs} ms (explicit) ? ffmpeg receives -analyzeduration {ffmpegMicroseconds} �s"
-                : $"AnalyzeDuration: 0 (auto) ? plugin will default to 200 ms when stream details are available ? ffmpeg receives -analyzeduration 200000 �s. When probing, Jellyfin's global FFmpeg analyzeduration is used.");
+                : $"AnalyzeDuration: 0 (legacy auto mode) ? plugin falls back to 200 ms when stream details are available ? ffmpeg receives -analyzeduration 200000 �s. When probing, Jellyfin's global FFmpeg analyzeduration is used.");
         report.PluginSettings.Add($"BufferMs: {(config.BufferMs > 0 ? $"{config.BufferMs} ms" : "0 (Jellyfin default)")}");
 
         // -- Jellyfin global FFmpeg settings (via reflection) ------------
@@ -458,13 +315,26 @@ public class TvHeadendApiController : ControllerBase
                         if (profileDoc.RootElement.TryGetProperty("entries", out var entries) && entries.GetArrayLength() > 0)
                         {
                             var entry = entries[0];
-                            profileClass = GetStringProp(entry, "class") ?? "unknown";
-                            var container = MapContainer(GetStringProp(entry, "container") ?? GetIntProp(entry, "container")?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
-                            var proVideoCodec = GetStringProp(entry, "pro_vcodec") ?? string.Empty;
-                            var proAudioCodec = GetStringProp(entry, "pro_acodec") ?? string.Empty;
-                            var srcVideoCodecs = GetStringArrayProp(entry, "src_vcodec");
-                            var srcAudioCodecs = GetStringArrayProp(entry, "src_acodec");
-                            var deinterlace = GetBoolProp(entry, "deinterlace");
+                            profileClass = GetStringPropOrParam(entry, "class") ?? "unknown";
+                            var container = MapContainer(GetStringPropOrParam(entry, "container") ?? GetIntPropOrParam(entry, "container")?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
+                            if (string.IsNullOrWhiteSpace(container))
+                            {
+                                container = MapProfileClassToContainer(profileClass);
+                            }
+
+                            var proVideoCodec = GetStringPropOrParam(entry, "pro_vcodec")
+                                ?? GetStringPropOrParam(entry, "vcodec")
+                                ?? string.Empty;
+                            var proAudioCodec = GetStringPropOrParam(entry, "pro_acodec")
+                                ?? GetStringPropOrParam(entry, "acodec")
+                                ?? string.Empty;
+                            var srcVideoCodecs = GetStringArrayPropOrParam(entry, "src_vcodec");
+                            var srcAudioCodecs = GetStringArrayPropOrParam(entry, "src_acodec");
+                            var deinterlace = GetBoolPropOrParam(entry, "deinterlace");
+                            if (deinterlace != true && !string.IsNullOrWhiteSpace(proVideoCodec))
+                            {
+                                deinterlace = await GetCodecProfileBoolSettingAsync(httpClient, baseUrl, webRoot, proVideoCodec, "deinterlace", cancellationToken).ConfigureAwait(false) ?? deinterlace;
+                            }
 
                             report.PluginSettings.Add($"TVH stream profile: class={profileClass}, container={(string.IsNullOrWhiteSpace(container) ? "(unknown)" : container)}");
                             report.PluginSettings.Add($"TVH codec links: video={(string.IsNullOrWhiteSpace(proVideoCodec) ? "(not linked)" : proVideoCodec)}, audio={(string.IsNullOrWhiteSpace(proAudioCodec) ? "(not linked)" : proAudioCodec)}");
@@ -483,13 +353,13 @@ public class TvHeadendApiController : ControllerBase
                                 {
                                     if (string.IsNullOrWhiteSpace(proVideoCodec))
                                     {
-                                        report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Video Codec Link", Status = "WARNING", Message = "No linked video codec profile (pro_vcodec).", Recommendation = "Link a video codec profile in TVHeadend for consistent output." });
+                                        report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Video Codec Link", Status = "WARNING", Message = "No linked video codec profile (pro_vcodec / vcodec).", Recommendation = "Link a video codec profile in TVHeadend for consistent output." });
                                         scoreDeductions += 5;
                                     }
 
                                     if (string.IsNullOrWhiteSpace(proAudioCodec))
                                     {
-                                        report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Audio Codec Link", Status = "WARNING", Message = "No linked audio codec profile (pro_acodec).", Recommendation = "Link an audio codec profile in TVHeadend for consistent output." });
+                                        report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Audio Codec Link", Status = "WARNING", Message = "No linked audio codec profile (pro_acodec / acodec).", Recommendation = "Link an audio codec profile in TVHeadend for consistent output." });
                                         scoreDeductions += 5;
                                     }
                                 }
@@ -604,39 +474,7 @@ public class TvHeadendApiController : ControllerBase
         }
 
         // -- Playback behaviour checks ------------------------------------
-        if (config.SupportsTranscoding && config.SupportsDirectPlay)
-        {
-            report.Checks.Add(new DiagnoseCheck
-            {
-                Category = "Playback",
-                Name = "Direct Play + Transcoding",
-                Status = "WARNING",
-                Message = "Both Direct Play and Transcoding are enabled.",
-                Recommendation = "For live TV, Direct Play alone is usually sufficient and faster."
-            });
-            scoreDeductions += 5;
-        }
-        else
-        {
-            report.Checks.Add(new DiagnoseCheck { Category = "Playback", Name = "Playback Mode", Status = "OK", Message = $"DirectPlay={config.SupportsDirectPlay}, DirectStream={config.SupportsDirectStream}, Transcoding={config.SupportsTranscoding}" });
-        }
-
-        if (config.SupportsProbing)
-        {
-            report.Checks.Add(new DiagnoseCheck
-            {
-                Category = "Playback",
-                Name = "Stream Probing",
-                Status = "INFO",
-                Message = "Probing is enabled. Channel switching may be slower due to stream analysis.",
-                Recommendation = "Disable probing for faster channel switching. The plugin queries TVHeadend for stream details automatically."
-            });
-            scoreDeductions += 10;
-        }
-        else
-        {
-            report.Checks.Add(new DiagnoseCheck { Category = "Playback", Name = "Stream Probing", Status = "OK", Message = "Probing disabled. Plugin provides stream details from TVHeadend or uses AnalyzeDuration as fallback." });
-        }
+        report.Checks.Add(new DiagnoseCheck { Category = "Playback", Name = "Playback Mode", Status = "OK", Message = $"DirectPlay={config.SupportsDirectPlay}, DirectStream={config.SupportsDirectStream}, Transcoding={config.SupportsTranscoding}" });
 
         // AnalyzeDuration checks
         if (config.AnalyzeDurationMs > 1000)
@@ -671,7 +509,7 @@ public class TvHeadendApiController : ControllerBase
 
         if (!config.SupportsProbing && config.AnalyzeDurationMs == 0)
         {
-            report.Recommendations.Add("Probing is off and AnalyzeDuration is 0. The plugin will query TVHeadend for stream details and default to 200ms. Consider setting an explicit AnalyzeDuration (e.g. 200ms) as fallback.");
+            report.Recommendations.Add("Probing is off and AnalyzeDuration is 0. This legacy auto mode falls back to 200ms when TVHeadend stream details are available. Consider setting an explicit AnalyzeDuration of 200ms to match the current default.");
         }
 
         // Buffer check
@@ -693,36 +531,6 @@ public class TvHeadendApiController : ControllerBase
         }
 
         // -- FFmpeg global settings checks --------------------------------
-        if (!string.IsNullOrWhiteSpace(jellyfinProbeSize))
-        {
-            if (int.TryParse(jellyfinProbeSize, out var probeSizeVal) && probeSizeVal <= 1000000)
-            {
-                report.Checks.Add(new DiagnoseCheck { Category = "FFmpeg", Name = "ProbeSize", Status = "OK", Message = $"Jellyfin FFmpeg ProbeSize: {jellyfinProbeSize} (good)." });
-            }
-            else
-            {
-                report.Checks.Add(new DiagnoseCheck
-                {
-                    Category = "FFmpeg",
-                    Name = "ProbeSize",
-                    Status = "WARNING",
-                    Message = $"Jellyfin FFmpeg ProbeSize: {jellyfinProbeSize} (may be high).",
-                    Recommendation = "Set ProbeSize to 1000000 or lower in Dashboard ? Playback ? FFmpeg for faster startup."
-                });
-                scoreDeductions += 5;
-            }
-        }
-        else
-        {
-            report.Checks.Add(new DiagnoseCheck
-            {
-                Category = "FFmpeg",
-                Name = "ProbeSize",
-                Status = "INFO",
-                Message = "Jellyfin FFmpeg ProbeSize: not set (using Jellyfin default).",
-                Recommendation = "Set ProbeSize to 1000000 in Dashboard → Playback → FFmpeg, or via JELLYFIN_FFmpeg__ProbeSize environment variable for faster channel switching."
-            });
-        }
 
         if (!string.IsNullOrWhiteSpace(jellyfinAnalyzeDuration))
         {
@@ -868,18 +676,19 @@ public class TvHeadendApiController : ControllerBase
                 var videoConf = new System.Text.Json.Nodes.JsonObject
                 {
                     ["name"] = videoCodecProfileName,
-                    ["description"] = "Auto-created by Jellyfin plugin. H.264 with 5 Mbps cap and repeated SPS/PPS headers for fast channel switching.",
+                    ["description"] = "",
                     ["deinterlace"] = true,
                     ["height"] = 0,
                     ["scaling_mode"] = 0,
                     ["hwaccel"] = false,
-                    ["bit_rate"] = 5000,
+                    ["max_bit_rate"] = 1000,
                     ["crf"] = 0,
-                    ["profile"] = -99,
-                    ["pix_fmt"] = -1,
+                    ["profile"] = 77,
+                    ["pix_fmt"] = 46,
                     ["preset"] = "faster",
-                    ["tune"] = "zerolatency",
-                    ["params"] = "repeat-headers=1:aud=1",
+                    ["quality"] = 5,
+                    ["level"] = 30,
+                    ["params"] = "",
                 };
 
                 var created = await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "libx264", videoConf, cancellationToken).ConfigureAwait(false);
@@ -908,9 +717,13 @@ public class TvHeadendApiController : ControllerBase
                 var audioConf = new System.Text.Json.Nodes.JsonObject
                 {
                     ["name"] = audioCodecProfileName,
-                    ["description"] = "Auto-created by Jellyfin plugin. AAC 128 kbps for fast channel switching.",
-                    ["bit_rate"] = 128,
-                    ["profile"] = -99,
+                    ["description"] = "",
+                    ["bit_rate"] = 0,
+                    ["profile"] = 0,
+                    ["channel_layout"] = 3,
+                    ["sample_rate"] = 48000,
+                    ["sample_fmt"] = 8,
+                    ["coder"] = "twoloop",
                 };
 
                 var created = await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "aac", audioConf, cancellationToken).ConfigureAwait(false);
@@ -958,8 +771,9 @@ public class TvHeadendApiController : ControllerBase
                 {
                     ["enabled"] = true,
                     ["name"] = "jellyfin",
-                    ["comment"] = "Auto-created by Jellyfin TvHeadendApi plugin for fast channel switching.",
-                    ["container"] = 2,
+                    ["comment"] = "",
+                    ["container"] = 9,
+                    ["timeout"] = 1,
                     ["vcodec"] = useVideoCodec,
                     ["acodec"] = useAudioCodec,
                     ["resolution"] = 0,
@@ -1091,262 +905,12 @@ public class TvHeadendApiController : ControllerBase
     {
         try
         {
-            var listUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
-            var response = await httpClient.GetStringAsync(listUrl, cancellationToken).ConfigureAwait(false);
-            var list = JsonSerializer.Deserialize<CodecProfileListResponse>(response, JsonOptions);
-            return list?.Entries?.Any(e => string.Equals(e.Val, profileName, StringComparison.OrdinalIgnoreCase)) == true;
+            return await FindCodecProfileEntryByReferenceAsync(httpClient, baseUrl, webRoot, profileName, cancellationToken).ConfigureAwait(false) != null;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Could not list codec profiles from TVHeadend.");
             return false;
-        }
-    }
-
-    /// <summary>
-    /// Creates multiple TVHeadend profile variants optimised for fast channel switching benchmarking.
-    /// Creates: jellyfin-ultrafast (2 Mbps), jellyfin-fast (3 Mbps), jellyfin-balanced (5 Mbps) codec profiles
-    /// and corresponding streaming profiles: jellyfin-ultrafast, jellyfin-fast, jellyfin-balanced.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A JSON object describing the created profiles.</returns>
-    [HttpPost("CreateTestProfiles")]
-    public async Task<ActionResult<object>> CreateTestProfiles(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var config = Plugin.Instance?.Configuration;
-            if (config == null)
-            {
-                return BadRequest(new { Success = false, Message = "Plugin configuration is not available." });
-            }
-
-            using var httpClient = BuildHttpClient(config);
-            var baseUrl = $"{(config.UseSSL ? "https" : "http")}://{config.Host}:{config.Port}";
-            var webRoot = string.IsNullOrWhiteSpace(config.Webroot) ? "/" : config.Webroot.TrimEnd('/') + "/";
-
-            var created = new List<string>();
-            var errors = new List<string>();
-
-            // Define video codec profile variants
-            var videoProfiles = new[]
-            {
-                new
-                {
-                    Name = "jellyfin-h264-ultrafast",
-                    Description = "Jellyfin: H.264 ultrafast preset, 2 Mbps, zerolatency. Fastest startup.",
-                    BitRate = 2000,
-                    Preset = "ultrafast",
-                    Tune = "zerolatency",
-                    Params = "repeat-headers=1:aud=1:keyint=25:min-keyint=25:scenecut=0:bframes=0",
-                },
-                new
-                {
-                    Name = "jellyfin-h264-fast",
-                    Description = "Jellyfin: H.264 superfast preset, 3 Mbps, zerolatency. Fast startup.",
-                    BitRate = 3000,
-                    Preset = "superfast",
-                    Tune = "zerolatency",
-                    Params = "repeat-headers=1:aud=1:keyint=25:min-keyint=25:bframes=0",
-                },
-                new
-                {
-                    Name = "jellyfin-h264-balanced",
-                    Description = "Jellyfin: H.264 faster preset, 5 Mbps, zerolatency. Balanced quality/speed.",
-                    BitRate = 5000,
-                    Preset = "faster",
-                    Tune = "zerolatency",
-                    Params = "repeat-headers=1:aud=1",
-                },
-            };
-
-            // Audio codec profile (shared)
-            const string audioProfileName = "jellyfin-aac";
-            var audioCodecExists = await CodecProfileExistsAsync(httpClient, baseUrl, webRoot, audioProfileName, cancellationToken).ConfigureAwait(false);
-            if (!audioCodecExists)
-            {
-                var audioConf = new System.Text.Json.Nodes.JsonObject
-                {
-                    ["name"] = audioProfileName,
-                    ["description"] = "Jellyfin: AAC 128 kbps for fast channel switching.",
-                    ["bit_rate"] = 128,
-                    ["profile"] = -99,
-                };
-
-                var ok = await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "aac", audioConf, cancellationToken).ConfigureAwait(false);
-                created.Add(ok ? $"audio codec '{audioProfileName}'" : $"FAILED audio codec '{audioProfileName}'");
-            }
-            else
-            {
-                created.Add($"audio codec '{audioProfileName}' (exists)");
-            }
-
-            // Create each video codec profile
-            foreach (var vp in videoProfiles)
-            {
-                var exists = await CodecProfileExistsAsync(httpClient, baseUrl, webRoot, vp.Name, cancellationToken).ConfigureAwait(false);
-                if (!exists)
-                {
-                    var videoConf = new System.Text.Json.Nodes.JsonObject
-                    {
-                        ["name"] = vp.Name,
-                        ["description"] = vp.Description,
-                        ["deinterlace"] = true,
-                        ["height"] = 0,
-                        ["scaling_mode"] = 0,
-                        ["hwaccel"] = false,
-                        ["bit_rate"] = vp.BitRate,
-                        ["crf"] = 0,
-                        ["profile"] = -99,
-                        ["pix_fmt"] = -1,
-                        ["preset"] = vp.Preset,
-                        ["tune"] = vp.Tune,
-                        ["params"] = vp.Params,
-                    };
-
-                    var ok = await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "libx264", videoConf, cancellationToken).ConfigureAwait(false);
-                    created.Add(ok ? $"video codec '{vp.Name}' ({vp.BitRate}k, {vp.Preset})" : $"FAILED video codec '{vp.Name}'");
-                }
-                else
-                {
-                    created.Add($"video codec '{vp.Name}' (exists)");
-                }
-            }
-
-            // Create streaming profiles for each variant
-            var streamingVariants = new[]
-            {
-                new { Name = "jellyfin-ultrafast", VideoCodecProfile = "jellyfin-h264-ultrafast" },
-                new { Name = "jellyfin-fast", VideoCodecProfile = "jellyfin-h264-fast" },
-                new { Name = "jellyfin-balanced", VideoCodecProfile = "jellyfin-h264-balanced" },
-            };
-
-            var listUrl = $"{baseUrl}{webRoot}api/profile/list";
-            var listResponse = await httpClient.GetStringAsync(listUrl, cancellationToken).ConfigureAwait(false);
-            var profileList = JsonSerializer.Deserialize<ProfileListResponse>(listResponse, JsonOptions);
-
-            foreach (var sv in streamingVariants)
-            {
-                var existingProfile = profileList?.Entries?.FirstOrDefault(e =>
-                    string.Equals(e.Val, sv.Name, StringComparison.OrdinalIgnoreCase));
-
-                if (existingProfile != null)
-                {
-                    created.Add($"streaming profile '{sv.Name}' (exists)");
-                    // Still re-link codec profiles
-                    var videoCodecP = await GetCodecProfileByNameAsync(httpClient, baseUrl, webRoot, sv.VideoCodecProfile, cancellationToken).ConfigureAwait(false);
-                    var audioCodecP = await GetCodecProfileByNameAsync(httpClient, baseUrl, webRoot, audioProfileName, cancellationToken).ConfigureAwait(false);
-                    if (videoCodecP != null && audioCodecP != null)
-                    {
-                        await LinkStreamingProfileToCodecProfilesAsync(httpClient, baseUrl, webRoot, existingProfile.Key, videoCodecP.Val, audioCodecP.Val, cancellationToken).ConfigureAwait(false);
-                    }
-
-                    continue;
-                }
-
-                var confNode = new System.Text.Json.Nodes.JsonObject
-                {
-                    ["enabled"] = true,
-                    ["name"] = sv.Name,
-                    ["comment"] = $"Jellyfin benchmark profile ({sv.VideoCodecProfile})",
-                    ["container"] = 2,
-                    ["vcodec"] = sv.VideoCodecProfile,
-                    ["acodec"] = audioProfileName,
-                    ["resolution"] = 0,
-                    ["channels"] = 0,
-                    ["vbitrate"] = 0,
-                    ["abitrate"] = 0,
-                };
-
-                var content = new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("class", "profile-transcode"),
-                    new KeyValuePair<string, string>("conf", confNode.ToJsonString())
-                });
-
-                var createUrl = $"{baseUrl}{webRoot}api/profile/create";
-                var response = await httpClient.PostAsync(createUrl, content, cancellationToken).ConfigureAwait(false);
-                if (response.IsSuccessStatusCode)
-                {
-                    created.Add($"streaming profile '{sv.Name}'");
-
-                    // Link codec profiles
-                    var newProfile = await GetStreamingProfileByNameAsync(httpClient, baseUrl, webRoot, sv.Name, cancellationToken).ConfigureAwait(false);
-                    var videoCodecP = await GetCodecProfileByNameAsync(httpClient, baseUrl, webRoot, sv.VideoCodecProfile, cancellationToken).ConfigureAwait(false);
-                    var audioCodecP = await GetCodecProfileByNameAsync(httpClient, baseUrl, webRoot, audioProfileName, cancellationToken).ConfigureAwait(false);
-                    if (newProfile != null && videoCodecP != null && audioCodecP != null)
-                    {
-                        await LinkStreamingProfileToCodecProfilesAsync(httpClient, baseUrl, webRoot, newProfile.Key, videoCodecP.Val, audioCodecP.Val, cancellationToken).ConfigureAwait(false);
-                        created.Add($"linked '{sv.Name}' ? {sv.VideoCodecProfile} + {audioProfileName}");
-                    }
-                }
-                else
-                {
-                    errors.Add($"Failed to create streaming profile '{sv.Name}'");
-                }
-            }
-
-            // Also ensure the base 'jellyfin' profile exists (5Mbps faster preset)
-            var jellyfinExists = profileList?.Entries?.Any(e =>
-                string.Equals(e.Val, "jellyfin", StringComparison.OrdinalIgnoreCase)) == true;
-            if (!jellyfinExists)
-            {
-                // Check if jellyfin-h264 codec profile exists
-                var jellyfinH264Exists = await CodecProfileExistsAsync(httpClient, baseUrl, webRoot, "jellyfin-h264", cancellationToken).ConfigureAwait(false);
-                if (!jellyfinH264Exists)
-                {
-                    var videoConf = new System.Text.Json.Nodes.JsonObject
-                    {
-                        ["name"] = "jellyfin-h264",
-                        ["description"] = "Jellyfin: H.264 with 5 Mbps cap, faster preset, zerolatency.",
-                        ["deinterlace"] = true,
-                        ["height"] = 0,
-                        ["scaling_mode"] = 0,
-                        ["hwaccel"] = false,
-                        ["bit_rate"] = 5000,
-                        ["crf"] = 0,
-                        ["profile"] = -99,
-                        ["pix_fmt"] = -1,
-                        ["preset"] = "faster",
-                        ["tune"] = "zerolatency",
-                        ["params"] = "repeat-headers=1:aud=1",
-                    };
-                    await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "libx264", videoConf, cancellationToken).ConfigureAwait(false);
-                }
-
-                var confNode = new System.Text.Json.Nodes.JsonObject
-                {
-                    ["enabled"] = true,
-                    ["name"] = "jellyfin",
-                    ["container"] = 2,
-                    ["vcodec"] = "jellyfin-h264",
-                    ["acodec"] = audioProfileName,
-                };
-
-                var content = new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("class", "profile-transcode"),
-                    new KeyValuePair<string, string>("conf", confNode.ToJsonString())
-                });
-
-                var createUrl = $"{baseUrl}{webRoot}api/profile/create";
-                await httpClient.PostAsync(createUrl, content, cancellationToken).ConfigureAwait(false);
-                created.Add("streaming profile 'jellyfin'");
-            }
-
-            return Ok(new
-            {
-                Success = errors.Count == 0,
-                Created = created,
-                Errors = errors,
-                Message = $"Created/verified: {string.Join(", ", created)}" + (errors.Count > 0 ? $" | Errors: {string.Join(", ", errors)}" : string.Empty),
-                AvailableProfiles = AvailableTestProfiles
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error creating test profiles.");
-            return Ok(new { Success = false, Message = $"Error: {ex.Message}" });
         }
     }
 
@@ -1397,10 +961,7 @@ public class TvHeadendApiController : ControllerBase
     {
         try
         {
-            var listUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
-            var response = await httpClient.GetStringAsync(listUrl, cancellationToken).ConfigureAwait(false);
-            var list = JsonSerializer.Deserialize<CodecProfileListResponse>(response, JsonOptions);
-            return list?.Entries?.FirstOrDefault(e => string.Equals(e.Val, profileName, StringComparison.OrdinalIgnoreCase));
+            return await FindCodecProfileEntryByReferenceAsync(httpClient, baseUrl, webRoot, profileName, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1409,40 +970,57 @@ public class TvHeadendApiController : ControllerBase
         }
     }
 
-    private async Task<CodecProfileDetails?> GetCodecProfileDetailsByNameAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
+    private async Task<bool?> GetCodecProfileBoolSettingAsync(HttpClient httpClient, string baseUrl, string webRoot, string codecProfileRef, string settingName, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(profileName))
+        var codecProfile = await FindCodecProfileEntryByReferenceAsync(httpClient, baseUrl, webRoot, codecProfileRef, cancellationToken).ConfigureAwait(false);
+        if (codecProfile == null || string.IsNullOrWhiteSpace(codecProfile.Key))
         {
             return null;
         }
 
-        var codecProfile = await GetCodecProfileByNameAsync(httpClient, baseUrl, webRoot, profileName, cancellationToken).ConfigureAwait(false);
-        if (codecProfile == null)
+        using var codecDoc = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, codecProfile.Key, cancellationToken).ConfigureAwait(false);
+        if (!codecDoc.RootElement.TryGetProperty("entries", out var entries) || entries.GetArrayLength() == 0)
         {
             return null;
         }
 
-        try
+        return GetBoolPropOrParam(entries[0], settingName);
+    }
+
+    private async Task<CodecProfileListEntry?> FindCodecProfileEntryByReferenceAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileReference, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(profileReference))
         {
-            using var doc = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, codecProfile.Key, cancellationToken).ConfigureAwait(false);
-            if (!doc.RootElement.TryGetProperty("entries", out var entries) || entries.GetArrayLength() == 0)
+            return null;
+        }
+
+        var listUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
+        var response = await httpClient.GetStringAsync(listUrl, cancellationToken).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(response);
+        if (!doc.RootElement.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var entry in entries.EnumerateArray())
+        {
+            var uuid = GetStringProp(entry, "uuid") ?? GetStringProp(entry, "key") ?? string.Empty;
+            var title = GetStringProp(entry, "title") ?? GetStringProp(entry, "val") ?? string.Empty;
+            var normalizedTitle = NormalizeCodecProfileTitle(title);
+
+            if (string.Equals(profileReference, uuid, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(profileReference, title, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(profileReference, normalizedTitle, StringComparison.OrdinalIgnoreCase))
             {
-                return null;
+                return new CodecProfileListEntry
+                {
+                    Key = uuid,
+                    Val = string.IsNullOrWhiteSpace(normalizedTitle) ? title : normalizedTitle,
+                };
             }
+        }
 
-            var entry = entries[0];
-            return new CodecProfileDetails
-            {
-                CodecClass = GetStringProp(entry, "class") ?? string.Empty,
-                BitRateKbps = GetIntProp(entry, "bit_rate") ?? 0,
-                Deinterlace = GetBoolProp(entry, "deinterlace")
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Could not load codec profile details for '{ProfileName}'.", profileName);
-            return null;
-        }
+        return null;
     }
 
     private async Task<ProfileListEntry?> GetStreamingProfileByNameAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
@@ -1610,6 +1188,11 @@ public class TvHeadendApiController : ControllerBase
         return null;
     }
 
+    private static string? GetStringPropOrParam(JsonElement element, string name)
+    {
+        return GetStringProp(element, name) ?? GetParamStringProp(element, name);
+    }
+
     private static int? GetIntProp(JsonElement element, string name)
     {
         if (element.TryGetProperty(name, out var prop))
@@ -1626,6 +1209,11 @@ public class TvHeadendApiController : ControllerBase
         }
 
         return null;
+    }
+
+    private static int? GetIntPropOrParam(JsonElement element, string name)
+    {
+        return GetIntProp(element, name) ?? GetParamIntProp(element, name);
     }
 
     private static bool? GetBoolProp(JsonElement element, string name)
@@ -1667,6 +1255,11 @@ public class TvHeadendApiController : ControllerBase
         return null;
     }
 
+    private static bool? GetBoolPropOrParam(JsonElement element, string name)
+    {
+        return GetBoolProp(element, name) ?? GetParamBoolProp(element, name);
+    }
+
     private static IReadOnlyList<string> GetStringArrayProp(JsonElement element, string name)
     {
         if (!element.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.Array)
@@ -1685,6 +1278,117 @@ public class TvHeadendApiController : ControllerBase
         }
 
         return values;
+    }
+
+    private static IReadOnlyList<string> GetStringArrayPropOrParam(JsonElement element, string name)
+    {
+        var values = GetStringArrayProp(element, name);
+        return values.Count > 0 ? values : GetParamStringArrayProp(element, name);
+    }
+
+    private static string? GetParamStringProp(JsonElement element, string name)
+    {
+        if (!TryGetParamValue(element, name, out var value))
+        {
+            return null;
+        }
+
+        return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+    }
+
+    private static int? GetParamIntProp(JsonElement element, string name)
+    {
+        if (!TryGetParamValue(element, name, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
+        {
+            return intValue;
+        }
+
+        return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out var parsed) ? parsed : null;
+    }
+
+    private static bool? GetParamBoolProp(JsonElement element, string name)
+    {
+        if (!TryGetParamValue(element, name, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.True)
+        {
+            return true;
+        }
+
+        if (value.ValueKind == JsonValueKind.False)
+        {
+            return false;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
+        {
+            return intValue != 0;
+        }
+
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            var stringValue = value.GetString();
+            if (bool.TryParse(stringValue, out var boolValue))
+            {
+                return boolValue;
+            }
+
+            if (int.TryParse(stringValue, out var parsed))
+            {
+                return parsed != 0;
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<string> GetParamStringArrayProp(JsonElement element, string name)
+    {
+        if (!TryGetParamValue(element, name, out var value) || value.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        var values = new List<string>();
+        foreach (var item in value.EnumerateArray())
+        {
+            var stringValue = item.ValueKind == JsonValueKind.String ? item.GetString() : item.ToString();
+            if (!string.IsNullOrWhiteSpace(stringValue))
+            {
+                values.Add(stringValue);
+            }
+        }
+
+        return values;
+    }
+
+    private static bool TryGetParamValue(JsonElement element, string name, out JsonElement value)
+    {
+        if (element.TryGetProperty("params", out var parameters) && parameters.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var parameter in parameters.EnumerateArray())
+            {
+                var id = GetStringProp(parameter, "id");
+                if (!string.Equals(id, name, StringComparison.OrdinalIgnoreCase)
+                    || !parameter.TryGetProperty("value", out value))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     private static System.Text.Json.Nodes.JsonArray ToJsonArray(IEnumerable<string> values)
@@ -1709,109 +1413,32 @@ public class TvHeadendApiController : ControllerBase
             "1" or "matroska" or "mkv" => "matroska",
             "2" or "mpegts" or "ts" => "mpegts",
             "3" or "mpegps" or "ps" => "mpegps",
+            "9" => "mp4",
             "4" or "mp4" => "mp4",
             _ => raw.ToLowerInvariant()
         };
     }
 
-    /// <summary>
-    /// Maps TVHeadend/libav video codec names to FFmpeg codec names.
-    /// </summary>
-    private static string MapVideoCodec(string raw)
+    private static string MapProfileClassToContainer(string profileClass)
     {
-        return raw.ToLowerInvariant() switch
+        return profileClass.ToLowerInvariant() switch
         {
-            "" or "copy" or "do not use" => string.Empty,
-            "libx264" or "h264" or "h264_vaapi" or "h264_nvenc" or "h264_qsv" => "h264",
-            "libx265" or "hevc" or "hevc_vaapi" or "hevc_nvenc" or "hevc_qsv" => "hevc",
-            "mpeg2video" or "mpeg2" => "mpeg2video",
-            "libvpx" or "vp8" => "vp8",
-            "libvpx-vp9" or "vp9" => "vp9",
-            _ => raw.ToLowerInvariant()
+            "profile-matroska" => "matroska",
+            "profile-mpegts" or "profile-mpegts-pass" or "profile-mpegts-spawn" => "mpegts",
+            "profile-htsp" => "mpegts",
+            _ => "mpegts"
         };
     }
 
-    /// <summary>
-    /// Maps TVHeadend/libav audio codec names to FFmpeg codec names.
-    /// </summary>
-    private static string MapAudioCodec(string raw)
+    private static string NormalizeCodecProfileTitle(string title)
     {
-        return raw.ToLowerInvariant() switch
+        if (string.IsNullOrWhiteSpace(title))
         {
-            "" or "copy" or "do not use" => string.Empty,
-            "libfdk_aac" or "aac" => "aac",
-            "ac3" or "a52" => "ac3",
-            "eac3" => "eac3",
-            "libmp3lame" or "mp3" => "mp3",
-            "mp2" or "libtwolame" => "mp2",
-            "libvorbis" or "vorbis" => "vorbis",
-            "libopus" or "opus" => "opus",
-            _ => raw.ToLowerInvariant()
-        };
-    }
-
-    private static string ResolveVideoCodec(string rawCodec, string codecProfileRef)
-    {
-        var mapped = MapVideoCodec(rawCodec);
-        if (!string.IsNullOrWhiteSpace(mapped) && !string.Equals(mapped, rawCodec, StringComparison.OrdinalIgnoreCase))
-        {
-            return mapped;
+            return string.Empty;
         }
 
-        var profile = codecProfileRef.ToLowerInvariant();
-        if (profile.Contains("264", StringComparison.Ordinal) || profile.Contains("avc", StringComparison.Ordinal))
-        {
-            return "h264";
-        }
-
-        if (profile.Contains("265", StringComparison.Ordinal) || profile.Contains("hevc", StringComparison.Ordinal))
-        {
-            return "hevc";
-        }
-
-        if (profile.Contains("mpeg2", StringComparison.Ordinal))
-        {
-            return "mpeg2video";
-        }
-
-        return mapped;
-    }
-
-    private static string ResolveAudioCodec(string rawCodec, string codecProfileRef)
-    {
-        var mapped = MapAudioCodec(rawCodec);
-        if (!string.IsNullOrWhiteSpace(mapped) && !string.Equals(mapped, rawCodec, StringComparison.OrdinalIgnoreCase))
-        {
-            return mapped;
-        }
-
-        var profile = codecProfileRef.ToLowerInvariant();
-        if (profile.Contains("aac", StringComparison.Ordinal))
-        {
-            return "aac";
-        }
-
-        if (profile.Contains("ac3", StringComparison.Ordinal) || profile.Contains("a52", StringComparison.Ordinal))
-        {
-            return "ac3";
-        }
-
-        if (profile.Contains("eac3", StringComparison.Ordinal))
-        {
-            return "eac3";
-        }
-
-        if (profile.Contains("opus", StringComparison.Ordinal))
-        {
-            return "opus";
-        }
-
-        if (profile.Contains("mp3", StringComparison.Ordinal))
-        {
-            return "mp3";
-        }
-
-        return mapped;
+        var separatorIndex = title.IndexOf(" (", StringComparison.Ordinal);
+        return separatorIndex > 0 ? title[..separatorIndex] : title;
     }
 
     /// <summary>
@@ -1854,14 +1481,5 @@ public class TvHeadendApiController : ControllerBase
 
         /// <summary>Gets the codec profile display name.</summary>
         public string Val { get; init; } = string.Empty;
-    }
-
-    private sealed class CodecProfileDetails
-    {
-        public string CodecClass { get; init; } = string.Empty;
-
-        public int BitRateKbps { get; init; }
-
-        public bool? Deinterlace { get; init; }
     }
 }

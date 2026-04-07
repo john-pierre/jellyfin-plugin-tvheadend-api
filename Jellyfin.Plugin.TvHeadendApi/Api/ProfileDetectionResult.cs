@@ -1,7 +1,7 @@
 ﻿namespace Jellyfin.Plugin.TvHeadendApi.Api;
 
 /// <summary>
-/// Response model for the DetectProfile endpoint.
+/// Response model for profile-related controller actions.
 /// </summary>
 public class ProfileDetectionResult
 {

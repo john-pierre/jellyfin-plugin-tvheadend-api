@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -13,6 +14,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -28,7 +30,10 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service;
 /// </summary>
 public sealed class LiveTvService : ILiveTvService, IDisposable
 {
+    private const char StreamIdDelimiter = '_';
+
     private readonly ILogger<LiveTvService> _logger;
+    private readonly ILibraryManager _libraryManager;
     private readonly object _httpClientSync = new();
     private HttpClient _httpClient;
     private string? _httpClientConfigurationKey;
@@ -39,9 +44,9 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     };
 
     /// <summary>
-    /// Time-to-live for cached profile details. After this period the plugin re-queries TVHeadend.
+    /// Time-to-live for cached profile container. After this period the plugin re-queries TVHeadend.
     /// </summary>
-    private static readonly TimeSpan ProfileDetailsCacheTtl = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan ProfileContainerCacheTtl = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// Lock to prevent concurrent profile container lookups.
@@ -49,36 +54,10 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     private readonly SemaphoreSlim _profileContainerLock = new(1, 1);
 
     /// <summary>
-    /// Cached profile details (container, codecs, bitrates) derived from the configured
-    /// TVHeadend streaming profile. Invalidated when the profile name changes or when the TTL expires.
+    /// Cached container string derived from the configured TVHeadend streaming profile.
+    /// Invalidated when the profile name changes or when the TTL expires.
     /// </summary>
-    private ProfileCacheEntry? _profileDetailsCache;
-
-    /// <summary>
-    /// JSON options for deserializing Jellyfin's mediainfo cache files.
-    /// Uses <see cref="JsonStringEnumConverter"/> because Jellyfin serialises enums as strings
-    /// (e.g. <c>"Type": "Video"</c> for <see cref="MediaStreamType"/>).
-    /// </summary>
-    private static readonly JsonSerializerOptions MediaInfoCacheJsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter() },
-    };
-
-    /// <summary>
-    /// Lazy index mapping channel UUID → mediainfo cache file path.
-    /// Built by scanning the <c>Path</c> property inside each cache file for a
-    /// TVHeadend <c>stream/channel/{uuid}</c> pattern. Rebuilt on cache miss.
-    /// </summary>
-    private Dictionary<string, string>? _probeCacheIndex;
-
-    /// <summary>
-    /// Regex to extract the 32-character hex channel UUID from a TVHeadend stream URL
-    /// stored in the <c>Path</c> property of Jellyfin's mediainfo cache files.
-    /// </summary>
-    private static readonly Regex ChannelIdFromPathRegex = new(
-        @"stream/channel/([0-9a-f]{32})",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private ContainerCacheEntry? _profileContainerCache;
 
     /// <summary>
     /// A static dictionary mapping ETSI EN 300 468 content type IDs to their human-readable descriptions.
@@ -210,12 +189,16 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     /// <param name="logger">
     /// The logger instance used to log messages related to the Live TV service. This parameter is mandatory and must not be null.
     /// </param>
+    /// <param name="libraryManager">
+    /// Jellyfin library manager used to resolve internal item ids from external identifiers.
+    /// </param>
     /// <exception cref="ArgumentNullException">
     /// Thrown if the <paramref name="logger"/> parameter is null, as logging is critical for service operation.
     /// </exception>
-    public LiveTvService(ILogger<LiveTvService> logger)
+    public LiveTvService(ILogger<LiveTvService> logger, ILibraryManager libraryManager)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _libraryManager = libraryManager ?? throw new ArgumentNullException(nameof(libraryManager));
 
         var handler = new HttpClientHandler
         {
@@ -1317,180 +1300,142 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
         return null;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  Jellyfin mediainfo probe cache – index by channel UUID
-    // ═══════════════════════════════════════════════════════════════════════
-
     /// <summary>
-    /// Scans Jellyfin's mediainfo cache directory and builds a channel UUID → file path
-    /// index by reading the <c>Path</c> property from each cache file.
+    /// Reads a string property either directly from an idnode entry or from its params[] value payload.
     /// </summary>
-    private Dictionary<string, string> BuildProbeCacheIndex()
+    private static string? GetJsonStringPropOrParam(JsonElement element, string name)
     {
-        var index = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        var cachePath = Plugin.Instance?.CachePath;
-        if (string.IsNullOrWhiteSpace(cachePath))
-        {
-            return index;
-        }
-
-        var mediaInfoDir = Path.Combine(cachePath, "mediainfo");
-        if (!Directory.Exists(mediaInfoDir))
-        {
-            _logger.LogDebug("Mediainfo cache directory {Dir} does not exist.", mediaInfoDir);
-            return index;
-        }
-
-        var files = Directory.GetFiles(mediaInfoDir, "*.json");
-        foreach (var file in files)
-        {
-            try
-            {
-                // Read only enough to extract the Path property (first few hundred bytes suffice).
-                var json = File.ReadAllText(file);
-                using var doc = JsonDocument.Parse(json);
-                if (!doc.RootElement.TryGetProperty("Path", out var pathEl))
-                {
-                    continue;
-                }
-
-                var path = pathEl.GetString();
-                if (string.IsNullOrWhiteSpace(path))
-                {
-                    continue;
-                }
-
-                var match = ChannelIdFromPathRegex.Match(path);
-                if (!match.Success)
-                {
-                    continue;
-                }
-
-                var channelId = match.Groups[1].Value;
-                // Always prefer the newest file (last one wins when iterating alphabetically).
-                index[channelId] = file;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Skipping unreadable mediainfo cache file: {File}.", file);
-            }
-        }
-
-        _logger.LogInformation(
-            "Built mediainfo probe cache index: {Indexed}/{Total} files matched a channel UUID.",
-            index.Count,
-            files.Length);
-
-        return index;
+        return GetJsonStringProp(element, name) ?? GetJsonParamStringProp(element, name);
     }
 
     /// <summary>
-    /// Tries to load probe-quality stream data from Jellyfin's mediainfo cache for the given
-    /// channel. Looks up the file via an in-memory index of channel UUID → file path.
-    /// On cache miss the index is rebuilt (new files may have appeared after a first probe).
-    /// Returns <c>null</c> when no cache entry exists for this channel.
+    /// Reads an integer property either directly from an idnode entry or from its params[] value payload.
     /// </summary>
-    private async Task<CachedProbeResult?> TryLoadMediaInfoCacheAsync(string channelId)
+    private static int? GetJsonIntPropOrParam(JsonElement element, string name)
     {
-        // Build index lazily on first access.
-        _probeCacheIndex ??= BuildProbeCacheIndex();
+        return GetJsonIntProp(element, name) ?? GetJsonParamIntProp(element, name);
+    }
 
-        // If not found, rebuild the index once (a new cache file may have been written).
-        if (!_probeCacheIndex.TryGetValue(channelId, out var cacheFilePath))
+    private static string? GetJsonParamStringProp(JsonElement element, string name)
+    {
+        if (!TryGetJsonParamValue(element, name, out var value))
         {
-            _probeCacheIndex = BuildProbeCacheIndex();
-            if (!_probeCacheIndex.TryGetValue(channelId, out cacheFilePath))
-            {
-                _logger.LogDebug("No mediainfo cache file found for channel {ChannelId}.", channelId);
-                return null;
-            }
-        }
-
-        // Verify the file still exists (could have been deleted).
-        if (!File.Exists(cacheFilePath))
-        {
-            _logger.LogDebug("Mediainfo cache file {Path} no longer exists for channel {ChannelId}.", cacheFilePath, channelId);
-            _probeCacheIndex.Remove(channelId);
             return null;
         }
 
-        try
+        return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+    }
+
+    private static int? GetJsonParamIntProp(JsonElement element, string name)
+    {
+        if (!TryGetJsonParamValue(element, name, out var value))
         {
-            var json = await File.ReadAllTextAsync(cacheFilePath).ConfigureAwait(false);
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            // Deserialise MediaStreams array.
-            if (!root.TryGetProperty("MediaStreams", out var streamsEl))
-            {
-                _logger.LogDebug("Mediainfo cache file {Path} has no MediaStreams property.", cacheFilePath);
-                return null;
-            }
-
-            var mediaStreams = JsonSerializer.Deserialize<List<MediaStream>>(
-                streamsEl.GetRawText(),
-                MediaInfoCacheJsonOptions);
-
-            if (mediaStreams == null || mediaStreams.Count == 0)
-            {
-                _logger.LogDebug("Mediainfo cache file {Path} contains no streams.", cacheFilePath);
-                return null;
-            }
-
-            // Ensure there is at least one video or audio stream.
-            bool hasUsefulStreams = mediaStreams.Any(
-                s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio);
-            if (!hasUsefulStreams)
-            {
-                _logger.LogDebug("Mediainfo cache file {Path} has no video/audio streams.", cacheFilePath);
-                return null;
-            }
-
-            // Extract optional container and bitrate.
-            string? container = null;
-            if (root.TryGetProperty("Container", out var containerEl))
-            {
-                container = containerEl.GetString();
-            }
-
-            int bitrate = 0;
-            if (root.TryGetProperty("Bitrate", out var bitrateEl) && bitrateEl.TryGetInt32(out var br))
-            {
-                bitrate = br;
-            }
-
-            _logger.LogInformation(
-                "Loaded Jellyfin mediainfo cache for channel {ChannelId} from {Path}: " +
-                "{VideoCount} video, {AudioCount} audio, {SubCount} subtitle streams, container={Container}, bitrate={Bitrate} bps.",
-                channelId,
-                cacheFilePath,
-                mediaStreams.Count(s => s.Type == MediaStreamType.Video),
-                mediaStreams.Count(s => s.Type == MediaStreamType.Audio),
-                mediaStreams.Count(s => s.Type == MediaStreamType.Subtitle),
-                container ?? "(unknown)",
-                bitrate);
-
-            return new CachedProbeResult(mediaStreams, container, bitrate);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to read mediainfo cache file {Path} for channel {ChannelId}.", cacheFilePath, channelId);
             return null;
         }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
+        {
+            return intValue;
+        }
+
+        return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out var parsed) ? parsed : null;
+    }
+
+    private static bool TryGetJsonParamValue(JsonElement element, string name, out JsonElement value)
+    {
+        if (element.TryGetProperty("params", out var parameters) && parameters.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var parameter in parameters.EnumerateArray())
+            {
+                var id = GetJsonStringProp(parameter, "id");
+                if (!string.Equals(id, name, StringComparison.OrdinalIgnoreCase)
+                    || !parameter.TryGetProperty("value", out value))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Builds the exact Jellyfin mediainfo cache filename from LiveTV token parts.
+    /// </summary>
+    /// <param name="providerTypeOrHash">
+    /// Either provider type full name (for example <c>Jellyfin.LiveTv.LiveTvMediaSourceProvider</c>)
+    /// or an already hashed 32-char provider hash.
+    /// </param>
+    /// <param name="itemTypeName">Item type name (for example <c>LiveTvChannel</c>).</param>
+    /// <param name="itemIdN">Item id in <c>N</c> format.</param>
+    /// <param name="sourceId">Source id, or empty when not available.</param>
+    /// <returns>Cache file name like <c>d966....json</c>.</returns>
+    private static string BuildMediainfoCacheFileName(
+        string providerTypeOrHash,
+        string itemTypeName,
+        string itemIdN,
+        string? sourceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(providerTypeOrHash);
+        ArgumentException.ThrowIfNullOrWhiteSpace(itemTypeName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(itemIdN);
+
+        static string GetJellyfinHashN(string value)
+        {
+            var bytes = Encoding.Unicode.GetBytes(value); // UTF-16LE
+#pragma warning disable CA5351
+            var hashBytes = MD5.HashData(bytes);
+#pragma warning restore CA5351
+            return new Guid(hashBytes).ToString("N");
+        }
+
+        static bool IsHex32(string value)
+            => value.Length == 32 && value.All(Uri.IsHexDigit);
+
+        // MediaSourceManager uses MD5(provider.GetType().FullName) as prefix.
+        var providerHash = IsHex32(providerTypeOrHash)
+            ? providerTypeOrHash.ToLowerInvariant()
+            : GetJellyfinHashN(providerTypeOrHash);
+
+        // LiveTvMediaSourceProvider builds: ItemType_ItemId_SourceId
+        var coreOpenToken = string.Join(
+            StreamIdDelimiter,
+            itemTypeName,
+            itemIdN,
+            sourceId ?? string.Empty);
+
+        // MediaSourceManager.SetKeyProperties prefixes provider hash.
+        var openToken = string.Join(StreamIdDelimiter, providerHash, coreOpenToken);
+
+        // LiveStreamHelper uses MD5(openToken) + ".json"
+        return GetJellyfinHashN(openToken) + ".json";
+    }
+
+    /// <summary>
+    /// Uses Jellyfin core id generation to resolve the internal channel id from the external id.
+    /// </summary>
+    /// <param name="serviceName">Live TV service name (for example <c>TvHeadendApi</c>).</param>
+    /// <param name="externalId">External provider channel id.</param>
+    /// <returns>Internal Jellyfin channel id.</returns>
+    private Guid GetInternalChannelId(string serviceName, string externalId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(externalId);
+
+        const string internalVersionNumber = "4";
+        var name = serviceName + externalId + internalVersionNumber;
+        return _libraryManager.GetNewItemId(name.ToLowerInvariant(), typeof(LiveTvChannel));
     }
 
     /// <summary>
     /// Builds a <see cref="MediaSourceInfo"/> for a given channel.
     /// <para>
-    /// The method reads Jellyfin's on-disk mediainfo cache to obtain probe-quality stream data
-    /// (codecs, resolution, bitrate, audio details) so that Jellyfin can start playback without
-    /// re-probing the stream.
-    /// </para>
-    /// <para>
-    /// When no cache entry exists (e.g. first tune) or the cache is empty, the method falls back
-    /// to enabling probing so Jellyfin can discover the format on its own and populate the cache
-    /// for subsequent tunes.
+    /// When <see cref="PluginConfiguration.EnableMediaInfoCacheWrite"/> is enabled, the method
+    /// pre-creates a Jellyfin mediainfo cache file with H264+AAC metadata so that Jellyfin's
+    /// <c>AddMediaInfoWithProbe</c> finds it and skips actual FFmpeg probing.
     /// </para>
     /// </summary>
     private async Task<MediaSourceInfo> BuildMediaSourceInfoAsync(string channelId, PluginConfiguration config, CancellationToken cancellationToken)
@@ -1498,30 +1443,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
         var streamUrl = ConstructUrl($"stream/channel/{channelId}?profile={config.StreamingProfile}", "url");
         _logger.LogInformation("Generated stream URL {Url} for channel ID {ChannelId}", MaskSensitiveData(streamUrl), channelId);
 
-        // ── Look up Jellyfin's mediainfo cache for this channel ──────────
-        CachedProbeResult? probeResult = null;
-        if (config.EnableMediaInfoCache)
-        {
-            probeResult = await TryLoadMediaInfoCacheAsync(channelId).ConfigureAwait(false);
-        }
-        else
-        {
-            _logger.LogDebug("Mediainfo cache lookup disabled by configuration for channel {ChannelId}.", channelId);
-        }
-
-        var hasProbeCache = probeResult != null;
-
-        // ── Container ───────────────────────────────────────────────────
-        // Prefer container from probe cache; fall back to TVH profile detection.
-        string container;
-        if (hasProbeCache && !string.IsNullOrWhiteSpace(probeResult!.Container))
-        {
-            container = probeResult.Container;
-        }
-        else
-        {
-            container = await GetStreamingProfileContainerAsync(config, cancellationToken).ConfigureAwait(false);
-        }
+        var container = await GetStreamingProfileContainerAsync(config, cancellationToken).ConfigureAwait(false);
 
         var mediaSource = new MediaSourceInfo
         {
@@ -1529,11 +1451,11 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             Path = streamUrl,
             Name = $"LiveTV {channelId}",
 
-            // Always HTTP – TVHeadend's streaming API is HTTP-based.
+            // Always HTTP � TVHeadend's streaming API is HTTP-based.
             Protocol = MediaProtocol.Http,
             Container = container,
 
-            // Always remote – TVHeadend is a network service.
+            // Always remote � TVHeadend is a network service.
             IsRemote = true,
 
             // Playback capabilities
@@ -1552,6 +1474,9 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
 
             // Live TV delivers in real-time; throttling causes buffering.
             ReadAtNativeFramerate = false,
+
+            SupportsProbing = config.SupportsProbing,
+            AnalyzeDurationMs = config.AnalyzeDurationMs > 0 ? config.AnalyzeDurationMs : 200,
         };
 
         if (config.BufferMs > 0)
@@ -1559,197 +1484,19 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             mediaSource.BufferMs = config.BufferMs;
         }
 
-        // ── Use cached probe data from Jellyfin mediainfo cache ──────────
-        // When we have probe-quality data we provide the MediaStreams so Jellyfin
-        // can make informed playback decisions (explicit -map flags in FFmpeg).
-        // Whether probing is also disabled depends on the SupportsProbing config:
-        //   SupportsProbing=false → fast path, Jellyfin calls AddMediaInfo (instant)
-        //   SupportsProbing=true  → Jellyfin calls AddMediaInfoWithProbe but our
-        //                           MediaStreams are already populated so it hits
-        //                           the "has valid indices" fast path anyway.
-        if (hasProbeCache && probeResult!.MediaStreams.Count > 0)
+        // Write a pre-fabricated cache file so Jellyfin's AddMediaInfoWithProbe finds it
+        // and skips actual FFmpeg probing � even the very first tune becomes fast.
+        if (config.EnableMediaInfoCacheWrite)
         {
-            mediaSource.SupportsProbing = config.SupportsProbing;
-            mediaSource.AnalyzeDurationMs = config.AnalyzeDurationMs > 0 ? config.AnalyzeDurationMs : 200;
-            mediaSource.MediaStreams = probeResult.MediaStreams;
-
-            if (probeResult.Bitrate > 0)
-            {
-                mediaSource.Bitrate = probeResult.Bitrate;
-            }
-
-            _logger.LogInformation(
-                "Built MediaSourceInfo for channel {ChannelId} from Jellyfin probe cache: Container={Container}, " +
-                "{VideoCount} video, {AudioCount} audio, {SubCount} subtitle streams, " +
-                "bitrate={Bitrate} bps. Probing={Probing}.",
-                channelId,
-                container,
-                probeResult.MediaStreams.Count(s => s.Type == MediaStreamType.Video),
-                probeResult.MediaStreams.Count(s => s.Type == MediaStreamType.Audio),
-                probeResult.MediaStreams.Count(s => s.Type == MediaStreamType.Subtitle),
-                probeResult.Bitrate,
-                config.SupportsProbing);
+            await TryWriteMediaInfoCacheAsync(channelId, streamUrl, container).ConfigureAwait(false);
         }
-        else
-        {
-            // No probe cache entry available for this channel.
-            // Try profile-based fallback: if the streaming profile is a transcode profile,
-            // we know the output codecs and can build synthetic MediaStreams so Jellyfin
-            // can make better playback decisions without probing.
-            var profileDetails = await GetProfileDetailsAsync(config, cancellationToken).ConfigureAwait(false);
-            if (profileDetails.IsTranscodeProfile
-                && (!string.IsNullOrWhiteSpace(profileDetails.VideoCodec) || !string.IsNullOrWhiteSpace(profileDetails.AudioCodec)))
-            {
-                mediaSource.SupportsProbing = false;
-                mediaSource.AnalyzeDurationMs = config.AnalyzeDurationMs > 0 ? config.AnalyzeDurationMs : 200;
 
-                var syntheticStreams = new List<MediaStream>();
-                int syntheticIndex = 0;
-                int syntheticBitrate = 0;
-
-                // Synthetic video stream from profile
-                if (!string.IsNullOrWhiteSpace(profileDetails.VideoCodec))
-                {
-                    var videoBitrateEstimate = profileDetails.VideoBitrateKbps > 0
-                        ? profileDetails.VideoBitrateKbps * 1000
-                        : config.FallbackMaxStreamingBitrate;
-
-                    var vs = new MediaStream
-                    {
-                        Type = MediaStreamType.Video,
-                        Index = syntheticIndex++,
-                        Codec = profileDetails.VideoCodec,
-                        IsDefault = true,
-                        BitRate = videoBitrateEstimate,
-                        // Mark as interlaced only if we know the profile does NOT deinterlace
-                        // (conservative default: assume deinterlaced output from transcode)
-                        IsInterlaced = false,
-                    };
-
-                    if (profileDetails.VideoHeight > 0)
-                    {
-                        vs.Height = profileDetails.VideoHeight;
-                        vs.Width = profileDetails.VideoHeight * 16 / 9; // assume 16:9
-                    }
-
-                    // Codec profile hints for common codecs
-                    switch (profileDetails.VideoCodec)
-                    {
-                        case "h264":
-                            vs.Profile = "High";
-                            vs.Level = 41;
-                            vs.PixelFormat = "yuv420p";
-                            vs.BitDepth = 8;
-                            break;
-                        case "hevc":
-                            vs.Profile = "Main";
-                            vs.Level = 120;
-                            vs.PixelFormat = "yuv420p";
-                            vs.BitDepth = 8;
-                            break;
-                    }
-
-                    syntheticBitrate += videoBitrateEstimate;
-                    syntheticStreams.Add(vs);
-                }
-
-                // Synthetic audio stream from profile
-                if (!string.IsNullOrWhiteSpace(profileDetails.AudioCodec))
-                {
-                    var audioBitrateEstimate = profileDetails.AudioBitrateKbps > 0
-                        ? profileDetails.AudioBitrateKbps * 1000
-                        : profileDetails.AudioCodec switch
-                        {
-                            "ac3" => 384000,
-                            "eac3" => 640000,
-                            "aac" => 128000,
-                            _ => 128000
-                        };
-
-                    var audioChannelCount = profileDetails.AudioChannels > 0
-                        ? profileDetails.AudioChannels
-                        : profileDetails.AudioCodec is "ac3" or "eac3" ? 6 : 2;
-
-                    var audioStream = new MediaStream
-                    {
-                        Type = MediaStreamType.Audio,
-                        Index = syntheticIndex++,
-                        Codec = profileDetails.AudioCodec,
-                        IsDefault = true,
-                        BitRate = audioBitrateEstimate,
-                        Channels = audioChannelCount,
-                        SampleRate = 48000,
-                        ChannelLayout = audioChannelCount switch
-                        {
-                            1 => "mono",
-                            2 => "stereo",
-                            6 => "5.1",
-                            8 => "7.1",
-                            _ => $"{audioChannelCount}.0"
-                        },
-                    };
-
-                    if (profileDetails.AudioCodec == "aac")
-                    {
-                        audioStream.Profile = "LC";
-                    }
-
-                    syntheticBitrate += audioBitrateEstimate;
-                    syntheticStreams.Add(audioStream);
-                }
-
-                mediaSource.MediaStreams = syntheticStreams;
-                if (syntheticBitrate > 0)
-                {
-                    mediaSource.Bitrate = syntheticBitrate;
-                }
-
-                _logger.LogInformation(
-                    "No probe cache entry for channel {ChannelId}. " +
-                    "Built synthetic MediaStreams from transcode profile '{ProfileName}': " +
-                    "video={VideoCodec}, audio={AudioCodec}, bitrate≈{Bitrate} bps. Probing disabled.",
-                    channelId,
-                    profileDetails.ProfileName,
-                    profileDetails.VideoCodec,
-                    profileDetails.AudioCodec,
-                    syntheticBitrate);
-            }
-            else
-            {
-                // No transcode profile or no codec info – respect user's probing preference.
-                // NOTE: When SupportsProbing is true, Jellyfin's MediaSourceManager.AddMediaInfoWithProbe
-                // will override AnalyzeDurationMs to 3000 ms for live streams and wait at least 3 s
-                // before probing.  The value we set here therefore only takes real effect when
-                // SupportsProbing is false (in which case Jellyfin does not call AddMediaInfoWithProbe).
-                // See: Emby.Server.Implementations/Library/MediaSourceManager.cs → AddMediaInfoWithProbe
-                mediaSource.SupportsProbing = config.SupportsProbing;
-
-                if (config.SupportsProbing)
-                {
-                    // Probing enabled: set AnalyzeDurationMs if explicitly configured,
-                    // otherwise let Jellyfin use its own default.
-                    if (config.AnalyzeDurationMs > 0)
-                    {
-                        mediaSource.AnalyzeDurationMs = config.AnalyzeDurationMs;
-                    }
-
-                    _logger.LogWarning(
-                        "No probe cache entry for channel {ChannelId}. Jellyfin will probe the stream.",
-                        channelId);
-                }
-                else
-                {
-                    // Probing disabled: always set an explicit AnalyzeDurationMs so that
-                    // Jellyfin does not fall back to its 3 000 ms default.
-                    mediaSource.AnalyzeDurationMs = config.AnalyzeDurationMs > 0 ? config.AnalyzeDurationMs : 200;
-
-                    _logger.LogInformation(
-                        "No probe cache entry for channel {ChannelId}. Probing disabled per config; AnalyzeDuration={Duration}ms.",
-                        channelId,
-                        mediaSource.AnalyzeDurationMs);
-                }
-            }
-        }
+        _logger.LogInformation(
+            "Built MediaSourceInfo for channel {ChannelId}: Container={Container}, Probing={Probing}, CacheWrite={CacheWrite}.",
+            channelId,
+            container,
+            config.SupportsProbing,
+            config.EnableMediaInfoCacheWrite);
 
         return mediaSource;
     }
@@ -1804,6 +1551,27 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
                 ?? throw new InvalidOperationException("Plugin configuration is not available.");
 
             var mediaSource = await BuildMediaSourceInfoAsync(channelId, config, cancellationToken).ConfigureAwait(false);
+
+            var providerTypeFullName = "Jellyfin.LiveTv.LiveTvMediaSourceProvider";
+            var itemTypeName = "LiveTvChannel";
+            var internalChannelId = GetInternalChannelId(Name, channelId);
+            var itemIdN = internalChannelId.ToString("N", CultureInfo.InvariantCulture);
+            var sourceIdFromMediaSource = mediaSource.Id ?? string.Empty;
+            var cacheFile = BuildMediainfoCacheFileName(providerTypeFullName, itemTypeName, itemIdN, sourceIdFromMediaSource);
+
+            _logger.LogInformation(
+                "GetInternalChannelId resolved external channel id {ExternalChannelId} to internal id {InternalChannelId}.",
+                channelId,
+                itemIdN);
+
+            _logger.LogInformation(
+                "Mediainfo cache key on media-source request: Provider={Provider}, ItemType={ItemType}, ItemId={ItemId}, SourceIdFromMediaSource={SourceIdFromMediaSource}, CacheFile={CacheFile}",
+                providerTypeFullName,
+                itemTypeName,
+                itemIdN,
+                sourceIdFromMediaSource,
+                cacheFile);
+
             return new List<MediaSourceInfo> { mediaSource };
         }
         catch (Exception ex)
@@ -1961,7 +1729,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     }
 
     /// <summary>
-    /// Maps the recording profile name stored in the plugin configuration to its corresponding UUID from the TVHeadEnd API.
+    /// Maps the recording profile name stored in the plugin configuration to its corresponding UUID from the TVHeadend API.
     /// </summary>
     /// <param name="profileName">The name of the recording profile to map.</param>
     /// <param name="cancellationToken">A token to cancel the operation if necessary.</param>
@@ -2018,7 +1786,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
         }
     }
 
-    // ── Streaming profile container detection ────────────────────────────
+    // -- Streaming profile container detection ----------------------------
 
     /// <summary>
     /// Maps TVHeadend container values (numeric enum or string) to FFmpeg container names.
@@ -2031,6 +1799,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             "1" or "matroska" or "mkv" => "matroska",
             "2" or "mpegts" or "ts" => "mpegts",
             "3" or "mpegps" or "ps" => "mpegps",
+            "9" => "mp4",
             "4" or "mp4" => "mp4",
             _ => raw.ToLowerInvariant()
         };
@@ -2052,49 +1821,35 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
 
     /// <summary>
     /// Queries TVHeadend for the configured streaming profile and returns its output container format.
-    /// <para>
-    /// For transcode profiles the container is read from the profile's <c>container</c> property.
-    /// For pass-through profiles the container is derived from the profile class name.
-    /// </para>
-    /// The result is cached for <see cref="ProfileDetailsCacheTtl"/> and invalidated when the
+    /// The result is cached for <see cref="ProfileContainerCacheTtl"/> and invalidated when the
     /// configured profile name changes.
     /// </summary>
     private async Task<string> GetStreamingProfileContainerAsync(PluginConfiguration config, CancellationToken cancellationToken)
     {
-        var entry = await GetProfileDetailsAsync(config, cancellationToken).ConfigureAwait(false);
-        return entry.Container;
-    }
-
-    /// <summary>
-    /// Returns the full cached profile details (container, codecs, bitrates) for the configured
-    /// streaming profile. Performs a TVHeadend API call on first access or when the cache expires.
-    /// </summary>
-    private async Task<ProfileCacheEntry> GetProfileDetailsAsync(PluginConfiguration config, CancellationToken cancellationToken)
-    {
         var profileName = config.StreamingProfile;
 
         // Fast path: return cached result if still valid
-        if (_profileDetailsCache is { } cached
+        if (_profileContainerCache is { } cached
             && string.Equals(cached.ProfileName, profileName, StringComparison.OrdinalIgnoreCase)
-            && DateTime.UtcNow - cached.Timestamp < ProfileDetailsCacheTtl)
+            && DateTime.UtcNow - cached.Timestamp < ProfileContainerCacheTtl)
         {
-            return cached;
+            return cached.Container;
         }
 
         await _profileContainerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // Double-check after acquiring lock
-            if (_profileDetailsCache is { } cached2
+            if (_profileContainerCache is { } cached2
                 && string.Equals(cached2.ProfileName, profileName, StringComparison.OrdinalIgnoreCase)
-                && DateTime.UtcNow - cached2.Timestamp < ProfileDetailsCacheTtl)
+                && DateTime.UtcNow - cached2.Timestamp < ProfileContainerCacheTtl)
             {
-                return cached2;
+                return cached2.Container;
             }
 
-            var entry = await DetectProfileDetailsAsync(profileName, cancellationToken).ConfigureAwait(false);
-            _profileDetailsCache = entry;
-            return entry;
+            var container = await DetectProfileContainerAsync(profileName, cancellationToken).ConfigureAwait(false);
+            _profileContainerCache = new ContainerCacheEntry(DateTime.UtcNow, profileName, container);
+            return container;
         }
         finally
         {
@@ -2103,17 +1858,18 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     }
 
     /// <summary>
-    /// Performs the actual TVHeadend API calls to detect container format and codec details
-    /// for a streaming profile. Returns a <see cref="ProfileCacheEntry"/> with all available info.
+    /// Performs TVHeadend API calls to detect the output container format for a streaming profile.
+    /// For transcode profiles the container is read from the profile's <c>container</c> property.
+    /// For pass-through profiles the container is derived from the profile class name.
     /// </summary>
-    private async Task<ProfileCacheEntry> DetectProfileDetailsAsync(string profileName, CancellationToken cancellationToken)
+    private async Task<string> DetectProfileContainerAsync(string profileName, CancellationToken cancellationToken)
     {
         const string fallbackContainer = "mpegts";
 
         if (string.IsNullOrWhiteSpace(profileName))
         {
             _logger.LogWarning("No streaming profile configured. Defaulting container to '{Container}'.", fallbackContainer);
-            return new ProfileCacheEntry(DateTime.UtcNow, profileName ?? string.Empty, fallbackContainer);
+            return fallbackContainer;
         }
 
         try
@@ -2150,7 +1906,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
                     "Streaming profile '{ProfileName}' not found in TVHeadend. Defaulting container to '{Container}'.",
                     profileName,
                     fallbackContainer);
-                return new ProfileCacheEntry(DateTime.UtcNow, profileName, fallbackContainer);
+                return fallbackContainer;
             }
 
             // Step 2: Load the profile details via api/idnode/load
@@ -2162,261 +1918,223 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             loadResponse.EnsureSuccessStatusCode();
             var loadBody = await loadResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
-            using (var doc = JsonDocument.Parse(loadBody))
+            using var doc = JsonDocument.Parse(loadBody);
+            if (!doc.RootElement.TryGetProperty("entries", out var profileEntries) || profileEntries.GetArrayLength() == 0)
             {
-                if (!doc.RootElement.TryGetProperty("entries", out var profileEntries) || profileEntries.GetArrayLength() == 0)
+                _logger.LogWarning(
+                    "TVHeadend returned empty data for profile UUID '{Uuid}'. Defaulting container to '{Container}'.",
+                    profileUuid,
+                    fallbackContainer);
+                return fallbackContainer;
+            }
+
+            var profileEntry = profileEntries[0];
+            var profileClass = GetJsonStringPropOrParam(profileEntry, "class") ?? string.Empty;
+
+            // Transcode profiles: read container from the profile
+            if (profileClass.Contains("transcode", StringComparison.OrdinalIgnoreCase))
+            {
+                var rawContainer = GetJsonStringPropOrParam(profileEntry, "container")
+                    ?? GetJsonIntPropOrParam(profileEntry, "container")?.ToString(CultureInfo.InvariantCulture)
+                    ?? string.Empty;
+
+                var mappedContainer = MapContainer(rawContainer);
+                if (string.IsNullOrWhiteSpace(mappedContainer))
                 {
                     _logger.LogWarning(
-                        "TVHeadend returned empty data for profile UUID '{Uuid}'. Defaulting container to '{Container}'.",
-                        profileUuid,
-                        fallbackContainer);
-                    return new ProfileCacheEntry(DateTime.UtcNow, profileName, fallbackContainer);
-                }
-
-                var profileEntry = profileEntries[0];
-                var profileClass = GetJsonStringProp(profileEntry, "class") ?? string.Empty;
-
-                // Transcode profiles: read container and codec fields
-                if (profileClass.Contains("transcode", StringComparison.OrdinalIgnoreCase))
-                {
-                    var rawContainer = GetJsonStringProp(profileEntry, "container")
-                        ?? GetJsonIntProp(profileEntry, "container")?.ToString(CultureInfo.InvariantCulture)
-                        ?? string.Empty;
-
-                    var mappedContainer = MapContainer(rawContainer);
-                    if (string.IsNullOrWhiteSpace(mappedContainer))
-                    {
-                        _logger.LogWarning(
-                            "Transcode profile '{ProfileName}' has no container set (raw='{Raw}'). Defaulting to '{Container}'.",
-                            profileName,
-                            rawContainer,
-                            fallbackContainer);
-                        mappedContainer = fallbackContainer;
-                    }
-                    else
-                    {
-                        _logger.LogInformation(
-                            "Streaming profile '{ProfileName}' (class={ProfileClass}) uses container '{Container}'.",
-                            profileName,
-                            profileClass,
-                            mappedContainer);
-                    }
-
-                    // Extract codec information from the transcode profile
-                    var rawVideoCodec = GetJsonStringProp(profileEntry, "vcodec") ?? string.Empty;
-                    var rawAudioCodec = GetJsonStringProp(profileEntry, "acodec") ?? string.Empty;
-                    var proVideoCodec = GetJsonStringProp(profileEntry, "pro_vcodec") ?? string.Empty;
-                    var proAudioCodec = GetJsonStringProp(profileEntry, "pro_acodec") ?? string.Empty;
-                    var vBitrate = GetJsonIntProp(profileEntry, "vbitrate") ?? 0;
-                    var aBitrate = GetJsonIntProp(profileEntry, "abitrate") ?? 0;
-                    var resolution = GetJsonIntProp(profileEntry, "resolution") ?? 0;
-                    var channels = GetJsonIntProp(profileEntry, "channels") ?? 0;
-
-                    // Resolve codec names: prefer direct vcodec/acodec, fall back to profile ref name heuristics
-                    var videoCodec = ResolveCodecFromProfile(rawVideoCodec, proVideoCodec, isVideo: true);
-                    var audioCodec = ResolveCodecFromProfile(rawAudioCodec, proAudioCodec, isVideo: false);
-
-                    _logger.LogInformation(
-                        "Transcode profile '{ProfileName}': video={VideoCodec}, audio={AudioCodec}, vbitrate={VBitrate}k, abitrate={ABitrate}k, resolution={Resolution}.",
+                        "Transcode profile '{ProfileName}' has no container set (raw='{Raw}'). Defaulting to '{Container}'.",
                         profileName,
-                        videoCodec,
-                        audioCodec,
-                        vBitrate,
-                        aBitrate,
-                        resolution);
-
-                    return new ProfileCacheEntry(DateTime.UtcNow, profileName, mappedContainer)
-                    {
-                        IsTranscodeProfile = true,
-                        VideoCodec = videoCodec,
-                        AudioCodec = audioCodec,
-                        VideoBitrateKbps = vBitrate,
-                        AudioBitrateKbps = aBitrate,
-                        VideoHeight = resolution,
-                        AudioChannels = channels,
-                    };
+                        rawContainer,
+                        fallbackContainer);
+                    return fallbackContainer;
                 }
 
-                // Non-transcode profiles: derive from profile class
-                var classContainer = MapProfileClassToContainer(profileClass);
                 _logger.LogInformation(
-                    "Streaming profile '{ProfileName}' (class={ProfileClass}) → container '{Container}' (derived from class).",
+                    "Streaming profile '{ProfileName}' (class={ProfileClass}) uses container '{Container}'.",
                     profileName,
                     profileClass,
-                    classContainer);
-                return new ProfileCacheEntry(DateTime.UtcNow, profileName, classContainer);
+                    mappedContainer);
+                return mappedContainer;
             }
+
+            // Non-transcode profiles: derive from profile class
+            var classContainer = MapProfileClassToContainer(profileClass);
+            _logger.LogInformation(
+                "Streaming profile '{ProfileName}' (class={ProfileClass}) ? container '{Container}' (derived from class).",
+                profileName,
+                profileClass,
+                classContainer);
+            return classContainer;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(
                 ex,
-                "Failed to detect details for streaming profile '{ProfileName}'. Defaulting to '{Container}'.",
+                "Failed to detect container for streaming profile '{ProfileName}'. Defaulting to '{Container}'.",
                 profileName,
                 fallbackContainer);
-            return new ProfileCacheEntry(DateTime.UtcNow, profileName, fallbackContainer);
+            return fallbackContainer;
+        }
+    }
+
+    // -- Mediainfo cache file writing --------------------------------------
+
+    /// <summary>
+    /// Pre-creates a Jellyfin mediainfo cache file for a channel if none exists yet.
+    /// The file contains H264+AAC stream metadata matching the output of TVHeadend's
+    /// "jellyfin" transcode profile, so that Jellyfin's <c>AddMediaInfoWithProbe</c> finds
+    /// the cache on the very first tune and skips actual FFmpeg probing.
+    /// </summary>
+    private async Task TryWriteMediaInfoCacheAsync(string channelId, string streamUrl, string container)
+    {
+        try
+        {
+            var cachePath = Plugin.Instance?.CachePath;
+            if (string.IsNullOrWhiteSpace(cachePath))
+            {
+                return;
+            }
+
+            var providerTypeFullName = "Jellyfin.LiveTv.LiveTvMediaSourceProvider";
+            var itemTypeName = "LiveTvChannel";
+            var internalChannelId = GetInternalChannelId(Name, channelId);
+            var itemIdN = internalChannelId.ToString("N", CultureInfo.InvariantCulture);
+            var cacheFileName = BuildMediainfoCacheFileName(providerTypeFullName, itemTypeName, itemIdN, channelId);
+            var mediaInfoDir = Path.Combine(cachePath, "mediainfo");
+            var cacheFilePath = Path.Combine(mediaInfoDir, cacheFileName);
+
+            if (File.Exists(cacheFilePath))
+            {
+                _logger.LogDebug(
+                    "Mediainfo cache file already exists for channel {ChannelId}: {Path}.",
+                    channelId,
+                    cacheFilePath);
+                return;
+            }
+
+            if (!Directory.Exists(mediaInfoDir))
+            {
+                Directory.CreateDirectory(mediaInfoDir);
+            }
+
+            // Build cache content matching Jellyfin's probe cache format.
+            // The structure mirrors what FFprobe would produce for H264+AAC MP4 output.
+            var cacheContent = new Dictionary<string, object?>
+            {
+                ["Chapters"] = Array.Empty<object>(),
+                ["Artists"] = Array.Empty<object>(),
+                ["AlbumArtists"] = Array.Empty<object>(),
+                ["Studios"] = Array.Empty<object>(),
+                ["Genres"] = Array.Empty<object>(),
+                ["People"] = Array.Empty<object>(),
+                ["ProviderIds"] = new Dictionary<string, string>(),
+                ["Protocol"] = "Http",
+                ["Path"] = streamUrl,
+                ["Type"] = "Default",
+                ["Container"] = "mov,mp4,m4a,3gp,3g2,mj2",
+                ["IsRemote"] = false,
+                ["RunTimeTicks"] = 0,
+                ["ReadAtNativeFramerate"] = false,
+                ["IgnoreDts"] = false,
+                ["IgnoreIndex"] = false,
+                ["GenPtsInput"] = false,
+                ["SupportsTranscoding"] = true,
+                ["SupportsDirectStream"] = true,
+                ["SupportsDirectPlay"] = true,
+                ["IsInfiniteStream"] = false,
+                ["UseMostCompatibleTranscodingProfile"] = false,
+                ["RequiresOpening"] = false,
+                ["RequiresClosing"] = false,
+                ["RequiresLooping"] = false,
+                ["SupportsProbing"] = true,
+                ["MediaStreams"] = new[]
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["Codec"] = "h264",
+                        ["CodecTag"] = "avc1",
+                        ["Language"] = "und",
+                        ["TimeBase"] = "1/16384",
+                        ["VideoRange"] = "SDR",
+                        ["VideoRangeType"] = "SDR",
+                        ["AudioSpatialFormat"] = "None",
+                        ["DisplayTitle"] = "720p H264 SDR",
+                        ["NalLengthSize"] = "4",
+                        ["IsInterlaced"] = false,
+                        ["IsAVC"] = true,
+                        ["BitDepth"] = 8,
+                        ["RefFrames"] = 1,
+                        ["IsDefault"] = true,
+                        ["IsForced"] = false,
+                        ["IsHearingImpaired"] = false,
+                        ["Height"] = 720,
+                        ["Width"] = 1280,
+                        ["AverageFrameRate"] = 25.0,
+                        ["RealFrameRate"] = 25.0,
+                        ["ReferenceFrameRate"] = 25.0,
+                        ["Profile"] = "Main",
+                        ["Type"] = "Video",
+                        ["AspectRatio"] = "16:9",
+                        ["Index"] = 0,
+                        ["IsExternal"] = false,
+                        ["IsTextSubtitleStream"] = false,
+                        ["SupportsExternalStream"] = false,
+                        ["PixelFormat"] = "yuv420p",
+                        ["Level"] = 30,
+                        ["IsAnamorphic"] = false,
+                    },
+                    new Dictionary<string, object?>
+                    {
+                        ["Codec"] = "aac",
+                        ["CodecTag"] = "mp4a",
+                        ["Language"] = "ger",
+                        ["TimeBase"] = "1/48000",
+                        ["VideoRange"] = "Unknown",
+                        ["VideoRangeType"] = "Unknown",
+                        ["AudioSpatialFormat"] = "None",
+                        ["DisplayTitle"] = "AAC - Stereo",
+                        ["IsInterlaced"] = false,
+                        ["IsAVC"] = false,
+                        ["ChannelLayout"] = "stereo",
+                        ["BitRate"] = 128000,
+                        ["Channels"] = 2,
+                        ["SampleRate"] = 48000,
+                        ["IsDefault"] = true,
+                        ["IsForced"] = false,
+                        ["IsHearingImpaired"] = false,
+                        ["Profile"] = "LC",
+                        ["Type"] = "Audio",
+                        ["Index"] = 1,
+                        ["IsExternal"] = false,
+                        ["IsTextSubtitleStream"] = false,
+                        ["SupportsExternalStream"] = false,
+                        ["Level"] = 0,
+                    },
+                },
+                ["MediaAttachments"] = Array.Empty<object>(),
+                ["Formats"] = Array.Empty<string>(),
+                ["Bitrate"] = 128000,
+                ["RequiredHttpHeaders"] = new Dictionary<string, string>(),
+                ["TranscodingSubProtocol"] = "http",
+                ["HasSegments"] = false,
+            };
+
+            var json = JsonSerializer.Serialize(cacheContent);
+            await File.WriteAllTextAsync(cacheFilePath, json).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Created mediainfo cache file for channel {ChannelId} at {Path}.",
+                channelId,
+                cacheFilePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to write mediainfo cache file for channel {ChannelId}.", channelId);
         }
     }
 
     /// <summary>
-    /// Resolves a TVHeadend codec reference to an FFmpeg codec name.
-    /// Tries the raw codec field first, then falls back to heuristics from the codec profile reference name.
+    /// Cached container string extracted from a TVHeadend streaming profile.
     /// </summary>
-    private static string ResolveCodecFromProfile(
-        string rawCodec,
-        string profileRef,
-        bool isVideo)
-    {
-        // Try mapping the raw codec name directly
-        if (!string.IsNullOrWhiteSpace(rawCodec))
-        {
-            var mapped = isVideo ? MapVideoCodecName(rawCodec) : MapAudioCodecName(rawCodec);
-            if (!string.IsNullOrWhiteSpace(mapped))
-            {
-                return mapped;
-            }
-        }
-
-        // Fall back to heuristics from the codec profile reference name
-        if (!string.IsNullOrWhiteSpace(profileRef))
-        {
-            var lower = profileRef.ToLowerInvariant();
-            if (isVideo)
-            {
-                if (lower.Contains("264", StringComparison.Ordinal) || lower.Contains("avc", StringComparison.Ordinal))
-                {
-                    return "h264";
-                }
-
-                if (lower.Contains("265", StringComparison.Ordinal) || lower.Contains("hevc", StringComparison.Ordinal))
-                {
-                    return "hevc";
-                }
-
-                if (lower.Contains("mpeg2", StringComparison.Ordinal))
-                {
-                    return "mpeg2video";
-                }
-
-                if (lower.Contains("vp9", StringComparison.Ordinal))
-                {
-                    return "vp9";
-                }
-
-                if (lower.Contains("vp8", StringComparison.Ordinal))
-                {
-                    return "vp8";
-                }
-
-                if (lower.Contains("av1", StringComparison.Ordinal))
-                {
-                    return "av1";
-                }
-            }
-            else
-            {
-                if (lower.Contains("aac", StringComparison.Ordinal))
-                {
-                    return "aac";
-                }
-
-                if (lower.Contains("ac3", StringComparison.Ordinal) || lower.Contains("a52", StringComparison.Ordinal))
-                {
-                    return "ac3";
-                }
-
-                if (lower.Contains("eac3", StringComparison.Ordinal))
-                {
-                    return "eac3";
-                }
-
-                if (lower.Contains("opus", StringComparison.Ordinal))
-                {
-                    return "opus";
-                }
-
-                if (lower.Contains("mp3", StringComparison.Ordinal))
-                {
-                    return "mp3";
-                }
-
-                if (lower.Contains("mp2", StringComparison.Ordinal))
-                {
-                    return "mp2";
-                }
-            }
-        }
-
-        return string.Empty;
-    }
-
-    /// <summary>Maps TVHeadend/libav video codec names to FFmpeg codec names.</summary>
-    private static string MapVideoCodecName(string raw)
-    {
-        return raw.ToLowerInvariant() switch
-        {
-            "" or "copy" or "do not use" => string.Empty,
-            "libx264" or "h264" or "h264_vaapi" or "h264_nvenc" or "h264_qsv" => "h264",
-            "libx265" or "hevc" or "hevc_vaapi" or "hevc_nvenc" or "hevc_qsv" => "hevc",
-            "mpeg2video" or "mpeg2" => "mpeg2video",
-            "libvpx" or "vp8" => "vp8",
-            "libvpx-vp9" or "vp9" => "vp9",
-            "av1" or "libaom-av1" or "libsvtav1" => "av1",
-            _ => raw.ToLowerInvariant()
-        };
-    }
-
-    /// <summary>Maps TVHeadend/libav audio codec names to FFmpeg codec names.</summary>
-    private static string MapAudioCodecName(string raw)
-    {
-        return raw.ToLowerInvariant() switch
-        {
-            "" or "copy" or "do not use" => string.Empty,
-            "libfdk_aac" or "aac" => "aac",
-            "ac3" or "a52" => "ac3",
-            "eac3" => "eac3",
-            "libmp3lame" or "mp3" => "mp3",
-            "mp2" or "libtwolame" => "mp2",
-            "libvorbis" or "vorbis" => "vorbis",
-            "libopus" or "opus" => "opus",
-            _ => raw.ToLowerInvariant()
-        };
-    }
-
-    /// <summary>
-    /// Holds probe-quality stream data parsed from a single Jellyfin mediainfo cache file.
-    /// </summary>
-    private sealed record CachedProbeResult(
-        List<MediaStream> MediaStreams,
-        string? Container,
-        int Bitrate);
-
-    /// <summary>
-    /// Cached profile details extracted from a TVHeadend streaming profile.
-    /// Used both for container detection and as a fallback to build synthetic MediaStreams
-    /// when no elementary stream data is available from TVHeadend.
-    /// </summary>
-    private sealed record ProfileCacheEntry(DateTime Timestamp, string ProfileName, string Container)
-    {
-        /// <summary>Gets a value indicating whether this is a transcode profile (fixed output codecs).</summary>
-        public bool IsTranscodeProfile { get; init; }
-
-        /// <summary>Gets the output video codec (FFmpeg name), e.g. "h264", "hevc". Empty for pass-through.</summary>
-        public string VideoCodec { get; init; } = string.Empty;
-
-        /// <summary>Gets the output audio codec (FFmpeg name), e.g. "aac", "ac3". Empty for pass-through.</summary>
-        public string AudioCodec { get; init; } = string.Empty;
-
-        /// <summary>Gets the video bitrate in kbps (0 if not set / copy).</summary>
-        public int VideoBitrateKbps { get; init; }
-
-        /// <summary>Gets the audio bitrate in kbps (0 if not set / copy).</summary>
-        public int AudioBitrateKbps { get; init; }
-
-        /// <summary>Gets the output video height (0 = source resolution).</summary>
-        public int VideoHeight { get; init; }
-
-        /// <summary>Gets the output audio channel count (0 = source channels).</summary>
-        public int AudioChannels { get; init; }
-    }
+    private sealed record ContainerCacheEntry(DateTime Timestamp, string ProfileName, string Container);
 }

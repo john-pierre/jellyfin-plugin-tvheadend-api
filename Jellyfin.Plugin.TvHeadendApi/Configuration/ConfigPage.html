@@ -42,16 +42,60 @@
                         <button id="DiagnoseBtn" is="emby-button" type="button" class="raised emby-button" style="min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
                             <span>🔍 Run Diagnose</span>
                         </button>
+                        <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button" style="background:#00a4dc; color:#fff; font-weight:bold; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
+                            <span>Create &quot;jellyfin&quot; Profile</span>
+                        </button>
                         <button id="ResetDefaultsBtn" is="emby-button" type="button" class="raised emby-button" style="background:#444; color:#fff; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
                             <span>Reset Config</span>
                         </button>
                     </div>
 
                     <div id="ResetDefaultsMsg" style="margin-top:0.25em; font-style:italic;"></div>
+                    <div id="ProfileActionMsg" style="margin-top:0.5em; font-style:italic;"></div>
 
                     <div id="DiagnoseReport" style="margin-top:1em; padding:1em; border:1px solid #444; border-radius:6px; background:#1a1a2e; font-family:monospace; font-size:0.9em; line-height:1.6;">
                         <em>Diagnose wird geladen…</em>
                     </div>
+                </div>
+
+                <!-- ── 0b. Setup Guide ───────────────────────────────────── -->
+                <div class="section">
+                    <details>
+                        <summary style="cursor:pointer; font-size:1.15em; font-weight:bold;">📖 Recommended Setup Guide (TVHeadend + Jellyfin)</summary>
+                        <div style="margin-top:0.75em; line-height:1.7;">
+                            <p>Follow these steps for the <strong>fastest channel switching</strong> (stream open &lt; 3 seconds, even on first tune):</p>
+
+                            <h3 style="margin:1em 0 0.3em;">1. TVHeadend: Create a transcode profile</h3>
+                            <ul style="margin:0 0 0 1.5em;">
+                                <li>Click <strong>"Create jellyfin Profile"</strong> in the top action bar to auto-create an optimised profile in TVHeadend.</li>
+                                <li>This creates a transcode profile named <code>jellyfin</code> that outputs <strong>MP4 / H.264 / AAC</strong>.</li>
+                                <li>Alternatively, create the profile manually in TVHeadend: <em>Configuration → Stream → Stream Profiles → Add profile-transcode</em>,
+                                    set Container = <code>MPEG-TS</code> or <code>MP4</code>, Video Codec = <code>libx264</code>, Audio Codec = <code>AAC</code>.</li>
+                            </ul>
+
+                            <h3 style="margin:1em 0 0.3em;">2. Plugin: Set Streaming Profile</h3>
+                            <ul style="margin:0 0 0 1.5em;">
+                                <li>In the <em>Streaming</em> section below, set the <strong>Streaming Profile</strong> to <code>jellyfin</code>.</li>
+                            </ul>
+
+                            <h3 style="margin:1em 0 0.3em;">3. Plugin: Playback Settings</h3>
+                            <ul style="margin:0 0 0 1.5em;">
+                                <li>Enable <strong>Direct Play</strong> ✅</li>
+                                <li>Enable <strong>Direct Stream</strong> ✅</li>
+                                <li>Enable <strong>Stream Probing</strong> ✅ — this allows Jellyfin to use the pre-created mediainfo cache immediately.</li>
+                                <li>Enable <strong>Pre-create Probe Cache Files</strong> ✅ — the plugin writes cache files automatically so that even the very first tune to a channel is fast.</li>
+                            </ul>
+
+
+                            <h3 style="margin:1em 0 0.3em;">How it works</h3>
+                            <p style="margin:0 0 0 0.5em;">
+                                TVHeadend pre-transcodes every channel to a consistent format (H.264 + AAC).
+                                The plugin pre-creates Jellyfin's mediainfo cache files with matching stream metadata.
+                                When Jellyfin opens a channel it finds the cache, skips FFmpeg probing, and starts
+                                Direct Play immediately — resulting in channel switching under 3 seconds.
+                            </p>
+                        </div>
+                    </details>
                 </div>
 
                 <!-- ── 1. Connection ────────────────────────────────────── -->
@@ -177,57 +221,73 @@
                     </div>
                     <div class="checkboxContainer">
                         <label>
-                            <input id="SupportsProbing" name="SupportsProbing" type="checkbox" is="emby-checkbox" />
-                            <span>Stream Probing</span>
-                        </label>
-                        <div class="fieldDescription">
-                            Let Jellyfin analyse (probe) the stream with FFmpeg to detect codecs and format before playback.
-                            <strong>Recommended: OFF.</strong> The plugin queries TVHeadend for stream details automatically, which is faster and avoids probing entirely.<br>
-                            <em>⚠️ Jellyfin core behaviour when probing is ON:</em>
-                            <ul style="margin:0.3em 0 0 1.5em; padding:0;">
-                                <li>Jellyfin always waits <strong>at least 3 seconds</strong> before probing (<code>Math.Max(3000, AnalyzeDurationMs)</code>).</li>
-                                <li>Jellyfin <strong>overrides</strong> the AnalyzeDuration to <strong>3000 ms</strong> for all live streams, regardless of what this plugin sets.</li>
-                                <li>Jellyfin <strong>caches</strong> probe results on disk (under <code>&lt;data&gt;/cache/mediainfo/</code>). The first probe takes 3+ seconds;
-                                    subsequent opens of the same channel use the cache and complete in milliseconds.</li>
-                                <li>The cache key is derived from the stream's LiveStreamId. It persists until Jellyfin clears its cache.</li>
-                            </ul>
-                        </div>
-                    </div>
-                    <div class="checkboxContainer">
-                        <label>
                             <input id="IgnoreDts" name="IgnoreDts" type="checkbox" is="emby-checkbox" />
                             <span>Ignore DTS Timestamps</span>
                         </label>
                         <div class="fieldDescription">Ignore Decode Time Stamps. Can fix playback glitches with some MPEG-TS streams.</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="SupportsProbing" name="SupportsProbing" type="checkbox" is="emby-checkbox" />
+                            <span>Stream Probing</span>
+                        </label>
+                        <div class="fieldDescription">
+                            Probing means Jellyfin resolves the stream metadata it needs before playback
+                            starts, so it can decide whether <strong>Direct Play</strong>, remuxing, or
+                            transcoding is required.
+                            <strong>Recommended: ON</strong> when using a transcode profile with
+                            <em>Pre-create Probe Cache Files</em> enabled, because that gives Jellyfin the
+                            metadata it needs immediately and helps it start in <strong>Direct Play</strong>
+                            as fast as possible.<br>
+                            <em>Important: Jellyfin has a hard-coded live TV delay of <strong>3 seconds</strong>
+                            when it has to probe a stream. If Direct Play is not possible and Jellyfin falls
+                            back to transcoding, there is another hard-coded <strong>3 second</strong> live TV
+                            startup delay on that path as well. Together with FFmpeg startup overhead, channel
+                            switching can easily end up around <strong>8 seconds</strong>. With probing enabled
+                            and matching cache files already present, Jellyfin gets the data it needs right away
+                            and can stay on the fast Direct Play path.</em>
+                        </div>
+                    </div>
+
+                    <div style="background-color:#f0f0f0; border-left:4px solid #00a4dc; padding:1em; margin:1em 0; border-radius:4px;">
+                        <h4 style="margin:0 0 0.5em 0; color:#00a4dc;">💡 FFmpeg Settings (Optional)</h4>
+                        <p style="margin:0 0 0.5em 0; font-size:0.95em;">
+                            To optimize stream analysis, you can configure Jellyfin's FFmpeg ProbeSize setting:
+                        </p>
+                        <ul style="margin:0 0 0 1.5em; font-size:0.95em;">
+                            <li>Go to <em>Dashboard → Playback → FFmpeg</em></li>
+                            <li>Set <strong>ProbeSize</strong> to <code>1000000</code> for faster stream analysis</li>
+                            <li>Or set the environment variable <code>JELLYFIN_FFmpeg__ProbeSize=1000000</code></li>
+                        </ul>
+                    </div>
+
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="EnableMediaInfoCacheWrite" name="EnableMediaInfoCacheWrite" type="checkbox" is="emby-checkbox" />
+                            <span>Pre-create Probe Cache Files</span>
+                        </label>
+                        <div class="fieldDescription">
+                            When enabled, the plugin automatically creates mediainfo cache files for channels
+                            that don't have one yet. The files contain H.264 + AAC stream metadata matching the
+                            output of TVHeadend's "jellyfin" transcode profile. This makes even the very first
+                            tune to a channel fast by eliminating FFmpeg probing entirely.<br>
+                            <em>⚠️ Only enable this when using a transcode profile that outputs MP4/H.264/AAC
+                            (e.g. the "jellyfin" profile). Do <strong>not</strong> enable with "pass" or other
+                            variable-output profiles — the cached metadata would not match the actual stream.</em>
+                        </div>
                     </div>
                     <div class="inputContainer">
                         <label class="inputLabel" for="BufferMs">Buffer (ms)</label>
                         <input id="BufferMs" name="BufferMs" type="number" is="emby-input" min="0" placeholder="0" />
                         <div class="fieldDescription">Stream buffer in milliseconds. <code>0</code> = Jellyfin default. Lower values reduce latency but may cause stuttering on slow connections.</div>
                     </div>
-                    <div class="checkboxContainer">
-                        <label>
-                            <input id="EnableMediaInfoCache" name="EnableMediaInfoCache" type="checkbox" is="emby-checkbox" />
-                            <span>Use Jellyfin Probe Cache</span>
-                        </label>
-                        <div class="fieldDescription">
-                            When enabled, the plugin reads Jellyfin's mediainfo probe cache files
-                            (<code>&lt;data&gt;/cache/mediainfo/*.json</code>) and uses the detailed
-                            stream data from previous FFmpeg probes (ColorRange, ColorSpace, Profile,
-                            Level, PixelFormat, RealFrameRate, DisplayTitle, etc.) instead of the
-                            synthetic streams built from TVHeadend's basic service API.<br>
-                            <em>Requires at least one prior probe run per channel to populate the cache.
-                            You can trigger this by temporarily enabling Stream Probing, opening each
-                            channel once, then disabling probing again.</em>
-                        </div>
-                    </div>
                     <div class="inputContainer">
                         <label class="inputLabel" for="AnalyzeDurationMs">FFmpeg Analyze Duration (ms)</label>
-                        <input id="AnalyzeDurationMs" name="AnalyzeDurationMs" type="number" is="emby-input" min="0" placeholder="0" />
+                        <input id="AnalyzeDurationMs" name="AnalyzeDurationMs" type="number" is="emby-input" min="0" placeholder="200" />
                         <div class="fieldDescription">
                             Time FFmpeg spends analysing the stream before playback starts, in <strong>milliseconds</strong>.
-                            <code>0</code> = automatic: the plugin defaults to <strong>200 ms</strong> when TVHeadend stream details are available.
-                            If no stream details are found and probing is active, Jellyfin's global FFmpeg setting is used as fallback.<br>
+                            <strong>Default: 200 ms.</strong> This is the recommended value for fast startup.
+                            You can still set <code>0</code> to use the plugin's automatic fallback behaviour for older setups.<br>
                             <em>⚠️ Important: When <strong>Stream Probing</strong> is enabled, Jellyfin's core always overrides this value
                             to <strong>3000 ms</strong> for live streams. This plugin's value only takes effect reliably when probing is <strong>OFF</strong>
                             and the plugin provides stream details from TVHeadend.</em><br>
@@ -237,29 +297,7 @@
                     </div>
                 </div>
 
-                <!-- ── 5. TVHeadend Profile Management ─────────────────── -->
-                <div class="section">
-                    <h2>TVHeadend Profiles</h2>
-                    <p class="sectionDescription">
-                        Create optimised streaming profiles in TVHeadend directly from this plugin,
-                        or detect the configuration of your current profile.
-                    </p>
-
-                    <div style="display:flex; flex-wrap:wrap; gap:0.75em; margin-bottom:0.75em;">
-                        <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button" style="background:#00a4dc; color:#fff; font-weight:bold;">
-                            <span>Create &quot;jellyfin&quot; Profile</span>
-                        </button>
-                        <button id="CreateTestProfilesBtn" is="emby-button" type="button" class="raised emby-button">
-                            <span>Create Benchmark Profiles</span>
-                        </button>
-                        <button id="DetectProfileBtn" is="emby-button" type="button" class="raised emby-button">
-                            <span>Detect Current Profile</span>
-                        </button>
-                    </div>
-                    <div id="ProfileActionMsg" style="margin-top:0.5em; font-style:italic;"></div>
-                </div>
-
-                <!-- ── 6. Recording (DVR) ───────────────────────────────── -->
+                <!-- ── 5. Recording (DVR) ───────────────────────────────── -->
                 <div class="section">
                     <h2>Recording (DVR)</h2>
                     <p class="sectionDescription">Settings for TVHeadend-managed recordings. Disable if you want Jellyfin to handle DVR on its own.</p>
@@ -355,7 +393,7 @@
                 config.IgnoreDts = document.querySelector('#IgnoreDts').checked;
                 config.BufferMs = parseIntegerOrDefault('#BufferMs', config.BufferMs);
                 config.AnalyzeDurationMs = parseIntegerOrDefault('#AnalyzeDurationMs', config.AnalyzeDurationMs);
-                config.EnableMediaInfoCache = document.querySelector('#EnableMediaInfoCache').checked;
+                config.EnableMediaInfoCacheWrite = document.querySelector('#EnableMediaInfoCacheWrite').checked;
                 config.EnableTvhDvr = document.querySelector('#EnableTvhDvr').checked;
                 config.Priority = parseIntegerOrDefault('#Priority', config.Priority);
                 config.PrePaddingSeconds = parseIntegerOrDefault('#PrePaddingSeconds', config.PrePaddingSeconds);
@@ -480,47 +518,6 @@
             });
         });
 
-        // ── Create Benchmark Test Profiles ─────────────────────────────
-        document.querySelector('#CreateTestProfilesBtn').addEventListener('click', function () {
-            var msgEl = document.querySelector('#ProfileActionMsg');
-            msgEl.style.color = '';
-            msgEl.textContent = 'Creating benchmark profiles in TVHeadend…';
-
-            saveCurrentFormToConfig().then(function () {
-                return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/CreateTestProfiles'), dataType: 'json' });
-            }).then(function (result) {
-                if (!result.Success) { msgEl.style.color = 'red'; msgEl.textContent = '❌ ' + (result.Message || 'Creation failed.'); return; }
-                msgEl.style.color = 'green';
-                msgEl.textContent = '✅ ' + result.Message;
-                loadDiagnose();
-            }).catch(function (err) {
-                msgEl.style.color = 'red';
-                msgEl.textContent = 'Request failed: ' + (err.statusText || err.message || 'Unknown error');
-            });
-        });
-
-        // ── Detect Profile from TVHeadend ──────────────────────────────
-        document.querySelector('#DetectProfileBtn').addEventListener('click', function () {
-            var msgEl = document.querySelector('#ProfileActionMsg');
-            msgEl.style.color = '';
-            msgEl.textContent = 'Detecting profile from TVHeadend…';
-
-            saveCurrentFormToConfig().then(function () {
-                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/DetectProfile'), dataType: 'json' });
-            }).then(function (result) {
-                if (!result.Success) { msgEl.style.color = 'red'; msgEl.textContent = '❌ ' + result.Message; return; }
-                var info = result.ProfileName + ' (' + result.ProfileClass + ')';
-                if (result.IsTranscodeProfile) {
-                    info += ' — Container: ' + (result.Container || '?') + ', Video: ' + (result.VideoCodec || '?') + ', Audio: ' + (result.AudioCodec || '?');
-                }
-                msgEl.style.color = result.IsTranscodeProfile ? 'green' : 'orange';
-                msgEl.textContent = (result.IsTranscodeProfile ? '✅ ' : 'ℹ️ ') + result.Message + ' [' + info + ']';
-            }).catch(function (err) {
-                msgEl.style.color = 'red';
-                msgEl.textContent = 'Request failed: ' + (err.statusText || err.message || 'Unknown error');
-            });
-        });
-
         // ── Load config into form ───────────────────────────────────────
         function loadFormFromConfig(config) {
             document.querySelector('#Host').value = config.Host || '';
@@ -542,7 +539,7 @@
             document.querySelector('#IgnoreDts').checked = config.IgnoreDts || false;
             document.querySelector('#BufferMs').value = config.BufferMs || '0';
             document.querySelector('#AnalyzeDurationMs').value = config.AnalyzeDurationMs || '0';
-            document.querySelector('#EnableMediaInfoCache').checked = config.EnableMediaInfoCache !== false;
+            document.querySelector('#EnableMediaInfoCacheWrite').checked = config.EnableMediaInfoCacheWrite !== false;
             document.querySelector('#EnableTvhDvr').checked = config.EnableTvhDvr !== false;
             document.querySelector('#Priority').value = config.Priority || '';
             document.querySelector('#PrePaddingSeconds').value = config.PrePaddingSeconds || '';
