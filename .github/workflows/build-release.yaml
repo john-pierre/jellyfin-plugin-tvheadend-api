@@ -1,19 +1,18 @@
 # GitHub Actions Workflow: Combined CI/CD and PR Validation Pipeline
 #
 # Description:
-# This workflow combines the build, release, and pull request validation processes for the Jellyfin plugin.
-# It runs on pull requests for validation (including PR title checks) and on pushes to the main branch to trigger releases.
+# This workflow combines build validation and release packaging for the Jellyfin plugin.
+# It runs on pull requests for build/test/package validation and on pushes to main for release automation.
 #
 # Key Features:
 # - Uses Release Please to manage versioning and changelogs.
-# - Validates PR titles against a predefined format to ensure semantic versioning compliance.
 # - Builds the plugin, runs tests, and packages the artifacts.
 # - Uploads artifacts for pull requests and creates releases for main branch pushes.
-# - Provides immediate feedback to contributors about PR title compliance and build/test results.
+# - Provides immediate feedback to contributors about build/test results.
 #
 # Use Cases:
 # - CI/CD for Jellyfin plugin development, combining validation and deployment processes.
-# - Enforcing high-quality standards for PR titles, commit history, and release management.
+# - Enforcing high-quality standards for commit history and release management.
 # - Ensuring reliable, automated builds and releases with minimal manual intervention.
 
 name: Build and Release
@@ -41,13 +40,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check PR Title
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: thehanimo/pr-title-checker@v1.4.3
-        with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          pass_on_octokit_error: false
-          configuration_path: .github/pr-title-checker-config.json
 
       - name: Release Please
         id: release-please
@@ -199,5 +191,5 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           branch: main
-          commit_message: Add Release Bundle ${{ steps.release-please.outputs.tag_name }} to manifest.json
+          commit_message: "build(release): update manifest for ${{ steps.release-please.outputs.tag_name }} [skip ci]"
           file_pattern: manifest.json

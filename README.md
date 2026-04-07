@@ -324,18 +324,24 @@ jellyfin-plugin-tvheadend-api/
 
 ## Release Process
 
-This repository uses [Release Please](https://github.com/googleapis/release-please) and a GitHub Actions pipeline defined in `.github/workflows/build-release.yaml`.
+This repository uses [Release Please](https://github.com/googleapis/release-please) and two GitHub Actions workflows:
+
+- `.github/workflows/pr-title-check.yaml` (PR title policy)
+- `.github/workflows/build-release.yaml` (build, package, release, manifest update)
 
 **Workflow overview:**
 
-1. **Pull Requests** — The pipeline validates the PR title against [Conventional Commits](https://www.conventionalcommits.org/) and runs a full build.
-2. **Push to `main`** — Release Please analyzes commit messages and opens a release PR when there are releasable changes.
+1. **Pull Requests** — PR title is validated against [Conventional Commits](https://www.conventionalcommits.org/) by the dedicated PR title workflow.
+2. **Merge Strategy** — Use **Squash and merge** so the merged commit subject equals the PR title.
+3. **Push to `main`** — Release Please analyzes merged commit subjects and opens/updates a release PR when there are releasable changes.
 3. **Release created** — When the release PR is merged, the pipeline:
    - Builds the plugin
    - Packages the DLL and `meta.json` into a ZIP archive
    - Calculates MD5 and SHA-256 checksums
    - Uploads all artifacts to the GitHub release
    - Updates `manifest.json` with the new version entry and commits it to `main`
+
+This setup keeps changelog entries aligned with PR titles, as long as squash merge is used consistently.
 
 ### Key Files
 
@@ -344,6 +350,8 @@ This repository uses [Release Please](https://github.com/googleapis/release-plea
 | `manifest.json` | Jellyfin plugin repository metadata (consumed by Jellyfin clients) |
 | `.release-please-manifest.json` | Current version state for Release Please |
 | `.github/release-please-config.json` | Release Please configuration |
+| `.github/pr-title-checker-config.json` | Conventional Commit regex for PR title validation |
+| `.github/workflows/pr-title-check.yaml` | Dedicated PR title validation workflow |
 | `.github/workflows/build-release.yaml` | CI/CD pipeline definition |
 
 ## Contributing

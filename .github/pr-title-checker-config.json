@@ -4,7 +4,7 @@
       "color": "FF0000"
     },
     "CHECKS": {
-      "regexp": "^(?<type>build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test){1}(\\((?<scope>.+){1}\\))?(?<breakingchange>!)?: (?<message>[\\w ]+)([\\s\\S]*)",
+      "regexp": "^(?<type>build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\\((?<scope>[a-z0-9._/-]+)\\))?(?<breakingchange>!)?: (?<message>[^\\r\\n]+)$",
       "ignoreLabels" : ["dont check pr title", "meta"]
     },
     "MESSAGES": {

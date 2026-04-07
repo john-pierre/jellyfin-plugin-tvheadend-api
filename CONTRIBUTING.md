@@ -70,7 +70,9 @@ refactor: extract HTTP client lifecycle into dedicated helper
 ci: skip test step when no test projects exist
 ```
 
-Pull request **titles** are also validated against this format by the CI pipeline.
+Pull request **titles** are also validated against this format by `.github/workflows/pr-title-check.yaml`.
+
+To keep release changelog entries aligned with PR titles, maintainers should use **Squash and merge**.
 
 ## Pull Request Process
 
@@ -88,14 +90,15 @@ Pull request **titles** are also validated against this format by the CI pipelin
 
 4. **Push and open a PR** against the `main` branch.
 
-5. The CI pipeline will:
-   - Check your PR title against Conventional Commits
+5. CI workflows will:
+   - Check your PR title against Conventional Commits (`pr-title-check.yaml`)
    - Build the plugin
-   - Package the artifact and upload it as a PR artifact for manual testing
+   - Package the artifact and upload it as a PR artifact for manual testing (`build-release.yaml`)
 
 6. Address any review feedback.
 
-7. Once approved and merged, [Release Please](https://github.com/googleapis/release-please) will automatically determine if a new version should be released based on the commit types.
+7. Once approved and merged, [Release Please](https://github.com/googleapis/release-please) automatically determines if a new version should be released based on merged commit types (with squash merge: PR title).
+8. On a created release, the pipeline updates `manifest.json` with the new release artifact URL and checksum and commits it back to `main`.
 
 ## Project Layout
 
