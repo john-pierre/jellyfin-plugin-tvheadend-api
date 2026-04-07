@@ -676,25 +676,31 @@ public class TvHeadendApiController : ControllerBase
                 var videoConf = new System.Text.Json.Nodes.JsonObject
                 {
                     ["name"] = videoCodecProfileName,
-                    ["description"] = "",
+                    ["description"] = string.Empty,
                     ["deinterlace"] = true,
                     ["height"] = 0,
                     ["scaling_mode"] = 0,
                     ["hwaccel"] = false,
-                    ["max_bit_rate"] = 1000,
                     ["crf"] = 0,
+                    ["bit_rate"] = 0,
+                    ["max_bit_rate"] = 1000,
+                    ["buff_factor"] = 3,
+                    ["bit_rate_scale_factor"] = 0,
                     ["profile"] = 77,
                     ["pix_fmt"] = 46,
-                    ["preset"] = "faster",
+                    ["qmin"] = 0,
+                    ["qmax"] = 0,
                     ["quality"] = 5,
                     ["level"] = 30,
-                    ["params"] = "",
+                    ["preset"] = "faster",
+                    ["tune"] = "zerolatency",
+                    ["params"] = string.Empty,
                 };
 
                 var created = await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "libx264", videoConf, cancellationToken).ConfigureAwait(false);
                 if (created)
                 {
-                    createdParts.Add("video codec profile 'jellyfin-h264' (H.264 libx264, 5 Mbps)");
+                    createdParts.Add("video codec profile 'jellyfin-h264' (H.264 libx264)");
                 }
                 else
                 {
@@ -704,6 +710,62 @@ public class TvHeadendApiController : ControllerBase
             else
             {
                 createdParts.Add("video codec profile 'jellyfin-h264' (already exists)");
+            }
+
+            // -- Step 1b: Create video codec profile "jellyfin-h264-intel" (Intel QuickSync) ------
+            const string videoCodecIntelProfileName = "jellyfin-h264-intel";
+            var videoCodecIntelExists = await CodecProfileExistsAsync(httpClient, baseUrl, webRoot, videoCodecIntelProfileName, cancellationToken).ConfigureAwait(false);
+
+            if (!videoCodecIntelExists)
+            {
+                _logger.LogInformation("Creating Intel QuickSync video codec profile '{Name}' in TVHeadend.", videoCodecIntelProfileName);
+
+                var videoIntelConf = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["name"] = videoCodecIntelProfileName,
+                    ["description"] = string.Empty,
+                    ["deinterlace"] = true,
+                    ["height"] = 0,
+                    ["scaling_mode"] = 0,
+                    ["hwaccel"] = true,
+                    ["hwaccel_details"] = 1,
+                    ["hw_denoise"] = 0,
+                    ["hw_sharpness"] = 44,
+                    ["platform"] = 1,
+                    ["device"] = "/dev/dri/renderD128",
+                    ["low_power"] = false,
+                    ["async_depth"] = 4,
+                    ["desired_b_depth"] = 0,
+                    ["b_reference"] = 0,
+                    ["rc_mode"] = 0,
+                    ["qp"] = 0,
+                    ["bit_rate"] = 0,
+                    ["max_bit_rate"] = 1000,
+                    ["buff_factor"] = 3,
+                    ["bit_rate_scale_factor"] = 0,
+                    ["profile"] = 77,
+                    ["pix_fmt"] = 46,
+                    ["qmin"] = 0,
+                    ["qmax"] = 0,
+                    ["quality"] = 5,
+                    ["level"] = 30,
+                    ["ui"] = 255,
+                    ["uilp"] = 255,
+                };
+
+                var created = await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "hevc_qsv", videoIntelConf, cancellationToken).ConfigureAwait(false);
+                if (created)
+                {
+                    createdParts.Add("video codec profile 'jellyfin-h264-intel' (H.264 Intel QuickSync)");
+                }
+                else
+                {
+                    _logger.LogWarning("Could not create Intel QuickSync video codec profile '{Name}'. Continuing without it.", videoCodecIntelProfileName);
+                }
+            }
+            else
+            {
+                createdParts.Add("video codec profile 'jellyfin-h264-intel' (already exists)");
             }
 
             // -- Step 2: Create audio codec profile "jellyfin-aac" -------
@@ -717,12 +779,17 @@ public class TvHeadendApiController : ControllerBase
                 var audioConf = new System.Text.Json.Nodes.JsonObject
                 {
                     ["name"] = audioCodecProfileName,
-                    ["description"] = "",
+                    ["description"] = string.Empty,
+                    ["tracks"] = 1,
+                    ["language1"] = string.Empty,
+                    ["language2"] = string.Empty,
+                    ["language3"] = string.Empty,
                     ["bit_rate"] = 0,
+                    ["qscale"] = 0,
                     ["profile"] = 0,
-                    ["channel_layout"] = 3,
-                    ["sample_rate"] = 48000,
                     ["sample_fmt"] = 8,
+                    ["sample_rate"] = 48000,
+                    ["channel_layout"] = 3,
                     ["coder"] = "twoloop",
                 };
 
@@ -758,28 +825,28 @@ public class TvHeadendApiController : ControllerBase
                 var createUrl = $"{baseUrl}{webRoot}api/profile/create";
                 _logger.LogInformation("Creating streaming profile 'jellyfin' in TVHeadend at {Url}.", createUrl);
 
-                // Reference the codec profiles by name so TVHeadend uses their
-                // bitrate/preset/tune settings instead of defaults.
-                var useVideoCodec = videoCodecExists || createdParts.Any(p => p.Contains("jellyfin-h264", StringComparison.Ordinal) && !p.Contains("Could not", StringComparison.Ordinal))
-                    ? videoCodecProfileName
-                    : "libx264";
-                var useAudioCodec = audioCodecExists || createdParts.Any(p => p.Contains("jellyfin-aac", StringComparison.Ordinal) && !p.Contains("Could not", StringComparison.Ordinal))
-                    ? audioCodecProfileName
-                    : "aac";
-
                 var confNode = new System.Text.Json.Nodes.JsonObject
                 {
-                    ["enabled"] = true,
                     ["name"] = "jellyfin",
-                    ["comment"] = "",
-                    ["container"] = 9,
+                    ["enabled"] = true,
+                    ["default"] = false,
+                    ["comment"] = string.Empty,
                     ["timeout"] = 1,
-                    ["vcodec"] = useVideoCodec,
-                    ["acodec"] = useAudioCodec,
-                    ["resolution"] = 0,
-                    ["channels"] = 0,
-                    ["vbitrate"] = 0,
-                    ["abitrate"] = 0,
+                    ["timeout_start"] = 0,
+                    ["priority"] = 0,
+                    ["fpriority"] = 0,
+                    ["restart"] = false,
+                    ["contaccess"] = true,
+                    ["catimeout"] = 2000,
+                    ["swservice"] = true,
+                    ["svfilter"] = 0,
+                    ["container"] = 9,
+                    ["pro_vcodec"] = "jellyfin-h264",
+                    ["src_vcodec"] = new System.Text.Json.Nodes.JsonArray { "MPEG2VIDEO", "H264", "VP8", "HEVC", "VP9", "THEORA" },
+                    ["pro_acodec"] = "jellyfin-aac",
+                    ["src_acodec"] = new System.Text.Json.Nodes.JsonArray { "MPEG2AUDIO", "AC3", "AAC", "MP4A", "EAC3", "VORBIS", "OPUS", "AC-4" },
+                    ["pro_scodec"] = string.Empty,
+                    ["src_scodec"] = new System.Text.Json.Nodes.JsonArray(),
                 };
 
                 var jsonConf = confNode.ToJsonString();
@@ -802,9 +869,9 @@ public class TvHeadendApiController : ControllerBase
                     {
                         ["enabled"] = true,
                         ["name"] = "jellyfin",
-                        ["container"] = 2,
-                        ["vcodec"] = useVideoCodec,
-                        ["acodec"] = useAudioCodec,
+                        ["container"] = 9,
+                        ["pro_vcodec"] = "jellyfin-h264",
+                        ["pro_acodec"] = "jellyfin-aac",
                     };
 
                     var retryContent = new FormUrlEncodedContent(new[]
