@@ -28,16 +28,14 @@ Run the minimum relevant checks:
 1. `dotnet restore Jellyfin.Plugin.TvHeadendApi.sln`
 2. `dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release --no-restore`
 3. PowerShell parser check for modified `.ps1` files
-4. Optional smoke test:
-   - `powershell -ExecutionPolicy Bypass -File .\scripts\analyze-tvh.ps1 -MaxChannels 1 -Scenarios current -StreamingProfiles pass -SkipBuild`
+4. Optional smoke test relevant to the changed behavior.
 
-## 5) Verify Analyzer Outputs
+## 5) Verify Script Outputs
 
-If analyzer touched:
+If script behavior changed:
 
-- report path under `reports/report_<timestamp>.md`
-- artifacts under `reports/artifacts_<timestamp>/...`
-- `## Test Plan` matches pre-run console overview
+- output paths and filenames are deterministic
+- output remains consistent with documented behavior
 
 ## 6) Prepare Review Notes
 

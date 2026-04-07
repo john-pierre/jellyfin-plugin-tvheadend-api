@@ -430,7 +430,7 @@
                 var stats = [];
                 if (r.ChannelCount !== undefined) stats.push(r.ChannelCount + ' channels');
                 if (r.DvrEntryCount !== undefined && r.DvrEntryCount > 0) stats.push(r.DvrEntryCount + ' DVR entries');
-                if (r.AvailableProfiles && r.AvailableProfiles.length > 0) stats.push(r.AvailableProfiles.length + ' profiles');
+                if (r.AvailableStreamingProfiles && r.AvailableStreamingProfiles.length > 0) stats.push(r.AvailableStreamingProfiles.length + ' streaming profiles');
                 if (stats.length > 0) html += '<div style="margin-bottom:0.8em; opacity:0.85;">' + escapeHtml(stats.join(' · ')) + '</div>';
 
                 if (r.Checks && r.Checks.length > 0) {

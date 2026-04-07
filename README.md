@@ -93,15 +93,16 @@ A Jellyfin plugin that integrates [TVHeadend](https://tvheadend.org) exclusively
 | Setting                        | Description                                      | Default      |
 |--------------------------------|--------------------------------------------------|--------------|
 | **Streaming Profile**          | TVHeadend stream profile name.                   | `pass`       |
-| **BufferMs**                   | Stream buffer size in milliseconds.              | `500`        |
-| **FallbackMaxStreamingBitrate**| Fallback maximum bitrate in bits per second.     | `30000000`   |
-| **AnalyzeDurationMs**          | Stream analysis duration before playback starts. | `500`        |
+| **BufferMs**                   | Stream buffer size in milliseconds (`0` = Jellyfin default). | `0`          |
+| **FallbackMaxStreamingBitrate**| Fallback maximum bitrate in bits per second.     | `3000000`    |
+| **AnalyzeDurationMs**          | Stream analysis duration before playback starts. | `200`        |
 | **Supports Direct Play**       | Allow direct playback without transcoding.       | `true`       |
 | **Supports Direct Stream**     | Allow remuxing without re-encoding.              | `true`       |
 | **Supports Transcoding**       | Allow full transcoding.                          | `false`      |
-| **Supports Probing**           | Probe stream properties before playback.         | `false`      |
+| **Supports Probing**           | Probe stream properties before playback.         | `true`       |
 | **Is Infinite Stream**         | Treat the stream as infinite (live TV).          | `true`       |
 | **Ignore DTS**                 | Ignore Decode Time Stamps for compatibility.     | `false`      |
+| **Pre-create Probe Cache Files** | Pre-create Jellyfin mediainfo cache files for compatible profiles. | `true`    |
 
 #### Auto-Created Transcoding Profiles
 
@@ -141,7 +142,8 @@ Understanding how Jellyfin handles live TV stream probing is critical for optima
 - **First open of a channel with probing enabled always takes ≥ 3 seconds** because of the hard-coded `Math.Max(3000, ...)` delay in Jellyfin's `AddMediaInfoWithProbe`.
 - **Subsequent opens** of the same channel hit the **disk cache** and complete in milliseconds (the probe result is stored as `<data>/cache/mediainfo/<md5>.json`).
 - Jellyfin **always overrides** the plugin's `AnalyzeDurationMs` to `3000` ms for live streams when probing is active — the plugin value has no effect in that case.
-- **Recommended approach:** Leave **Stream Probing OFF** (`SupportsProbing = false`). The plugin queries TVHeadend's service API for codec, resolution, and bitrate data, builds a detailed `MediaSourceInfo`, and tells Jellyfin to skip probing entirely. This gives near-instant channel switching on every open, not just cached ones.
+- **Recommended approach:** Keep **Stream Probing ON** when using the `jellyfin` MP4/H.264/AAC profile and `Pre-create Probe Cache Files`. Jellyfin can read cache metadata immediately and usually starts faster.
+- The plugin only pre-creates probe cache files for **MP4** streaming profiles. For pass-through profiles like `pass` (`mpegts`), cache pre-creation is skipped to avoid incorrect metadata.
 
 ### Recording
 
@@ -277,28 +279,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev-build.ps1 -DryRun
 
 The current dev version state is stored in `./.docker/dev-version.txt`.
 
-### Analyzer Test Plan Preview
-
-Before channel tests start, `scripts/analyze-tvh.ps1` now prints a pre-run overview that shows exactly what will be tested and where outputs are written.
-
-It includes:
-
-- selected channels (number, name, TVHeadend id)
-- planned run matrix (`profile x scenario`)
-- scenario mode per run (DirectPlay/DirectStream/Transcoding/Probing/AnalyzeDuration where applicable)
-- artifact directories per run under `reports/artifacts_<timestamp>/...`
-- report output path and a minimum runtime estimate
-
-Example run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\analyze-tvh.ps1 -MaxChannels 3 -Scenarios current -StreamingProfiles jellyfin,pass -SkipBuild
-```
-
-Generated outputs are written under:
-
-- `reports/report_<timestamp>.md`
-- `reports/artifacts_<timestamp>/...`
 
 #### Migration for older local Docker data
 

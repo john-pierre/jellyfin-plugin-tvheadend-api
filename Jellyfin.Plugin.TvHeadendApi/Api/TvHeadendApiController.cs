@@ -153,8 +153,8 @@ public class TvHeadendApiController : ControllerBase
         var ffmpegMicroseconds = effectiveAnalyzeDurationMs * 1000;
         report.PluginSettings.Add(
             config.AnalyzeDurationMs > 0
-                ? $"AnalyzeDuration: {config.AnalyzeDurationMs} ms (explicit) ? ffmpeg receives -analyzeduration {ffmpegMicroseconds} �s"
-                : $"AnalyzeDuration: 0 (legacy auto mode) ? plugin falls back to 200 ms when stream details are available ? ffmpeg receives -analyzeduration 200000 �s. When probing, Jellyfin's global FFmpeg analyzeduration is used.");
+                ? $"AnalyzeDuration: {config.AnalyzeDurationMs} ms (explicit) -> ffmpeg receives -analyzeduration {ffmpegMicroseconds} us"
+                : $"AnalyzeDuration: 0 (legacy auto mode) -> plugin falls back to 200 ms when stream details are available -> ffmpeg receives -analyzeduration 200000 us. When probing, Jellyfin's global FFmpeg analyzeduration is used.");
         report.PluginSettings.Add($"BufferMs: {(config.BufferMs > 0 ? $"{config.BufferMs} ms" : "0 (Jellyfin default)")}");
 
         // -- Jellyfin global FFmpeg settings (via reflection) ------------
@@ -231,7 +231,7 @@ public class TvHeadendApiController : ControllerBase
             }
             catch (HttpRequestException ex)
             {
-                report.Connection = $"? Cannot reach TVHeadend at {config.Host}:{config.Port} � {ex.Message}";
+                report.Connection = $"Cannot reach TVHeadend at {config.Host}:{config.Port} - {ex.Message}";
                 report.Checks.Add(new DiagnoseCheck { Category = "Connection", Name = "TVHeadend Connectivity", Status = "ERROR", Message = ex.Message, Recommendation = "Check host, port, and network connectivity." });
                 report.OverallStatus = "ERROR";
                 report.CompatibilityScore = 0;
@@ -484,7 +484,7 @@ public class TvHeadendApiController : ControllerBase
                 Category = "Playback",
                 Name = "AnalyzeDuration",
                 Status = "WARNING",
-                Message = $"AnalyzeDuration is {config.AnalyzeDurationMs}ms ({config.AnalyzeDurationMs * 1000}�s) which is very high.",
+                Message = $"AnalyzeDuration is {config.AnalyzeDurationMs}ms ({config.AnalyzeDurationMs * 1000}us) which is very high.",
                 Recommendation = "Consider 200ms or less for faster channel switching."
             });
             scoreDeductions += 15;
@@ -643,7 +643,7 @@ public class TvHeadendApiController : ControllerBase
     /// Creates an optimised set of profiles in TVHeadend for fast channel switching:
     /// 1. A video codec profile "jellyfin-h264" (H.264 / libx264, 5 Mbps cap, faster preset, zerolatency tune, deinterlace)
     /// 2. An audio codec profile "jellyfin-aac" (AAC, 128 kbps)
-    /// 3. A streaming transcode profile "jellyfin" that references both codec profiles in an MPEG-TS container.
+    /// 3. A streaming transcode profile "jellyfin" that references both codec profiles in an MP4 container.
     /// If any of these already exist, they are skipped.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -753,7 +753,7 @@ public class TvHeadendApiController : ControllerBase
                     ["uilp"] = 255,
                 };
 
-                var created = await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "hevc_qsv", videoIntelConf, cancellationToken).ConfigureAwait(false);
+                var created = await CreateCodecProfileAsync(httpClient, baseUrl, webRoot, "h264_qsv", videoIntelConf, cancellationToken).ConfigureAwait(false);
                 if (created)
                 {
                     createdParts.Add("video codec profile 'jellyfin-h264-intel' (H.264 Intel QuickSync)");
@@ -935,7 +935,7 @@ public class TvHeadendApiController : ControllerBase
                 ProfileName = "jellyfin",
                 ProfileClass = "profile-transcode",
                 IsTranscodeProfile = true,
-                Container = "mpegts",
+                Container = "mp4",
                 VideoCodec = "h264",
                 AudioCodec = "aac",
                 VideoBitrate = 5000000,
@@ -1199,7 +1199,7 @@ public class TvHeadendApiController : ControllerBase
     /// Reads the current FFmpeg probesize and analyzeduration from Jellyfin's global encoding options.
     /// Uses reflection because the <c>FFmpegProbeSize</c> and <c>FFmpegAnalyzeDuration</c> properties
     /// exist on the runtime <c>EncodingOptions</c> type but are not exposed in the public SDK NuGet packages.
-    /// Returns (probeSize, analyzeDuration) � both as raw strings, or null if not available.
+    /// Returns (probeSize, analyzeDuration) - both as raw strings, or null if not available.
     /// </summary>
     private (string? ProbeSize, string? AnalyzeDuration) ReadJellyfinFfmpegSettings()
     {

@@ -507,7 +507,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             });
 
             // Send a POST request to the TVHeadEnd API to cancel the timer
-            var response = await _httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
 
             // Ensure the response indicates success (HTTP status code 200-299)
             if (response.IsSuccessStatusCode)
@@ -567,7 +567,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             });
 
             // Send a POST request to the TVHeadEnd API to cancel the series timer
-            var response = await _httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
 
             // Ensure the response indicates success (HTTP status code 200-299)
             if (response.IsSuccessStatusCode)
@@ -682,7 +682,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             var url = ConstructUrl(path);
 
             // Send the POST request
-            var response = await _httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
 
             // Ensure the response indicates success (HTTP status code 200-299)
             if (response.IsSuccessStatusCode)
@@ -798,7 +798,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             var url = ConstructUrl(path);
 
             // Send the POST request
-            var response = await _httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
 
             if (response.IsSuccessStatusCode)
             {
@@ -873,7 +873,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             _logger.LogInformation("Updating timer with ID: {TimerId}.", updatedTimer.Id);
 
             // Send the POST request to the TVHeadEnd API
-            var response = await _httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
 
             // Check if the response was successful
             if (response.IsSuccessStatusCode)
@@ -950,7 +950,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             _logger.LogInformation("Updating series timer with ID: {SeriesTimerId}.", info.Id);
 
             // Send the POST request to the TVHeadEnd API
-            var response = await _httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
 
             // Check if the response was successful
             if (response.IsSuccessStatusCode)
@@ -1451,11 +1451,11 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
             Path = streamUrl,
             Name = $"LiveTV {channelId}",
 
-            // Always HTTP � TVHeadend's streaming API is HTTP-based.
+            // Always HTTP - TVHeadend's streaming API is HTTP-based.
             Protocol = MediaProtocol.Http,
             Container = container,
 
-            // Always remote � TVHeadend is a network service.
+            // Always remote - TVHeadend is a network service.
             IsRemote = true,
 
             // Playback capabilities
@@ -1485,7 +1485,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
         }
 
         // Write a pre-fabricated cache file so Jellyfin's AddMediaInfoWithProbe finds it
-        // and skips actual FFmpeg probing � even the very first tune becomes fast.
+        // and skips actual FFmpeg probing - even the very first tune becomes fast.
         if (config.EnableMediaInfoCacheWrite)
         {
             await TryWriteMediaInfoCacheAsync(channelId, streamUrl, container).ConfigureAwait(false);
@@ -1989,6 +1989,15 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     {
         try
         {
+            if (!string.Equals(container, "mp4", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogDebug(
+                    "Skipping mediainfo cache write for channel {ChannelId}: container '{Container}' is not compatible with the MP4 cache template.",
+                    channelId,
+                    container);
+                return;
+            }
+
             var cachePath = Plugin.Instance?.CachePath;
             if (string.IsNullOrWhiteSpace(cachePath))
             {
@@ -2032,7 +2041,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
                 ["Path"] = streamUrl,
                 ["Type"] = "Default",
                 ["Container"] = "mov,mp4,m4a,3gp,3g2,mj2",
-                ["IsRemote"] = false,
+                ["IsRemote"] = true,
                 ["RunTimeTicks"] = 0,
                 ["ReadAtNativeFramerate"] = false,
                 ["IgnoreDts"] = false,

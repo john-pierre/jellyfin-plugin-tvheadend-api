@@ -13,7 +13,6 @@ Use this file together with `AGENTS.md`.
 - `Jellyfin.Plugin.TvHeadendApi/Service/LiveTvService.cs`
 - `Jellyfin.Plugin.TvHeadendApi/Configuration/PluginConfiguration.cs`
 - `Jellyfin.Plugin.TvHeadendApi/Api/TvHeadendApiController.cs`
-- `scripts/analyze-tvh.ps1`
 - `README.md`
 
 ## Code Change Expectations
@@ -28,12 +27,5 @@ For code and script changes, run at least:
 
 1. `dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release`
 2. PowerShell parser check for changed scripts.
-3. A small analyzer run when script behavior changes:
-   - `powershell -ExecutionPolicy Bypass -File .\scripts\analyze-tvh.ps1 -MaxChannels 1 -Scenarios current -StreamingProfiles pass -SkipBuild`
-
-## Analyzer Output Contract
-
-- Pre-run console overview must describe exactly what is tested.
-- Report must include the same test-plan context.
-- Generated outputs belong under `reports/`.
+3. Run the changed script once with minimal safe parameters when behavior changes.
 

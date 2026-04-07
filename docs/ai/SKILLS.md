@@ -26,19 +26,11 @@ Goal: avoid silent config regressions.
 - Preserve defaults unless explicitly changed and documented.
 - Document any UI/behavioral impact in `README.md` or `CHANGELOG.md`.
 
-## Skill: Analyzer Workflow
-
-Goal: maintain reliable diagnostics for playback and stream behavior.
-
-- Update `scripts/analyze-tvh.ps1` with deterministic output paths under `reports/`.
-- Keep pre-run console test plan aligned with report `## Test Plan`.
-- Keep stream capture naming media-friendly (`stream_capture.<ext>`).
-
 ## Skill: Validation Discipline
 
 Goal: produce reproducible, review-ready changes.
 
 - Build solution in Release mode.
 - Parse-check changed PowerShell scripts.
-- Run analyzer smoke test when script behavior changes.
+- Run a minimal smoke test for the changed script behavior.
 

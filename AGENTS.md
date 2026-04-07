@@ -23,8 +23,6 @@ Maintain and improve the Jellyfin TVHeadend API plugin while preserving:
   - Plugin settings page rendered in Jellyfin admin.
 - `Jellyfin.Plugin.TvHeadendApi/Api/TvHeadendApiController.cs`
   - Diagnostic and helper endpoints used by tooling.
-- `scripts/analyze-tvh.ps1`
-  - End-to-end analyzer for PlaybackInfo/stream open metrics and report generation.
 
 ## Ground Rules For Changes
 
@@ -40,22 +38,17 @@ Maintain and improve the Jellyfin TVHeadend API plugin while preserving:
    - `dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release --no-restore`
 2. (Optional) Start dev Jellyfin:
    - `docker compose up -d --build`
-3. Run analyzer smoke test:
-   - `powershell -ExecutionPolicy Bypass -File .\scripts\analyze-tvh.ps1 -MaxChannels 1 -Scenarios current -StreamingProfiles pass -SkipBuild`
-4. Validate outputs:
-   - Report in `reports/report_<timestamp>.md`
-   - Artifacts in `reports/artifacts_<timestamp>/...`
+3. (Optional) Run a quick live playback smoke test from a client.
 
-## When Editing `scripts/analyze-tvh.ps1`
+## When Editing `scripts/*.ps1`
 
-- Keep pre-run plan output consistent with report `## Test Plan` section.
-- Keep artifact naming deterministic and media-friendly (`stream_capture.<ext>`).
-- Ensure report paths default under `reports/`.
+- Keep script output stable and deterministic where possible.
+- Prefer explicit parameters over hidden defaults for reproducible runs.
 
 ## PR Checklist For Agents
 
 - Build succeeds locally.
 - Any changed behavior is documented in `README.md` or `CHANGELOG.md`.
-- Script/report outputs and paths are still coherent.
+- Script behavior and output expectations are still coherent.
 - No secrets or local machine data added.
 
