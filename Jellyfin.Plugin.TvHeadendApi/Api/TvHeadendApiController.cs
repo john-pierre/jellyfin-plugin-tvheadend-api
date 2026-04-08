@@ -8,8 +8,10 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Service;
 using MediaBrowser.Common.Api;
 using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.LiveTv;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -53,18 +55,22 @@ public class TvHeadendApiController : ControllerBase
 
     private readonly ILogger<TvHeadendApiController> _logger;
     private readonly IServerConfigurationManager _serverConfigManager;
+    private readonly ILiveTvService _liveTvService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TvHeadendApiController"/> class.
     /// </summary>
     /// <param name="logger">Logger instance.</param>
     /// <param name="serverConfigManager">Jellyfin server configuration manager for accessing global encoding options.</param>
+    /// <param name="liveTvService">The LiveTV service for image proxy requests.</param>
     public TvHeadendApiController(
         ILogger<TvHeadendApiController> logger,
-        IServerConfigurationManager serverConfigManager)
+        IServerConfigurationManager serverConfigManager,
+        ILiveTvService liveTvService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _serverConfigManager = serverConfigManager ?? throw new ArgumentNullException(nameof(serverConfigManager));
+        _liveTvService = liveTvService ?? throw new ArgumentNullException(nameof(liveTvService));
     }
 
     /// <summary>
@@ -80,6 +86,68 @@ public class TvHeadendApiController : ControllerBase
             Name = "TvHeadendApi",
             Version = version
         });
+    }
+
+    /// <summary>
+    /// Proxies image requests from Jellyfin to TVHeadend, ensuring all image access goes through
+    /// Jellyfin's authorization layer instead of exposing direct credentials or tokens.
+    /// This endpoint accepts an image path and returns the raw image data from TVHeadend.
+    /// </summary>
+    /// <param name="imagePath">The TVHeadend image endpoint relative path, e.g., "imagecache/1715".</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The image data as a stream if successful; 404 or 500 error otherwise.</returns>
+    [HttpGet("ImageProxy")]
+    public async Task<IActionResult> GetImageProxy([FromQuery] string? imagePath, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(imagePath))
+        {
+            _logger.LogWarning("Image proxy called without a valid imagePath.");
+            return BadRequest(new { error = "imagePath parameter is required" });
+        }
+
+        try
+        {
+            var liveTvService = _liveTvService as LiveTvService;
+            if (liveTvService == null)
+            {
+                _logger.LogError("LiveTvService is not available or is not of expected type.");
+                return StatusCode(500, new { error = "Service configuration error" });
+            }
+
+            // Construct the full image URL using the LiveTvService's internal method
+            // The URL will have embedded credentials (via LiveTvService.ConstructImageUrl)
+            var imageUrl = liveTvService.ConstructImageUrl(imagePath);
+
+            // Fetch the image from TVHeadend using the internal HTTP client
+            using var response = await liveTvService.FetchImageAsync(imageUrl, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("TVHeadend returned HTTP {Status} for image {ImagePath}.", response.StatusCode, imagePath);
+                return StatusCode((int)response.StatusCode, new { error = $"TVHeadend returned {response.StatusCode}" });
+            }
+
+            // Determine content type
+            var contentType = response.Content.Headers.ContentType?.ToString() ?? "image/jpeg";
+
+            // Stream the image directly to the client
+            var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            return File(stream, contentType);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid image path: {ImagePath}", imagePath);
+            return BadRequest(new { error = $"Invalid image path: {ex.Message}" });
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Failed to fetch image from TVHeadend for path {ImagePath}.", imagePath);
+            return StatusCode(502, new { error = $"Failed to connect to TVHeadend: {ex.Message}" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error in image proxy for path {ImagePath}.", imagePath);
+            return StatusCode(500, new { error = $"Internal server error: {ex.Message}" });
+        }
     }
 
     /// <summary>

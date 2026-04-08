@@ -443,8 +443,8 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
                         ? ((int)channel.Number).ToString(CultureInfo.InvariantCulture)
                         : channel.Number.ToString(CultureInfo.InvariantCulture),
                     ImageUrl = !string.IsNullOrWhiteSpace(channel.IconPublicUrl)
-                        ? ConstructUrl(channel.IconPublicUrl.TrimStart('/'), "parameter")
-                        : null, // URL to the channel's icon image
+                        ? ConstructUrl($"api/TvHeadendApi/ImageProxy?imagePath={Uri.EscapeDataString(channel.IconPublicUrl.TrimStart('/'))}")
+                        : null, // URL to the image proxy endpoint (credentials never exposed)
                     HasImage = !string.IsNullOrWhiteSpace(channel.IconPublicUrl) // Set HasImage based on the existence of ImageUrl
                 }).ToList();
 
@@ -1212,17 +1212,17 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
                 })
                 .Select(entry =>
                 {
-                    // Determine the image URL
+                    // Determine the image URL (use proxy for imagecache paths)
                     string? imageUrl = null;
                     if (!string.IsNullOrWhiteSpace(entry.Image))
                     {
                         imageUrl = entry.Image.StartsWith("imagecache/", StringComparison.Ordinal)
-                            ? ConstructUrl(entry.Image, "parameter")
+                            ? ConstructUrl($"api/TvHeadendApi/ImageProxy?imagePath={Uri.EscapeDataString(entry.Image)}")
                             : entry.Image;
                     }
                     else if (!string.IsNullOrWhiteSpace(entry.ChannelIcon))
                     {
-                        imageUrl = ConstructUrl(entry.ChannelIcon, "parameter");
+                        imageUrl = ConstructUrl($"api/TvHeadendApi/ImageProxy?imagePath={Uri.EscapeDataString(entry.ChannelIcon)}");
                     }
 
                     // Map to ProgramInfo
@@ -1301,7 +1301,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     }
 
     /// <summary>
-    /// Reads a string property either directly from an idnode entry or from its params[] value payload.
+    /// Reads a string property either from an idnode entry or from its params[] value payload.
     /// </summary>
     private static string? GetJsonStringPropOrParam(JsonElement element, string name)
     {
@@ -1309,7 +1309,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     }
 
     /// <summary>
-    /// Reads an integer property either directly from an idnode entry or from its params[] value payload.
+    /// Reads an integer property either from an idnode entry or from its params[] value payload.
     /// </summary>
     private static int? GetJsonIntPropOrParam(JsonElement element, string name)
     {
@@ -1674,7 +1674,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
         catch (Exception ex)
         {
             // Log any errors that occur during the process
-            _logger.LogError(ex, "Error occurred while fetching content types from TVHeadEnd.");
+            _logger.LogError(ex, "Error occurred while fetching content types from TVHeadend.");
             return new Dictionary<int, string>();
         }
     }
@@ -1723,7 +1723,7 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
         catch (Exception ex)
         {
             // Log any errors that occur during the process
-            _logger.LogError(ex, "Error occurred while fetching channel tags from TVHeadEnd.");
+            _logger.LogError(ex, "Error occurred while fetching channel tags from TVHeadend.");
             return new Dictionary<string, string>();
         }
     }
@@ -2140,6 +2140,44 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
         {
             _logger.LogWarning(ex, "Failed to write mediainfo cache file for channel {ChannelId}.", channelId);
         }
+    }
+
+    /// <summary>
+    /// Constructs a complete URL for a TVHeadEnd image endpoint (e.g., imagecache/1715).
+    /// This is used by the image proxy to fetch images and return them without exposing credentials.
+    /// </summary>
+    /// <param name="imagePath">The relative image path from TVHeadend (e.g., "imagecache/1715" or just the image ID).</param>
+    /// <returns>The full URL with embedded authentication if needed.</returns>
+    public string ConstructImageUrl(string imagePath)
+    {
+        if (string.IsNullOrWhiteSpace(imagePath))
+        {
+            throw new ArgumentException("Image path cannot be null or empty.", nameof(imagePath));
+        }
+
+        // Remove leading slash if present
+        var cleanPath = imagePath.TrimStart('/');
+
+        // Use ConstructUrl with "url" auth method to embed credentials directly
+        return ConstructUrl(cleanPath, "url");
+    }
+
+    /// <summary>
+    /// Fetches raw image data from TVHeadend using the provided URL.
+    /// This method is used by the image proxy endpoint to stream images to clients.
+    /// </summary>
+    /// <param name="imageUrl">The full TVHeadend image URL with embedded authentication.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An HTTP response message with the image data.</returns>
+    public async Task<HttpResponseMessage> FetchImageAsync(string imageUrl, CancellationToken cancellationToken)
+    {
+        var config = Plugin.Instance?.Configuration
+            ?? throw new InvalidOperationException("Plugin configuration is not available.");
+
+        EnsureHttpClientConfigured(config);
+
+        _logger.LogDebug("Fetching image from TVHeadend: {Url}", MaskSensitiveData(imageUrl));
+        return await _httpClient.GetAsync(imageUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

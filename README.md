@@ -17,10 +17,11 @@ A Jellyfin plugin that integrates [TVHeadend](https://tvheadend.org) exclusively
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration](#configuration)
-  - [Connection](#connection)
-  - [Authentication](#authentication)
-  - [Streaming](#streaming)
-  - [Recording](#recording)
+   - [Connection](#connection)
+   - [Authentication](#authentication)
+   - [Streaming](#streaming)
+   - [Recording](#recording)
+   - [Image Proxy](#image-proxy)
 - [Developer Guide](#developer-guide)
   - [Prerequisites](#prerequisites)
   - [AI Agent Instructions](#ai-agent-instructions)
@@ -153,6 +154,46 @@ Understanding how Jellyfin handles live TV stream probing is critical for optima
 | **PrePaddingSeconds**| Seconds to start recording before scheduled time.    | `5`       |
 | **PostPaddingSeconds**| Seconds to continue recording after scheduled end.  | `5`       |
 | **Recording Profile**| TVHeadend DVR configuration profile name.            | `default` |
+
+### Image Proxy
+
+The plugin provides a **secure image proxy endpoint** that fetches channel icons and EPG artwork from TVHeadend without exposing credentials directly to clients. All image access is authenticated through Jellyfin's authorization layer.
+
+#### How It Works
+
+1. **Channel Icons & EPG Artwork** — When retrieving channels or programs, the plugin generates image URLs pointing to Jellyfin's internal proxy endpoint:
+   ```
+   /api/TvHeadendApi/ImageProxy?imagePath={escaped_image_path}
+   ```
+
+2. **Internal Proxy** — The proxy endpoint:
+   - Validates the request (requires Jellyfin authentication)
+   - Constructs the full TVHeadend image URL with embedded credentials
+   - Fetches the image from TVHeadend using the plugin's HTTP client
+   - Streams the raw image data back to the client
+
+3. **Credential Masking** — Sensitive data (URLs with embedded credentials) is automatically masked in plugin logs.
+
+#### Benefits
+
+- ✅ **No credential exposure** — Users never receive TVHeadend URLs or auth tokens
+- ✅ **Jellyfin authorization** — Image access is protected by Jellyfin's login system
+- ✅ **Transparent operation** — Automatic for all channel icons and EPG artwork
+- ✅ **Consistent caching** — Jellyfin handles image caching seamlessly
+
+#### Testing the Proxy
+
+To verify that images are loading correctly:
+
+1. Open the Jellyfin web UI and navigate to **Live TV**.
+2. Check that **channel icons** appear next to channel names.
+3. Open an **EPG program** and verify that artwork displays correctly.
+4. Check Jellyfin's plugin logs in **Settings → Logs** — you should see entries like:
+   ```
+   [ImageProxy] Fetching image from TVHeadend: {masked_url}
+   ```
+5. Images served via proxy will show URLs like `/api/TvHeadendApi/ImageProxy?imagePath=...` in network inspector.
+
 
 ## Developer Guide
 
@@ -371,6 +412,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for det
 - The plugin is purely API-based; HTSP-specific features (e.g. subscription weight, low-latency streaming) are not available.
 - Stream metadata (codec, resolution, bitrate) depends on the TVHeadend streaming profile and cannot be reliably detected at the plugin level.
 - The Docker development environment is a convenience tool for plugin loading — it does not include a TVHeadend instance or mock backend.
+- Image access (channel icons, EPG artwork) is exclusively served through the internal Jellyfin proxy endpoint and cannot be cached externally or accessed directly.
 
 ## Security
 
