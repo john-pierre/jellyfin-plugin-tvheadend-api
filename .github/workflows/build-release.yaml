@@ -79,15 +79,11 @@ jobs:
           -p:InformationalVersion=${{ steps.version.outputs.version }}
 
       - name: Run Unit Tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! find . \( -name '*Tests.csproj' -o -name '*Test.csproj' \) | grep -q .; then
-            echo "No test projects found. Skipping tests."
-            exit 0
-          fi
-
-          dotnet test Jellyfin.Plugin.TvHeadendApi.sln --configuration Release --no-build --collect:"XPlat Code Coverage"
+        run: >
+          dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj
+          --configuration Release
+          --no-build
+          --collect:"XPlat Code Coverage"
 
       - name: Upload Test Results
         if: always()
