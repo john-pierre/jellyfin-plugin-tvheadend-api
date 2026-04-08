@@ -12,14 +12,14 @@ using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
-public class StreamProfileContainerResolverTests
+public class LiveStreamProfileContainerResolverTests
 {
     [Fact]
     public async Task ResolveContainerAsync_UsesCacheForSameProfile()
     {
         var apiClient = new FakeApiClient();
-        var sut = new StreamProfileContainerResolver(
-            NullLogger<StreamProfileContainerResolver>.Instance,
+        var sut = new LiveStreamProfileContainerResolver(
+            NullLogger<LiveStreamProfileContainerResolver>.Instance,
             apiClient,
             new TvheadendJsonReader());
 
@@ -37,8 +37,8 @@ public class StreamProfileContainerResolverTests
     public async Task ResolveContainerAsync_InvalidatesCacheWhenProfileChanges()
     {
         var apiClient = new FakeApiClient();
-        var sut = new StreamProfileContainerResolver(
-            NullLogger<StreamProfileContainerResolver>.Instance,
+        var sut = new LiveStreamProfileContainerResolver(
+            NullLogger<LiveStreamProfileContainerResolver>.Instance,
             apiClient,
             new TvheadendJsonReader());
 

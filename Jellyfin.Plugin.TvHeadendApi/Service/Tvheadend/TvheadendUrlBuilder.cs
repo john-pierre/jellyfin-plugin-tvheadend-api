@@ -15,7 +15,7 @@ internal sealed class TvheadendUrlBuilder : ITvheadendUrlBuilder
         ArgumentNullException.ThrowIfNull(config);
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
 
-        var baseUrl = TvhUrlBuilder.BuildEndpointUrl(config, endpoint);
+        var baseUrl = TvheadendUrlHelper.BuildEndpointUrl(config, endpoint);
         if (config.AllowAnonymousAccess)
         {
             return baseUrl;

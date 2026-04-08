@@ -3,7 +3,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
 /// <summary>
 /// Provides TVHeadend profile and container mapping helpers shared across services.
 /// </summary>
-internal static class TvhProfileMappingHelper
+internal static class TvheadendProfileMappingHelper
 {
     /// <summary>
     /// Maps TVHeadend container values (numeric enum or string) to FFmpeg container names.

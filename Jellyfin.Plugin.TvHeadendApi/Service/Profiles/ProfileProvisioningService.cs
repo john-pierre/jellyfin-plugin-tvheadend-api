@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model;
 using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
 using Microsoft.Extensions.Logging;
-using static Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend.TvhJsonHelper;
+using static Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend.TvheadendJsonHelper;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Profiles;
 

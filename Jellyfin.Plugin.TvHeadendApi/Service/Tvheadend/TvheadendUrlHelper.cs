@@ -6,7 +6,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
 /// <summary>
 /// Builds normalized TVHeadend base and endpoint URLs.
 /// </summary>
-internal static class TvhUrlBuilder
+internal static class TvheadendUrlHelper
 {
     public static string GetWebRoot(PluginConfiguration config)
     {

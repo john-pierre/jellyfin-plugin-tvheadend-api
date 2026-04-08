@@ -42,11 +42,11 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ILiveTvGuideService, LiveTvGuideService>();
         serviceCollection.AddSingleton<ITvheadendDvrService, TvheadendDvrService>();
         serviceCollection.AddSingleton<ILiveStreamSourceService, LiveStreamSourceService>();
-        serviceCollection.AddSingleton<IStreamLifecycleService, StreamLifecycleService>();
+        serviceCollection.AddSingleton<ILiveStreamLifecycleService, LiveStreamLifecycleService>();
         serviceCollection.AddSingleton<ITvheadendImageGateway, TvheadendImageGateway>();
         serviceCollection.AddSingleton<IImageProxyService, ImageProxyService>();
         serviceCollection.AddSingleton<IProfileProvisioningService, ProfileProvisioningService>();
-        serviceCollection.AddSingleton<IStreamProfileContainerResolver, StreamProfileContainerResolver>();
+        serviceCollection.AddSingleton<ILiveStreamProfileContainerResolver, LiveStreamProfileContainerResolver>();
         serviceCollection.AddSingleton<ITvheadendApiClient, TvheadendApiClient>();
 
         // Register LiveTvService as the implementation of ILiveTvService

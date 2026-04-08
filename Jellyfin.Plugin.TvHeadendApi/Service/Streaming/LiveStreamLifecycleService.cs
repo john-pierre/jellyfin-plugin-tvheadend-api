@@ -8,11 +8,11 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Streaming;
 /// <summary>
 /// Default implementation for stream lifecycle requests that TVHeadend does not actively support.
 /// </summary>
-internal sealed class StreamLifecycleService : IStreamLifecycleService
+internal sealed class LiveStreamLifecycleService : ILiveStreamLifecycleService
 {
-    private readonly ILogger<StreamLifecycleService> _logger;
+    private readonly ILogger<LiveStreamLifecycleService> _logger;
 
-    public StreamLifecycleService(ILogger<StreamLifecycleService> logger)
+    public LiveStreamLifecycleService(ILogger<LiveStreamLifecycleService> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }

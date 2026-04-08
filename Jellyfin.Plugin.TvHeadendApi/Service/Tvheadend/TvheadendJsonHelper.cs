@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
 /// <summary>
 /// Provides helper methods for reading TVHeadend JSON payloads and idnode params.
 /// </summary>
-internal static class TvhJsonHelper
+internal static class TvheadendJsonHelper
 {
     public static string? GetStringProp(JsonElement element, string name)
     {

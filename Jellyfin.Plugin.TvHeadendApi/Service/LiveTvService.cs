@@ -21,13 +21,13 @@ public sealed class LiveTvService : ILiveTvService, IDisposable
     private readonly ILiveTvGuideService _guideService;
     private readonly ITvheadendDvrService _dvrService;
     private readonly ILiveStreamSourceService _streamSourceService;
-    private readonly IStreamLifecycleService _streamLifecycleService;
+    private readonly ILiveStreamLifecycleService _streamLifecycleService;
 
     public LiveTvService(
         ILiveTvGuideService guideService,
         ITvheadendDvrService dvrService,
         ILiveStreamSourceService streamSourceService,
-        IStreamLifecycleService streamLifecycleService)
+        ILiveStreamLifecycleService streamLifecycleService)
     {
         _guideService = guideService ?? throw new ArgumentNullException(nameof(guideService));
         _dvrService = dvrService ?? throw new ArgumentNullException(nameof(dvrService));

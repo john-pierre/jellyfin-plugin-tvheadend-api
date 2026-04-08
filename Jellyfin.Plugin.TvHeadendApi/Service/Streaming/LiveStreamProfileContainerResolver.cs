@@ -5,32 +5,32 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
 using Microsoft.Extensions.Logging;
-using static Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend.TvhProfileMappingHelper;
+using static Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend.TvheadendProfileMappingHelper;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Streaming;
 
 /// <summary>
 /// Resolves and caches the effective output container from TVHeadend streaming profiles.
 /// </summary>
-internal sealed class StreamProfileContainerResolver : IStreamProfileContainerResolver, IDisposable
+internal sealed class LiveStreamProfileContainerResolver : ILiveStreamProfileContainerResolver, IDisposable
 {
     private static readonly TimeSpan ProfileContainerCacheTtl = TimeSpan.FromMinutes(5);
 
     private readonly SemaphoreSlim _profileContainerLock = new(1, 1);
-    private readonly ILogger<StreamProfileContainerResolver> _logger;
+    private readonly ILogger<LiveStreamProfileContainerResolver> _logger;
     private readonly ITvheadendApiClient _tvheadendApiClient;
     private readonly ITvheadendJsonReader _jsonReader;
 
     private ContainerCacheEntry? _profileContainerCache;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="StreamProfileContainerResolver"/> class.
+    /// Initializes a new instance of the <see cref="LiveStreamProfileContainerResolver"/> class.
     /// </summary>
     /// <param name="logger">Logger instance.</param>
     /// <param name="tvheadendApiClient">TVHeadend API client.</param>
     /// <param name="jsonReader">TVHeadend JSON reader.</param>
-    public StreamProfileContainerResolver(
-        ILogger<StreamProfileContainerResolver> logger,
+    public LiveStreamProfileContainerResolver(
+        ILogger<LiveStreamProfileContainerResolver> logger,
         ITvheadendApiClient tvheadendApiClient,
         ITvheadendJsonReader jsonReader)
     {

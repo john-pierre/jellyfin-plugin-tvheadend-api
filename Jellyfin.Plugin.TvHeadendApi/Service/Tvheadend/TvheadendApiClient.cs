@@ -21,25 +21,25 @@ internal sealed class TvheadendApiClient : ITvheadendApiClient
     /// <inheritdoc />
     public HttpClient CreateHttpClient(PluginConfiguration config)
     {
-        return TvhHttpClientFactory.Create(config);
+        return TvheadendHttpClientFactory.Create(config);
     }
 
     /// <inheritdoc />
     public string GetBaseUrl(PluginConfiguration config)
     {
-        return TvhUrlBuilder.GetBaseUrl(config);
+        return TvheadendUrlHelper.GetBaseUrl(config);
     }
 
     /// <inheritdoc />
     public string GetWebRoot(PluginConfiguration config)
     {
-        return TvhUrlBuilder.GetWebRoot(config);
+        return TvheadendUrlHelper.GetWebRoot(config);
     }
 
     /// <inheritdoc />
     public string BuildUrl(PluginConfiguration config, string endpoint)
     {
-        return TvhUrlBuilder.BuildEndpointUrl(config, endpoint);
+        return TvheadendUrlHelper.BuildEndpointUrl(config, endpoint);
     }
 
     /// <inheritdoc />

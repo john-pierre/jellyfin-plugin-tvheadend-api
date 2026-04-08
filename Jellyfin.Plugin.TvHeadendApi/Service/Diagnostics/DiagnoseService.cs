@@ -10,8 +10,8 @@ using Jellyfin.Plugin.TvHeadendApi.Model;
 using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
 using MediaBrowser.Controller.Configuration;
 using Microsoft.Extensions.Logging;
-using static Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend.TvhJsonHelper;
-using static Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend.TvhProfileMappingHelper;
+using static Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend.TvheadendJsonHelper;
+using static Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend.TvheadendProfileMappingHelper;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
 

@@ -9,7 +9,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
 /// <summary>
 /// Creates HTTP clients configured for TVHeadend API communication.
 /// </summary>
-internal static class TvhHttpClientFactory
+internal static class TvheadendHttpClientFactory
 {
     public static HttpClient Create(PluginConfiguration config)
     {

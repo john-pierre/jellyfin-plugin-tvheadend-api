@@ -6,7 +6,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Streaming;
 /// <summary>
 /// Handles lifecycle operations that are required by Jellyfin but not supported by TVHeadend.
 /// </summary>
-public interface IStreamLifecycleService
+public interface ILiveStreamLifecycleService
 {
     /// <summary>
     /// Handles a close-stream request from Jellyfin.

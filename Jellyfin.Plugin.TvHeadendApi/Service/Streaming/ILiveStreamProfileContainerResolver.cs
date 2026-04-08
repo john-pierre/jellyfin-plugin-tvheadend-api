@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Streaming;
 /// <summary>
 /// Resolves the output container for the configured TVHeadend streaming profile.
 /// </summary>
-public interface IStreamProfileContainerResolver
+public interface ILiveStreamProfileContainerResolver
 {
     /// <summary>
     /// Resolves the effective output container for the given plugin configuration.

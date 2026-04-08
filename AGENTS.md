@@ -31,6 +31,13 @@ Maintain and improve the Jellyfin TVHeadend API plugin while preserving:
 - Prefer minimal, focused diffs over broad refactors.
 - Keep generated artifacts out of git (`reports/` is ignored except marker files).
 
+## Naming And Layout Rules
+
+- Follow `README.md` section **"Naming and Structure Conventions"** as the naming source of truth.
+- Keep TVHeadend helpers in `Jellyfin.Plugin.TvHeadendApi/Service/Tvheadend/`.
+- Do not add new files back into a generic `Utility/` folder.
+- Keep C# file name == primary type name.
+
 ## Testing Workflow
 
 1. Build plugin:

@@ -19,3 +19,14 @@ These docs describe:
 
 Use this index when onboarding a new agent session.
 
+## Naming Rules (Required)
+
+Before creating or renaming files, follow `README.md` section **"Naming and Structure Conventions"**.
+
+Short version:
+
+- Keep TVHeadend-specific helpers under `Jellyfin.Plugin.TvHeadendApi/Service/Tvheadend/`.
+- Do not reintroduce a generic `Utility/` folder.
+- Match C# file names and primary type names exactly.
+- Use `Tvheadend*` for service/helper classes; reserve `TvhApi*` for API DTO models.
+

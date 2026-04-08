@@ -28,14 +28,14 @@ internal sealed class LiveStreamSourceService : ILiveStreamSourceService
 
     private readonly ILogger<LiveStreamSourceService> _logger;
     private readonly ILibraryManager _libraryManager;
-    private readonly IStreamProfileContainerResolver _streamProfileContainerResolver;
+    private readonly ILiveStreamProfileContainerResolver _streamProfileContainerResolver;
     private readonly ITvheadendApiClient _tvheadendApiClient;
     private readonly ITvheadendUrlBuilder _tvheadendUrlBuilder;
 
     public LiveStreamSourceService(
         ILogger<LiveStreamSourceService> logger,
         ILibraryManager libraryManager,
-        IStreamProfileContainerResolver streamProfileContainerResolver,
+        ILiveStreamProfileContainerResolver streamProfileContainerResolver,
         ITvheadendApiClient tvheadendApiClient,
         ITvheadendUrlBuilder tvheadendUrlBuilder)
     {

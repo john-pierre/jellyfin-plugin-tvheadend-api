@@ -27,7 +27,6 @@ A Jellyfin plugin that integrates [TVHeadend](https://tvheadend.org) exclusively
   - [AI Agent Instructions](#ai-agent-instructions)
   - [Building from Source](#building-from-source)
   - [Docker Development Environment](#docker-development-environment)
-  - [Analyzer Test Plan Preview](#analyzer-test-plan-preview)
   - [Project Structure](#project-structure)
 - [Release Process](#release-process)
 - [Contributing](#contributing)
@@ -218,6 +217,29 @@ If AI guidance and other docs ever conflict, follow this order:
 2. `AGENTS.md`.
 3. `.github/copilot-instructions.md`.
 4. `docs/ai/*.md`.
+
+### Naming and Structure Conventions
+
+To keep the repository predictable for humans and AI agents, use these conventions for all new files/folders and when touching existing ones:
+
+1. **C# folders and files:** `PascalCase` by domain (`Service`, `Configuration`, `Model`, `Api`).
+2. **TVHeadend service internals:** keep TVHeadend-specific helpers in `Jellyfin.Plugin.TvHeadendApi/Service/Tvheadend` (no generic `Utility` bucket).
+3. **Class/file alignment:** file name matches the primary type name exactly.
+4. **Prefix usage:**
+   - Use `Tvheadend*` for services/helpers/adapters.
+   - Keep `TvhApi*` only for raw API DTO models under `Model/`.
+5. **Scripts/docs naming:**
+   - PowerShell scripts: `kebab-case.ps1`.
+   - Markdown docs outside C# code: `kebab-case.md` preferred.
+6. **No silent moves:** if a rename/move is user-visible for contributors, document it in README/CHANGELOG.
+
+Recent normalization applied in this repository:
+
+- `Utility/` was removed and TVHeadend helpers were moved into `Service/Tvheadend/`.
+- `TvhUrlBuilder` -> `TvheadendUrlHelper`
+- `TvhHttpClientFactory` -> `TvheadendHttpClientFactory`
+- `TvhJsonHelper` -> `TvheadendJsonHelper`
+- `TvhProfileMappingHelper` -> `TvheadendProfileMappingHelper`
 
 ### Building from Source
 
