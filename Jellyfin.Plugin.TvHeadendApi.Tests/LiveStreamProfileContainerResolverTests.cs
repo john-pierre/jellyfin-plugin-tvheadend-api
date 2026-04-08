@@ -18,10 +18,11 @@ public class LiveStreamProfileContainerResolverTests
     public async Task ResolveContainerAsync_UsesCacheForSameProfile()
     {
         var apiClient = new FakeApiClient();
+        var profileResolver = new FakeProfileResolver();
         var sut = new LiveStreamProfileContainerResolver(
             NullLogger<LiveStreamProfileContainerResolver>.Instance,
             apiClient,
-            new TvheadendJsonReader());
+            profileResolver);
 
         var config = new PluginConfiguration { StreamingProfile = "jellyfin" };
 
@@ -30,17 +31,18 @@ public class LiveStreamProfileContainerResolverTests
 
         Assert.Equal("mp4", first);
         Assert.Equal("mp4", second);
-        Assert.Equal(2, apiClient.GetStringCallCount);
+        Assert.Equal(2, profileResolver.ResolveCalls);
     }
 
     [Fact]
     public async Task ResolveContainerAsync_InvalidatesCacheWhenProfileChanges()
     {
         var apiClient = new FakeApiClient();
+        var profileResolver = new FakeProfileResolver();
         var sut = new LiveStreamProfileContainerResolver(
             NullLogger<LiveStreamProfileContainerResolver>.Instance,
             apiClient,
-            new TvheadendJsonReader());
+            profileResolver);
 
         var firstConfig = new PluginConfiguration { StreamingProfile = "jellyfin" };
         var secondConfig = new PluginConfiguration { StreamingProfile = "jellyfin-alt" };
@@ -50,14 +52,44 @@ public class LiveStreamProfileContainerResolverTests
 
         Assert.Equal("mp4", first);
         Assert.Equal("mp4", second);
-        Assert.Equal(4, apiClient.GetStringCallCount);
+        Assert.Equal(4, profileResolver.ResolveCalls);
+    }
+
+    private sealed class FakeProfileResolver : ITvheadendStreamProfileResolver
+    {
+        public int ResolveCalls { get; private set; }
+
+        public Task<IReadOnlyList<TvheadendStreamProfileReference>> GetProfilesAsync(HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
+        {
+            ResolveCalls++;
+            return Task.FromResult<IReadOnlyList<TvheadendStreamProfileReference>>(
+                new[]
+                {
+                    new TvheadendStreamProfileReference("uuid1", "jellyfin"),
+                    new TvheadendStreamProfileReference("uuid2", "jellyfin-alt"),
+                });
+        }
+
+        public Task<TvheadendStreamProfileDetails?> GetProfileDetailsByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileUuid, string profileName, CancellationToken cancellationToken)
+        {
+            ResolveCalls++;
+            return Task.FromResult<TvheadendStreamProfileDetails?>(new TvheadendStreamProfileDetails(
+                profileUuid,
+                profileName,
+                "profile-transcode",
+                "mp4",
+                "9",
+                string.Empty,
+                string.Empty,
+                Array.Empty<string>(),
+                Array.Empty<string>(),
+                null));
+        }
     }
 
     private sealed class FakeApiClient : ITvheadendApiClient
     {
         private static readonly HttpClient SharedClient = new();
-
-        public int GetStringCallCount { get; private set; }
 
         public PluginConfiguration? GetCurrentConfiguration() => new PluginConfiguration();
 
@@ -70,26 +102,7 @@ public class LiveStreamProfileContainerResolverTests
         public string BuildUrl(PluginConfiguration config, string endpoint) => $"http://tvh:9981/{endpoint.TrimStart('/')}";
 
         public Task<string> GetStringAsync(HttpClient httpClient, string url, CancellationToken cancellationToken)
-        {
-            GetStringCallCount++;
-
-            if (url.Contains("api/profile/list", StringComparison.Ordinal))
-            {
-                return Task.FromResult("{\"entries\":[{\"key\":\"uuid1\",\"val\":\"jellyfin\"},{\"key\":\"uuid2\",\"val\":\"jellyfin-alt\"}]}");
-            }
-
-            if (url.Contains("uuid=uuid1", StringComparison.Ordinal))
-            {
-                return Task.FromResult("{\"entries\":[{\"class\":\"profile-transcode\",\"container\":9}]}");
-            }
-
-            if (url.Contains("uuid=uuid2", StringComparison.Ordinal))
-            {
-                return Task.FromResult("{\"entries\":[{\"class\":\"profile-transcode\",\"container\":9}]}");
-            }
-
-            throw new InvalidOperationException($"Unexpected URL: {url}");
-        }
+            => throw new InvalidOperationException("Not used by this resolver test.");
 
         public Task<Stream> GetStreamAsync(HttpClient httpClient, string url, CancellationToken cancellationToken)
             => Task.FromResult<Stream>(new MemoryStream());

@@ -430,7 +430,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for det
 
 ## Known Limitations
 
-- There is currently **no test project** in the repository. Unit tests for URL construction, response mapping, and configuration handling are a planned addition.
+- Test coverage is still partial; add focused tests for new behavior in streaming, diagnostics, and DVR paths.
 - The plugin is purely API-based; HTSP-specific features (e.g. subscription weight, low-latency streaming) are not available.
 - Stream metadata (codec, resolution, bitrate) depends on the TVHeadend streaming profile and cannot be reliably detected at the plugin level.
 - The Docker development environment is a convenience tool for plugin loading — it does not include a TVHeadend instance or mock backend.

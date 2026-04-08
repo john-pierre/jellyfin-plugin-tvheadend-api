@@ -1,11 +1,10 @@
 using System;
-using System.Text.Json;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
 using Microsoft.Extensions.Logging;
-using static Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend.TvheadendProfileMappingHelper;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Streaming;
 
@@ -19,7 +18,7 @@ internal sealed class LiveStreamProfileContainerResolver : ILiveStreamProfileCon
     private readonly SemaphoreSlim _profileContainerLock = new(1, 1);
     private readonly ILogger<LiveStreamProfileContainerResolver> _logger;
     private readonly ITvheadendApiClient _tvheadendApiClient;
-    private readonly ITvheadendJsonReader _jsonReader;
+    private readonly ITvheadendStreamProfileResolver _streamProfileResolver;
 
     private ContainerCacheEntry? _profileContainerCache;
 
@@ -28,15 +27,15 @@ internal sealed class LiveStreamProfileContainerResolver : ILiveStreamProfileCon
     /// </summary>
     /// <param name="logger">Logger instance.</param>
     /// <param name="tvheadendApiClient">TVHeadend API client.</param>
-    /// <param name="jsonReader">TVHeadend JSON reader.</param>
+    /// <param name="streamProfileResolver">TVHeadend stream profile resolver.</param>
     public LiveStreamProfileContainerResolver(
         ILogger<LiveStreamProfileContainerResolver> logger,
         ITvheadendApiClient tvheadendApiClient,
-        ITvheadendJsonReader jsonReader)
+        ITvheadendStreamProfileResolver streamProfileResolver)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
-        _jsonReader = jsonReader ?? throw new ArgumentNullException(nameof(jsonReader));
+        _streamProfileResolver = streamProfileResolver ?? throw new ArgumentNullException(nameof(streamProfileResolver));
     }
 
     /// <summary>
@@ -95,27 +94,9 @@ internal sealed class LiveStreamProfileContainerResolver : ILiveStreamProfileCon
             var baseUrl = _tvheadendApiClient.GetBaseUrl(config);
             var webRoot = _tvheadendApiClient.GetWebRoot(config);
 
-            var listUrl = $"{baseUrl}{webRoot}api/profile/list";
-            var listBody = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
-
-            string? profileUuid = null;
-            using (var listDoc = JsonDocument.Parse(listBody))
-            {
-                if (listDoc.RootElement.TryGetProperty("entries", out var entries) && entries.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var entry in entries.EnumerateArray())
-                    {
-                        var val = _jsonReader.GetStringProp(entry, "val");
-                        if (string.Equals(val, profileName, StringComparison.OrdinalIgnoreCase))
-                        {
-                            profileUuid = _jsonReader.GetStringProp(entry, "key");
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(profileUuid))
+            var profiles = await _streamProfileResolver.GetProfilesAsync(httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
+            var profileReference = profiles.FirstOrDefault(p => string.Equals(p.Name, profileName, StringComparison.OrdinalIgnoreCase));
+            if (profileReference == null)
             {
                 _logger.LogWarning(
                     "Streaming profile '{ProfileName}' not found in TVHeadend. Defaulting container to '{Container}'.",
@@ -124,35 +105,26 @@ internal sealed class LiveStreamProfileContainerResolver : ILiveStreamProfileCon
                 return fallbackContainer;
             }
 
-            var loadUrl = $"{baseUrl}{webRoot}api/idnode/load?uuid={Uri.EscapeDataString(profileUuid)}";
-            var loadBody = await _tvheadendApiClient.GetStringAsync(httpClient, loadUrl, cancellationToken).ConfigureAwait(false);
-
-            using var doc = JsonDocument.Parse(loadBody);
-            if (!doc.RootElement.TryGetProperty("entries", out var profileEntries) || profileEntries.GetArrayLength() == 0)
+            var profileDetails = await _streamProfileResolver
+                .GetProfileDetailsByUuidAsync(httpClient, baseUrl, webRoot, profileReference.Key, profileReference.Name, cancellationToken)
+                .ConfigureAwait(false);
+            if (profileDetails == null)
             {
                 _logger.LogWarning(
                     "TVHeadend returned empty data for profile UUID '{Uuid}'. Defaulting container to '{Container}'.",
-                    profileUuid,
+                    profileReference.Key,
                     fallbackContainer);
                 return fallbackContainer;
             }
 
-            var profileEntry = profileEntries[0];
-            var profileClass = _jsonReader.GetStringPropOrParam(profileEntry, "class") ?? string.Empty;
-
-            if (profileClass.Contains("transcode", StringComparison.OrdinalIgnoreCase))
+            if (profileDetails.ProfileClass.Contains("transcode", StringComparison.OrdinalIgnoreCase))
             {
-                var rawContainer = _jsonReader.GetStringPropOrParam(profileEntry, "container")
-                    ?? _jsonReader.GetIntPropOrParam(profileEntry, "container")?.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                    ?? string.Empty;
-
-                var mappedContainer = MapContainer(rawContainer);
-                if (string.IsNullOrWhiteSpace(mappedContainer))
+                if (string.IsNullOrWhiteSpace(profileDetails.Container))
                 {
                     _logger.LogWarning(
                         "Transcode profile '{ProfileName}' has no container set (raw='{Raw}'). Defaulting to '{Container}'.",
                         profileName,
-                        rawContainer,
+                        profileDetails.RawContainer,
                         fallbackContainer);
                     return fallbackContainer;
                 }
@@ -160,18 +132,17 @@ internal sealed class LiveStreamProfileContainerResolver : ILiveStreamProfileCon
                 _logger.LogInformation(
                     "Streaming profile '{ProfileName}' (class={ProfileClass}) uses container '{Container}'.",
                     profileName,
-                    profileClass,
-                    mappedContainer);
-                return mappedContainer;
+                    profileDetails.ProfileClass,
+                    profileDetails.Container);
+                return profileDetails.Container;
             }
 
-            var classContainer = MapProfileClassToContainer(profileClass);
             _logger.LogInformation(
                 "Streaming profile '{ProfileName}' (class={ProfileClass}) -> container '{Container}' (derived from class).",
                 profileName,
-                profileClass,
-                classContainer);
-            return classContainer;
+                profileDetails.ProfileClass,
+                profileDetails.Container);
+            return profileDetails.Container;
         }
         catch (Exception ex)
         {

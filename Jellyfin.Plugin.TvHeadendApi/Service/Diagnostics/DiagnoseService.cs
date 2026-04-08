@@ -11,7 +11,6 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
 using MediaBrowser.Controller.Configuration;
 using Microsoft.Extensions.Logging;
 using static Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend.TvheadendJsonHelper;
-using static Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend.TvheadendProfileMappingHelper;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
 
@@ -20,15 +19,11 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
 /// </summary>
 internal sealed class DiagnoseService : IDiagnoseService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     private readonly ILogger<DiagnoseService> _logger;
     private readonly IServerConfigurationManager _serverConfigManager;
     private readonly IJellyfinEncodingOptionsReader _encodingOptionsReader;
     private readonly ITvheadendIdNodeService _idNodeService;
+    private readonly ITvheadendStreamProfileResolver _streamProfileResolver;
     private readonly ITvheadendApiClient _tvheadendApiClient;
 
     /// <summary>
@@ -38,18 +33,21 @@ internal sealed class DiagnoseService : IDiagnoseService
     /// <param name="serverConfigManager">Jellyfin server configuration manager.</param>
     /// <param name="encodingOptionsReader">Reader for Jellyfin FFmpeg encoding options.</param>
     /// <param name="idNodeService">Service for TVHeadend idnode API access.</param>
+    /// <param name="streamProfileResolver">Service for TVHeadend stream profile inspection.</param>
     /// <param name="tvheadendApiClient">TVHeadend API client.</param>
     public DiagnoseService(
         ILogger<DiagnoseService> logger,
         IServerConfigurationManager serverConfigManager,
         IJellyfinEncodingOptionsReader encodingOptionsReader,
         ITvheadendIdNodeService idNodeService,
+        ITvheadendStreamProfileResolver streamProfileResolver,
         ITvheadendApiClient tvheadendApiClient)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _serverConfigManager = serverConfigManager ?? throw new ArgumentNullException(nameof(serverConfigManager));
         _encodingOptionsReader = encodingOptionsReader ?? throw new ArgumentNullException(nameof(encodingOptionsReader));
         _idNodeService = idNodeService ?? throw new ArgumentNullException(nameof(idNodeService));
+        _streamProfileResolver = streamProfileResolver ?? throw new ArgumentNullException(nameof(streamProfileResolver));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
     }
 
@@ -196,17 +194,15 @@ internal sealed class DiagnoseService : IDiagnoseService
             string? profileClass = null;
             try
             {
-                var profUrl = $"{baseUrl}{webRoot}api/profile/list";
-                var profResponse = await _tvheadendApiClient.GetStringAsync(httpClient, profUrl, cancellationToken).ConfigureAwait(false);
-                var profList = JsonSerializer.Deserialize<ProfileListResponse>(profResponse, JsonOptions);
-                var profiles = profList?.Entries?.Select(e => e.Val).ToList() ?? new List<string>();
+                var profileReferences = await _streamProfileResolver.GetProfilesAsync(httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
+                var profiles = profileReferences.Select(e => e.Name).ToList();
                 foreach (var p in profiles)
                 {
                     report.AvailableStreamingProfiles.Add(p);
                 }
 
-                var matchingStreamProfile = profList?.Entries?.FirstOrDefault(e =>
-                    string.Equals(e.Val, config.StreamingProfile, StringComparison.OrdinalIgnoreCase));
+                var matchingStreamProfile = profileReferences.FirstOrDefault(e =>
+                    string.Equals(e.Name, config.StreamingProfile, StringComparison.OrdinalIgnoreCase));
 
                 configuredStreamProfileExists = matchingStreamProfile != null;
 
@@ -231,26 +227,18 @@ internal sealed class DiagnoseService : IDiagnoseService
                 {
                     try
                     {
-                        using var profileDoc = await _idNodeService.LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, matchingStreamProfile.Key, cancellationToken).ConfigureAwait(false);
-                        if (profileDoc.RootElement.TryGetProperty("entries", out var entries) && entries.GetArrayLength() > 0)
+                        var profileDetails = await _streamProfileResolver
+                            .GetProfileDetailsByUuidAsync(httpClient, baseUrl, webRoot, matchingStreamProfile.Key, matchingStreamProfile.Name, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (profileDetails != null)
                         {
-                            var entry = entries[0];
-                            profileClass = GetStringPropOrParam(entry, "class") ?? "unknown";
-                            var container = MapContainer(GetStringPropOrParam(entry, "container") ?? GetIntPropOrParam(entry, "container")?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
-                            if (string.IsNullOrWhiteSpace(container))
-                            {
-                                container = MapProfileClassToContainer(profileClass);
-                            }
-
-                            var proVideoCodec = GetStringPropOrParam(entry, "pro_vcodec")
-                                ?? GetStringPropOrParam(entry, "vcodec")
-                                ?? string.Empty;
-                            var proAudioCodec = GetStringPropOrParam(entry, "pro_acodec")
-                                ?? GetStringPropOrParam(entry, "acodec")
-                                ?? string.Empty;
-                            var srcVideoCodecs = GetStringArrayPropOrParam(entry, "src_vcodec");
-                            var srcAudioCodecs = GetStringArrayPropOrParam(entry, "src_acodec");
-                            var deinterlace = GetBoolPropOrParam(entry, "deinterlace");
+                            profileClass = string.IsNullOrWhiteSpace(profileDetails.ProfileClass) ? "unknown" : profileDetails.ProfileClass;
+                            var container = profileDetails.Container;
+                            var proVideoCodec = profileDetails.ProVideoCodec;
+                            var proAudioCodec = profileDetails.ProAudioCodec;
+                            var srcVideoCodecs = profileDetails.SrcVideoCodecs;
+                            var srcAudioCodecs = profileDetails.SrcAudioCodecs;
+                            var deinterlace = profileDetails.Deinterlace;
                             if (deinterlace != true && !string.IsNullOrWhiteSpace(proVideoCodec))
                             {
                                 deinterlace = await GetCodecProfileBoolSettingAsync(httpClient, baseUrl, webRoot, proVideoCodec, "deinterlace", cancellationToken).ConfigureAwait(false) ?? deinterlace;
@@ -605,18 +593,6 @@ internal sealed class DiagnoseService : IDiagnoseService
 
         var separatorIndex = title.IndexOf(" (", StringComparison.Ordinal);
         return separatorIndex > 0 ? title[..separatorIndex] : title;
-    }
-
-    private sealed class ProfileListResponse
-    {
-        public IReadOnlyList<ProfileListEntry>? Entries { get; init; }
-    }
-
-    private sealed class ProfileListEntry
-    {
-        public string Key { get; init; } = string.Empty;
-
-        public string Val { get; init; } = string.Empty;
     }
 
     private sealed class CodecProfileListEntry

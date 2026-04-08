@@ -38,6 +38,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ITvheadendJsonReader, TvheadendJsonReader>();
         serviceCollection.AddSingleton<IJellyfinEncodingOptionsReader, JellyfinEncodingOptionsReader>();
         serviceCollection.AddSingleton<ITvheadendIdNodeService, TvheadendIdNodeService>();
+        serviceCollection.AddSingleton<ITvheadendStreamProfileResolver, TvheadendStreamProfileResolver>();
         serviceCollection.AddSingleton<IDiagnoseService, DiagnoseService>();
         serviceCollection.AddSingleton<ILiveTvGuideService, LiveTvGuideService>();
         serviceCollection.AddSingleton<ITvheadendDvrService, TvheadendDvrService>();
