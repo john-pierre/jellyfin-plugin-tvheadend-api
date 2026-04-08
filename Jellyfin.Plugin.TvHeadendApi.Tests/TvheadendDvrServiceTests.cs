@@ -260,8 +260,8 @@ public class TvheadendDvrServiceTests
                 {
                     ChannelId = "ch-1",
                     Name = "Invalid",
-                    StartDate = DateTime.UtcNow,
-                    EndDate = DateTime.UtcNow
+                    StartDate = default,
+                    EndDate = default
                 },
                 CancellationToken.None));
     }
@@ -361,29 +361,55 @@ public class TvheadendDvrServiceTests
     }
 
     [Fact]
+    public async Task GetSeriesTimersAsync_WhenInvalidJson_ReturnsEmpty()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, "{ invalid json");
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        var result = await sut.GetSeriesTimersAsync(CancellationToken.None);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task GetSeriesTimersAsync_WhenConfigurationMissing_ReturnsEmpty()
+    {
+        var handler = new QueueHttpMessageHandler();
+        var sut = CreateSut(handler, out _, out var apiClient, null);
+
+        var result = await sut.GetSeriesTimersAsync(CancellationToken.None);
+
+        Assert.Empty(result);
+        apiClient.Verify(x => x.GetCurrentConfiguration(), Times.Once);
+    }
+
+    [Fact]
     public async Task CreateSeriesTimerAsync_WithProgramId_UsesCreateBySeriesEndpoint()
     {
         var handler = new QueueHttpMessageHandler();
         handler.Enqueue(HttpStatusCode.OK, """
                                          { "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }
                                          """);
-        handler.Enqueue(HttpStatusCode.OK, "{}");
+        handler.Enqueue(HttpStatusCode.OK, """
+                                         { "uuid": "series-created-1" }
+                                         """);
 
         var sut = CreateSut(handler, out _, out _, CreateConfig());
+        var info = new SeriesTimerInfo
+        {
+            Name = "Series Name",
+            ChannelId = "ch-2",
+            ProgramId = "789"
+        };
 
-        await sut.CreateSeriesTimerAsync(
-            new SeriesTimerInfo
-            {
-                Name = "Series Name",
-                ChannelId = "ch-2",
-                ProgramId = "789"
-            },
-            CancellationToken.None);
+        await sut.CreateSeriesTimerAsync(info, CancellationToken.None);
 
         Assert.Equal(2, handler.Requests.Count);
         Assert.Contains("api/dvr/autorec/create_by_series", handler.Requests[1].Url);
         Assert.Contains("config_uuid=profile-uuid", handler.Requests[1].Body);
         Assert.Contains("event_id=789", handler.Requests[1].Body);
+        Assert.Equal("series-created-1", info.Id);
     }
 
     [Fact]
@@ -393,32 +419,56 @@ public class TvheadendDvrServiceTests
         handler.Enqueue(HttpStatusCode.OK, """
                                          { "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }
                                          """);
-        handler.Enqueue(HttpStatusCode.OK, "{}");
+        handler.Enqueue(HttpStatusCode.OK, """
+                                         { "entries": [ { "uuid": "series-created-2" } ] }
+                                         """);
 
         var sut = CreateSut(handler, out _, out _, CreateConfig(priority: 7));
+        var info = new SeriesTimerInfo
+        {
+            Name = "Series Name",
+            ChannelId = "ch-5",
+            Overview = "Series overview",
+            RecordAnyTime = true,
+            RecordAnyChannel = false,
+            RecordNewOnly = true,
+            PrePaddingSeconds = 180,
+            PostPaddingSeconds = 240
+        };
 
-        await sut.CreateSeriesTimerAsync(
-            new SeriesTimerInfo
-            {
-                Name = "Series Name",
-                ChannelId = "ch-5",
-                Overview = "Series overview",
-                RecordAnyTime = true,
-                RecordAnyChannel = false,
-                RecordNewOnly = true,
-                PrePaddingSeconds = 180,
-                PostPaddingSeconds = 240
-            },
-            CancellationToken.None);
+        await sut.CreateSeriesTimerAsync(info, CancellationToken.None);
 
         Assert.Equal(2, handler.Requests.Count);
         Assert.Contains("api/dvr/autorec/create", handler.Requests[1].Url);
         Assert.Contains("conf=", handler.Requests[1].Body);
         Assert.Contains("%22channel%22%3A%22ch-5%22", handler.Requests[1].Body);
-        Assert.Contains("%22title%22%3A%22Series%20Name%22", handler.Requests[1].Body);
+        Assert.Contains("%22title%22%3A%22Series+Name%22", handler.Requests[1].Body);
         Assert.Contains("%22start_extra%22%3A3", handler.Requests[1].Body);
         Assert.Contains("%22stop_extra%22%3A4", handler.Requests[1].Body);
         Assert.Contains("%22config_uuid%22%3A%22profile-uuid%22", handler.Requests[1].Body);
+        Assert.Equal("series-created-2", info.Id);
+    }
+
+    [Fact]
+    public async Task CreateSeriesTimerAsync_WhenCreateResponseHasNoId_AssignsFallbackId()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, """
+                                         { "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }
+                                         """);
+        handler.Enqueue(HttpStatusCode.OK, "{}");
+
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+        var info = new SeriesTimerInfo
+        {
+            Name = "Series Name",
+            ChannelId = "ch-4"
+        };
+
+        await sut.CreateSeriesTimerAsync(info, CancellationToken.None);
+
+        Assert.False(string.IsNullOrWhiteSpace(info.Id));
+        Assert.True(Guid.TryParse(info.Id, out _));
     }
 
     [Fact]
@@ -462,6 +512,15 @@ public class TvheadendDvrServiceTests
     }
 
     [Fact]
+    public async Task UpdateSeriesTimerAsync_WithMissingId_ThrowsArgumentException()
+    {
+        var sut = CreateSut(new QueueHttpMessageHandler(), out _, out _, CreateConfig());
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            sut.UpdateSeriesTimerAsync(new SeriesTimerInfo { Id = string.Empty }, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task CancelSeriesTimerAsync_PostsUuidFormViaApiClient()
     {
         var sut = CreateSut(new QueueHttpMessageHandler(), out _, out var apiClient, CreateConfig());
@@ -490,12 +549,51 @@ public class TvheadendDvrServiceTests
     }
 
     [Fact]
+    public async Task CancelSeriesTimerAsync_WithEmptyId_ThrowsArgumentException()
+    {
+        var sut = CreateSut(new QueueHttpMessageHandler(), out _, out _, CreateConfig());
+
+        await Assert.ThrowsAsync<ArgumentException>(() => sut.CancelSeriesTimerAsync(string.Empty, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task CreateSeriesTimerAsync_WithMissingName_ThrowsArgumentException()
     {
         var sut = CreateSut(new QueueHttpMessageHandler(), out _, out _, CreateConfig());
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             sut.CreateSeriesTimerAsync(new SeriesTimerInfo { ChannelId = "ch-1", Name = string.Empty }, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetNewTimerDefaultsAsync_WithProgram_UsesConfigAndProgramFields()
+    {
+        var sut = CreateSut(new QueueHttpMessageHandler(), out _, out _, CreateConfig(priority: 9));
+
+        var defaults = await sut.GetNewTimerDefaultsAsync(
+            new ProgramInfo { ChannelId = "ch-42", Name = "Program Name", Overview = "Program Overview" },
+            CancellationToken.None);
+
+        Assert.Equal("ch-42", defaults.ChannelId);
+        Assert.Equal("Program Name", defaults.Name);
+        Assert.Equal("Program Overview", defaults.Overview);
+        Assert.Equal(9, defaults.Priority);
+        Assert.True(defaults.RecordAnyTime);
+        Assert.True(defaults.RecordNewOnly);
+        Assert.Equal(7, defaults.Days.Count);
+    }
+
+    [Fact]
+    public async Task GetNewTimerDefaultsAsync_WithNullProgram_ReturnsSafeDefaults()
+    {
+        var sut = CreateSut(new QueueHttpMessageHandler(), out _, out _, CreateConfig());
+
+        var defaults = await sut.GetNewTimerDefaultsAsync(null!, CancellationToken.None);
+
+        Assert.Null(defaults.ChannelId);
+        Assert.Null(defaults.Name);
+        Assert.Null(defaults.Overview);
+        Assert.Equal(7, defaults.Days.Count);
     }
 
     private static TvheadendDvrService CreateSut(
@@ -579,4 +677,3 @@ public class TvheadendDvrServiceTests
 
     private sealed record CapturedRequest(HttpMethod Method, string Url, string Body);
 }
-

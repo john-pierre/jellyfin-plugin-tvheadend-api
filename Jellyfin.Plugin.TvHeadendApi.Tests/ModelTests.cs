@@ -177,4 +177,107 @@ public class ModelTests
         Assert.Empty(channelResponse.Entries);
         Assert.Equal(0, channelResponse.Total);
     }
+
+    [Fact]
+    public void TvhApiChannelGridEntry_CanBeDeserialized()
+    {
+        var json = """
+                   {
+                     "Uuid": "ch-1",
+                     "Name": "Channel One",
+                     "Number": 1.5,
+                     "icon_public_url": "imagecache/1"
+                   }
+                   """;
+
+        var model = JsonSerializer.Deserialize<TvhApiChannelGridEntry>(json);
+
+        Assert.NotNull(model);
+        Assert.Equal("ch-1", model.Uuid);
+        Assert.Equal("Channel One", model.Name);
+        Assert.Equal(1.5, model.Number);
+        Assert.Equal("imagecache/1", model.IconPublicUrl);
+    }
+
+    [Fact]
+    public void TvhApiEpgEventsGridResponse_WithEntry_CanBeDeserialized()
+    {
+        var json = """
+                   {
+                     "entries": [
+                       {
+                         "eventId": 123,
+                         "channelUuid": "ch-1",
+                         "title": "Movie",
+                         "start": 1700000000,
+                         "stop": 1700003600,
+                         "genre": [16],
+                         "image": "imagecache/poster"
+                       }
+                     ],
+                     "totalCount": 1
+                   }
+                   """;
+
+        var model = JsonSerializer.Deserialize<TvhApiEpgEventsGridResponse>(json);
+
+        Assert.NotNull(model);
+        Assert.Single(model.Entries);
+        Assert.Equal(1, model.TotalCount);
+        Assert.Equal(123, model.Entries[0].EventId);
+        Assert.Equal("ch-1", model.Entries[0].ChannelUuid);
+    }
+
+    [Fact]
+    public void TvhApiDvrConfigGridResponse_WithEntry_CanBeDeserialized()
+    {
+        var json = """
+                   {
+                     "entries": [
+                       {
+                         "uuid": "cfg-1",
+                         "name": "default",
+                         "enabled": true,
+                         "pri": 5,
+                         "cache": 2
+                       }
+                     ],
+                     "total": 1
+                   }
+                   """;
+
+        var model = JsonSerializer.Deserialize<TvhApiDvrConfigGridResponse>(json);
+
+        Assert.NotNull(model);
+        Assert.Single(model.Entries);
+        Assert.Equal("cfg-1", model.Entries[0].Uuid);
+        Assert.Equal("default", model.Entries[0].Name);
+        Assert.True(model.Entries[0].Enabled);
+        Assert.Equal(1, model.Total);
+    }
+
+    [Fact]
+    public void TvhApiDvrEntryGridEntry_DefaultInitialization_HasSafeDefaults()
+    {
+        var model = new TvhApiDvrEntryGridEntry();
+
+        Assert.NotNull(model);
+        Assert.Equal(string.Empty, model.Uuid);
+        Assert.Equal(string.Empty, model.Channel);
+        Assert.Empty(model.Title);
+        Assert.Empty(model.Credits);
+        Assert.Empty(model.Genre);
+    }
+
+    [Fact]
+    public void TvhApiDvrAutoRecGridEntry_DefaultInitialization_HasSafeDefaults()
+    {
+        var model = new TvhApiDvrAutoRecGridEntry();
+
+        Assert.NotNull(model);
+        Assert.Equal(string.Empty, model.Uuid);
+        Assert.Equal(string.Empty, model.Channel);
+        Assert.Equal(string.Empty, model.Name);
+        Assert.Empty(model.Weekdays);
+    }
 }

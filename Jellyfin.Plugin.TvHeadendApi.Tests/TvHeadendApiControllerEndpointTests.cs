@@ -1,5 +1,6 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
+using System.Net.Http;
 using Jellyfin.Plugin.TvHeadendApi.Api;
 using Jellyfin.Plugin.TvHeadendApi.Model;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
@@ -17,6 +18,92 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 /// </summary>
 public class TvHeadendApiControllerExtendedTests
 {
+    [Fact]
+    public async Task GetImageProxy_ReturnsServiceResult_Passthrough()
+    {
+        // Arrange
+        var expected = new NotFoundObjectResult("missing image");
+        var mockImageProxyService = new Mock<IImageProxyService>();
+        mockImageProxyService
+            .Setup(x => x.ProxyImageAsync("imagecache/1715", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var controller = new TvHeadendApiController(
+            mockImageProxyService.Object,
+            new Mock<IDiagnoseService>().Object,
+            new Mock<IProfileProvisioningService>().Object);
+
+        // Act
+        var result = await controller.GetImageProxy("imagecache/1715", CancellationToken.None);
+
+        // Assert
+        Assert.Same(expected, result);
+    }
+
+    [Fact]
+    public async Task GetImageProxy_ForwardsCancellationTokenToService()
+    {
+        // Arrange
+        var cts = new CancellationTokenSource();
+        var token = cts.Token;
+        var mockImageProxyService = new Mock<IImageProxyService>();
+        mockImageProxyService
+            .Setup(x => x.ProxyImageAsync("imagecache/1", token))
+            .ReturnsAsync(new OkResult());
+
+        var controller = new TvHeadendApiController(
+            mockImageProxyService.Object,
+            new Mock<IDiagnoseService>().Object,
+            new Mock<IProfileProvisioningService>().Object);
+
+        // Act
+        await controller.GetImageProxy("imagecache/1", token);
+
+        // Assert
+        mockImageProxyService.Verify(x => x.ProxyImageAsync("imagecache/1", token), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetImageProxy_WithNullPath_DelegatesAndReturnsBadRequest()
+    {
+        // Arrange
+        var expected = new BadRequestObjectResult("imagePath is required");
+        var mockImageProxyService = new Mock<IImageProxyService>();
+        mockImageProxyService
+            .Setup(x => x.ProxyImageAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var controller = new TvHeadendApiController(
+            mockImageProxyService.Object,
+            new Mock<IDiagnoseService>().Object,
+            new Mock<IProfileProvisioningService>().Object);
+
+        // Act
+        var result = await controller.GetImageProxy(null, CancellationToken.None);
+
+        // Assert
+        Assert.Same(expected, result);
+        mockImageProxyService.Verify(x => x.ProxyImageAsync(null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetImageProxy_WhenServiceThrows_PropagatesException()
+    {
+        // Arrange
+        var mockImageProxyService = new Mock<IImageProxyService>();
+        mockImageProxyService
+            .Setup(x => x.ProxyImageAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("proxy failed"));
+
+        var controller = new TvHeadendApiController(
+            mockImageProxyService.Object,
+            new Mock<IDiagnoseService>().Object,
+            new Mock<IProfileProvisioningService>().Object);
+
+        // Act + Assert
+        await Assert.ThrowsAsync<HttpRequestException>(() => controller.GetImageProxy("imagecache/1", CancellationToken.None));
+    }
+
     [Fact]
     public async Task Diagnose_ReturnsOkWithValidDiagnoseResult()
     {

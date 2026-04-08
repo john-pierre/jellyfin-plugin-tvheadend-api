@@ -90,6 +90,91 @@ internal sealed partial class TvheadendDvrService
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException($"Failed to create series timer for series '{info.Name}' on channel ID: {info.ChannelId}. HTTP Status: {response.StatusCode}. Response: {responseContent}.");
         }
+
+        var createResponse = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var createdId = TryExtractCreatedEntityId(createResponse);
+        if (!string.IsNullOrWhiteSpace(createdId))
+        {
+            info.Id = createdId;
+        }
+        else if (string.IsNullOrWhiteSpace(info.Id))
+        {
+            // Keep downstream socket payloads valid even when TVHeadend omits an ID in create responses.
+            info.Id = Guid.NewGuid().ToString("N");
+        }
+    }
+
+    private static string? TryExtractCreatedEntityId(string responseBody)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            return ExtractId(document.RootElement);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ExtractId(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (TryGetStringProperty(element, "uuid", out var uuid))
+        {
+            return uuid;
+        }
+
+        if (TryGetStringProperty(element, "id", out var id))
+        {
+            return id;
+        }
+
+        if (element.TryGetProperty("entry", out var entry))
+        {
+            var entryId = ExtractId(entry);
+            if (!string.IsNullOrWhiteSpace(entryId))
+            {
+                return entryId;
+            }
+        }
+
+        if (!element.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var item in entries.EnumerateArray())
+        {
+            var itemId = ExtractId(item);
+            if (!string.IsNullOrWhiteSpace(itemId))
+            {
+                return itemId;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryGetStringProperty(JsonElement element, string name, out string? value)
+    {
+        value = null;
+        if (!element.TryGetProperty(name, out var property) || property.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = property.GetString();
+        return !string.IsNullOrWhiteSpace(value);
     }
 
     public async Task UpdateSeriesTimerAsync(SeriesTimerInfo info, CancellationToken cancellationToken)
