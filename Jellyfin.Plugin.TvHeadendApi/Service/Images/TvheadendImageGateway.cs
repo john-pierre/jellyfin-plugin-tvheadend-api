@@ -20,7 +20,7 @@ internal sealed class TvheadendImageGateway : ITvheadendImageGateway
         _tvheadendUrlBuilder = tvheadendUrlBuilder ?? throw new ArgumentNullException(nameof(tvheadendUrlBuilder));
     }
 
-    public Task<HttpResponseMessage> FetchImageAsync(string imagePath, CancellationToken cancellationToken)
+    public async Task<HttpResponseMessage> FetchImageAsync(string imagePath, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(imagePath);
 
@@ -29,7 +29,30 @@ internal sealed class TvheadendImageGateway : ITvheadendImageGateway
 
         var cleanPath = imagePath.TrimStart('/');
         var imageUrl = _tvheadendUrlBuilder.BuildUrl(config, cleanPath, "url");
-        var httpClient = _tvheadendApiClient.CreateHttpClient(config);
-        return httpClient.GetAsync(imageUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var httpClient = _tvheadendApiClient.CreateHttpClient(config);
+        using var upstream = await httpClient.GetAsync(imageUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+
+        var detached = new HttpResponseMessage(upstream.StatusCode)
+        {
+            ReasonPhrase = upstream.ReasonPhrase,
+            Version = upstream.Version,
+        };
+
+        foreach (var header in upstream.Headers)
+        {
+            detached.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        if (upstream.Content != null)
+        {
+            var body = await upstream.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            detached.Content = new ByteArrayContent(body);
+            foreach (var header in upstream.Content.Headers)
+            {
+                detached.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+        }
+
+        return detached;
     }
 }
