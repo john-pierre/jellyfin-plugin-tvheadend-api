@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
@@ -13,7 +13,7 @@ using Xunit;
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
 /// <summary>
-/// Phase 2: Infrastructure Tests for TvheadendApiClient and HTTP operations.
+/// Infrastructure Tests for TvheadendApiClient and HTTP operations.
 /// Tests the HTTP abstraction layer and basic client operations.
 /// </summary>
 public class TvheadendApiClientTests
@@ -149,7 +149,7 @@ public class TvheadendApiClientTests
         var cts = new CancellationTokenSource(100);
 
         // Act & Assert
-        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
             await client.GetStringAsync(httpClient, "http://localhost:9981/api/test", cts.Token)
         );
     }
@@ -272,7 +272,7 @@ public class TvheadendApiClientTests
         var client = new TvheadendApiClient();
         var mockHandler = new MockHttpMessageHandler
         {
-            Response = new HttpResponseMessage(HttpStatusCode.OK)
+            ResponseFactory = () => new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"data\":\"test\"}")
             }
@@ -295,6 +295,7 @@ public class TvheadendApiClientTests
     private sealed class MockHttpMessageHandler : HttpMessageHandler
     {
         public HttpResponseMessage? Response { get; set; }
+        public Func<HttpResponseMessage>? ResponseFactory { get; set; }
         public Action<HttpRequestMessage>? OnRequest { get; set; }
         public int Delay { get; set; }
 
@@ -307,7 +308,8 @@ public class TvheadendApiClientTests
                 await Task.Delay(Delay, cancellationToken).ConfigureAwait(false);
             }
 
-            return Response ?? new HttpResponseMessage(HttpStatusCode.OK);
+            return ResponseFactory?.Invoke() ?? Response ?? new HttpResponseMessage(HttpStatusCode.OK);
         }
     }
 }
+

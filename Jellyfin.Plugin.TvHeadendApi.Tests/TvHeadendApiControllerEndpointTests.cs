@@ -1,4 +1,4 @@
-using System.Threading;
+﻿using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Api;
 using Jellyfin.Plugin.TvHeadendApi.Model;
@@ -12,7 +12,7 @@ using Xunit;
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
 /// <summary>
-/// Phase 2: Extended API Controller tests.
+/// Extended API Controller tests.
 /// Tests diagnostic and profile operations.
 /// </summary>
 public class TvHeadendApiControllerExtendedTests
@@ -202,7 +202,7 @@ public class TvHeadendApiControllerExtendedTests
 }
 
 /// <summary>
-/// Phase 2: Tests for profile provisioning service interactions.
+/// Tests for profile provisioning service interactions.
 /// </summary>
 public class ProfileProvisioningServiceInteractionTests
 {
@@ -252,7 +252,7 @@ public class ProfileProvisioningServiceInteractionTests
 }
 
 /// <summary>
-/// Phase 2: Tests for diagnostic checks.
+/// Tests for diagnostic checks.
 /// </summary>
 public class DiagnosticCheckTests
 {
@@ -318,4 +318,5 @@ public class DiagnosticCheckTests
         Assert.Equal(85, result.CompatibilityScore);
     }
 }
+
 

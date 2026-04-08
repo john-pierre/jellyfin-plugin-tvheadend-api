@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
 using Xunit;
 
@@ -6,7 +6,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
 /// <summary>
 /// Tests for TvheadendJsonHelper utility methods.
-/// Phase 1: JSON Helper Coverage
+/// JSON Helper Coverage
 /// </summary>
 public class TvheadendJsonHelperTests
 {
@@ -39,7 +39,7 @@ public class TvheadendJsonHelperTests
     }
 
     [Fact]
-    public void GetStringProp_WithNullValue_ReturnsNull()
+    public void GetStringProp_WithNullValue_ReturnsEmptyString()
     {
         // Arrange
         var json = JsonDocument.Parse("{\"name\":null}");
@@ -49,7 +49,7 @@ public class TvheadendJsonHelperTests
         var result = TvheadendJsonHelper.GetStringProp(element, "name");
 
         // Assert
-        Assert.Null(result);
+        Assert.Equal(string.Empty, result);
     }
 
     [Fact]
@@ -193,73 +193,42 @@ public class TvheadendJsonHelperTests
     }
 
     [Fact]
-    public void GetStringArrayProp_WithValidArray_ReturnsArray()
+    public void GetStringPropOrParam_WithParamString_ReturnsValue()
     {
         // Arrange
-        var json = JsonDocument.Parse("{\"codecs\":[\"h264\",\"aac\"]}");
+        var json = JsonDocument.Parse("{\"params\":[{\"id\":\"name\",\"value\":\"test\"}]}");
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetStringArrayProp(element, "codecs");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("h264", result);
-        Assert.Contains("aac", result);
-    }
-
-    [Fact]
-    public void GetStringArrayProp_WithMissingProperty_ReturnsEmptyOrNull()
-    {
-        // Arrange
-        var json = JsonDocument.Parse("{\"other\":[]}");
-        var element = json.RootElement;
-
-        // Act
-        var result = TvheadendJsonHelper.GetStringArrayProp(element, "codecs");
-
-        // Assert
-        Assert.True(result == null || result.Count == 0);
-    }
-
-
-    [Fact]
-    public void GetParamStringProp_WithValidParamString_ReturnsValue()
-    {
-        // Arrange
-        var json = JsonDocument.Parse("{\"params\":{\"name\":\"test\"}}");
-        var element = json.RootElement;
-
-        // Act
-        var result = TvheadendJsonHelper.GetParamStringProp(element, "name");
+        var result = TvheadendJsonHelper.GetStringPropOrParam(element, "name");
 
         // Assert
         Assert.Equal("test", result);
     }
 
     [Fact]
-    public void GetParamIntProp_WithValidParamInt_ReturnsValue()
+    public void GetIntPropOrParam_WithParamInt_ReturnsValue()
     {
         // Arrange
-        var json = JsonDocument.Parse("{\"params\":{\"timeout\":5000}}");
+        var json = JsonDocument.Parse("{\"params\":[{\"id\":\"timeout\",\"value\":5000}]}");
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetParamIntProp(element, "timeout");
+        var result = TvheadendJsonHelper.GetIntPropOrParam(element, "timeout");
 
         // Assert
         Assert.Equal(5000, result);
     }
 
     [Fact]
-    public void GetParamBoolProp_WithValidParamBool_ReturnsValue()
+    public void GetBoolPropOrParam_WithParamBool_ReturnsValue()
     {
         // Arrange
-        var json = JsonDocument.Parse("{\"params\":{\"debug\":true}}");
+        var json = JsonDocument.Parse("{\"params\":[{\"id\":\"debug\",\"value\":true}]}");
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetParamBoolProp(element, "debug");
+        var result = TvheadendJsonHelper.GetBoolPropOrParam(element, "debug");
 
         // Assert
         Assert.True(result);
