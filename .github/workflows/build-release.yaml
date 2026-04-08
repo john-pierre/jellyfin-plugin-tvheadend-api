@@ -40,7 +40,6 @@ jobs:
         with:
           fetch-depth: 0
 
-
       - name: Release Please
         id: release-please
         if: ${{ github.event_name == 'push' }}
