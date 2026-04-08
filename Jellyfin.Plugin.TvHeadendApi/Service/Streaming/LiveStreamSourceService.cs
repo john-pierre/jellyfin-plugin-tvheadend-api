@@ -79,7 +79,9 @@ internal sealed class LiveStreamSourceService : ILiveStreamSourceService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(channelId);
 
-        var streamUrl = _tvheadendUrlBuilder.BuildUrl(config, $"stream/channel/{channelId}?profile={config.StreamingProfile}", "url");
+        // Append streaming profile parameter, then apply auth token as query parameter.
+        // The auth token is required for direct playback from clients.
+        var streamUrl = _tvheadendUrlBuilder.BuildUrl(config, $"stream/channel/{channelId}?profile={config.StreamingProfile}", "parameter");
         var container = await _streamProfileContainerResolver.ResolveContainerAsync(config, cancellationToken).ConfigureAwait(false);
         var mediaSource = new MediaSourceInfo
         {

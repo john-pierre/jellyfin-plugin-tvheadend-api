@@ -28,7 +28,7 @@ internal sealed class TvheadendImageGateway : ITvheadendImageGateway
             ?? throw new InvalidOperationException("Plugin configuration is not available.");
 
         var cleanPath = imagePath.TrimStart('/');
-        var imageUrl = _tvheadendUrlBuilder.BuildUrl(config, cleanPath, "url");
+        var imageUrl = _tvheadendUrlBuilder.BuildUrl(config, cleanPath, "parameter");
         using var httpClient = _tvheadendApiClient.CreateHttpClient(config);
         using var upstream = await httpClient.GetAsync(imageUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 

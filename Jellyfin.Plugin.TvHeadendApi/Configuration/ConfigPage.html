@@ -45,6 +45,9 @@
                         <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button" style="background:#00a4dc; color:#fff; font-weight:bold; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
                             <span>Create &quot;jellyfin&quot; Profile</span>
                         </button>
+                        <button id="GenerateAuthTokenBtn" is="emby-button" type="button" class="raised emby-button" style="background:#4caf50; color:#fff; font-weight:bold; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
+                            <span>🔐 Generate Auth Token</span>
+                        </button>
                         <button id="ResetDefaultsBtn" is="emby-button" type="button" class="raised emby-button" style="background:#444; color:#fff; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
                             <span>Reset Config</span>
                         </button>
@@ -157,9 +160,9 @@
                         <div class="fieldDescription">TVHeadend password for HTTP Basic Auth.</div>
                     </div>
                     <div class="inputContainer">
-                        <label class="inputLabel" for="AuthToken">Auth Token</label>
+                        <label class="inputLabel" for="AuthToken">Auth Token <span style="color: #e74c3c; font-weight: bold;">*</span></label>
                         <input id="AuthToken" name="AuthToken" type="password" is="emby-input" />
-                        <div class="fieldDescription">Optional persistent access token. Appended as <code>?auth=…</code> to image and icon URLs. Leave empty if unused.</div>
+                        <div class="fieldDescription"><strong>Required.</strong> A persistent access token used for direct stream playback by clients. This token is appended as <code>?auth=…</code> to all stream and image URLs, allowing clients to play channels without additional authentication.<br/><br/>👤 <strong>To generate a new auth token, you need TVHeadend admin access.</strong><br/>Click <strong>"Generate Auth Token"</strong> button above to create one automatically from TVHeadend, or generate manually in TVHeadend admin panel and paste it here.</div>
                     </div>
                 </div>
 
@@ -469,6 +472,25 @@
         }
 
         document.querySelector('#DiagnoseBtn').addEventListener('click', loadDiagnose);
+
+        // ── Generate Auth Token ─────────────────────────────────────────
+        document.querySelector('#GenerateAuthTokenBtn').addEventListener('click', function () {
+            var msgEl = document.querySelector('#ProfileActionMsg');
+            msgEl.style.color = '';
+            msgEl.textContent = 'Generating auth token from TVHeadend…';
+
+            saveCurrentFormToConfig().then(function () {
+                return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/GenerateAuthToken'), dataType: 'json' });
+            }).then(function (result) {
+                if (!result.Success) { msgEl.style.color = 'red'; msgEl.textContent = '❌ ' + result.Message; return; }
+                document.querySelector('#AuthToken').value = result.AuthToken || '';
+                msgEl.style.color = 'green';
+                msgEl.textContent = '✅ ' + (result.Message || 'Auth token generated successfully.');
+            }).catch(function (err) {
+                msgEl.style.color = 'red';
+                msgEl.textContent = 'Request failed: ' + (err.statusText || err.message || 'Unknown error');
+            });
+        });
 
         // ── Reset defaults ─────────────────────────────────────────────
         document.querySelector('#ResetDefaultsBtn').addEventListener('click', function () {

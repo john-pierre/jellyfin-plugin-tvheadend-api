@@ -97,7 +97,16 @@ public class PluginConfiguration : BasePluginConfiguration
     public string Password { get; set; }
 
     /// <summary>
-    /// Gets or sets an optional authentication token appended as <c>?auth=</c> to image/parameter URLs.
+    /// Gets or sets a required authentication token appended as <c>?auth=</c> to stream and image URLs.
+    /// This token is essential for direct playback from clients.
+    /// <para>
+    /// <strong>Required:</strong> A TVHeadend admin account is needed to generate this token.
+    /// Generate it using the plugin's "Generate Auth Token" button in the settings UI
+    /// (which uses the configured TVHeadend credentials), or manually create one in TVHeadend's
+    /// admin panel (Configuration → Users → API Tokens or similar).
+    /// </para>
+    /// When set, this token is automatically appended to all stream URLs and image requests,
+    /// allowing clients to play channels without transmitting raw passwords.
     /// </summary>
     public string AuthToken { get; set; }
 

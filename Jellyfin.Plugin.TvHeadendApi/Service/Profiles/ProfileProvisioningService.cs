@@ -380,6 +380,100 @@ internal sealed class ProfileProvisioningService : IProfileProvisioningService
         }
     }
 
+    /// <inheritdoc />
+    public async Task<AuthTokenGenerationResult> GenerateAuthTokenAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var config = _tvheadendApiClient.GetCurrentConfiguration();
+            if (config == null)
+            {
+                return new AuthTokenGenerationResult { Success = false, Message = "Plugin configuration is not available." };
+            }
+
+            using var httpClient = _tvheadendApiClient.CreateHttpClient(config);
+            var baseUrl = _tvheadendApiClient.GetBaseUrl(config);
+            var webRoot = _tvheadendApiClient.GetWebRoot(config);
+
+            // Call TVHeadend's token generation endpoint
+            var tokenUrl = $"{baseUrl}{webRoot}api/user/token";
+            _logger.LogInformation("Generating auth token from TVHeadend at {Url}.", tokenUrl);
+
+            using var response = await _tvheadendApiClient.PostFormAsync(
+                httpClient,
+                tokenUrl,
+                Array.Empty<KeyValuePair<string, string>>(),
+                cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                _logger.LogError("Token generation failed (HTTP {Status}): {Body}. Requires TVHeadend admin privileges.", response.StatusCode, errorBody);
+                return new AuthTokenGenerationResult
+                {
+                    Success = false,
+                    Message = $"Token generation failed (HTTP {(int)response.StatusCode}). "
+                        + "Make sure your TVHeadend user has admin privileges. "
+                        + $"Response: {errorBody}"
+                };
+            }
+
+            var tokenBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(tokenBody);
+            var root = doc.RootElement;
+
+            var token = GetStringProp(root, "token") ?? GetStringProp(root, "auth");
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                _logger.LogError("Token generation response did not contain a token field: {Response}", tokenBody);
+                return new AuthTokenGenerationResult
+                {
+                    Success = false,
+                    Message = "TVHeadend generated a token but it could not be extracted from the response."
+                };
+            }
+
+            // Save the token to the plugin configuration
+            var plugin = Plugin.Instance;
+            if (plugin == null)
+            {
+                return new AuthTokenGenerationResult
+                {
+                    Success = false,
+                    Message = "Plugin instance is not available."
+                };
+            }
+
+            if (plugin.Configuration is Configuration.PluginConfiguration pluginConfig)
+            {
+                pluginConfig.AuthToken = token;
+                plugin.SaveConfiguration();
+                _logger.LogInformation("Auth token saved to plugin configuration.");
+            }
+
+            return new AuthTokenGenerationResult
+            {
+                Success = true,
+                AuthToken = token,
+                Message = "Auth token generated successfully and saved to configuration."
+            };
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Failed to connect to TVHeadend for token generation.");
+            return new AuthTokenGenerationResult
+            {
+                Success = false,
+                Message = $"Cannot connect to TVHeadend: {ex.Message}. Check your connection and authentication settings."
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating auth token.");
+            return new AuthTokenGenerationResult { Success = false, Message = $"Unexpected error: {ex.Message}" };
+        }
+    }
+
     private async Task<bool> CodecProfileExistsAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
     {
         try

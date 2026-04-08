@@ -86,5 +86,15 @@ public class TvHeadendApiControllerTests
                 ProfileName = "jellyfin",
             });
         }
+
+        public Task<AuthTokenGenerationResult> GenerateAuthTokenAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new AuthTokenGenerationResult
+            {
+                Success = true,
+                Message = "Token generated",
+                AuthToken = "test-token-abc123",
+            });
+        }
     }
 }
