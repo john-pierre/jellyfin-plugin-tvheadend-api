@@ -3,11 +3,11 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 
 WORKDIR /src
 
-# Copy solution + project file first for layer-cached restore
+# Copy project metadata first for layer-cached restore
 COPY Jellyfin.Plugin.TvHeadendApi.sln ./
 COPY Jellyfin.Plugin.TvHeadendApi/Jellyfin.Plugin.TvHeadendApi.csproj Jellyfin.Plugin.TvHeadendApi/
 
-RUN dotnet restore Jellyfin.Plugin.TvHeadendApi.sln
+RUN dotnet restore Jellyfin.Plugin.TvHeadendApi/Jellyfin.Plugin.TvHeadendApi.csproj
 
 # Copy the rest of the source code
 COPY Jellyfin.Plugin.TvHeadendApi/ Jellyfin.Plugin.TvHeadendApi/
@@ -16,7 +16,7 @@ COPY manifest.json ./
 # Build version – overridable via --build-arg
 ARG VERSION=1.0.0.0
 
-RUN dotnet build Jellyfin.Plugin.TvHeadendApi.sln \
+RUN dotnet build Jellyfin.Plugin.TvHeadendApi/Jellyfin.Plugin.TvHeadendApi.csproj \
       --configuration Release \
       --no-restore \
       -p:AssemblyVersion=${VERSION} \

@@ -328,16 +328,16 @@ If you want quieter logs again, remove or adjust the `JELLYFIN_Logging__LogLevel
 #### Quick dev build helper (auto version bump)
 
 Use the script below to auto-increment the 4th version number for development builds
-(e.g. `1.0.0.1` -> `1.0.0.2`), rebuild the image and recreate Jellyfin:
+(e.g. `1.0.0.1` -> `1.0.0.2`), run unit tests, rebuild the image and recreate Jellyfin:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\dev-build.ps1
+powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
 Optional dry-run (shows commands only):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\dev-build.ps1 -DryRun
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -DryRun
 ```
 
 The current dev version state is stored in `./.docker/dev-version.txt`.

@@ -66,7 +66,10 @@ try {
     $nextVersion = Increment-Version -VersionText $currentVersion
     Write-Step "Next dev version: $nextVersion"
 
+    $testProjectPath = Join-Path $repoRoot "Jellyfin.Plugin.TvHeadendApi.Tests\Jellyfin.Plugin.TvHeadendApi.Tests.csproj"
+
     if ($DryRun) {
+        Write-Host "[DRY-RUN] Would run: dotnet test $testProjectPath -c Release"
         Write-Host "[DRY-RUN] Would run: docker compose build --build-arg VERSION=$nextVersion $ComposeService"
         Write-Host "[DRY-RUN] Would run: docker compose up -d --force-recreate $ComposeService"
         if (-not $NoLogs) {
@@ -74,6 +77,16 @@ try {
         }
         Write-Host "[DRY-RUN] Would write version file: $VersionFile -> $nextVersion"
         exit 0
+    }
+
+    if (-not (Test-Path $testProjectPath)) {
+        throw "Test project not found: $testProjectPath"
+    }
+
+    Write-Step "Running unit tests"
+    dotnet test $testProjectPath -c Release
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet test failed with exit code $LASTEXITCODE"
     }
 
     Write-Step "Building image with VERSION=$nextVersion"
