@@ -144,7 +144,7 @@ internal sealed class LiveTvGuideService : ILiveTvGuideService
                 Name = channel.Name,
                 Number = channel.Number % 1 == 0 ? ((int)channel.Number).ToString(CultureInfo.InvariantCulture) : channel.Number.ToString(CultureInfo.InvariantCulture),
                 ImageUrl = !string.IsNullOrWhiteSpace(channel.IconPublicUrl)
-                    ? _tvheadendUrlBuilder.BuildUrl(config, $"api/TvHeadendApi/ImageProxy?imagePath={Uri.EscapeDataString(channel.IconPublicUrl.TrimStart('/'))}")
+                    ? _tvheadendUrlBuilder.BuildUrl(config, channel.IconPublicUrl.TrimStart('/'), "parameter")
                     : null,
                 HasImage = !string.IsNullOrWhiteSpace(channel.IconPublicUrl),
             }).ToList();
@@ -187,12 +187,12 @@ internal sealed class LiveTvGuideService : ILiveTvGuideService
                     if (!string.IsNullOrWhiteSpace(entry.Image))
                     {
                         imageUrl = entry.Image.StartsWith("imagecache/", StringComparison.Ordinal)
-                            ? _tvheadendUrlBuilder.BuildUrl(config, $"api/TvHeadendApi/ImageProxy?imagePath={Uri.EscapeDataString(entry.Image)}")
+                            ? _tvheadendUrlBuilder.BuildUrl(config, entry.Image.TrimStart('/'), "parameter")
                             : entry.Image;
                     }
                     else if (!string.IsNullOrWhiteSpace(entry.ChannelIcon))
                     {
-                        imageUrl = _tvheadendUrlBuilder.BuildUrl(config, $"api/TvHeadendApi/ImageProxy?imagePath={Uri.EscapeDataString(entry.ChannelIcon)}");
+                        imageUrl = _tvheadendUrlBuilder.BuildUrl(config, entry.ChannelIcon.TrimStart('/'), "parameter");
                     }
 
                     return new ProgramInfo

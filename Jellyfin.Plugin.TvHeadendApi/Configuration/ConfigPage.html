@@ -45,9 +45,6 @@
                         <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button" style="background:#00a4dc; color:#fff; font-weight:bold; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
                             <span>Create &quot;jellyfin&quot; Profile</span>
                         </button>
-                        <button id="GenerateAuthTokenBtn" is="emby-button" type="button" class="raised emby-button" style="background:#4caf50; color:#fff; font-weight:bold; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
-                            <span>🔐 Generate Auth Token</span>
-                        </button>
                         <button id="ResetDefaultsBtn" is="emby-button" type="button" class="raised emby-button" style="background:#444; color:#fff; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
                             <span>Reset Config</span>
                         </button>
@@ -150,19 +147,25 @@
                         <div class="fieldDescription">Enable only if TVHeadend permits unauthenticated connections. When checked, username &amp; password are ignored.</div>
                     </div>
                     <div class="inputContainer">
-                        <label class="inputLabel" for="Username">Username</label>
-                        <input id="Username" name="Username" type="text" is="emby-input" placeholder="e.g., admin" />
-                        <div class="fieldDescription">TVHeadend username for HTTP Basic Auth.</div>
+                        <label class="inputLabel" for="Username">Username <span style="color: #e74c3c; font-weight: bold;">*</span></label>
+                        <input id="Username" name="Username" type="text" is="emby-input" placeholder="e.g., admin" required />
+                        <div class="fieldDescription">TVHeadend username for HTTP Basic Auth. Required when Anonymous Access is disabled.</div>
                     </div>
                     <div class="inputContainer">
-                        <label class="inputLabel" for="Password">Password</label>
-                        <input id="Password" name="Password" type="password" is="emby-input" />
-                        <div class="fieldDescription">TVHeadend password for HTTP Basic Auth.</div>
+                        <label class="inputLabel" for="Password">Password <span style="color: #e74c3c; font-weight: bold;">*</span></label>
+                        <input id="Password" name="Password" type="password" is="emby-input" required />
+                        <div class="fieldDescription">TVHeadend password for HTTP Basic Auth. Required when Anonymous Access is disabled.</div>
                     </div>
                     <div class="inputContainer">
                         <label class="inputLabel" for="AuthToken">Auth Token <span style="color: #e74c3c; font-weight: bold;">*</span></label>
                         <input id="AuthToken" name="AuthToken" type="password" is="emby-input" />
-                        <div class="fieldDescription"><strong>Required.</strong> A persistent access token used for direct stream playback by clients. This token is appended as <code>?auth=…</code> to all stream and image URLs, allowing clients to play channels without additional authentication.<br/><br/>👤 <strong>To generate a new auth token, you need TVHeadend admin access.</strong><br/>Click <strong>"Generate Auth Token"</strong> button above to create one automatically from TVHeadend, or generate manually in TVHeadend admin panel and paste it here.</div>
+                        <div class="fieldDescription"><strong>Required.</strong> A persistent access token used for direct stream playback by clients. This token is appended as <code>?auth=…</code> to all stream and image URLs, allowing clients to play channels without additional authentication.<br/><br/><strong>Allowed token format:</strong> letters and digits only (<code>A-Z</code>, <code>a-z</code>, <code>0-9</code>).<br/><br/>👤 <strong>To generate a new auth token, you need TVHeadend admin access.</strong><br/>Click <strong>"Generate Auth Token"</strong> below to create one automatically from TVHeadend, or generate manually in TVHeadend admin panel and paste it here.</div>
+                        <div style="margin-top:0.75em; display:flex; gap:0.75em; align-items:center; flex-wrap:wrap;">
+                            <button id="GenerateAuthTokenBtn" is="emby-button" type="button" class="raised emby-button" style="background:#4caf50; color:#fff; font-weight:bold; min-height:44px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
+                                <span>Generate Auth Token</span>
+                            </button>
+                            <span id="AuthTokenActionMsg" style="font-style:italic;"></span>
+                        </div>
                     </div>
                 </div>
 
@@ -361,6 +364,15 @@
             return div.innerHTML;
         }
 
+        function updateAuthRequiredState() {
+            var allowAnonymous = document.querySelector('#AllowAnonymousAccess').checked;
+            var usernameInput = document.querySelector('#Username');
+            var passwordInput = document.querySelector('#Password');
+
+            usernameInput.required = !allowAnonymous;
+            passwordInput.required = !allowAnonymous;
+        }
+
         function loadPluginInfo() {
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/PluginInfo'), dataType: 'json' }).then(function (info) {
                 var version = (info && info.Version) ? info.Version : 'unknown';
@@ -475,7 +487,7 @@
 
         // ── Generate Auth Token ─────────────────────────────────────────
         document.querySelector('#GenerateAuthTokenBtn').addEventListener('click', function () {
-            var msgEl = document.querySelector('#ProfileActionMsg');
+            var msgEl = document.querySelector('#AuthTokenActionMsg');
             msgEl.style.color = '';
             msgEl.textContent = 'Generating auth token from TVHeadend…';
 
@@ -567,6 +579,7 @@
             document.querySelector('#PrePaddingSeconds').value = config.PrePaddingSeconds || '';
             document.querySelector('#PostPaddingSeconds').value = config.PostPaddingSeconds || '';
             document.querySelector('#RecordingProfile').value = config.RecordingProfile || '';
+            updateAuthRequiredState();
         }
 
         // ── Load available profiles from TVHeadend ──────────────────────
@@ -647,6 +660,8 @@
                 console.error('Error loading configuration:', err);
             });
         });
+
+        document.querySelector('#AllowAnonymousAccess').addEventListener('change', updateAuthRequiredState);
 
         // ── Save config ────────────────────────────────────────────────
         document.querySelector('#TvHeadendApiConfigForm').addEventListener('submit', function (e) {

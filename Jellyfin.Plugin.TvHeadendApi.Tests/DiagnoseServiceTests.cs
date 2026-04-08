@@ -524,6 +524,37 @@ public class DiagnoseServiceTests
             text.Contains("Probing is off and AnalyzeDuration is 0", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task DiagnoseAsync_WithNonAlphanumericAuthToken_AddsAuthenticationError()
+    {
+        var sut = CreateSut(out var apiClient, out var streamResolver, out var idNodeService, out _);
+        var config = CreateConfig();
+        config.AuthToken = "abc.def-123";
+
+        apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        apiClient.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
+        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
+
+        streamResolver
+            .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TvheadendStreamProfileReference> { new("profile-1", "pass") });
+        idNodeService
+            .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JsonDocument.Parse("""
+                                            { "entries": [ { "name": "default" } ] }
+                                            """));
+
+        var result = await sut.DiagnoseAsync(CancellationToken.None);
+
+        Assert.Contains(result.Checks, check =>
+            check.Category == "Authentication" &&
+            check.Name == "Auth Token Format" &&
+            check.Status == "ERROR");
+    }
+
     private static string GetJsonForUrl(string url)
     {
         if (url.Contains("api/serverinfo", StringComparison.Ordinal))
@@ -568,6 +599,7 @@ public class DiagnoseServiceTests
             StreamingProfile = "pass",
             RecordingProfile = "default",
             EnableTvhDvr = true,
+            AuthToken = "abc123",
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
             SupportsTranscoding = false,

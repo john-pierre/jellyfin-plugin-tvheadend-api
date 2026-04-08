@@ -90,6 +90,41 @@ internal sealed class DiagnoseService : IDiagnoseService
 
         report.PluginSettings.Add($"DVR enabled: {config.EnableTvhDvr}, Recording Profile: {config.RecordingProfile}");
 
+        if (string.IsNullOrWhiteSpace(config.AuthToken))
+        {
+            report.Checks.Add(new DiagnoseCheck
+            {
+                Category = "Authentication",
+                Name = "Auth Token Format",
+                Status = "ERROR",
+                Message = "Auth token is empty.",
+                Recommendation = "Generate a token and use only letters and numbers (A-Z, a-z, 0-9)."
+            });
+            scoreDeductions += 20;
+        }
+        else if (!TvheadendAuthTokenValidator.IsAlphanumeric(config.AuthToken))
+        {
+            report.Checks.Add(new DiagnoseCheck
+            {
+                Category = "Authentication",
+                Name = "Auth Token Format",
+                Status = "ERROR",
+                Message = "Auth token contains unsupported characters.",
+                Recommendation = "Use only letters and numbers (A-Z, a-z, 0-9)."
+            });
+            scoreDeductions += 20;
+        }
+        else
+        {
+            report.Checks.Add(new DiagnoseCheck
+            {
+                Category = "Authentication",
+                Name = "Auth Token Format",
+                Status = "OK",
+                Message = "Auth token format is alphanumeric."
+            });
+        }
+
         HttpClient httpClient;
         string baseUrl;
         string webRoot;

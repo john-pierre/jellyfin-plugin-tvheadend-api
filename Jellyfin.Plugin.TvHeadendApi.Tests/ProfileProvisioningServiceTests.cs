@@ -145,6 +145,30 @@ public class ProfileProvisioningServiceTests
     }
 
     [Fact]
+    public async Task GenerateAuthTokenAsync_WhenTokenContainsUnsupportedCharacters_ReturnsFailure()
+    {
+        var config = new PluginConfiguration();
+        var idNode = new TvheadendIdNodeService();
+        var api = new Mock<ITvheadendApiClient>();
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        api.Setup(x => x.GetBaseUrl(config)).Returns("http://127.0.0.1:9981");
+        api.Setup(x => x.GetWebRoot(config)).Returns("/");
+        api.Setup(x => x.PostFormAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"token\":\"abc.def-123\"}")
+            });
+
+        var sut = new ProfileProvisioningService(NullLogger<ProfileProvisioningService>.Instance, idNode, api.Object);
+        var result = await sut.GenerateAuthTokenAsync(CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("Only letters and numbers", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CreateProfileAsync_WhenHttpThrows_ReturnsConnectionFailure()
     {
         var config = new PluginConfiguration();

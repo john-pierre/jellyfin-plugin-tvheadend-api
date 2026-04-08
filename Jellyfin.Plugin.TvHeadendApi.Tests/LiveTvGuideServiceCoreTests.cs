@@ -49,7 +49,7 @@ public class LiveTvGuideServiceCoreTests
 
         Assert.Equal(2, result.Count);
         Assert.Equal("7", result[0].Number);
-        Assert.Equal("http://tvh/api/TvHeadendApi/ImageProxy?imagePath=imagecache%2Fmy%20icon.png", result[0].ImageUrl);
+        Assert.Equal("http://tvh/imagecache/my icon.png", result[0].ImageUrl);
         Assert.True(result[0].HasImage);
         Assert.Equal("7.5", result[1].Number);
         Assert.Null(result[1].ImageUrl);
@@ -140,7 +140,7 @@ public class LiveTvGuideServiceCoreTests
 
         Assert.False(result.HasImage);
         Assert.Null(result.ImageUrl);
-        urlBuilder.Verify(x => x.BuildUrl(config, It.Is<string>(endpoint => endpoint.StartsWith("api/TvHeadendApi/ImageProxy", StringComparison.Ordinal)), It.IsAny<string>()), Times.Never);
+        urlBuilder.Verify(x => x.BuildUrl(config, It.Is<string>(endpoint => endpoint.StartsWith("imagecache/", StringComparison.Ordinal)), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -246,7 +246,7 @@ public class LiveTvGuideServiceCoreTests
         var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
-        Assert.Equal("http://tvh/api/TvHeadendApi/ImageProxy?imagePath=imagecache%2Fposter%201.png", program.ImageUrl);
+        Assert.Equal("http://tvh/imagecache/poster 1.png", program.ImageUrl);
         Assert.True(program.HasImage);
     }
 
@@ -281,7 +281,7 @@ public class LiveTvGuideServiceCoreTests
         var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
-        Assert.Equal("http://tvh/api/TvHeadendApi/ImageProxy?imagePath=imagecache%2Fch1.png", program.ImageUrl);
+        Assert.Equal("http://tvh/imagecache/ch1.png", program.ImageUrl);
         Assert.True(program.HasImage);
     }
 
@@ -391,7 +391,7 @@ public class LiveTvGuideServiceCoreTests
 
         Assert.Equal(externalImage, program.ImageUrl);
         Assert.True(program.HasImage);
-        urlBuilder.Verify(x => x.BuildUrl(config, It.Is<string>(endpoint => endpoint.Contains("api/TvHeadendApi/ImageProxy", StringComparison.Ordinal)), It.IsAny<string>()), Times.Never);
+        urlBuilder.Verify(x => x.BuildUrl(config, It.Is<string>(endpoint => endpoint.Contains("imagecache/", StringComparison.Ordinal)), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]

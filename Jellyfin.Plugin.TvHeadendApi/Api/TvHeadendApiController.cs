@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
-using Jellyfin.Plugin.TvHeadendApi.Service.Images;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profiles;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
@@ -20,22 +19,18 @@ namespace Jellyfin.Plugin.TvHeadendApi.Api;
 [Authorize(Policy = Policies.RequiresElevation)]
 public class TvHeadendApiController : ControllerBase
 {
-    private readonly IImageProxyService _imageProxyService;
     private readonly IDiagnoseService _diagnoseService;
     private readonly IProfileProvisioningService _profileProvisioningService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TvHeadendApiController"/> class.
     /// </summary>
-    /// <param name="imageProxyService">Service that proxies TVHeadend image requests.</param>
     /// <param name="diagnoseService">Service that builds the diagnostic report.</param>
     /// <param name="profileProvisioningService">Service that provisions recommended TVHeadend profiles.</param>
     public TvHeadendApiController(
-        IImageProxyService imageProxyService,
         IDiagnoseService diagnoseService,
         IProfileProvisioningService profileProvisioningService)
     {
-        _imageProxyService = imageProxyService ?? throw new ArgumentNullException(nameof(imageProxyService));
         _diagnoseService = diagnoseService ?? throw new ArgumentNullException(nameof(diagnoseService));
         _profileProvisioningService = profileProvisioningService ?? throw new ArgumentNullException(nameof(profileProvisioningService));
     }
@@ -53,20 +48,6 @@ public class TvHeadendApiController : ControllerBase
             Name = "TvHeadendApi",
             Version = version
         });
-    }
-
-    /// <summary>
-    /// Proxies image requests from Jellyfin to TVHeadend, ensuring all image access goes through
-    /// Jellyfin's authorization layer instead of exposing direct credentials or tokens.
-    /// This endpoint accepts an image path and returns the raw image data from TVHeadend.
-    /// </summary>
-    /// <param name="imagePath">The TVHeadend image endpoint relative path, e.g., "imagecache/1715".</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The image data as a stream if successful; 404 or 500 error otherwise.</returns>
-    [HttpGet("ImageProxy")]
-    public async Task<IActionResult> GetImageProxy([FromQuery] string? imagePath, CancellationToken cancellationToken)
-    {
-        return await _imageProxyService.ProxyImageAsync(imagePath, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -422,7 +422,7 @@ internal sealed class ProfileProvisioningService : IProfileProvisioningService
             using var doc = JsonDocument.Parse(tokenBody);
             var root = doc.RootElement;
 
-            var token = GetStringProp(root, "token") ?? GetStringProp(root, "auth");
+            var token = (GetStringProp(root, "token") ?? GetStringProp(root, "auth"))?.Trim();
             if (string.IsNullOrWhiteSpace(token))
             {
                 _logger.LogError("Token generation response did not contain a token field: {Response}", tokenBody);
@@ -430,6 +430,16 @@ internal sealed class ProfileProvisioningService : IProfileProvisioningService
                 {
                     Success = false,
                     Message = "TVHeadend generated a token but it could not be extracted from the response."
+                };
+            }
+
+            if (!TvheadendAuthTokenValidator.IsAlphanumeric(token))
+            {
+                _logger.LogError("Generated token has unsupported characters and was rejected.");
+                return new AuthTokenGenerationResult
+                {
+                    Success = false,
+                    Message = "Generated token contains unsupported characters. Only letters and numbers (A-Z, a-z, 0-9) are allowed."
                 };
             }
 

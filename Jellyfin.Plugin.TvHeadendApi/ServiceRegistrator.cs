@@ -2,7 +2,6 @@ using Jellyfin.Plugin.TvHeadendApi.Service;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Images;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profiles;
 using Jellyfin.Plugin.TvHeadendApi.Service.Streaming;
 using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
@@ -44,8 +43,6 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ITvheadendDvrService, TvheadendDvrService>();
         serviceCollection.AddSingleton<ILiveStreamSourceService, LiveStreamSourceService>();
         serviceCollection.AddSingleton<ILiveStreamLifecycleService, LiveStreamLifecycleService>();
-        serviceCollection.AddSingleton<ITvheadendImageGateway, TvheadendImageGateway>();
-        serviceCollection.AddSingleton<IImageProxyService, ImageProxyService>();
         serviceCollection.AddSingleton<IProfileProvisioningService, ProfileProvisioningService>();
         serviceCollection.AddSingleton<ILiveStreamProfileContainerResolver, LiveStreamProfileContainerResolver>();
         serviceCollection.AddSingleton<ITvheadendApiClient, TvheadendApiClient>();

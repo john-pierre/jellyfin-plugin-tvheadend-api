@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Api;
 using Jellyfin.Plugin.TvHeadendApi.Model;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
-using Jellyfin.Plugin.TvHeadendApi.Service.Images;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profiles;
 using Microsoft.AspNetCore.Mvc;
 using Xunit;
@@ -17,7 +16,6 @@ public class TvHeadendApiControllerTests
     {
         var expected = new DiagnoseResult { OverallStatus = "OK", CompatibilityScore = 100 };
         var sut = new TvHeadendApiController(
-            new FakeImageProxyService(),
             new FakeDiagnoseService(expected),
             new FakeProfileProvisioningService());
 
@@ -32,7 +30,6 @@ public class TvHeadendApiControllerTests
     public async Task CreateProfile_ReturnsOkWithPayload()
     {
         var sut = new TvHeadendApiController(
-            new FakeImageProxyService(),
             new FakeDiagnoseService(new DiagnoseResult()),
             new FakeProfileProvisioningService());
 
@@ -47,7 +44,6 @@ public class TvHeadendApiControllerTests
     public void ResetToDefaults_WhenPluginInstanceUnavailable_ReturnsBadRequest()
     {
         var sut = new TvHeadendApiController(
-            new FakeImageProxyService(),
             new FakeDiagnoseService(new DiagnoseResult()),
             new FakeProfileProvisioningService());
 
@@ -56,11 +52,6 @@ public class TvHeadendApiControllerTests
         Assert.IsType<BadRequestObjectResult>(result.Result);
     }
 
-    private sealed class FakeImageProxyService : IImageProxyService
-    {
-        public Task<IActionResult> ProxyImageAsync(string? imagePath, CancellationToken cancellationToken)
-            => Task.FromResult<IActionResult>(new OkResult());
-    }
 
     private sealed class FakeDiagnoseService : IDiagnoseService
     {
