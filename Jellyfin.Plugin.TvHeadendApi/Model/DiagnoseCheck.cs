@@ -1,4 +1,4 @@
-namespace Jellyfin.Plugin.TvHeadendApi.Api;
+namespace Jellyfin.Plugin.TvHeadendApi.Model;
 
 /// <summary>
 /// A single diagnostic check result with category, status, and optional recommendation.

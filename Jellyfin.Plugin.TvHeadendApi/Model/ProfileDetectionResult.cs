@@ -1,4 +1,4 @@
-﻿namespace Jellyfin.Plugin.TvHeadendApi.Api;
+namespace Jellyfin.Plugin.TvHeadendApi.Model;
 
 /// <summary>
 /// Response model for profile-related controller actions.

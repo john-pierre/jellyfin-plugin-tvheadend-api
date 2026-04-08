@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Api;
+namespace Jellyfin.Plugin.TvHeadendApi.Model;
 
 /// <summary>
 /// Comprehensive diagnostic result model returned by the Diagnose endpoint.

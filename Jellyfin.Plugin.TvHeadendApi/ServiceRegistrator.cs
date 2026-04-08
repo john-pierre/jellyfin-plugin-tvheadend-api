@@ -1,5 +1,11 @@
-using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service;
+using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
+using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
+using Jellyfin.Plugin.TvHeadendApi.Service.Images;
+using Jellyfin.Plugin.TvHeadendApi.Service.Profiles;
+using Jellyfin.Plugin.TvHeadendApi.Service.Streaming;
+using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Plugins;
@@ -28,6 +34,21 @@ public class ServiceRegistrator : IPluginServiceRegistrator
     /// </param>
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
+        serviceCollection.AddSingleton<ITvheadendUrlBuilder, TvheadendUrlBuilder>();
+        serviceCollection.AddSingleton<ITvheadendJsonReader, TvheadendJsonReader>();
+        serviceCollection.AddSingleton<IJellyfinEncodingOptionsReader, JellyfinEncodingOptionsReader>();
+        serviceCollection.AddSingleton<ITvheadendIdNodeService, TvheadendIdNodeService>();
+        serviceCollection.AddSingleton<IDiagnoseService, DiagnoseService>();
+        serviceCollection.AddSingleton<ILiveTvGuideService, LiveTvGuideService>();
+        serviceCollection.AddSingleton<ITvheadendDvrService, TvheadendDvrService>();
+        serviceCollection.AddSingleton<ILiveStreamSourceService, LiveStreamSourceService>();
+        serviceCollection.AddSingleton<IStreamLifecycleService, StreamLifecycleService>();
+        serviceCollection.AddSingleton<ITvheadendImageGateway, TvheadendImageGateway>();
+        serviceCollection.AddSingleton<IImageProxyService, ImageProxyService>();
+        serviceCollection.AddSingleton<IProfileProvisioningService, ProfileProvisioningService>();
+        serviceCollection.AddSingleton<IStreamProfileContainerResolver, StreamProfileContainerResolver>();
+        serviceCollection.AddSingleton<ITvheadendApiClient, TvheadendApiClient>();
+
         // Register LiveTvService as the implementation of ILiveTvService
         serviceCollection.AddSingleton<ILiveTvService, LiveTvService>();
     }
