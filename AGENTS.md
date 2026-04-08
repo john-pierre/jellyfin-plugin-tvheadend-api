@@ -30,6 +30,7 @@ Maintain and improve the Jellyfin TVHeadend API plugin while preserving:
 - Do not alter plugin behavior silently; document user-visible effects.
 - Prefer minimal, focused diffs over broad refactors.
 - Keep generated artifacts out of git (`reports/` is ignored except marker files).
+- Keep GitHub Actions `uses:` references tag-based by default; do not auto-convert tags to commit SHAs unless explicitly requested.
 
 ## Naming And Layout Rules
 

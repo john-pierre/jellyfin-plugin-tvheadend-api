@@ -74,6 +74,12 @@ Pull request **titles** are also validated against this format by `.github/workf
 
 To keep release changelog entries aligned with PR titles, maintainers should use **Squash and merge**.
 
+## CI Action Versioning Policy
+
+- This repository intentionally keeps GitHub Actions `uses:` references tag-based (for example `@v4` or `@v1.4.3`).
+- Do not automatically rewrite action references to pinned commit SHAs unless explicitly requested by maintainers.
+- If you update an action tag, keep the change minimal and note it in the PR description.
+
 ## Pull Request Process
 
 1. **Create a feature branch** from `main`:
