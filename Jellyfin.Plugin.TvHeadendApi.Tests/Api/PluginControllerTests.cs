@@ -4,6 +4,7 @@ using Jellyfin.Plugin.TvHeadendApi.Api;
 using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Microsoft.AspNetCore.Mvc;
@@ -19,7 +20,8 @@ public class PluginControllerTests
         var expected = new DiagnoseResult { OverallStatus = "OK", CompatibilityScore = 100 };
         var sut = new PluginController(
             new FakeDiagnosticService(expected),
-            new FakeProvisioningService());
+            new FakeDefaultProfileService(),
+            new FakeTokenService());
 
         var result = await sut.Diagnose(CancellationToken.None);
 
@@ -33,7 +35,8 @@ public class PluginControllerTests
     {
         var sut = new PluginController(
             new FakeDiagnosticService(new DiagnoseResult()),
-            new FakeProvisioningService());
+            new FakeDefaultProfileService(),
+            new FakeTokenService());
 
         var result = await sut.CreateProfile(CancellationToken.None);
 
@@ -52,7 +55,8 @@ public class PluginControllerTests
 
         var sut = new PluginController(
             new FakeDiagnosticService(diagnose),
-            new FakeProvisioningService());
+            new FakeDefaultProfileService(),
+            new FakeTokenService());
 
         var result = await sut.GetProfileOptions(CancellationToken.None);
 
@@ -68,7 +72,8 @@ public class PluginControllerTests
     {
         var sut = new PluginController(
             new FakeDiagnosticService(new DiagnoseResult()),
-            new FakeProvisioningService());
+            new FakeDefaultProfileService(),
+            new FakeTokenService());
 
         var result = sut.ResetToDefaults();
 
@@ -89,7 +94,7 @@ public class PluginControllerTests
             => Task.FromResult(_result);
     }
 
-    private sealed class FakeProvisioningService : IProvisioningService
+    private sealed class FakeDefaultProfileService : IDefaultProfileService
     {
         public Task<ProfileDetectionResult> CreateProfileAsync(CancellationToken cancellationToken)
         {
@@ -101,7 +106,21 @@ public class PluginControllerTests
             });
         }
 
-        public Task<AuthTokenGenerationResult> GenerateAuthTokenAsync(CancellationToken cancellationToken)
+    }
+
+    private sealed class FakeTokenService : ITokenService
+    {
+        public Task<AuthTokenGenerationResult> GenerateValidTokenAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new AuthTokenGenerationResult
+            {
+                Success = true,
+                Message = "Token generated",
+                AuthToken = "test-token-abc123",
+            });
+        }
+
+        public Task<AuthTokenGenerationResult> GenerateAndStoreTokenAsync(CancellationToken cancellationToken)
         {
             return Task.FromResult(new AuthTokenGenerationResult
             {

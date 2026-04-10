@@ -29,7 +29,7 @@ public class ServiceRegistratorTests
         Assert.Contains(services, d => d.ServiceType == typeof(IDvrService) && d.ImplementationType == typeof(DvrService));
         Assert.Contains(services, d => d.ServiceType == typeof(IMediaSourceService) && d.ImplementationType == typeof(MediaSourceService));
         Assert.Contains(services, d => d.ServiceType == typeof(ILifecycleService) && d.ImplementationType == typeof(LifecycleService));
-        Assert.Contains(services, d => d.ServiceType == typeof(IProvisioningService) && d.ImplementationType == typeof(ProvisioningService));
+        Assert.Contains(services, d => d.ServiceType == typeof(IDefaultProfileService) && d.ImplementationType == typeof(DefaultProfileService));
         Assert.Contains(services, d => d.ServiceType == typeof(ITokenService) && d.ImplementationType == typeof(TokenService));
         Assert.Contains(services, d => d.ServiceType == typeof(ILiveTvService) && d.ImplementationType == typeof(OrchestratorService));
         Assert.Contains(services, d => d.ServiceType == typeof(IDiagnosticService) && d.ImplementationType == typeof(DiagnosticService));

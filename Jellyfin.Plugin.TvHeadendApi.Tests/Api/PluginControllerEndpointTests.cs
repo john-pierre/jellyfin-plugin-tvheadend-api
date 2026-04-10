@@ -4,6 +4,7 @@ using Jellyfin.Plugin.TvHeadendApi.Api;
 using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Microsoft.AspNetCore.Mvc;
@@ -33,11 +34,13 @@ public class PluginControllerEndpointTests
             .Setup(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedResult);
 
-        var mockProfileService = new Mock<IProvisioningService>();
+        var mockProfileService = new Mock<IDefaultProfileService>();
+        var mockTokenService = new Mock<ITokenService>();
 
         var controller = new PluginController(
             mockDiagnosticService.Object,
-            mockProfileService.Object);
+            mockProfileService.Object,
+            mockTokenService.Object);
 
         // Act
         var result = await controller.Diagnose(CancellationToken.None);
@@ -59,11 +62,13 @@ public class PluginControllerEndpointTests
             .Setup(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DiagnoseResult { OverallStatus = "OK" });
 
-        var mockProfileService = new Mock<IProvisioningService>();
+        var mockProfileService = new Mock<IDefaultProfileService>();
+        var mockTokenService = new Mock<ITokenService>();
 
         var controller = new PluginController(
             mockDiagnosticService.Object,
-            mockProfileService.Object);
+            mockProfileService.Object,
+            mockTokenService.Object);
 
         // Act
         await controller.Diagnose(CancellationToken.None);
@@ -85,16 +90,18 @@ public class PluginControllerEndpointTests
             ProfileName = "jellyfin"
         };
 
-        var mockProfileService = new Mock<IProvisioningService>();
+        var mockProfileService = new Mock<IDefaultProfileService>();
         mockProfileService
             .Setup(x => x.CreateProfileAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedResult);
 
         var mockDiagnosticService = new Mock<IDiagnosticService>();
+        var mockTokenService = new Mock<ITokenService>();
 
         var controller = new PluginController(
             mockDiagnosticService.Object,
-            mockProfileService.Object);
+            mockProfileService.Object,
+            mockTokenService.Object);
 
         // Act
         var result = await controller.CreateProfile(CancellationToken.None);
@@ -117,16 +124,18 @@ public class PluginControllerEndpointTests
             Message = "Profile creation failed"
         };
 
-        var mockProfileService = new Mock<IProvisioningService>();
+        var mockProfileService = new Mock<IDefaultProfileService>();
         mockProfileService
             .Setup(x => x.CreateProfileAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(failureResult);
 
         var mockDiagnosticService = new Mock<IDiagnosticService>();
+        var mockTokenService = new Mock<ITokenService>();
 
         var controller = new PluginController(
             mockDiagnosticService.Object,
-            mockProfileService.Object);
+            mockProfileService.Object,
+            mockTokenService.Object);
 
         // Act
         var result = await controller.CreateProfile(CancellationToken.None);
@@ -148,16 +157,18 @@ public class PluginControllerEndpointTests
             Message = "Token generated"
         };
 
-        var mockProfileService = new Mock<IProvisioningService>();
-        mockProfileService
-            .Setup(x => x.GenerateAuthTokenAsync(It.IsAny<CancellationToken>()))
+        var mockProfileService = new Mock<IDefaultProfileService>();
+        var mockTokenService = new Mock<ITokenService>();
+        mockTokenService
+            .Setup(x => x.GenerateAndStoreTokenAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(tokenResult);
 
         var mockDiagnosticService = new Mock<IDiagnosticService>();
 
         var controller = new PluginController(
             mockDiagnosticService.Object,
-            mockProfileService.Object);
+            mockProfileService.Object,
+            mockTokenService.Object);
 
         // Act
         var result = await controller.GenerateAuthToken(CancellationToken.None);
@@ -175,11 +186,13 @@ public class PluginControllerEndpointTests
     {
         // Arrange
         var mockDiagnosticService = new Mock<IDiagnosticService>();
-        var mockProfileService = new Mock<IProvisioningService>();
+        var mockProfileService = new Mock<IDefaultProfileService>();
+        var mockTokenService = new Mock<ITokenService>();
 
         var controller = new PluginController(
             mockDiagnosticService.Object,
-            mockProfileService.Object);
+            mockProfileService.Object,
+            mockTokenService.Object);
 
         // Act
         var result = controller.ResetToDefaults();
@@ -199,7 +212,7 @@ public class ProvisioningServiceInteractionTests
     public async Task CreateProfileAsync_SuccessfulResult_HasProfileName()
     {
         // Arrange
-        var mockService = new Mock<IProvisioningService>();
+        var mockService = new Mock<IDefaultProfileService>();
         mockService
             .Setup(x => x.CreateProfileAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileDetectionResult
@@ -221,9 +234,9 @@ public class ProvisioningServiceInteractionTests
     public async Task GenerateAuthTokenAsync_ReturnsToken()
     {
         // Arrange
-        var mockService = new Mock<IProvisioningService>();
+        var mockService = new Mock<ITokenService>();
         mockService
-            .Setup(x => x.GenerateAuthTokenAsync(It.IsAny<CancellationToken>()))
+            .Setup(x => x.GenerateAndStoreTokenAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AuthTokenGenerationResult
             {
                 Success = true,
@@ -231,7 +244,7 @@ public class ProvisioningServiceInteractionTests
             });
 
         // Act
-        var result = await mockService.Object.GenerateAuthTokenAsync(CancellationToken.None);
+        var result = await mockService.Object.GenerateAndStoreTokenAsync(CancellationToken.None);
 
         // Assert
         Assert.NotNull(result);
