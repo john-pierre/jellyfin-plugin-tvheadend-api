@@ -1,13 +1,13 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 
 /// <summary>
 /// Represents a recording from the TVHeadEnd API.
 /// Maps all fields from the `/api/dvr/entry/grid` response.
 /// </summary>
-public class TvhApiDvrEntryGridEntry
+public sealed class TvhApiDvrEntryGridEntry
 {
     /// <summary>
     /// Gets the age rating for the recording.

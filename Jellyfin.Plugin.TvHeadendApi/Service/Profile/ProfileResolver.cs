@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
@@ -16,15 +17,17 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 /// </summary>
 internal sealed class ProfileResolver : IProfileResolver
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     private readonly IApiClient _tvheadendApiClient;
-    private readonly IJsonReader _jsonReader;
 
     public ProfileResolver(
-        IApiClient tvheadendApiClient,
-        IJsonReader jsonReader)
+        IApiClient tvheadendApiClient)
     {
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
-        _jsonReader = jsonReader ?? throw new ArgumentNullException(nameof(jsonReader));
     }
 
     public async Task<IReadOnlyList<ProfileReference>> GetProfilesAsync(
@@ -36,17 +39,17 @@ internal sealed class ProfileResolver : IProfileResolver
         var listUrl = $"{baseUrl}{webRoot}api/profile/list";
         var listBody = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
 
-        using var listDoc = JsonDocument.Parse(listBody);
-        if (!listDoc.RootElement.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
+        var listResponse = JsonSerializer.Deserialize<TvhApiProfileListResponse>(listBody, JsonOptions);
+        if (listResponse?.Entries == null || listResponse.Entries.Length == 0)
         {
             return Array.Empty<ProfileReference>();
         }
 
         var profiles = new List<ProfileReference>();
-        foreach (var entry in entries.EnumerateArray())
+        foreach (var entry in listResponse.Entries)
         {
-            var key = _jsonReader.GetStringProp(entry, "key");
-            var name = _jsonReader.GetStringProp(entry, "val");
+            var key = entry.Key;
+            var name = entry.Val;
             if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(name))
             {
                 continue;
@@ -67,15 +70,16 @@ internal sealed class ProfileResolver : IProfileResolver
         CancellationToken cancellationToken)
     {
         using var profileDoc = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, profileUuid, cancellationToken).ConfigureAwait(false);
-        if (!profileDoc.RootElement.TryGetProperty("entries", out var entries) || entries.GetArrayLength() == 0)
+        var profileResponse = JsonSerializer.Deserialize<TvhApiIdNodeLoadResponse>(profileDoc.RootElement.GetRawText(), JsonOptions);
+        if (profileResponse?.Entries == null || profileResponse.Entries.Length == 0)
         {
             return null;
         }
 
-        var entry = entries[0];
-        var profileClass = _jsonReader.GetStringPropOrParam(entry, "class") ?? string.Empty;
-        var rawContainer = _jsonReader.GetStringPropOrParam(entry, "container")
-            ?? _jsonReader.GetIntPropOrParam(entry, "container")?.ToString(CultureInfo.InvariantCulture)
+        var entry = profileResponse.Entries[0];
+        var profileClass = ReadStringOrParam(entry.ProfileClass, entry.Params, "class") ?? string.Empty;
+        var rawContainer = ReadStringOrParam(entry.Container, entry.Params, "container")
+            ?? ReadIntOrParam(entry.Container, entry.Params, "container")?.ToString(CultureInfo.InvariantCulture)
             ?? string.Empty;
 
         var mappedContainer = ProfileMappingHelper.MapContainer(rawContainer);
@@ -84,11 +88,11 @@ internal sealed class ProfileResolver : IProfileResolver
             mappedContainer = ProfileMappingHelper.MapProfileClassToContainer(profileClass);
         }
 
-        var proVideoCodec = _jsonReader.GetStringPropOrParam(entry, "pro_vcodec")
-            ?? _jsonReader.GetStringPropOrParam(entry, "vcodec")
+        var proVideoCodec = ReadStringOrParam(entry.ProVideoCodec, entry.Params, "pro_vcodec")
+            ?? ReadStringOrParam(entry.VideoCodec, entry.Params, "vcodec")
             ?? string.Empty;
-        var proAudioCodec = _jsonReader.GetStringPropOrParam(entry, "pro_acodec")
-            ?? _jsonReader.GetStringPropOrParam(entry, "acodec")
+        var proAudioCodec = ReadStringOrParam(entry.ProAudioCodec, entry.Params, "pro_acodec")
+            ?? ReadStringOrParam(entry.AudioCodec, entry.Params, "acodec")
             ?? string.Empty;
 
         return new ProfileDetails(
@@ -99,9 +103,9 @@ internal sealed class ProfileResolver : IProfileResolver
             rawContainer,
             proVideoCodec,
             proAudioCodec,
-            _jsonReader.GetStringArrayPropOrParam(entry, "src_vcodec"),
-            _jsonReader.GetStringArrayPropOrParam(entry, "src_acodec"),
-            _jsonReader.GetBoolPropOrParam(entry, "deinterlace"));
+            ReadStringArrayOrParam(entry.SourceVideoCodecs, entry.Params, "src_vcodec"),
+            ReadStringArrayOrParam(entry.SourceAudioCodecs, entry.Params, "src_acodec"),
+            ReadBoolOrParam(entry.Deinterlace, entry.Params, "deinterlace"));
     }
 
     public async Task<ResolvedProfile?> ResolveProfileByNameAsync(
@@ -171,8 +175,8 @@ internal sealed class ProfileResolver : IProfileResolver
 
         var codecProfileListUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
         var codecProfileListBody = await _tvheadendApiClient.GetStringAsync(httpClient, codecProfileListUrl, cancellationToken).ConfigureAwait(false);
-        using var listDoc = JsonDocument.Parse(codecProfileListBody);
-        if (!listDoc.RootElement.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
+        var codecProfileList = JsonSerializer.Deserialize<TvhApiCodecProfileListResponse>(codecProfileListBody, JsonOptions);
+        if (codecProfileList?.Entries == null || codecProfileList.Entries.Length == 0)
         {
             return null;
         }
@@ -180,14 +184,10 @@ internal sealed class ProfileResolver : IProfileResolver
         string? codecProfileUuid = null;
         string? codecProfileName = null;
 
-        foreach (var entry in entries.EnumerateArray())
+        foreach (var entry in codecProfileList.Entries)
         {
-            var uuid = _jsonReader.GetStringProp(entry, "uuid")
-                ?? _jsonReader.GetStringProp(entry, "key")
-                ?? string.Empty;
-            var title = _jsonReader.GetStringProp(entry, "title")
-                ?? _jsonReader.GetStringProp(entry, "val")
-                ?? string.Empty;
+            var uuid = entry.EffectiveUuid;
+            var title = entry.EffectiveTitle;
 
             if (!string.Equals(profileReference, uuid, StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(profileReference, title, StringComparison.OrdinalIgnoreCase)
@@ -207,15 +207,16 @@ internal sealed class ProfileResolver : IProfileResolver
         }
 
         using var codecDoc = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, codecProfileUuid, cancellationToken).ConfigureAwait(false);
-        if (!codecDoc.RootElement.TryGetProperty("entries", out var codecEntries) || codecEntries.GetArrayLength() == 0)
+        var codecResponse = JsonSerializer.Deserialize<TvhApiIdNodeLoadResponse>(codecDoc.RootElement.GetRawText(), JsonOptions);
+        if (codecResponse?.Entries == null || codecResponse.Entries.Length == 0)
         {
             return new CodecProfileDetails(codecProfileUuid, codecProfileName ?? string.Empty, string.Empty, string.Empty, null);
         }
 
-        var codecEntry = codecEntries[0];
-        var codecName = _jsonReader.GetStringPropOrParam(codecEntry, "codec") ?? string.Empty;
-        var codecProfileClass = _jsonReader.GetStringPropOrParam(codecEntry, "class") ?? string.Empty;
-        var deinterlace = _jsonReader.GetBoolPropOrParam(codecEntry, "deinterlace");
+        var codecEntry = codecResponse.Entries[0];
+        var codecName = ReadStringOrParam(codecEntry.Codec, codecEntry.Params, "codec") ?? string.Empty;
+        var codecProfileClass = ReadStringOrParam(codecEntry.ProfileClass, codecEntry.Params, "class") ?? string.Empty;
+        var deinterlace = ReadBoolOrParam(codecEntry.Deinterlace, codecEntry.Params, "deinterlace");
 
         return new CodecProfileDetails(codecProfileUuid, codecProfileName ?? string.Empty, codecProfileClass, codecName, deinterlace);
     }
@@ -296,6 +297,116 @@ internal sealed class ProfileResolver : IProfileResolver
         var url = $"{baseUrl}{webRoot}api/idnode/load?uuid={Uri.EscapeDataString(uuid)}";
         var body = await _tvheadendApiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
         return JsonDocument.Parse(body);
+    }
+
+    private static string? ReadStringOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    {
+        return ReadString(directValue) ?? ReadString(GetParamValue(parameters, parameterName));
+    }
+
+    private static int? ReadIntOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    {
+        return ReadInt(directValue) ?? ReadInt(GetParamValue(parameters, parameterName));
+    }
+
+    private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    {
+        return ReadBool(directValue) ?? ReadBool(GetParamValue(parameters, parameterName));
+    }
+
+    private static IReadOnlyList<string> ReadStringArrayOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    {
+        var values = ReadStringArray(directValue);
+        return values.Count > 0 ? values : ReadStringArray(GetParamValue(parameters, parameterName));
+    }
+
+    private static JsonElement GetParamValue(IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    {
+        foreach (var parameter in parameters)
+        {
+            if (string.Equals(parameter.Id, parameterName, StringComparison.OrdinalIgnoreCase))
+            {
+                return parameter.Value;
+            }
+        }
+
+        return default;
+    }
+
+    private static string? ReadString(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Undefined || value.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+    }
+
+    private static int? ReadInt(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
+        {
+            return intValue;
+        }
+
+        return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static bool? ReadBool(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.True)
+        {
+            return true;
+        }
+
+        if (value.ValueKind == JsonValueKind.False)
+        {
+            return false;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
+        {
+            return intValue != 0;
+        }
+
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            var rawValue = value.GetString();
+            if (bool.TryParse(rawValue, out var boolValue))
+            {
+                return boolValue;
+            }
+
+            if (int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInt))
+            {
+                return parsedInt != 0;
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<string> ReadStringArray(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        var values = new List<string>();
+        foreach (var item in value.EnumerateArray())
+        {
+            var stringValue = item.ValueKind == JsonValueKind.String ? item.GetString() : item.ToString();
+            if (!string.IsNullOrWhiteSpace(stringValue))
+            {
+                values.Add(stringValue);
+            }
+        }
+
+        return values;
     }
 
     private sealed record CodecProfileDetails(string Uuid, string Name, string ProfileClass, string Codec, bool? Deinterlace);

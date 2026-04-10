@@ -1,12 +1,12 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 
 /// <summary>
 /// Represents the response from the `/api/dvr/config/grid` endpoint.
 /// </summary>
-public class TvhApiDvrConfigGridResponse
+public sealed class TvhApiDvrConfigGridResponse
 {
     /// <summary>
     /// Gets the list of recording profiles.

@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 
 /// <summary>
 /// Represents a single TVHeadend DVR configuration entry from /api/idnode/load.

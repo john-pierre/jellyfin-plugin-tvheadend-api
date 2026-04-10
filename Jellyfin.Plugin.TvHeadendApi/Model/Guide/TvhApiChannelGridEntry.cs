@@ -1,14 +1,14 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 
 /// <summary>
 /// Represents a TV channel from the TVHeadEnd API.
 /// This model is used to map the channel information returned by the TVHeadEnd `/api/channel/grid` endpoint.
 /// A TV channel includes details such as its unique identifier, name, number, status, and associated metadata.
 /// </summary>
-public class TvhApiChannelGridEntry
+public sealed class TvhApiChannelGridEntry
 {
     /// <summary>
     /// Gets the universally unique identifier (UUID) of the channel.

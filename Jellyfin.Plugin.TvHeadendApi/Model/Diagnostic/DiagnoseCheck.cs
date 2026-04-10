@@ -1,9 +1,9 @@
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 
 /// <summary>
 /// A single diagnostic check result with category, status, and optional recommendation.
 /// </summary>
-public class DiagnoseCheck
+public sealed class DiagnoseCheck
 {
     /// <summary>Gets or sets the check category (e.g. "Connection", "Streaming", "Playback", "FFmpeg", "Recording").</summary>
     public string Category { get; set; } = string.Empty;

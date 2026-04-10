@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Model;
+using Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.LiveTv;

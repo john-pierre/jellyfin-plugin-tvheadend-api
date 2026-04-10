@@ -3,7 +3,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 /// <summary>
 /// Represents the result of an authentication token generation request.
 /// </summary>
-public class AuthTokenGenerationResult
+public sealed class AuthTokenGenerationResult
 {
     /// <summary>
     /// Gets or sets a value indicating whether the token generation was successful.

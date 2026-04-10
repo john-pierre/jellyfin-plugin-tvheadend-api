@@ -1,13 +1,13 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 
 /// <summary>
 /// Represents the response model for the TVHeadEnd EPG grid API.
 /// Maps the JSON response from the `/api/epg/events/grid` endpoint, providing program details for TV channels.
 /// </summary>
-public class TvhApiEpgEventsGridResponse
+public sealed class TvhApiEpgEventsGridResponse
 {
     /// <summary>
     /// Gets the list of EPG entries returned by the TVHeadEnd API.

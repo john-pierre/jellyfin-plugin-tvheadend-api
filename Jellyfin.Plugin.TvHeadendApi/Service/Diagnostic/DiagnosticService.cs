@@ -6,15 +6,16 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Model;
-using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
-using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
+using Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
+using Jellyfin.Plugin.TvHeadendApi.Model.Guide;
+using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller.Configuration;
 using Microsoft.Extensions.Logging;
-using static Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure.JsonHelper;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 
@@ -160,12 +161,11 @@ internal sealed class DiagnosticService : IDiagnosticService
                 sw.Stop();
                 report.LatencyMs = (int)sw.ElapsedMilliseconds;
 
-                using var infoDoc = JsonDocument.Parse(infoResponse);
-                var root = infoDoc.RootElement;
+                var serverInfo = JsonSerializer.Deserialize<TvhApiServerInfoResponse>(infoResponse, SerializerOptions) ?? new TvhApiServerInfoResponse();
 
-                var swVersion = GetStringProp(root, "sw_version") ?? "unknown";
-                var apiVersion = GetIntProp(root, "api_version")?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?";
-                var serverName = GetStringProp(root, "name") ?? string.Empty;
+                var swVersion = string.IsNullOrWhiteSpace(serverInfo.SwVersion) ? "unknown" : serverInfo.SwVersion;
+                var apiVersion = serverInfo.ApiVersion?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?";
+                var serverName = serverInfo.Name;
 
                 report.Connection = $"? Connected to {(string.IsNullOrEmpty(serverName) ? config.Host : serverName)}";
                 report.ServerVersion = $"TVHeadend {swVersion} (API v{apiVersion})";
@@ -178,7 +178,7 @@ internal sealed class DiagnosticService : IDiagnosticService
                     Message = $"Connected in {report.LatencyMs}ms to {config.Host}:{config.Port}"
                 });
 
-                var apiVer = GetIntProp(root, "api_version") ?? 0;
+                var apiVer = serverInfo.ApiVersion ?? 0;
                 if (apiVer >= 19)
                 {
                     report.Checks.Add(new DiagnoseCheck { Category = "Connection", Name = "API Version", Status = "OK", Message = $"API v{apiVer} is supported." });
@@ -208,17 +208,13 @@ internal sealed class DiagnosticService : IDiagnosticService
             {
                 var chUrl = $"{baseUrl}{webRoot}api/channel/grid?limit=500&sort=number";
                 var chResponse = await _tvheadendApiClient.GetStringAsync(httpClient, chUrl, cancellationToken).ConfigureAwait(false);
-                using var chDoc = JsonDocument.Parse(chResponse);
-                if (chDoc.RootElement.TryGetProperty("total", out var totalProp) && totalProp.TryGetInt32(out var total))
+                var channelGrid = JsonSerializer.Deserialize<TvhApiChannelGridResponse>(chResponse, SerializerOptions);
+                if (channelGrid != null)
                 {
-                    report.ChannelCount = total;
-                }
-
-                if (chDoc.RootElement.TryGetProperty("entries", out var chEntries) && chEntries.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var chEntry in chEntries.EnumerateArray())
+                    report.ChannelCount = channelGrid.Total;
+                    foreach (var chEntry in channelGrid.Entries)
                     {
-                        var uuid = GetStringProp(chEntry, "uuid");
+                        var uuid = chEntry.Uuid;
                         if (!string.IsNullOrWhiteSpace(uuid))
                         {
                             allChannelUuids.Add(uuid);
@@ -353,11 +349,8 @@ internal sealed class DiagnosticService : IDiagnosticService
                 {
                     var dvrUrl = $"{baseUrl}{webRoot}api/dvr/entry/grid?limit=1";
                     var dvrResponse = await _tvheadendApiClient.GetStringAsync(httpClient, dvrUrl, cancellationToken).ConfigureAwait(false);
-                    using var dvrDoc = JsonDocument.Parse(dvrResponse);
-                    if (dvrDoc.RootElement.TryGetProperty("total", out var dvrTotal) && dvrTotal.TryGetInt32(out var dvrCount))
-                    {
-                        report.DvrEntryCount = dvrCount;
-                    }
+                    var dvrEntries = JsonSerializer.Deserialize<TvhApiDvrEntryGridResponse>(dvrResponse, SerializerOptions);
+                    report.DvrEntryCount = dvrEntries?.Total ?? 0;
                 }
                 catch (Exception ex)
                 {
@@ -378,7 +371,7 @@ internal sealed class DiagnosticService : IDiagnosticService
                         cancellationToken).ConfigureAwait(false);
                     dvrHttpResponse.EnsureSuccessStatusCode();
                     var dvrBody = await dvrHttpResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                    var dvrConfigList = System.Text.Json.JsonSerializer.Deserialize<DvrConfigListResponse>(dvrBody, SerializerOptions);
+                    var dvrConfigList = JsonSerializer.Deserialize<DvrConfigListResponse>(dvrBody, SerializerOptions);
                     if (dvrConfigList != null && dvrConfigList.Entries.Length > 0)
                     {
                         foreach (var entry in dvrConfigList.Entries)
@@ -587,13 +580,15 @@ internal sealed class DiagnosticService : IDiagnosticService
             return null;
         }
 
-        using var codecDoc = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, codecProfile.Key, cancellationToken).ConfigureAwait(false);
-        if (!codecDoc.RootElement.TryGetProperty("entries", out var entries) || entries.GetArrayLength() == 0)
+        var codecResponse = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, codecProfile.Key, cancellationToken).ConfigureAwait(false);
+        if (codecResponse?.Entries == null || codecResponse.Entries.Length == 0)
         {
             return null;
         }
 
-        return GetBoolPropOrParam(entries[0], settingName);
+        var codecEntry = codecResponse.Entries[0];
+        var directValue = GetIdNodeProperty(codecEntry, settingName);
+        return ReadBoolOrParam(directValue, codecEntry.Params, settingName);
     }
 
     private async Task<CodecProfileListEntry?> FindCodecProfileEntryByReferenceAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileReference, CancellationToken cancellationToken)
@@ -605,16 +600,16 @@ internal sealed class DiagnosticService : IDiagnosticService
 
         var listUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
         var response = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
-        using var doc = JsonDocument.Parse(response);
-        if (!doc.RootElement.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
+        var list = JsonSerializer.Deserialize<TvhApiCodecProfileListResponse>(response, SerializerOptions);
+        if (list?.Entries == null || list.Entries.Length == 0)
         {
             return null;
         }
 
-        foreach (var entry in entries.EnumerateArray())
+        foreach (var entry in list.Entries)
         {
-            var uuid = GetStringProp(entry, "uuid") ?? GetStringProp(entry, "key") ?? string.Empty;
-            var title = GetStringProp(entry, "title") ?? GetStringProp(entry, "val") ?? string.Empty;
+            var uuid = entry.EffectiveUuid;
+            var title = entry.EffectiveTitle;
             var normalizedTitle = NormalizeCodecProfileTitle(title);
 
             if (string.Equals(profileReference, uuid, StringComparison.OrdinalIgnoreCase)
@@ -643,11 +638,95 @@ internal sealed class DiagnosticService : IDiagnosticService
         return separatorIndex > 0 ? title[..separatorIndex] : title;
     }
 
-    private async Task<JsonDocument> LoadIdNodeByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string uuid, CancellationToken cancellationToken)
+    private async Task<TvhApiIdNodeLoadResponse?> LoadIdNodeByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string uuid, CancellationToken cancellationToken)
     {
         var url = $"{baseUrl}{webRoot}api/idnode/load?uuid={Uri.EscapeDataString(uuid)}";
         var body = await _tvheadendApiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
-        return JsonDocument.Parse(body);
+        return JsonSerializer.Deserialize<TvhApiIdNodeLoadResponse>(body, SerializerOptions);
+    }
+
+    private static JsonElement GetIdNodeProperty(TvhApiIdNodeEntry entry, string name)
+    {
+        return name switch
+        {
+            "deinterlace" => entry.Deinterlace,
+            "enabled" => entry.Enabled,
+            "default" => entry.IsDefault,
+            "container" => entry.Container,
+            "pro_vcodec" => entry.ProVideoCodec,
+            "vcodec" => entry.VideoCodec,
+            "pro_acodec" => entry.ProAudioCodec,
+            "acodec" => entry.AudioCodec,
+            "src_vcodec" => entry.SourceVideoCodecs,
+            "src_acodec" => entry.SourceAudioCodecs,
+            "pro_scodec" => entry.ProSubtitleCodec,
+            "src_scodec" => entry.SourceSubtitleCodecs,
+            "name" => entry.Name,
+            "class" => entry.ProfileClass,
+            "codec" => entry.Codec,
+            "timeout" => entry.Timeout,
+            "timeout_start" => entry.TimeoutStart,
+            "priority" => entry.Priority,
+            "fpriority" => entry.FPriority,
+            "restart" => entry.Restart,
+            "contaccess" => entry.ContinuousAccess,
+            "catimeout" => entry.CaTimeout,
+            "swservice" => entry.SoftwareService,
+            "svfilter" => entry.ServiceVideoFilter,
+            _ => default,
+        };
+    }
+
+    private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    {
+        return ReadBool(directValue) ?? ReadBool(GetParamValue(parameters, parameterName));
+    }
+
+    private static JsonElement GetParamValue(IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    {
+        foreach (var parameter in parameters)
+        {
+            if (string.Equals(parameter.Id, parameterName, StringComparison.OrdinalIgnoreCase))
+            {
+                return parameter.Value;
+            }
+        }
+
+        return default;
+    }
+
+    private static bool? ReadBool(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.True)
+        {
+            return true;
+        }
+
+        if (value.ValueKind == JsonValueKind.False)
+        {
+            return false;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
+        {
+            return intValue != 0;
+        }
+
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            var rawValue = value.GetString();
+            if (bool.TryParse(rawValue, out var boolValue))
+            {
+                return boolValue;
+            }
+
+            if (int.TryParse(rawValue, out var parsedInt))
+            {
+                return parsedInt != 0;
+            }
+        }
+
+        return null;
     }
 
     private sealed class CodecProfileListEntry

@@ -1,7 +1,7 @@
 using System;
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 
 /// <summary>
 /// Represents the TVHeadend /api/idnode/load response for the dvrconfig class.
@@ -14,4 +14,3 @@ internal sealed class DvrConfigListResponse
     [JsonPropertyName("entries")]
     public DvrConfigListEntry[] Entries { get; init; } = Array.Empty<DvrConfigListEntry>();
 }
-

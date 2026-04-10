@@ -1,13 +1,13 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 
 /// <summary>
 /// Represents the response model for the TVHeadEnd DVR autorec grid API.
 /// Maps the JSON response from the `/api/dvr/autorec/grid` endpoint, providing details about automatic recording rules.
 /// </summary>
-public class TvhApiDvrAutoRecGridResponse
+public sealed class TvhApiDvrAutoRecGridResponse
 {
     /// <summary>
     /// Gets the list of DVR automatic recording rules returned by the TVHeadEnd API.

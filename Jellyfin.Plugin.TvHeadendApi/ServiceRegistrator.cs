@@ -35,7 +35,6 @@ public class ServiceRegistrator : IPluginServiceRegistrator
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         serviceCollection.AddSingleton<IUrlBuilder, UrlBuilder>();
-        serviceCollection.AddSingleton<IJsonReader, JsonReader>();
         serviceCollection.AddSingleton<IEncodingOptionsReader, EncodingOptionsReader>();
         serviceCollection.AddSingleton<ITokenService, TokenService>();
         serviceCollection.AddSingleton<IProfileResolver, ProfileResolver>();

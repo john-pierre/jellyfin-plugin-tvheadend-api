@@ -1,13 +1,13 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 
 /// <summary>
 /// Represents an individual program entry in the TVHeadEnd EPG.
 /// This model maps the fields from the TVHeadEnd API response exactly.
 /// </summary>
-public class TvhApiEpgEventsGridEntry
+public sealed class TvhApiEpgEventsGridEntry
 {
     /// <summary>
     /// Gets the unique identifier for the event.

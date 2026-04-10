@@ -1,14 +1,14 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 
 /// <summary>
 /// Represents the response model for the TVHeadEnd channel grid API.
 /// This class maps the JSON response returned by the `/api/channel/grid` endpoint,
 /// which provides a list of all available TV channels and additional metadata about the response.
 /// </summary>
-public class TvhApiChannelGridResponse
+public sealed class TvhApiChannelGridResponse
 {
     /// <summary>
     /// Gets the list of TV channels returned by the TVHeadEnd API.

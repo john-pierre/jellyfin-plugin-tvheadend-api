@@ -1,12 +1,12 @@
 using System.Collections.Generic;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 
 /// <summary>
 /// Comprehensive diagnostic result model returned by the Diagnose endpoint.
 /// Provides connection status, compatibility scoring, and detailed per-category checks.
 /// </summary>
-public class DiagnoseResult
+public sealed class DiagnoseResult
 {
     /// <summary>Gets or sets the overall status: "OK", "WARNING", or "ERROR".</summary>
     public string OverallStatus { get; set; } = string.Empty;

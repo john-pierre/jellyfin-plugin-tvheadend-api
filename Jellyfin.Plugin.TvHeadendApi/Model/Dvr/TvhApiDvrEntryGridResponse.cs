@@ -1,13 +1,13 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 
 /// <summary>
 /// Represents the response model for the TVHeadEnd recording grid API.
 /// Maps the JSON response from the `/api/dvr/entry/grid` endpoint, providing details about recordings.
 /// </summary>
-public class TvhApiDvrEntryGridResponse
+public sealed class TvhApiDvrEntryGridResponse
 {
     /// <summary>
     /// Gets the list of recordings returned by the TVHeadEnd API.

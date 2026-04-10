@@ -1,9 +1,9 @@
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 
 /// <summary>
 /// Result of a TVHeadend profile detection or provisioning operation.
 /// </summary>
-public class ProfileDetectionResult
+public sealed class ProfileDetectionResult
 {
     /// <summary>Gets or sets a value indicating whether detection was successful.</summary>
     public bool Success { get; set; }

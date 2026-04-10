@@ -1,12 +1,12 @@
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 
 /// <summary>
 /// Represents a recording configuration profile from TVHeadEnd.
 /// Maps all fields from the `/api/dvr/config/grid` response.
 /// </summary>
-public class TvhApiDvrConfigGridEntry
+public sealed class TvhApiDvrConfigGridEntry
 {
     /// <summary>
     /// Gets the unique identifier (UUID) of the profile.

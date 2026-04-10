@@ -1,6 +1,9 @@
 using System.Text.Json;
-using Jellyfin.Plugin.TvHeadendApi.Model;
 using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
+using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
+using Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
+using Jellyfin.Plugin.TvHeadendApi.Model.Guide;
+using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;

@@ -1,13 +1,13 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 
 /// <summary>
 /// Represents the response model for the TVHeadEnd channel tag API.
 /// This class maps the JSON response returned by the `/api/channeltag/list` endpoint.
 /// </summary>
-public class TvhApiChannelTagResponse
+public sealed class TvhApiChannelTagResponse
 {
     /// <summary>
     /// Gets the list of channel tags returned by the TVHeadEnd API.

@@ -1,11 +1,11 @@
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 
 /// <summary>
 /// Represents a single entry in the content type list.
 /// </summary>
-public class TvhApiEpgContentTypeListEntry
+public sealed class TvhApiEpgContentTypeListEntry
 {
     /// <summary>
     /// Gets the unique key (ID) of the content type.

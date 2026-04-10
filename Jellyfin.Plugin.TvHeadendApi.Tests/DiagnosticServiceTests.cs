@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -87,7 +88,7 @@ public class DiagnosticServiceTests
     [Fact]
     public async Task DiagnoseAsync_HappyPath_ReturnsOkAndProfiles()
     {
-        var sut = CreateSut(out var apiClient, out var streamResolver, out var idNodeService, out var encodingReader);
+        var sut = CreateSut(out var apiClient, out var streamResolver, out var encodingReader);
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
@@ -117,11 +118,16 @@ public class DiagnosticServiceTests
                 new List<string>(),
                 true));
 
-        idNodeService
-            .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "name": "default" } ] }
-                                            """));
+        apiClient
+            .Setup(x => x.PostFormAsync(
+                It.IsAny<HttpClient>(),
+                It.Is<string>(u => u.Contains("idnode/load", StringComparison.Ordinal)),
+                It.IsAny<IEnumerable<KeyValuePair<string, string>>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("{ \"entries\": [ { \"name\": \"default\" } ] }"),
+            });
 
         encodingReader
             .Setup(x => x.ReadFfmpegSettings(It.IsAny<IServerConfigurationManager>(), It.IsAny<Microsoft.Extensions.Logging.ILogger>()))
@@ -139,7 +145,7 @@ public class DiagnosticServiceTests
     [Fact]
     public async Task DiagnoseAsync_WhenStreamingProfileMissing_AddsErrorCheckAndWarningStatus()
     {
-        var sut = CreateSut(out var apiClient, out var streamResolver, out var idNodeService, out _);
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
         var config = CreateConfig();
         config.StreamingProfile = "missing-profile";
 
@@ -157,12 +163,6 @@ public class DiagnosticServiceTests
                 new("profile-1", "pass")
             });
 
-        idNodeService
-            .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "name": "default" } ] }
-                                            """));
-
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
         Assert.Equal("WARNING", result.OverallStatus);
@@ -175,7 +175,7 @@ public class DiagnosticServiceTests
     [Fact]
     public async Task DiagnoseAsync_TranscodeProfile_UsesCodecProfileLookupForDeinterlace()
     {
-        var sut = CreateSut(out var apiClient, out var streamResolver, out var idNodeService, out _);
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
@@ -189,6 +189,13 @@ public class DiagnosticServiceTests
                 {
                     return Task.FromResult("""
                                            { "entries": [ { "uuid": "codec-1", "title": "H264 Main (libx264)" } ] }
+                                           """);
+                }
+
+                if (url.Contains("api/idnode/load", StringComparison.Ordinal) && url.Contains("codec-1", StringComparison.Ordinal))
+                {
+                    return Task.FromResult("""
+                                           { "entries": [ { "params": [ { "id": "deinterlace", "value": true } ] } ] }
                                            """);
                 }
 
@@ -212,17 +219,6 @@ public class DiagnosticServiceTests
                 new List<string>(),
                 null));
 
-        idNodeService
-            .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "name": "default" } ] }
-                                            """));
-        idNodeService
-            .Setup(x => x.LoadIdNodeByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "codec-1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "params": [ { "id": "deinterlace", "value": true } ] } ] }
-                                            """));
-
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
         Assert.Contains(result.Checks, check =>
@@ -234,7 +230,7 @@ public class DiagnosticServiceTests
     [Fact]
     public async Task DiagnoseAsync_TranscodeProfileWithoutDeinterlace_AddsWarningCheck()
     {
-        var sut = CreateSut(out var apiClient, out var streamResolver, out var idNodeService, out _);
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
@@ -261,12 +257,6 @@ public class DiagnosticServiceTests
                 new List<string>(),
                 false));
 
-        idNodeService
-            .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "name": "default" } ] }
-                                            """));
-
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
         Assert.Contains(result.Checks, check =>
@@ -278,7 +268,7 @@ public class DiagnosticServiceTests
     [Fact]
     public async Task DiagnoseAsync_TranscodeProfile_CodecProfileListKeyValFallback_ResolvesDeinterlace()
     {
-        var sut = CreateSut(out var apiClient, out var streamResolver, out var idNodeService, out _);
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
@@ -292,6 +282,13 @@ public class DiagnosticServiceTests
                 {
                     return Task.FromResult("""
                                            { "entries": [ { "key": "codec-k1", "val": "H264 Main (libx264)" } ] }
+                                           """);
+                }
+
+                if (url.Contains("api/idnode/load", StringComparison.Ordinal) && url.Contains("codec-k1", StringComparison.Ordinal))
+                {
+                    return Task.FromResult("""
+                                           { "entries": [ { "params": [ { "id": "deinterlace", "value": true } ] } ] }
                                            """);
                 }
 
@@ -315,17 +312,6 @@ public class DiagnosticServiceTests
                 new List<string>(),
                 null));
 
-        idNodeService
-            .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "name": "default" } ] }
-                                            """));
-        idNodeService
-            .Setup(x => x.LoadIdNodeByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "codec-k1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "params": [ { "id": "deinterlace", "value": true } ] } ] }
-                                            """));
-
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
         Assert.Contains(result.Checks, check => check.Category == "Streaming" && check.Name == "Deinterlacing" && check.Status == "OK");
@@ -334,7 +320,7 @@ public class DiagnosticServiceTests
     [Fact]
     public async Task DiagnoseAsync_TranscodeProfile_WhenCodecIdNodeEntriesEmpty_DeinterlacingWarning()
     {
-        var sut = CreateSut(out var apiClient, out var streamResolver, out var idNodeService, out _);
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
@@ -371,17 +357,6 @@ public class DiagnosticServiceTests
                 new List<string>(),
                 null));
 
-        idNodeService
-            .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "name": "default" } ] }
-                                            """));
-        idNodeService
-            .Setup(x => x.LoadIdNodeByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "codec-empty", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [] }
-                                            """));
-
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
         Assert.Contains(result.Checks, check => check.Category == "Streaming" && check.Name == "Deinterlacing" && check.Status == "WARNING");
@@ -390,7 +365,7 @@ public class DiagnosticServiceTests
     [Fact]
     public async Task DiagnoseAsync_TranscodeProfile_WhenParamsMissDeinterlace_DeinterlacingWarning()
     {
-        var sut = CreateSut(out var apiClient, out var streamResolver, out var idNodeService, out _);
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
@@ -427,17 +402,6 @@ public class DiagnosticServiceTests
                 new List<string>(),
                 null));
 
-        idNodeService
-            .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "name": "default" } ] }
-                                            """));
-        idNodeService
-            .Setup(x => x.LoadIdNodeByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "codec-nodeint", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "params": [ { "id": "other", "value": true } ] } ] }
-                                            """));
-
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
         Assert.Contains(result.Checks, check => check.Category == "Streaming" && check.Name == "Deinterlacing" && check.Status == "WARNING");
@@ -446,7 +410,7 @@ public class DiagnosticServiceTests
     [Fact]
     public async Task DiagnoseAsync_WithHighAnalyzeDurationAndBuffer_AddsPlaybackWarnings()
     {
-        var sut = CreateSut(out var apiClient, out var streamResolver, out var idNodeService, out _);
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
         var config = CreateConfig();
         config.AnalyzeDurationMs = 1500;
         config.BufferMs = 3000;
@@ -479,11 +443,6 @@ public class DiagnosticServiceTests
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<ProfileReference>());
-        idNodeService
-            .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "name": "default" } ] }
-                                            """));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -495,7 +454,7 @@ public class DiagnosticServiceTests
     [Fact]
     public async Task DiagnoseAsync_WithLegacyAnalyzeModeAndNoProbing_AddsLegacyRecommendation()
     {
-        var sut = CreateSut(out var apiClient, out var streamResolver, out var idNodeService, out _);
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
         var config = CreateConfig();
         config.SupportsProbing = false;
         config.AnalyzeDurationMs = 0;
@@ -513,11 +472,6 @@ public class DiagnosticServiceTests
         streamResolver
             .Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "profile-1", "pass", It.IsAny<CancellationToken>()))
             .ReturnsAsync((ProfileDetails?)null);
-        idNodeService
-            .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "name": "default" } ] }
-                                            """));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -528,7 +482,7 @@ public class DiagnosticServiceTests
     [Fact]
     public async Task DiagnoseAsync_WithNonAlphanumericAuthToken_AddsAuthenticationError()
     {
-        var sut = CreateSut(out var apiClient, out var streamResolver, out var idNodeService, out _);
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
         var config = CreateConfig();
         config.AuthToken = "abc.def-123";
 
@@ -542,11 +496,6 @@ public class DiagnosticServiceTests
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<ProfileReference> { new("profile-1", "pass") });
-        idNodeService
-            .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("""
-                                            { "entries": [ { "name": "default" } ] }
-                                            """));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -586,6 +535,13 @@ public class DiagnosticServiceTests
                    """;
         }
 
+        if (url.Contains("api/idnode/load", StringComparison.Ordinal))
+        {
+            return """
+                   { "entries": [] }
+                   """;
+        }
+
         throw new InvalidOperationException($"Unexpected URL in test: {url}");
     }
 
@@ -612,12 +568,10 @@ public class DiagnosticServiceTests
     private static DiagnosticService CreateSut(
         out Mock<IApiClient> apiClient,
         out Mock<IProfileResolver> streamResolver,
-        out Mock<IIdNodeService> idNodeService,
         out Mock<IEncodingOptionsReader> encodingReader)
     {
         apiClient = new Mock<IApiClient>(MockBehavior.Strict);
         streamResolver = new Mock<IProfileResolver>(MockBehavior.Strict);
-        idNodeService = new Mock<IIdNodeService>(MockBehavior.Strict);
         encodingReader = new Mock<IEncodingOptionsReader>(MockBehavior.Strict);
 
         var serverConfigManager = new Mock<IServerConfigurationManager>();
@@ -629,9 +583,19 @@ public class DiagnosticServiceTests
         streamResolver
             .Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((ProfileDetails?)null);
-        idNodeService
-            .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonDocument.Parse("{ \"entries\": [] }"));
+
+        // Default: DVR config POST returns empty entries.
+        apiClient
+            .Setup(x => x.PostFormAsync(
+                It.IsAny<HttpClient>(),
+                It.Is<string>(u => u.Contains("idnode/load", StringComparison.Ordinal)),
+                It.IsAny<IEnumerable<KeyValuePair<string, string>>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("{ \"entries\": [] }"),
+            });
+
         encodingReader
             .Setup(x => x.ReadFfmpegSettings(It.IsAny<IServerConfigurationManager>(), It.IsAny<Microsoft.Extensions.Logging.ILogger>()))
             .Returns((null, null));
@@ -640,14 +604,13 @@ public class DiagnosticServiceTests
             NullLogger<DiagnosticService>.Instance,
             serverConfigManager.Object,
             encodingReader.Object,
-            idNodeService.Object,
             streamResolver.Object,
             apiClient.Object);
     }
 
     private static DiagnosticService CreateSut(out Mock<IApiClient> apiClient)
     {
-        var sut = CreateSut(out apiClient, out _, out _, out _);
+        var sut = CreateSut(out apiClient, out _, out _);
         return sut;
     }
 }

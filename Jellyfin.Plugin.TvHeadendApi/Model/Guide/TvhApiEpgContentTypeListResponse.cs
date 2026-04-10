@@ -1,13 +1,13 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 
 /// <summary>
 /// Represents the response model for the TVHeadEnd content type API.
 /// This class maps the JSON response returned by the `/api/epg/content_type/list` endpoint.
 /// </summary>
-public class TvhApiEpgContentTypeListResponse
+public sealed class TvhApiEpgContentTypeListResponse
 {
     /// <summary>
     /// Gets the list of content types returned by the TVHeadEnd API.
