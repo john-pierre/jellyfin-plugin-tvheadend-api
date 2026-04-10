@@ -2,7 +2,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 
 /// <summary>
 /// Resolves the output container for the configured TVHeadend streaming profile.

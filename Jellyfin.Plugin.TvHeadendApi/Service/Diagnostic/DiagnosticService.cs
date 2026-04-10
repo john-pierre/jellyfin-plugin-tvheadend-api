@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -7,7 +7,9 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model;
+using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller.Configuration;
@@ -21,10 +23,14 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 /// </summary>
 internal sealed class DiagnosticService : IDiagnosticService
 {
+    private static readonly System.Text.Json.JsonSerializerOptions SerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     private readonly ILogger<DiagnosticService> _logger;
     private readonly IServerConfigurationManager _serverConfigManager;
     private readonly IEncodingOptionsReader _encodingOptionsReader;
-    private readonly IIdNodeService _idNodeService;
     private readonly IProfileResolver _streamProfileResolver;
     private readonly IApiClient _tvheadendApiClient;
 
@@ -34,21 +40,18 @@ internal sealed class DiagnosticService : IDiagnosticService
     /// <param name="logger">Logger instance.</param>
     /// <param name="serverConfigManager">Jellyfin server configuration manager.</param>
     /// <param name="encodingOptionsReader">Reader for Jellyfin FFmpeg encoding options.</param>
-    /// <param name="idNodeService">Service for TVHeadend idnode API access.</param>
     /// <param name="streamProfileResolver">Service for TVHeadend stream profile inspection.</param>
     /// <param name="tvheadendApiClient">TVHeadend API client.</param>
     public DiagnosticService(
         ILogger<DiagnosticService> logger,
         IServerConfigurationManager serverConfigManager,
         IEncodingOptionsReader encodingOptionsReader,
-        IIdNodeService idNodeService,
         IProfileResolver streamProfileResolver,
         IApiClient tvheadendApiClient)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _serverConfigManager = serverConfigManager ?? throw new ArgumentNullException(nameof(serverConfigManager));
         _encodingOptionsReader = encodingOptionsReader ?? throw new ArgumentNullException(nameof(encodingOptionsReader));
-        _idNodeService = idNodeService ?? throw new ArgumentNullException(nameof(idNodeService));
         _streamProfileResolver = streamProfileResolver ?? throw new ArgumentNullException(nameof(streamProfileResolver));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
     }
@@ -104,7 +107,7 @@ internal sealed class DiagnosticService : IDiagnosticService
             });
             scoreDeductions += 20;
         }
-        else if (!AuthTokenValidator.IsAlphanumeric(config.AuthToken))
+        else if (!TokenValidator.IsAlphanumeric(config.AuthToken))
         {
             report.Checks.Add(new DiagnoseCheck
             {
@@ -363,16 +366,24 @@ internal sealed class DiagnosticService : IDiagnosticService
 
                 try
                 {
-                    using var dvrProfilesDoc = await _idNodeService.LoadDvrConfigsAsync(httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
-                    if (dvrProfilesDoc.RootElement.TryGetProperty("entries", out var dvrEntries) && dvrEntries.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var entry in dvrEntries.EnumerateArray())
+                    var dvrLoadUrl = $"{baseUrl}{webRoot}api/idnode/load";
+                    using var dvrHttpResponse = await _tvheadendApiClient.PostFormAsync(
+                        httpClient,
+                        dvrLoadUrl,
+                        new[]
                         {
-                            var name = GetStringProp(entry, "name")
-                                ?? GetStringProp(entry, "text")
-                                ?? GetStringProp(entry, "val")
-                                ?? string.Empty;
-
+                            new KeyValuePair<string, string>("enum", "1"),
+                            new KeyValuePair<string, string>("class", "dvrconfig"),
+                        },
+                        cancellationToken).ConfigureAwait(false);
+                    dvrHttpResponse.EnsureSuccessStatusCode();
+                    var dvrBody = await dvrHttpResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    var dvrConfigList = System.Text.Json.JsonSerializer.Deserialize<DvrConfigListResponse>(dvrBody, SerializerOptions);
+                    if (dvrConfigList != null && dvrConfigList.Entries.Length > 0)
+                    {
+                        foreach (var entry in dvrConfigList.Entries)
+                        {
+                            var name = entry.EffectiveName;
                             if (!string.IsNullOrWhiteSpace(name))
                             {
                                 dvrProfileNames.Add(name);
@@ -576,7 +587,7 @@ internal sealed class DiagnosticService : IDiagnosticService
             return null;
         }
 
-        using var codecDoc = await _idNodeService.LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, codecProfile.Key, cancellationToken).ConfigureAwait(false);
+        using var codecDoc = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, codecProfile.Key, cancellationToken).ConfigureAwait(false);
         if (!codecDoc.RootElement.TryGetProperty("entries", out var entries) || entries.GetArrayLength() == 0)
         {
             return null;
@@ -630,6 +641,13 @@ internal sealed class DiagnosticService : IDiagnosticService
 
         var separatorIndex = title.IndexOf(" (", StringComparison.Ordinal);
         return separatorIndex > 0 ? title[..separatorIndex] : title;
+    }
+
+    private async Task<JsonDocument> LoadIdNodeByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string uuid, CancellationToken cancellationToken)
+    {
+        var url = $"{baseUrl}{webRoot}api/idnode/load?uuid={Uri.EscapeDataString(uuid)}";
+        var body = await _tvheadendApiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
+        return JsonDocument.Parse(body);
     }
 
     private sealed class CodecProfileListEntry

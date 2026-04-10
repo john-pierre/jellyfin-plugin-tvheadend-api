@@ -1,6 +1,7 @@
-using System.Threading;
+﻿using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model;
+using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 

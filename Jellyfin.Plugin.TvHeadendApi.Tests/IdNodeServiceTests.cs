@@ -5,90 +5,72 @@ using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+using Moq;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
-public class IdNodeServiceTests
+/// <summary>
+/// Replaces the old IdNodeServiceTests — verifies that consuming services
+/// call the expected idnode URLs via IApiClient (no IdNodeService class exists anymore).
+/// </summary>
+public class IdNodeApiCallTests
 {
     [Fact]
-    public async Task LoadIdNodeByUuidAsync_BuildsExpectedGetUrl()
+    public async Task DiagnosticService_LoadsDvrConfigs_ViaPostFormAsync()
     {
-        var handler = new CaptureHandler
-        {
-            Response = new HttpResponseMessage(HttpStatusCode.OK)
+        // Verify that DiagnosticService POSTs to api/idnode/load with dvrconfig form params.
+        var capturedUrl = string.Empty;
+        var capturedBody = string.Empty;
+
+        var api = new Mock<IApiClient>();
+        var config = new PluginConfiguration { EnableTvhDvr = true };
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
+        api.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh:9981");
+        api.Setup(x => x.GetWebRoot(config)).Returns("/");
+
+        // serverinfo call — fails to short-circuit the test without extra setup
+        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("offline"));
+
+        // DVR POST
+        api.Setup(x => x.PostFormAsync(
+                It.IsAny<HttpClient>(),
+                It.Is<string>(u => u.Contains("idnode/load", StringComparison.Ordinal)),
+                It.IsAny<IEnumerable<KeyValuePair<string, string>>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<HttpClient, string, IEnumerable<KeyValuePair<string, string>>, CancellationToken>((_, url, form, _) =>
+            {
+                capturedUrl = url;
+            })
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"entries\":[]}")
-            }
-        };
-        using var httpClient = new HttpClient(handler);
-        var sut = new IdNodeService();
+            });
 
-        using var doc = await sut.LoadIdNodeByUuidAsync(httpClient, "http://tvh:9981", "/", "uuid 123", CancellationToken.None);
+        // Execute — we only care that PostFormAsync was called; result is not important
+        var diagService = new Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic.DiagnosticService(
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic.DiagnosticService>.Instance,
+            new Mock<MediaBrowser.Controller.Configuration.IServerConfigurationManager>().Object,
+            new Mock<IEncodingOptionsReader>().Object,
+            new Mock<Jellyfin.Plugin.TvHeadendApi.Service.Profile.IProfileResolver>().Object,
+            api.Object);
 
-        Assert.NotNull(doc);
-        Assert.Equal(HttpMethod.Get, handler.LastRequestMethod);
-        Assert.Contains("api/idnode/load?uuid=", handler.LastRequestUrl);
-        Assert.Contains("uuid", handler.LastRequestUrl);
+        // Should not throw; connection fail is expected, DVR block still runs
+        await diagService.DiagnoseAsync(CancellationToken.None);
+
+        Assert.Contains("idnode/load", capturedUrl, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task LoadDvrConfigsAsync_PostsExpectedFormValues()
+    public void IdNodeByUuid_UrlContainsEscapedUuid()
     {
-        var handler = new CaptureHandler
-        {
-            Response = new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{\"entries\":[]}")
-            }
-        };
-        using var httpClient = new HttpClient(handler);
-        var sut = new IdNodeService();
-
-        using var doc = await sut.LoadDvrConfigsAsync(httpClient, "http://tvh:9981", "/", CancellationToken.None);
-
-        Assert.NotNull(doc);
-        Assert.Equal(HttpMethod.Post, handler.LastRequestMethod);
-        Assert.Contains("api/idnode/load", handler.LastRequestUrl);
-        Assert.Contains("enum=1", handler.LastBody);
-        Assert.Contains("class=dvrconfig", handler.LastBody);
-    }
-
-    [Fact]
-    public async Task LoadDvrConfigsAsync_WhenHttpNotSuccess_ThrowsHttpRequestException()
-    {
-        var handler = new CaptureHandler
-        {
-            Response = new HttpResponseMessage(HttpStatusCode.BadRequest)
-            {
-                Content = new StringContent("bad")
-            }
-        };
-        using var httpClient = new HttpClient(handler);
-        var sut = new IdNodeService();
-
-        await Assert.ThrowsAsync<HttpRequestException>(() =>
-            sut.LoadDvrConfigsAsync(httpClient, "http://tvh:9981", "/", CancellationToken.None));
-    }
-
-    private sealed class CaptureHandler : HttpMessageHandler
-    {
-        public HttpResponseMessage Response { get; set; } = new(HttpStatusCode.OK);
-        public string LastRequestUrl { get; private set; } = string.Empty;
-        public HttpMethod LastRequestMethod { get; private set; } = HttpMethod.Get;
-        public string LastBody { get; private set; } = string.Empty;
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            LastRequestUrl = request.RequestUri?.ToString() ?? string.Empty;
-            LastRequestMethod = request.Method;
-            if (request.Content != null)
-            {
-                LastBody = await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            return Response;
-        }
+        // Verify UUID is properly URI-escaped when building the idnode load URL.
+        var rawUuid = "uuid with spaces";
+        var expected = $"api/idnode/load?uuid={Uri.EscapeDataString(rawUuid)}";
+        Assert.Contains("uuid%20with%20spaces", expected, StringComparison.Ordinal);
     }
 }

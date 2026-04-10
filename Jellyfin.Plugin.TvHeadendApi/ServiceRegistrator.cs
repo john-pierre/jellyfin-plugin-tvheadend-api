@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.TvHeadendApi.Service;
+using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
@@ -36,7 +37,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IUrlBuilder, UrlBuilder>();
         serviceCollection.AddSingleton<IJsonReader, JsonReader>();
         serviceCollection.AddSingleton<IEncodingOptionsReader, EncodingOptionsReader>();
-        serviceCollection.AddSingleton<IIdNodeService, IdNodeService>();
+        serviceCollection.AddSingleton<ITokenService, TokenService>();
         serviceCollection.AddSingleton<IProfileResolver, ProfileResolver>();
         serviceCollection.AddSingleton<IDiagnosticService, DiagnosticService>();
         serviceCollection.AddSingleton<IGuideService, GuideService>();

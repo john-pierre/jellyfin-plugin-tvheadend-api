@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Jellyfin.Plugin.TvHeadendApi.Model;
+using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;

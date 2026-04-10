@@ -1,9 +1,11 @@
 using System;
-using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Model;
+using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
+using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,20 +19,20 @@ public class ProvisioningServiceTests
     [Fact]
     public void Constructor_WithNullLogger_Throws()
     {
-        var idNode = new IdNodeService();
         var api = new Mock<IApiClient>();
+        var tokenService = new Mock<ITokenService>();
 
-        Assert.Throws<ArgumentNullException>(() => new ProvisioningService(null!, idNode, api.Object));
+        Assert.Throws<ArgumentNullException>(() => new ProvisioningService(null!, api.Object, tokenService.Object));
     }
 
     [Fact]
     public async Task CreateProfileAsync_WhenConfigurationMissing_ReturnsFailure()
     {
-        var idNode = new IdNodeService();
         var api = new Mock<IApiClient>();
+        var tokenService = new Mock<ITokenService>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
 
-        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, idNode, api.Object);
+        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, api.Object, tokenService.Object);
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -38,106 +40,40 @@ public class ProvisioningServiceTests
     }
 
     [Fact]
-    public async Task GenerateAuthTokenAsync_WhenConfigurationMissing_ReturnsFailure()
+    public async Task GenerateAuthTokenAsync_WhenTokenServiceFails_ReturnsFailure()
     {
-        var idNode = new IdNodeService();
         var api = new Mock<IApiClient>();
-        api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
-
-        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, idNode, api.Object);
-        var result = await sut.GenerateAuthTokenAsync(CancellationToken.None);
-
-        Assert.False(result.Success);
-        Assert.Contains("configuration", result.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task GenerateAuthTokenAsync_WhenHttpStatusNotSuccess_ReturnsFailureWithStatus()
-    {
-        var config = new PluginConfiguration();
-        var idNode = new IdNodeService();
-        var api = new Mock<IApiClient>();
-
-        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.GetBaseUrl(config)).Returns("http://127.0.0.1:9981");
-        api.Setup(x => x.GetWebRoot(config)).Returns("/");
-        api.Setup(x => x.PostFormAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.Forbidden)
+        var tokenService = new Mock<ITokenService>();
+        tokenService
+            .Setup(x => x.GenerateValidTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AuthTokenGenerationResult
             {
-                Content = new StringContent("denied")
+                Success = false,
+                Message = "Token generation failed."
             });
 
-        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, idNode, api.Object);
+        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, api.Object, tokenService.Object);
         var result = await sut.GenerateAuthTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
-        Assert.Contains("403", result.Message);
-    }
-
-    [Fact]
-    public async Task GenerateAuthTokenAsync_WhenTokenMissingInResponse_ReturnsFailure()
-    {
-        var config = new PluginConfiguration();
-        var idNode = new IdNodeService();
-        var api = new Mock<IApiClient>();
-
-        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.GetBaseUrl(config)).Returns("http://127.0.0.1:9981");
-        api.Setup(x => x.GetWebRoot(config)).Returns("/");
-        api.Setup(x => x.PostFormAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{}")
-            });
-
-        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, idNode, api.Object);
-        var result = await sut.GenerateAuthTokenAsync(CancellationToken.None);
-
-        Assert.False(result.Success);
-        Assert.Contains("token", result.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task GenerateAuthTokenAsync_WhenHttpThrows_ReturnsConnectionFailure()
-    {
-        var config = new PluginConfiguration();
-        var idNode = new IdNodeService();
-        var api = new Mock<IApiClient>();
-
-        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.GetBaseUrl(config)).Returns("http://127.0.0.1:9981");
-        api.Setup(x => x.GetWebRoot(config)).Returns("/");
-        api.Setup(x => x.PostFormAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new HttpRequestException("boom"));
-
-        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, idNode, api.Object);
-        var result = await sut.GenerateAuthTokenAsync(CancellationToken.None);
-
-        Assert.False(result.Success);
-        Assert.Contains("Cannot connect", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("failed", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public async Task GenerateAuthTokenAsync_WhenTokenExistsButPluginInstanceMissing_ReturnsFailure()
     {
-        var config = new PluginConfiguration();
-        var idNode = new IdNodeService();
         var api = new Mock<IApiClient>();
-
-        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.GetBaseUrl(config)).Returns("http://127.0.0.1:9981");
-        api.Setup(x => x.GetWebRoot(config)).Returns("/");
-        api.Setup(x => x.PostFormAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+        var tokenService = new Mock<ITokenService>();
+        tokenService
+            .Setup(x => x.GenerateValidTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AuthTokenGenerationResult
             {
-                Content = new StringContent("{\"token\":\"abc123\"}")
+                Success = true,
+                AuthToken = "abc123",
+                Message = "Auth token generated successfully."
             });
 
-        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, idNode, api.Object);
+        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, api.Object, tokenService.Object);
         var result = await sut.GenerateAuthTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -145,35 +81,11 @@ public class ProvisioningServiceTests
     }
 
     [Fact]
-    public async Task GenerateAuthTokenAsync_WhenTokenContainsUnsupportedCharacters_ReturnsFailure()
-    {
-        var config = new PluginConfiguration();
-        var idNode = new IdNodeService();
-        var api = new Mock<IApiClient>();
-
-        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.GetBaseUrl(config)).Returns("http://127.0.0.1:9981");
-        api.Setup(x => x.GetWebRoot(config)).Returns("/");
-        api.Setup(x => x.PostFormAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{\"token\":\"abc.def-123\"}")
-            });
-
-        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, idNode, api.Object);
-        var result = await sut.GenerateAuthTokenAsync(CancellationToken.None);
-
-        Assert.False(result.Success);
-        Assert.Contains("Only letters and numbers", result.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task CreateProfileAsync_WhenHttpThrows_ReturnsConnectionFailure()
     {
         var config = new PluginConfiguration();
-        var idNode = new IdNodeService();
         var api = new Mock<IApiClient>();
+        var tokenService = new Mock<ITokenService>();
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
@@ -182,7 +94,102 @@ public class ProvisioningServiceTests
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("offline"));
 
-        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, idNode, api.Object);
+        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, api.Object, tokenService.Object);
+        var result = await sut.CreateProfileAsync(CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("Cannot connect", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+}
+
+namespace Jellyfin.Plugin.TvHeadendApi.Tests;
+
+public class ProvisioningServiceTests
+{
+    [Fact]
+    public void Constructor_WithNullLogger_Throws()
+    {
+        var idNode = new IdNodeService();
+        var api = new Mock<IApiClient>();
+        var tokenService = new Mock<ITokenService>();
+
+        Assert.Throws<ArgumentNullException>(() => new ProvisioningService(null!, idNode, api.Object, tokenService.Object));
+    }
+
+    [Fact]
+    public async Task CreateProfileAsync_WhenConfigurationMissing_ReturnsFailure()
+    {
+        var idNode = new IdNodeService();
+        var api = new Mock<IApiClient>();
+        var tokenService = new Mock<ITokenService>();
+        api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
+
+        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, idNode, api.Object, tokenService.Object);
+        var result = await sut.CreateProfileAsync(CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("configuration", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GenerateAuthTokenAsync_WhenTokenServiceFails_ReturnsFailure()
+    {
+        var idNode = new IdNodeService();
+        var api = new Mock<IApiClient>();
+        var tokenService = new Mock<ITokenService>();
+        tokenService
+            .Setup(x => x.GenerateValidTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AuthTokenGenerationResult
+            {
+                Success = false,
+                Message = "Token generation failed."
+            });
+
+        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, idNode, api.Object, tokenService.Object);
+        var result = await sut.GenerateAuthTokenAsync(CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("failed", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GenerateAuthTokenAsync_WhenTokenExistsButPluginInstanceMissing_ReturnsFailure()
+    {
+        var idNode = new IdNodeService();
+        var api = new Mock<IApiClient>();
+        var tokenService = new Mock<ITokenService>();
+        tokenService
+            .Setup(x => x.GenerateValidTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AuthTokenGenerationResult
+            {
+                Success = true,
+                AuthToken = "abc123",
+                Message = "Auth token generated successfully."
+            });
+
+        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, idNode, api.Object, tokenService.Object);
+        var result = await sut.GenerateAuthTokenAsync(CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("Plugin instance", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateProfileAsync_WhenHttpThrows_ReturnsConnectionFailure()
+    {
+        var config = new PluginConfiguration();
+        var idNode = new IdNodeService();
+        var api = new Mock<IApiClient>();
+        var tokenService = new Mock<ITokenService>();
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
+        api.Setup(x => x.GetBaseUrl(config)).Returns("http://127.0.0.1:9981");
+        api.Setup(x => x.GetWebRoot(config)).Returns("/");
+        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("offline"));
+
+        var sut = new ProvisioningService(NullLogger<ProvisioningService>.Instance, idNode, api.Object, tokenService.Object);
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.False(result.Success);

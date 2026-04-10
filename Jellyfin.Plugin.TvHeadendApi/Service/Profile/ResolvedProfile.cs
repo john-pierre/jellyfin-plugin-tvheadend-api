@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 
 internal sealed record ResolvedProfile(
     string Key,

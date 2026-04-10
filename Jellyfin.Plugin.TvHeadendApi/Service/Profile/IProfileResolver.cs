@@ -3,7 +3,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 
 /// <summary>
 /// Resolves TVHeadend stream profile metadata from profile list and idnode details.

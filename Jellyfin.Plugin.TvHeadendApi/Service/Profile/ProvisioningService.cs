@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -6,6 +6,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model;
+using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
+using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using Microsoft.Extensions.Logging;
 using static Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure.JsonHelper;
@@ -45,23 +47,23 @@ internal sealed class ProvisioningService : IProvisioningService
     };
 
     private readonly ILogger<ProvisioningService> _logger;
-    private readonly IIdNodeService _idNodeService;
     private readonly IApiClient _tvheadendApiClient;
+    private readonly ITokenService _tokenService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ProvisioningService"/> class.
     /// </summary>
     /// <param name="logger">Logger instance.</param>
-    /// <param name="idNodeService">Service for TVHeadend idnode API access.</param>
     /// <param name="tvheadendApiClient">TVHeadend API client.</param>
+    /// <param name="tokenService">Service that creates/refreshes auth tokens until valid.</param>
     public ProvisioningService(
         ILogger<ProvisioningService> logger,
-        IIdNodeService idNodeService,
-        IApiClient tvheadendApiClient)
+        IApiClient tvheadendApiClient,
+        ITokenService tokenService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _idNodeService = idNodeService ?? throw new ArgumentNullException(nameof(idNodeService));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
+        _tokenService = tokenService ?? throw new ArgumentNullException(nameof(tokenService));
     }
 
     /// <inheritdoc />
@@ -385,62 +387,10 @@ internal sealed class ProvisioningService : IProvisioningService
     {
         try
         {
-            var config = _tvheadendApiClient.GetCurrentConfiguration();
-            if (config == null)
+            var tokenResult = await _tokenService.GenerateValidTokenAsync(cancellationToken).ConfigureAwait(false);
+            if (!tokenResult.Success || string.IsNullOrWhiteSpace(tokenResult.AuthToken))
             {
-                return new AuthTokenGenerationResult { Success = false, Message = "Plugin configuration is not available." };
-            }
-
-            using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
-            var baseUrl = _tvheadendApiClient.GetBaseUrl(config);
-            var webRoot = _tvheadendApiClient.GetWebRoot(config);
-
-            // Call TVHeadend's token generation endpoint
-            var tokenUrl = $"{baseUrl}{webRoot}api/user/token";
-            _logger.LogInformation("Generating auth token from TVHeadend at {Url}.", tokenUrl);
-
-            using var response = await _tvheadendApiClient.PostFormAsync(
-                httpClient,
-                tokenUrl,
-                Array.Empty<KeyValuePair<string, string>>(),
-                cancellationToken).ConfigureAwait(false);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                _logger.LogError("Token generation failed (HTTP {Status}): {Body}. Requires TVHeadend admin privileges.", response.StatusCode, errorBody);
-                return new AuthTokenGenerationResult
-                {
-                    Success = false,
-                    Message = $"Token generation failed (HTTP {(int)response.StatusCode}). "
-                        + "Make sure your TVHeadend user has admin privileges. "
-                        + $"Response: {errorBody}"
-                };
-            }
-
-            var tokenBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            using var doc = JsonDocument.Parse(tokenBody);
-            var root = doc.RootElement;
-
-            var token = (GetStringProp(root, "token") ?? GetStringProp(root, "auth"))?.Trim();
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                _logger.LogError("Token generation response did not contain a token field: {Response}", tokenBody);
-                return new AuthTokenGenerationResult
-                {
-                    Success = false,
-                    Message = "TVHeadend generated a token but it could not be extracted from the response."
-                };
-            }
-
-            if (!AuthTokenValidator.IsAlphanumeric(token))
-            {
-                _logger.LogError("Generated token has unsupported characters and was rejected.");
-                return new AuthTokenGenerationResult
-                {
-                    Success = false,
-                    Message = "Generated token contains unsupported characters. Only letters and numbers (A-Z, a-z, 0-9) are allowed."
-                };
+                return tokenResult;
             }
 
             // Save the token to the plugin configuration
@@ -456,7 +406,7 @@ internal sealed class ProvisioningService : IProvisioningService
 
             if (plugin.Configuration is Configuration.PluginConfiguration pluginConfig)
             {
-                pluginConfig.AuthToken = token;
+                pluginConfig.AuthToken = tokenResult.AuthToken;
                 plugin.SaveConfiguration();
                 _logger.LogInformation("Auth token saved to plugin configuration.");
             }
@@ -464,8 +414,10 @@ internal sealed class ProvisioningService : IProvisioningService
             return new AuthTokenGenerationResult
             {
                 Success = true,
-                AuthToken = token,
-                Message = "Auth token generated successfully and saved to configuration."
+                AuthToken = tokenResult.AuthToken,
+                AttemptCount = tokenResult.AttemptCount,
+                UsedRefresh = tokenResult.UsedRefresh,
+                Message = tokenResult.Message + " Saved to plugin configuration."
             };
         }
         catch (HttpRequestException ex)
@@ -601,7 +553,9 @@ internal sealed class ProvisioningService : IProvisioningService
     {
         try
         {
-            using var doc = await _idNodeService.LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, streamProfileUuid, cancellationToken).ConfigureAwait(false);
+            var loadUrl = $"{baseUrl}{webRoot}api/idnode/load?uuid={Uri.EscapeDataString(streamProfileUuid)}";
+            var loadBody = await _tvheadendApiClient.GetStringAsync(httpClient, loadUrl, cancellationToken).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(loadBody);
             if (!doc.RootElement.TryGetProperty("entries", out var entries) || entries.GetArrayLength() == 0)
             {
                 _logger.LogWarning("Could not load stream profile UUID {Uuid} before linking codec profiles.", streamProfileUuid);

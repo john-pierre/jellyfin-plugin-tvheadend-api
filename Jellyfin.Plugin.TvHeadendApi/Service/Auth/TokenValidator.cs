@@ -1,11 +1,11 @@
 using System;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 
 /// <summary>
 /// Validates TVHeadend auth token format for stream URL compatibility.
 /// </summary>
-internal static class AuthTokenValidator
+internal static class TokenValidator
 {
     /// <summary>
     /// Returns true when the token contains only ASCII letters and digits.

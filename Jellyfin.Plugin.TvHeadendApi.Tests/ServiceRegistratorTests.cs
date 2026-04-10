@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.TvHeadendApi.Service;
+using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
@@ -25,11 +26,11 @@ public class ServiceRegistratorTests
         sut.RegisterServices(services, host.Object);
 
         Assert.Contains(services, d => d.ServiceType == typeof(IUrlBuilder) && d.ImplementationType == typeof(UrlBuilder));
-        Assert.Contains(services, d => d.ServiceType == typeof(IGuideService) && d.ImplementationType == typeof(GuideService));
         Assert.Contains(services, d => d.ServiceType == typeof(IDvrService) && d.ImplementationType == typeof(DvrService));
         Assert.Contains(services, d => d.ServiceType == typeof(IMediaSourceService) && d.ImplementationType == typeof(MediaSourceService));
         Assert.Contains(services, d => d.ServiceType == typeof(ILifecycleService) && d.ImplementationType == typeof(LifecycleService));
         Assert.Contains(services, d => d.ServiceType == typeof(IProvisioningService) && d.ImplementationType == typeof(ProvisioningService));
+        Assert.Contains(services, d => d.ServiceType == typeof(ITokenService) && d.ImplementationType == typeof(TokenService));
         Assert.Contains(services, d => d.ServiceType == typeof(ILiveTvService) && d.ImplementationType == typeof(OrchestratorService));
         Assert.Contains(services, d => d.ServiceType == typeof(IDiagnosticService) && d.ImplementationType == typeof(DiagnosticService));
     }

@@ -258,6 +258,8 @@ No. This plugin is API-only via HTTP/JSON.
 
 In practical setups, treat it as required for stable stream/image auth behavior.
 
+When using the plugin's token generation endpoint, the plugin now retries token create/refresh automatically until it gets an alphanumeric token (A-Z, a-z, 0-9) that is safe for FFmpeg URL usage.
+
 ## For Copilot and AI Agents
 
 If you are an AI coding assistant working in this repository:

@@ -1,4 +1,4 @@
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 
 /// <summary>
 /// Provides TVHeadend profile and container mapping helpers shared across services.

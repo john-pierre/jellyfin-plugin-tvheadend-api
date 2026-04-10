@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 
 /// <summary>
 /// Loads stream profile references and detailed profile metadata from TVHeadend APIs.
@@ -17,16 +17,13 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 internal sealed class ProfileResolver : IProfileResolver
 {
     private readonly IApiClient _tvheadendApiClient;
-    private readonly IIdNodeService _idNodeService;
     private readonly IJsonReader _jsonReader;
 
     public ProfileResolver(
         IApiClient tvheadendApiClient,
-        IIdNodeService idNodeService,
         IJsonReader jsonReader)
     {
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
-        _idNodeService = idNodeService ?? throw new ArgumentNullException(nameof(idNodeService));
         _jsonReader = jsonReader ?? throw new ArgumentNullException(nameof(jsonReader));
     }
 
@@ -69,7 +66,7 @@ internal sealed class ProfileResolver : IProfileResolver
         string profileName,
         CancellationToken cancellationToken)
     {
-        using var profileDoc = await _idNodeService.LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, profileUuid, cancellationToken).ConfigureAwait(false);
+        using var profileDoc = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, profileUuid, cancellationToken).ConfigureAwait(false);
         if (!profileDoc.RootElement.TryGetProperty("entries", out var entries) || entries.GetArrayLength() == 0)
         {
             return null;
@@ -209,7 +206,7 @@ internal sealed class ProfileResolver : IProfileResolver
             return null;
         }
 
-        using var codecDoc = await _idNodeService.LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, codecProfileUuid, cancellationToken).ConfigureAwait(false);
+        using var codecDoc = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, codecProfileUuid, cancellationToken).ConfigureAwait(false);
         if (!codecDoc.RootElement.TryGetProperty("entries", out var codecEntries) || codecEntries.GetArrayLength() == 0)
         {
             return new CodecProfileDetails(codecProfileUuid, codecProfileName ?? string.Empty, string.Empty, string.Empty, null);
@@ -292,6 +289,13 @@ internal sealed class ProfileResolver : IProfileResolver
         }
 
         return string.Empty;
+    }
+
+    private async Task<JsonDocument> LoadIdNodeByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string uuid, CancellationToken cancellationToken)
+    {
+        var url = $"{baseUrl}{webRoot}api/idnode/load?uuid={Uri.EscapeDataString(uuid)}";
+        var body = await _tvheadendApiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
+        return JsonDocument.Parse(body);
     }
 
     private sealed record CodecProfileDetails(string Uuid, string Name, string ProfileClass, string Codec, bool? Deinterlace);
