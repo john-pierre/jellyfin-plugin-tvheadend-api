@@ -4,6 +4,7 @@
     <modules>
       <module fileurl="file://$PROJECT_DIR$/../jellyfin/jellyfin.iml" filepath="$PROJECT_DIR$/../jellyfin/jellyfin.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/jellyfin-plugin-tvheadend-api.iml" filepath="$PROJECT_DIR$/.idea/jellyfin-plugin-tvheadend-api.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../tvheadend/tvheadend.iml" filepath="$PROJECT_DIR$/../tvheadend/tvheadend.iml" />
     </modules>
   </component>
 </project>
