@@ -299,6 +299,5 @@ internal sealed class ProfileResolver : IProfileResolver
         return JsonDocument.Parse(body);
     }
 
-
     private sealed record CodecProfileDetails(string Uuid, string Name, string ProfileClass, string Codec, bool? Deinterlace);
 }

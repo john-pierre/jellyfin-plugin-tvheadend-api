@@ -375,7 +375,6 @@ internal sealed class DefaultProfileService : IDefaultProfileService
         }
     }
 
-
     private async Task<bool> CodecProfileExistsAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
     {
         try
