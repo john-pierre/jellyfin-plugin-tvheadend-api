@@ -13,7 +13,14 @@ internal static class UrlHelper
     public static string GetWebRoot(PluginConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        return string.IsNullOrWhiteSpace(config.Webroot) ? "/" : config.Webroot.TrimEnd('/') + "/";
+        if (string.IsNullOrWhiteSpace(config.Webroot))
+        {
+            return "/";
+        }
+
+        // Ensure the webroot always starts with / and ends with /
+        // e.g. "tvh" → "/tvh/", "/tvh" → "/tvh/", "tvh/" → "/tvh/"
+        return "/" + config.Webroot.Trim('/') + "/";
     }
 
     public static string GetBaseUrl(PluginConfiguration config)

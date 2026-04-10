@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -189,5 +190,54 @@ public class TokenServiceTests
 
         Assert.False(result.Success);
         Assert.Contains("Plugin instance", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GenerateValidTokenAsync_WhenLoadOmitsPassword_UsesConfiguredPasswordOnSave()
+    {
+        var config = new PluginConfiguration { Username = "user", Password = "secret" };
+        var api = new Mock<IApiClient>();
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
+        api.Setup(x => x.BuildUrl(config, "api/user/list")).Returns("http://127.0.0.1:9981/api/user/list");
+        api.Setup(x => x.BuildUrl(config, "api/idnode/load")).Returns("http://127.0.0.1:9981/api/idnode/load");
+        api.Setup(x => x.BuildUrl(config, "api/idnode/save")).Returns("http://127.0.0.1:9981/api/idnode/save");
+        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/user/list", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"entries\":[{\"key\":\"uuid-1\",\"val\":\"user\"}]}");
+
+        var loadCall = 0;
+        api.Setup(x => x.PostFormAsync(
+                It.IsAny<HttpClient>(),
+                "http://127.0.0.1:9981/api/idnode/load",
+                It.IsAny<IEnumerable<KeyValuePair<string, string>>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                loadCall++;
+                return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent(loadCall == 1
+                        ? "{\"entries\":[{\"enabled\":true,\"username\":\"user\",\"comment\":\"\",\"authcode\":\"\"}]}"
+                        : "{\"entries\":[{\"enabled\":true,\"username\":\"user\",\"comment\":\"\",\"authcode\":\"abc123\"}]}")
+                };
+            });
+
+        IEnumerable<KeyValuePair<string, string>>? postedValues = null;
+        api.Setup(x => x.PostFormAsync(
+                It.IsAny<HttpClient>(),
+                "http://127.0.0.1:9981/api/idnode/save",
+                It.IsAny<IEnumerable<KeyValuePair<string, string>>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<HttpClient, string, IEnumerable<KeyValuePair<string, string>>, CancellationToken>((_, _, values, _) => postedValues = values)
+            .ReturnsAsync(() => new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object);
+        var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(postedValues);
+        var nodeJson = Assert.Single(postedValues!, pair => pair.Key == "node").Value;
+        Assert.Contains("\"password\":\"secret\"", nodeJson, StringComparison.Ordinal);
     }
 }

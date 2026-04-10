@@ -18,8 +18,10 @@ internal static class ProfileMappingHelper
             "1" or "matroska" or "mkv" => "matroska",
             "2" or "mpegts" or "ts" => "mpegts",
             "3" or "mpegps" or "ps" => "mpegps",
-            "9" => "mp4",
-            "4" or "mp4" => "mp4",
+            // MC_PASS (4) is pass-through — no re-mux container; treat as mpegts
+            "4" or "pass" => "mpegts",
+            // MC_AVMP4 (9) is the libav MP4 muxer
+            "9" or "mp4" => "mp4",
             _ => raw.ToLowerInvariant()
         };
     }

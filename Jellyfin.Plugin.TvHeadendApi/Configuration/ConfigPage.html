@@ -569,7 +569,7 @@
             document.querySelector('#SupportsDirectPlay').checked = config.SupportsDirectPlay !== false;
             document.querySelector('#SupportsDirectStream').checked = config.SupportsDirectStream !== false;
             document.querySelector('#SupportsTranscoding').checked = config.SupportsTranscoding || false;
-            document.querySelector('#SupportsProbing').checked = config.SupportsProbing || false;
+            document.querySelector('#SupportsProbing').checked = config.SupportsProbing !== false;
             document.querySelector('#IgnoreDts').checked = config.IgnoreDts || false;
             document.querySelector('#BufferMs').value = config.BufferMs || '0';
             document.querySelector('#AnalyzeDurationMs').value = config.AnalyzeDurationMs || '0';

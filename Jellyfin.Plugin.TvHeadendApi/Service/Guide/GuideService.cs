@@ -163,8 +163,18 @@ internal sealed class GuideService : IGuideService
         try
         {
             var config = GetConfig();
-            const int limit = 10000;
-            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, $"api/epg/events/grid?channel={channelId}&limit={limit}");
+            const int limit = 5000;
+            var encodedChannelId = Uri.EscapeDataString(channelId);
+
+            // Pass server-side time-window filter to TVHeadend to reduce payload size.
+            // TVH filter: stop > startDateUtc AND start < endDateUtc (overlap condition).
+            var startUnix = new DateTimeOffset(startDateUtc, TimeSpan.Zero).ToUnixTimeSeconds();
+            var endUnix = new DateTimeOffset(endDateUtc, TimeSpan.Zero).ToUnixTimeSeconds();
+            var filterJson = "[{\"field\":\"stop\",\"type\":\"numeric\",\"value\":" + startUnix
+                + ",\"comparison\":\"gt\"},{\"field\":\"start\",\"type\":\"numeric\",\"value\":" + endUnix
+                + ",\"comparison\":\"lt\"}]";
+            var encodedFilter = Uri.EscapeDataString(filterJson);
+            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, $"api/epg/events/grid?channel={encodedChannelId}&limit={limit}&filter={encodedFilter}");
             using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
             using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)

@@ -202,7 +202,7 @@ internal sealed class TokenService : ITokenService
         string username,
         CancellationToken cancellationToken)
     {
-        var listUrl = _apiClient.BuildUrl(config, "api/user/list");
+        var listUrl = _apiClient.BuildUrl(config, "api/access/entry/userlist");
         var response = await _apiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
         var userList = JsonSerializer.Deserialize<UserListResponse>(response, JsonOptions);
         if (userList == null || userList.Entries.Length == 0)
@@ -259,8 +259,8 @@ internal sealed class TokenService : ITokenService
         {
             Uuid = userUuid,
             Enabled = entry.Enabled ?? true,
-            Username = (entry.Username ?? string.Empty).Trim(),
-            Password = entry.Password ?? string.Empty,
+            Username = string.IsNullOrWhiteSpace(entry.Username) ? config.Username : entry.Username.Trim(),
+            Password = string.IsNullOrWhiteSpace(entry.Password) ? config.Password : entry.Password,
             Comment = entry.Comment ?? string.Empty,
             AuthToken = (entry.AuthCode ?? entry.Token ?? entry.Auth ?? string.Empty).Trim(),
         };

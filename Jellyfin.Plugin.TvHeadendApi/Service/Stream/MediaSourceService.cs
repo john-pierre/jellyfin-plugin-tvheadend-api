@@ -87,7 +87,9 @@ internal sealed class MediaSourceService : IMediaSourceService
 
         // Append streaming profile parameter, then apply auth token as query parameter.
         // The auth token is required for direct playback from clients.
-        var streamUrl = _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, $"stream/channel/{channelId}?profile={config.StreamingProfile}");
+        var encodedChannelId = Uri.EscapeDataString(channelId);
+        var encodedProfile = Uri.EscapeDataString(config.StreamingProfile ?? string.Empty);
+        var streamUrl = _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, $"stream/channel/{encodedChannelId}?profile={encodedProfile}");
         var container = await _streamProfileContainerResolver.ResolveContainerAsync(config, cancellationToken).ConfigureAwait(false);
         var mediaSource = new MediaSourceInfo
         {
@@ -305,16 +307,13 @@ internal sealed class MediaSourceService : IMediaSourceService
             var audioCodec = string.IsNullOrWhiteSpace(profileSnapshot.AudioCodec) ? "aac" : profileSnapshot.AudioCodec;
             var videoCodecTag = string.Equals(videoCodec, "h264", StringComparison.OrdinalIgnoreCase) ? "avc1" : videoCodec;
             var audioCodecTag = string.Equals(audioCodec, "aac", StringComparison.OrdinalIgnoreCase) ? "mp4a" : audioCodec;
-            var displayContainer = string.Equals(normalizedContainer, "mpegts", StringComparison.OrdinalIgnoreCase)
-                ? "mpegts,ts"
-                : "mov,mp4,m4a,3gp,3g2,mj2";
 
             var cacheContent = new Dictionary<string, object?>
             {
                 ["Protocol"] = "Http",
                 ["Path"] = streamUrl,
                 ["Type"] = "Default",
-                ["Container"] = displayContainer,
+                ["Container"] = normalizedContainer,
                 ["IsRemote"] = true,
                 ["ReadAtNativeFramerate"] = false,
                 ["IgnoreDts"] = false,
@@ -329,7 +328,7 @@ internal sealed class MediaSourceService : IMediaSourceService
                     {
                         ["Codec"] = videoCodec,
                         ["CodecTag"] = videoCodecTag,
-                        ["DisplayTitle"] = "720p " + videoCodec.ToUpperInvariant() + " SDR",
+                        ["DisplayTitle"] = videoCodec.ToUpperInvariant(),
                         ["IsDefault"] = true,
                         ["Height"] = 720,
                         ["Width"] = 1280,
@@ -341,7 +340,7 @@ internal sealed class MediaSourceService : IMediaSourceService
                     {
                         ["Codec"] = audioCodec,
                         ["CodecTag"] = audioCodecTag,
-                        ["DisplayTitle"] = audioCodec.ToUpperInvariant() + " - Stereo",
+                        ["DisplayTitle"] = audioCodec.ToUpperInvariant(),
                         ["BitRate"] = 128000,
                         ["Channels"] = 2,
                         ["SampleRate"] = 48000,

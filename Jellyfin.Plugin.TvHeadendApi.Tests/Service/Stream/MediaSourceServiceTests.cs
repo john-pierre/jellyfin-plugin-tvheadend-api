@@ -185,6 +185,35 @@ public class MediaSourceServiceTests
     }
 
     [Fact]
+    public async Task GetChannelStreamAsync_EncodesChannelIdAndProfileInPath()
+    {
+        var config = new PluginConfiguration
+        {
+            Host = "tvh.local",
+            Port = 9981,
+            StreamingProfile = "jelly fin+fast",
+            EnableMediaInfoCacheWrite = false,
+            AllowAnonymousAccess = true,
+        };
+
+        var library = new Mock<ILibraryManager>();
+        var resolver = new Mock<IProfileContainerResolver>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new UrlBuilder();
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProfileSnapshot("jelly fin+fast", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
+
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder);
+        var mediaSource = await sut.GetChannelStreamAsync("ch/1", CancellationToken.None);
+
+        Assert.Contains("stream/channel/ch%2F1", mediaSource.Path, StringComparison.Ordinal);
+        Assert.Contains("profile=jelly%20fin%2Bfast", mediaSource.Path, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task GetChannelStreamAsync_WithCacheWriteEnabledAndNonMp4_DoesNotThrow()
     {
         var config = new PluginConfiguration

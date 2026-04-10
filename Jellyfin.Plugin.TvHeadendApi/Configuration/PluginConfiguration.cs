@@ -48,7 +48,8 @@ public class PluginConfiguration : BasePluginConfiguration
         this.Priority = 5;
         this.PrePaddingSeconds = 5;
         this.PostPaddingSeconds = 5;
-        this.RecordingProfile = "default";
+        // TVHeadend's built-in default profile has an empty name (""); "default" is not a valid TVH profile name.
+        this.RecordingProfile = string.Empty;
     }
 
     // ── Connection ─────────────────────────────────────────────────────

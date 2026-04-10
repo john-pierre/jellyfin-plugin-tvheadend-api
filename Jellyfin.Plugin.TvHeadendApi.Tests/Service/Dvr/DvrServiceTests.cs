@@ -349,6 +349,82 @@ public class DvrServiceTests
     }
 
     [Fact]
+    public async Task GetSeriesTimersAsync_MapsPaddingAndFlags()
+    {
+        var responseJson = """
+                           {
+                             "entries": [
+                               {
+                                 "uuid": "series-p1",
+                                 "name": "Padded Show",
+                                 "channel": "",
+                                 "pri": 3,
+                                 "comment": "",
+                                 "start": "Any",
+                                 "start_extra": 2,
+                                 "stop_extra": 5,
+                                 "record": 1,
+                                 "weekdays": [1, 2, 3, 4, 5]
+                               }
+                             ]
+                           }
+                           """;
+
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, responseJson);
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        var result = (await sut.GetSeriesTimersAsync(CancellationToken.None)).ToList();
+
+        Assert.Single(result);
+        var series = result[0];
+        Assert.Equal(120, series.PrePaddingSeconds);
+        Assert.Equal(300, series.PostPaddingSeconds);
+        Assert.True(series.RecordNewOnly);
+        Assert.True(series.RecordAnyTime);
+        Assert.True(series.RecordAnyChannel);
+        Assert.Null(series.ChannelId);
+    }
+
+    [Fact]
+    public async Task GetSeriesTimersAsync_WithSpecificChannelAndNoRecord_MapsCorrectly()
+    {
+        var responseJson = """
+                           {
+                             "entries": [
+                               {
+                                 "uuid": "series-p2",
+                                 "name": "Fixed Show",
+                                 "channel": "ch-99",
+                                 "pri": 2,
+                                 "comment": "",
+                                 "start": "20:00",
+                                 "start_extra": 0,
+                                 "stop_extra": 0,
+                                 "record": 0,
+                                 "weekdays": []
+                               }
+                             ]
+                           }
+                           """;
+
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, responseJson);
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        var result = (await sut.GetSeriesTimersAsync(CancellationToken.None)).ToList();
+
+        Assert.Single(result);
+        var series = result[0];
+        Assert.Equal("ch-99", series.ChannelId);
+        Assert.False(series.RecordNewOnly);
+        Assert.False(series.RecordAnyTime);
+        Assert.False(series.RecordAnyChannel);
+        Assert.Equal(0, series.PrePaddingSeconds);
+        Assert.Equal(0, series.PostPaddingSeconds);
+    }
+
+    [Fact]
     public async Task GetSeriesTimersAsync_WhenHttpNonSuccess_ReturnsEmpty()
     {
         var handler = new QueueHttpMessageHandler();
@@ -450,6 +526,31 @@ public class DvrServiceTests
     }
 
     [Fact]
+    public async Task CreateSeriesTimerAsync_WithSpecificDays_UsesMappedWeekdaysPayload()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, """
+                                         { "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }
+                                         """);
+        handler.Enqueue(HttpStatusCode.OK, """
+                                         { "uuid": "series-created-3" }
+                                         """);
+
+        var sut = CreateSut(handler, out _, out _, CreateConfig(priority: 7));
+        var info = new SeriesTimerInfo
+        {
+            Name = "Series Name",
+            ChannelId = "ch-5",
+            Days = new List<DayOfWeek> { DayOfWeek.Monday, DayOfWeek.Friday }
+        };
+
+        await sut.CreateSeriesTimerAsync(info, CancellationToken.None);
+
+        Assert.Contains("%22weekdays%22%3A%5B2%2C6%5D", handler.Requests[1].Body);
+        Assert.Contains("%22pri%22%3A7", handler.Requests[1].Body);
+    }
+
+    [Fact]
     public async Task CreateSeriesTimerAsync_WhenCreateResponseHasNoId_AssignsFallbackId()
     {
         var handler = new QueueHttpMessageHandler();
@@ -509,6 +610,37 @@ public class DvrServiceTests
         Assert.Contains("%22channel%22%3A%22ch-10%22", handler.Requests[0].Body);
         Assert.Contains("%22record_any_time%22%3Afalse", handler.Requests[0].Body);
         Assert.Contains("%22record_new_only%22%3Atrue", handler.Requests[0].Body);
+    }
+
+    [Fact]
+    public async Task UpdateSeriesTimerAsync_IncludesExtendedFields()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, "{}");
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        await sut.UpdateSeriesTimerAsync(
+            new SeriesTimerInfo
+            {
+                Id = "series-88",
+                ChannelId = "ch-12",
+                Name = "My Series",
+                Overview = "My Overview",
+                Priority = 9,
+                RecordAnyTime = true,
+                RecordAnyChannel = true,
+                RecordNewOnly = false,
+                Days = new List<DayOfWeek> { DayOfWeek.Sunday, DayOfWeek.Wednesday }
+            },
+            CancellationToken.None);
+
+        Assert.Single(handler.Requests);
+        Assert.Contains("%22record_any_channel%22%3Atrue", handler.Requests[0].Body);
+        Assert.Contains("%22pri%22%3A9", handler.Requests[0].Body);
+        Assert.Contains("%22name%22%3A%22My+Series%22", handler.Requests[0].Body);
+        Assert.Contains("%22title%22%3A%22My+Series%22", handler.Requests[0].Body);
+        Assert.Contains("%22comment%22%3A%22My+Overview%22", handler.Requests[0].Body);
+        Assert.Contains("%22weekdays%22%3A%5B1%2C4%5D", handler.Requests[0].Body);
     }
 
     [Fact]

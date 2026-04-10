@@ -227,6 +227,46 @@ public class GuideServiceCoreTests
     }
 
     [Fact]
+    public async Task GetProgramsAsync_EncodesChannelIdInEndpoint()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            Entries = new object[]
+            {
+                new { EventId = 1, ChannelUuid = "ch/1", Title = "Keep", Start = new DateTimeOffset(startUtc).ToUnixTimeSeconds(), Stop = new DateTimeOffset(endUtc).ToUnixTimeSeconds(), Genre = new[] { 16 } }
+            }
+        });
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(payload)
+        });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/image");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var result = (await sut.GetProgramsAsync("ch/1", startUtc, endUtc, CancellationToken.None)).ToList();
+
+        Assert.Single(result);
+        urlBuilder.Verify(
+            x => x.BuildUrlWithHeaderAuth(
+                config,
+                It.Is<string>(endpoint => endpoint.Contains("channel=ch%2F1", StringComparison.Ordinal))),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task GetProgramsAsync_ImageCachePath_UsesImageProxyUrl()
     {
         var config = new PluginConfiguration();

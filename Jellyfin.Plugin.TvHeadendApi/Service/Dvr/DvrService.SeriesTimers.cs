@@ -41,8 +41,13 @@ internal sealed partial class DvrService
     {
         EnsureDvrEnabled();
         ArgumentNullException.ThrowIfNull(info);
-        ArgumentException.ThrowIfNullOrWhiteSpace(info.ChannelId);
         ArgumentException.ThrowIfNullOrWhiteSpace(info.Name);
+
+        // ChannelId is required only when RecordAnyChannel is false
+        if (!info.RecordAnyChannel)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(info.ChannelId);
+        }
 
         var config = GetConfig();
         var configUuid = await GetRecordingProfileUuidAsync(config.RecordingProfile, cancellationToken).ConfigureAwait(false);
@@ -54,7 +59,7 @@ internal sealed partial class DvrService
             path = "api/dvr/autorec/create_by_series";
             content = new FormUrlEncodedContent(new[]
             {
-                new KeyValuePair<string, string>("config_uuid", configUuid),
+                new KeyValuePair<string, string>("config_name", configUuid),
                 new KeyValuePair<string, string>("event_id", info.ProgramId),
             });
         }
@@ -63,17 +68,22 @@ internal sealed partial class DvrService
             path = "api/dvr/autorec/create";
             var seriesTimerJson = new
             {
-                channel = info.ChannelId,
+                // Empty channel = match any channel; UUID = specific channel
+                channel = info.RecordAnyChannel ? null : info.ChannelId,
                 title = info.Name,
-                description = info.Overview,
-                record_any_time = info.RecordAnyTime,
-                record_any_channel = info.RecordAnyChannel,
-                record_new_only = info.RecordNewOnly,
-                priority = config.Priority,
+                // TVH autorec has no "description" idnode; "comment" is the user-note field
+                comment = info.Overview,
+                // record: 0=all (DVR_AUTOREC_RECORD_ALL), 1=different episode number (new-only)
+                record = info.RecordNewOnly ? 1 : 0,
+                // start/start_window: "Any" = any time; absent/null = keep TVH default
+                start = info.RecordAnyTime ? "Any" : null,
+                start_window = info.RecordAnyTime ? "Any" : null,
+                pri = config.Priority,
                 start_extra = (int)Math.Round((double)info.PrePaddingSeconds / 60),
                 stop_extra = (int)Math.Round((double)info.PostPaddingSeconds / 60),
-                weekdays = new List<int> { 1, 2, 3, 4, 5, 6, 7 },
-                config_uuid = configUuid,
+                weekdays = BuildWeekdaysPayload(info.Days),
+                // TVH autorec config field is named "config_name" (stores the DVR config UUID)
+                config_name = configUuid,
             };
 
             content = new FormUrlEncodedContent(new[]
@@ -185,17 +195,38 @@ internal sealed partial class DvrService
 
         var config = GetConfig();
         var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/idnode/save");
-        var updates = new Dictionary<string, object>
+        var updates = new Dictionary<string, object?>
         {
             { "uuid", info.Id },
-            { "channel", info.ChannelId },
-            { "record_any_time", info.RecordAnyTime },
-            { "record_new_only", info.RecordNewOnly },
+            // record: 0=DVR_AUTOREC_RECORD_ALL (record everything), 1=different episode number (new-only)
+            { "record", info.RecordNewOnly ? 1 : 0 },
+            // start/start_window: "Any" matches any time; null keeps existing TVH value
+            { "start", info.RecordAnyTime ? "Any" : null },
+            { "start_window", info.RecordAnyTime ? "Any" : null },
+            { "pri", info.Priority },
             { "start_extra", (int)Math.Round((double)info.PrePaddingSeconds / 60) },
             { "stop_extra", (int)Math.Round((double)info.PostPaddingSeconds / 60) },
+            { "weekdays", BuildWeekdaysPayload(info.Days) },
         };
 
-        var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("node", JsonSerializer.Serialize(new[] { updates })) });
+        if (!string.IsNullOrWhiteSpace(info.ChannelId))
+        {
+            updates["channel"] = info.ChannelId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(info.Name))
+        {
+            updates["name"] = info.Name;
+            updates["title"] = info.Name;
+        }
+
+        if (!string.IsNullOrWhiteSpace(info.Overview))
+        {
+            updates["comment"] = info.Overview;
+            updates["description"] = info.Overview;
+        }
+
+        var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("node", JsonSerializer.Serialize(new[] { updates }, JsonOptions)) });
         using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
         using var response = await httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
@@ -250,15 +281,21 @@ internal sealed partial class DvrService
             {
                 Id = entry.Uuid,
                 Name = entry.Name,
-                ChannelId = entry.Channel,
+                ChannelId = string.IsNullOrEmpty(entry.Channel) ? null : entry.Channel,
                 Priority = entry.Priority,
                 Overview = entry.Comment,
-                Days = entry.Weekdays?.Where(day => day >= 1 && day <= 7).Select(day => (DayOfWeek)(day - 1)).ToList() ?? new List<DayOfWeek>(),
-                RecordNewOnly = false,
+                Days = entry.Weekdays?.Where(day => day >= 1 && day <= 7)
+                    // TVH: 1=Mon..6=Sat, 7=Sun; DayOfWeek: 0=Sun, 1=Mon..6=Sat
+                    .Select(day => day == 7 ? DayOfWeek.Sunday : (DayOfWeek)day)
+                    .ToList() ?? new List<DayOfWeek>(),
+                // 0=DVR_AUTOREC_RECORD_ALL (record everything), 15=DVR_AUTOREC_RECORD_DVR_PROFILE (use config); both mean "no dedup"
+                RecordNewOnly = entry.RecordMode is not 0 and not 15,
+                RecordAnyTime = string.IsNullOrEmpty(entry.Start) || string.Equals(entry.Start, "Any", StringComparison.OrdinalIgnoreCase),
+                RecordAnyChannel = string.IsNullOrEmpty(entry.Channel),
+                PrePaddingSeconds = entry.StartExtra * 60,
+                PostPaddingSeconds = entry.StopExtra * 60,
                 StartDate = DateTime.UtcNow,
                 EndDate = DateTime.UtcNow.AddHours(1),
-                RecordAnyTime = true,
-                RecordAnyChannel = false,
             }).ToList() ?? Enumerable.Empty<SeriesTimerInfo>();
         }
         catch (Exception ex)
@@ -266,5 +303,21 @@ internal sealed partial class DvrService
             _logger.LogError(ex, "Error occurred while fetching series timers from TVHeadEnd.");
             return Enumerable.Empty<SeriesTimerInfo>();
         }
+    }
+
+    private static List<int> BuildWeekdaysPayload(List<DayOfWeek>? days)
+    {
+        if (days == null || days.Count == 0)
+        {
+            return new List<int> { 1, 2, 3, 4, 5, 6, 7 };
+        }
+
+        return days
+            .Distinct()
+            // TVH: 1=Mon..6=Sat, 7=Sun; DayOfWeek: 0=Sun, 1=Mon..6=Sat
+            .Select(day => day == DayOfWeek.Sunday ? 7 : (int)day)
+            .Where(day => day >= 1 && day <= 7)
+            .OrderBy(day => day)
+            .ToList();
     }
 }

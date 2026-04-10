@@ -37,7 +37,8 @@ internal sealed partial class DvrService : IDvrService
 
     public async Task<string> GetRecordingProfileUuidAsync(string profileName, CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(profileName);
+        // profileName may be empty string: TVHeadend's built-in default profile has an empty name ("").
+        ArgumentNullException.ThrowIfNull(profileName);
 
         var config = GetConfig();
         var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/dvr/config/grid");
@@ -46,7 +47,17 @@ internal sealed partial class DvrService : IDvrService
         response.EnsureSuccessStatusCode();
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var result = await JsonSerializer.DeserializeAsync<DvrConfigGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
-        var matchingProfile = result?.Entries?.FirstOrDefault(profile => string.Equals(profile.Name, profileName, StringComparison.OrdinalIgnoreCase));
+
+        // When profileName is empty, match the TVHeadend default profile (empty name).
+        var matchingProfile = result?.Entries?.FirstOrDefault(profile =>
+            string.Equals(profile.Name, profileName, StringComparison.OrdinalIgnoreCase));
+
+        // Fall back to the first available profile when no explicit name matches.
+        if (matchingProfile == null && result?.Entries?.Count > 0)
+        {
+            matchingProfile = result.Entries[0];
+        }
+
         if (string.IsNullOrWhiteSpace(matchingProfile?.Uuid))
         {
             throw new InvalidOperationException($"No matching recording profile found for '{profileName}' in TVHeadend.");
