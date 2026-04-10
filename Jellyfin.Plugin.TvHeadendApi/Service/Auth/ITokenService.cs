@@ -15,4 +15,11 @@ public interface ITokenService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Generation result including the accepted token when successful.</returns>
     Task<AuthTokenGenerationResult> GenerateValidTokenAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Generates a valid TVHeadend token and persists it to the plugin configuration.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Generation result including the stored token when successful.</returns>
+    Task<AuthTokenGenerationResult> GenerateAndStoreTokenAsync(CancellationToken cancellationToken);
 }

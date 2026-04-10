@@ -381,59 +381,6 @@ internal sealed class ProvisioningService : IProvisioningService
         }
     }
 
-    /// <inheritdoc />
-    public async Task<AuthTokenGenerationResult> GenerateAuthTokenAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var tokenResult = await _tokenService.GenerateValidTokenAsync(cancellationToken).ConfigureAwait(false);
-            if (!tokenResult.Success || string.IsNullOrWhiteSpace(tokenResult.AuthToken))
-            {
-                return tokenResult;
-            }
-
-            // Save the token to the plugin configuration
-            var plugin = Plugin.Instance;
-            if (plugin == null)
-            {
-                return new AuthTokenGenerationResult
-                {
-                    Success = false,
-                    Message = "Plugin instance is not available."
-                };
-            }
-
-            if (plugin.Configuration is Configuration.PluginConfiguration pluginConfig)
-            {
-                pluginConfig.AuthToken = tokenResult.AuthToken;
-                plugin.SaveConfiguration();
-                _logger.LogInformation("Auth token saved to plugin configuration.");
-            }
-
-            return new AuthTokenGenerationResult
-            {
-                Success = true,
-                AuthToken = tokenResult.AuthToken,
-                AttemptCount = tokenResult.AttemptCount,
-                UsedRefresh = tokenResult.UsedRefresh,
-                Message = tokenResult.Message + " Saved to plugin configuration."
-            };
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError(ex, "Failed to connect to TVHeadend for token generation.");
-            return new AuthTokenGenerationResult
-            {
-                Success = false,
-                Message = $"Cannot connect to TVHeadend: {ex.Message}. Check your connection and authentication settings."
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error generating auth token.");
-            return new AuthTokenGenerationResult { Success = false, Message = $"Unexpected error: {ex.Message}" };
-        }
-    }
 
     private async Task<bool> CodecProfileExistsAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
     {
@@ -563,31 +510,31 @@ internal sealed class ProvisioningService : IProvisioningService
 
             var entry = loadResponse.Entries[0];
             var saveUrl = $"{baseUrl}{webRoot}api/idnode/save";
-            var sourceVideoCodecs = ReadStringArrayOrParam(entry.SourceVideoCodecs, entry.Params, "src_vcodec");
-            var sourceAudioCodecs = ReadStringArrayOrParam(entry.SourceAudioCodecs, entry.Params, "src_acodec");
-            var sourceSubtitleCodecs = ReadStringArrayOrParam(entry.SourceSubtitleCodecs, entry.Params, "src_scodec");
+            var sourceVideoCodecs = IdNodeValueHelper.ReadStringArrayOrParam(entry.SourceVideoCodecs, entry.Params, "src_vcodec");
+            var sourceAudioCodecs = IdNodeValueHelper.ReadStringArrayOrParam(entry.SourceAudioCodecs, entry.Params, "src_acodec");
+            var sourceSubtitleCodecs = IdNodeValueHelper.ReadStringArrayOrParam(entry.SourceSubtitleCodecs, entry.Params, "src_scodec");
             var node = new System.Text.Json.Nodes.JsonObject
             {
-                ["name"] = ReadStringOrParam(entry.Name, entry.Params, "name") ?? "jellyfin",
-                ["enabled"] = ReadBoolOrParam(entry.Enabled, entry.Params, "enabled") ?? true,
-                ["default"] = ReadBoolOrParam(entry.IsDefault, entry.Params, "default") ?? false,
-                ["comment"] = ReadStringOrParam(entry.Comment, entry.Params, "comment") ?? string.Empty,
-                ["timeout"] = ReadIntOrParam(entry.Timeout, entry.Params, "timeout") ?? 0,
-                ["timeout_start"] = ReadIntOrParam(entry.TimeoutStart, entry.Params, "timeout_start") ?? 0,
-                ["priority"] = ReadIntOrParam(entry.Priority, entry.Params, "priority") ?? 0,
-                ["fpriority"] = ReadIntOrParam(entry.FPriority, entry.Params, "fpriority") ?? 0,
-                ["restart"] = ReadBoolOrParam(entry.Restart, entry.Params, "restart") ?? false,
-                ["contaccess"] = ReadBoolOrParam(entry.ContinuousAccess, entry.Params, "contaccess") ?? true,
-                ["catimeout"] = ReadIntOrParam(entry.CaTimeout, entry.Params, "catimeout") ?? 2000,
-                ["swservice"] = ReadBoolOrParam(entry.SoftwareService, entry.Params, "swservice") ?? true,
-                ["svfilter"] = ReadIntOrParam(entry.ServiceVideoFilter, entry.Params, "svfilter") ?? 0,
-                ["container"] = ReadIntOrParam(entry.Container, entry.Params, "container") ?? 2,
+                ["name"] = IdNodeValueHelper.ReadStringOrParam(entry.Name, entry.Params, "name") ?? "jellyfin",
+                ["enabled"] = IdNodeValueHelper.ReadBoolOrParam(entry.Enabled, entry.Params, "enabled") ?? true,
+                ["default"] = IdNodeValueHelper.ReadBoolOrParam(entry.IsDefault, entry.Params, "default") ?? false,
+                ["comment"] = IdNodeValueHelper.ReadStringOrParam(entry.Comment, entry.Params, "comment") ?? string.Empty,
+                ["timeout"] = IdNodeValueHelper.ReadIntOrParam(entry.Timeout, entry.Params, "timeout") ?? 0,
+                ["timeout_start"] = IdNodeValueHelper.ReadIntOrParam(entry.TimeoutStart, entry.Params, "timeout_start") ?? 0,
+                ["priority"] = IdNodeValueHelper.ReadIntOrParam(entry.Priority, entry.Params, "priority") ?? 0,
+                ["fpriority"] = IdNodeValueHelper.ReadIntOrParam(entry.FPriority, entry.Params, "fpriority") ?? 0,
+                ["restart"] = IdNodeValueHelper.ReadBoolOrParam(entry.Restart, entry.Params, "restart") ?? false,
+                ["contaccess"] = IdNodeValueHelper.ReadBoolOrParam(entry.ContinuousAccess, entry.Params, "contaccess") ?? true,
+                ["catimeout"] = IdNodeValueHelper.ReadIntOrParam(entry.CaTimeout, entry.Params, "catimeout") ?? 2000,
+                ["swservice"] = IdNodeValueHelper.ReadBoolOrParam(entry.SoftwareService, entry.Params, "swservice") ?? true,
+                ["svfilter"] = IdNodeValueHelper.ReadIntOrParam(entry.ServiceVideoFilter, entry.Params, "svfilter") ?? 0,
+                ["container"] = IdNodeValueHelper.ReadIntOrParam(entry.Container, entry.Params, "container") ?? 2,
                 ["pro_vcodec"] = videoCodecRef,
-                ["src_vcodec"] = ToJsonArray(sourceVideoCodecs.Count > 0 ? sourceVideoCodecs : DefaultSourceVideoCodecs),
+                ["src_vcodec"] = IdNodeValueHelper.ToJsonArray(sourceVideoCodecs.Count > 0 ? sourceVideoCodecs : DefaultSourceVideoCodecs),
                 ["pro_acodec"] = audioCodecRef,
-                ["src_acodec"] = ToJsonArray(sourceAudioCodecs.Count > 0 ? sourceAudioCodecs : DefaultSourceAudioCodecs),
-                ["pro_scodec"] = ReadStringOrParam(entry.ProSubtitleCodec, entry.Params, "pro_scodec") ?? string.Empty,
-                ["src_scodec"] = ToJsonArray(sourceSubtitleCodecs),
+                ["src_acodec"] = IdNodeValueHelper.ToJsonArray(sourceAudioCodecs.Count > 0 ? sourceAudioCodecs : DefaultSourceAudioCodecs),
+                ["pro_scodec"] = IdNodeValueHelper.ReadStringOrParam(entry.ProSubtitleCodec, entry.Params, "pro_scodec") ?? string.Empty,
+                ["src_scodec"] = IdNodeValueHelper.ToJsonArray(sourceSubtitleCodecs),
                 ["uuid"] = streamProfileUuid,
             };
 
@@ -625,126 +572,5 @@ internal sealed class ProvisioningService : IProvisioningService
 
         var separatorIndex = title.IndexOf(" (", StringComparison.Ordinal);
         return separatorIndex > 0 ? title[..separatorIndex] : title;
-    }
-
-    private static System.Text.Json.Nodes.JsonArray ToJsonArray(IEnumerable<string> values)
-    {
-        var array = new System.Text.Json.Nodes.JsonArray();
-        foreach (var value in values)
-        {
-            array.Add(value);
-        }
-
-        return array;
-    }
-
-    private static string? ReadStringOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
-    {
-        return ReadString(directValue) ?? ReadString(GetParamValue(parameters, parameterName));
-    }
-
-    private static int? ReadIntOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
-    {
-        return ReadInt(directValue) ?? ReadInt(GetParamValue(parameters, parameterName));
-    }
-
-    private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
-    {
-        return ReadBool(directValue) ?? ReadBool(GetParamValue(parameters, parameterName));
-    }
-
-    private static IReadOnlyList<string> ReadStringArrayOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
-    {
-        var values = ReadStringArray(directValue);
-        return values.Count > 0 ? values : ReadStringArray(GetParamValue(parameters, parameterName));
-    }
-
-    private static JsonElement GetParamValue(IReadOnlyList<IdNodeParam> parameters, string parameterName)
-    {
-        foreach (var parameter in parameters)
-        {
-            if (string.Equals(parameter.Id, parameterName, StringComparison.OrdinalIgnoreCase))
-            {
-                return parameter.Value;
-            }
-        }
-
-        return default;
-    }
-
-    private static string? ReadString(JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.Undefined || value.ValueKind == JsonValueKind.Null)
-        {
-            return null;
-        }
-
-        return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
-    }
-
-    private static int? ReadInt(JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
-        {
-            return intValue;
-        }
-
-        return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out var parsed)
-            ? parsed
-            : null;
-    }
-
-    private static bool? ReadBool(JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.True)
-        {
-            return true;
-        }
-
-        if (value.ValueKind == JsonValueKind.False)
-        {
-            return false;
-        }
-
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
-        {
-            return intValue != 0;
-        }
-
-        if (value.ValueKind == JsonValueKind.String)
-        {
-            var rawValue = value.GetString();
-            if (bool.TryParse(rawValue, out var boolValue))
-            {
-                return boolValue;
-            }
-
-            if (int.TryParse(rawValue, out var parsedInt))
-            {
-                return parsedInt != 0;
-            }
-        }
-
-        return null;
-    }
-
-    private static IReadOnlyList<string> ReadStringArray(JsonElement value)
-    {
-        if (value.ValueKind != JsonValueKind.Array)
-        {
-            return Array.Empty<string>();
-        }
-
-        var values = new List<string>();
-        foreach (var item in value.EnumerateArray())
-        {
-            var stringValue = item.ValueKind == JsonValueKind.String ? item.GetString() : item.ToString();
-            if (!string.IsNullOrWhiteSpace(stringValue))
-            {
-                values.Add(stringValue);
-            }
-        }
-
-        return values;
     }
 }

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net.Http;
@@ -77,9 +76,9 @@ internal sealed class ProfileResolver : IProfileResolver
         }
 
         var entry = profileResponse.Entries[0];
-        var profileClass = ReadStringOrParam(entry.ProfileClass, entry.Params, "class") ?? string.Empty;
-        var rawContainer = ReadStringOrParam(entry.Container, entry.Params, "container")
-            ?? ReadIntOrParam(entry.Container, entry.Params, "container")?.ToString(CultureInfo.InvariantCulture)
+        var profileClass = IdNodeValueHelper.ReadStringOrParam(entry.ProfileClass, entry.Params, "class") ?? string.Empty;
+        var rawContainer = IdNodeValueHelper.ReadStringOrParam(entry.Container, entry.Params, "container")
+            ?? IdNodeValueHelper.ReadIntOrParam(entry.Container, entry.Params, "container")?.ToString(CultureInfo.InvariantCulture)
             ?? string.Empty;
 
         var mappedContainer = ProfileMappingHelper.MapContainer(rawContainer);
@@ -88,11 +87,11 @@ internal sealed class ProfileResolver : IProfileResolver
             mappedContainer = ProfileMappingHelper.MapProfileClassToContainer(profileClass);
         }
 
-        var proVideoCodec = ReadStringOrParam(entry.ProVideoCodec, entry.Params, "pro_vcodec")
-            ?? ReadStringOrParam(entry.VideoCodec, entry.Params, "vcodec")
+        var proVideoCodec = IdNodeValueHelper.ReadStringOrParam(entry.ProVideoCodec, entry.Params, "pro_vcodec")
+            ?? IdNodeValueHelper.ReadStringOrParam(entry.VideoCodec, entry.Params, "vcodec")
             ?? string.Empty;
-        var proAudioCodec = ReadStringOrParam(entry.ProAudioCodec, entry.Params, "pro_acodec")
-            ?? ReadStringOrParam(entry.AudioCodec, entry.Params, "acodec")
+        var proAudioCodec = IdNodeValueHelper.ReadStringOrParam(entry.ProAudioCodec, entry.Params, "pro_acodec")
+            ?? IdNodeValueHelper.ReadStringOrParam(entry.AudioCodec, entry.Params, "acodec")
             ?? string.Empty;
 
         return new ProfileDetails(
@@ -103,9 +102,9 @@ internal sealed class ProfileResolver : IProfileResolver
             rawContainer,
             proVideoCodec,
             proAudioCodec,
-            ReadStringArrayOrParam(entry.SourceVideoCodecs, entry.Params, "src_vcodec"),
-            ReadStringArrayOrParam(entry.SourceAudioCodecs, entry.Params, "src_acodec"),
-            ReadBoolOrParam(entry.Deinterlace, entry.Params, "deinterlace"));
+            IdNodeValueHelper.ReadStringArrayOrParam(entry.SourceVideoCodecs, entry.Params, "src_vcodec"),
+            IdNodeValueHelper.ReadStringArrayOrParam(entry.SourceAudioCodecs, entry.Params, "src_acodec"),
+            IdNodeValueHelper.ReadBoolOrParam(entry.Deinterlace, entry.Params, "deinterlace"));
     }
 
     public async Task<ResolvedProfile?> ResolveProfileByNameAsync(
@@ -214,9 +213,9 @@ internal sealed class ProfileResolver : IProfileResolver
         }
 
         var codecEntry = codecResponse.Entries[0];
-        var codecName = ReadStringOrParam(codecEntry.Codec, codecEntry.Params, "codec") ?? string.Empty;
-        var codecProfileClass = ReadStringOrParam(codecEntry.ProfileClass, codecEntry.Params, "class") ?? string.Empty;
-        var deinterlace = ReadBoolOrParam(codecEntry.Deinterlace, codecEntry.Params, "deinterlace");
+        var codecName = IdNodeValueHelper.ReadStringOrParam(codecEntry.Codec, codecEntry.Params, "codec") ?? string.Empty;
+        var codecProfileClass = IdNodeValueHelper.ReadStringOrParam(codecEntry.ProfileClass, codecEntry.Params, "class") ?? string.Empty;
+        var deinterlace = IdNodeValueHelper.ReadBoolOrParam(codecEntry.Deinterlace, codecEntry.Params, "deinterlace");
 
         return new CodecProfileDetails(codecProfileUuid, codecProfileName ?? string.Empty, codecProfileClass, codecName, deinterlace);
     }
@@ -299,115 +298,6 @@ internal sealed class ProfileResolver : IProfileResolver
         return JsonDocument.Parse(body);
     }
 
-    private static string? ReadStringOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
-    {
-        return ReadString(directValue) ?? ReadString(GetParamValue(parameters, parameterName));
-    }
-
-    private static int? ReadIntOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
-    {
-        return ReadInt(directValue) ?? ReadInt(GetParamValue(parameters, parameterName));
-    }
-
-    private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
-    {
-        return ReadBool(directValue) ?? ReadBool(GetParamValue(parameters, parameterName));
-    }
-
-    private static IReadOnlyList<string> ReadStringArrayOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
-    {
-        var values = ReadStringArray(directValue);
-        return values.Count > 0 ? values : ReadStringArray(GetParamValue(parameters, parameterName));
-    }
-
-    private static JsonElement GetParamValue(IReadOnlyList<IdNodeParam> parameters, string parameterName)
-    {
-        foreach (var parameter in parameters)
-        {
-            if (string.Equals(parameter.Id, parameterName, StringComparison.OrdinalIgnoreCase))
-            {
-                return parameter.Value;
-            }
-        }
-
-        return default;
-    }
-
-    private static string? ReadString(JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.Undefined || value.ValueKind == JsonValueKind.Null)
-        {
-            return null;
-        }
-
-        return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
-    }
-
-    private static int? ReadInt(JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
-        {
-            return intValue;
-        }
-
-        return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : null;
-    }
-
-    private static bool? ReadBool(JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.True)
-        {
-            return true;
-        }
-
-        if (value.ValueKind == JsonValueKind.False)
-        {
-            return false;
-        }
-
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
-        {
-            return intValue != 0;
-        }
-
-        if (value.ValueKind == JsonValueKind.String)
-        {
-            var rawValue = value.GetString();
-            if (bool.TryParse(rawValue, out var boolValue))
-            {
-                return boolValue;
-            }
-
-            if (int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInt))
-            {
-                return parsedInt != 0;
-            }
-        }
-
-        return null;
-    }
-
-    private static IReadOnlyList<string> ReadStringArray(JsonElement value)
-    {
-        if (value.ValueKind != JsonValueKind.Array)
-        {
-            return Array.Empty<string>();
-        }
-
-        var values = new List<string>();
-        foreach (var item in value.EnumerateArray())
-        {
-            var stringValue = item.ValueKind == JsonValueKind.String ? item.GetString() : item.ToString();
-            if (!string.IsNullOrWhiteSpace(stringValue))
-            {
-                values.Add(stringValue);
-            }
-        }
-
-        return values;
-    }
 
     private sealed record CodecProfileDetails(string Uuid, string Name, string ProfileClass, string Codec, bool? Deinterlace);
 }

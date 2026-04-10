@@ -143,6 +143,59 @@ internal sealed class TokenService : ITokenService
         }
     }
 
+    /// <inheritdoc />
+    public async Task<AuthTokenGenerationResult> GenerateAndStoreTokenAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var tokenResult = await GenerateValidTokenAsync(cancellationToken).ConfigureAwait(false);
+            if (!tokenResult.Success || string.IsNullOrWhiteSpace(tokenResult.AuthToken))
+            {
+                return tokenResult;
+            }
+
+            var plugin = Plugin.Instance;
+            if (plugin == null)
+            {
+                return new AuthTokenGenerationResult
+                {
+                    Success = false,
+                    Message = "Plugin instance is not available."
+                };
+            }
+
+            if (plugin.Configuration is Configuration.PluginConfiguration pluginConfig)
+            {
+                pluginConfig.AuthToken = tokenResult.AuthToken;
+                plugin.SaveConfiguration();
+                _logger.LogInformation("Auth token saved to plugin configuration.");
+            }
+
+            return new AuthTokenGenerationResult
+            {
+                Success = true,
+                AuthToken = tokenResult.AuthToken,
+                AttemptCount = tokenResult.AttemptCount,
+                UsedRefresh = tokenResult.UsedRefresh,
+                Message = tokenResult.Message + " Saved to plugin configuration."
+            };
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Failed to connect to TVHeadend for token generation.");
+            return new AuthTokenGenerationResult
+            {
+                Success = false,
+                Message = $"Cannot connect to TVHeadend: {ex.Message}. Check your connection and authentication settings."
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating auth token.");
+            return new AuthTokenGenerationResult { Success = false, Message = $"Unexpected error: {ex.Message}" };
+        }
+    }
+
     private async Task<string?> ResolveUserUuidAsync(
         HttpClient httpClient,
         Configuration.PluginConfiguration config,

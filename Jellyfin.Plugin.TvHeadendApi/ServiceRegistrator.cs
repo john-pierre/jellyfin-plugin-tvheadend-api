@@ -43,7 +43,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IDvrService, DvrService>();
         serviceCollection.AddSingleton<IMediaSourceService, MediaSourceService>();
         serviceCollection.AddSingleton<ILifecycleService, LifecycleService>();
-        serviceCollection.AddSingleton<IProvisioningService, ProvisioningService>();
+        serviceCollection.AddSingleton<IDefaultProfileService, DefaultProfileService>();
         serviceCollection.AddSingleton<IProfileContainerResolver, ProfileContainerResolver>();
         serviceCollection.AddSingleton<IApiClient, ApiClient>();
 

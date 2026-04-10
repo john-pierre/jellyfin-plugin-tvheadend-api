@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using MediaBrowser.Common.Api;
@@ -23,19 +24,23 @@ namespace Jellyfin.Plugin.TvHeadendApi.Api;
 public class PluginController : ControllerBase
 {
     private readonly IDiagnosticService _diagnoseService;
-    private readonly IProvisioningService _profileProvisioningService;
+    private readonly IDefaultProfileService _defaultProfileService;
+    private readonly ITokenService _tokenService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginController"/> class.
     /// </summary>
     /// <param name="diagnoseService">Service that builds the diagnostic report.</param>
-    /// <param name="profileProvisioningService">Service that provisions recommended TVHeadend profiles.</param>
+    /// <param name="defaultProfileService">Service that provisions recommended TVHeadend default profiles.</param>
+    /// <param name="tokenService">Service that manages TVHeadend auth tokens.</param>
     public PluginController(
         IDiagnosticService diagnoseService,
-        IProvisioningService profileProvisioningService)
+        IDefaultProfileService defaultProfileService,
+        ITokenService tokenService)
     {
         _diagnoseService = diagnoseService ?? throw new ArgumentNullException(nameof(diagnoseService));
-        _profileProvisioningService = profileProvisioningService ?? throw new ArgumentNullException(nameof(profileProvisioningService));
+        _defaultProfileService = defaultProfileService ?? throw new ArgumentNullException(nameof(defaultProfileService));
+        _tokenService = tokenService ?? throw new ArgumentNullException(nameof(tokenService));
     }
 
     /// <summary>
@@ -111,7 +116,7 @@ public class PluginController : ControllerBase
     [HttpPost("CreateProfile")]
     public async Task<ActionResult<ProfileDetectionResult>> CreateProfile(CancellationToken cancellationToken)
     {
-        return Ok(await _profileProvisioningService.CreateProfileAsync(cancellationToken).ConfigureAwait(false));
+        return Ok(await _defaultProfileService.CreateProfileAsync(cancellationToken).ConfigureAwait(false));
     }
 
     /// <summary>
@@ -123,7 +128,7 @@ public class PluginController : ControllerBase
     [HttpPost("GenerateAuthToken")]
     public async Task<ActionResult<AuthTokenGenerationResult>> GenerateAuthToken(CancellationToken cancellationToken)
     {
-        return Ok(await _profileProvisioningService.GenerateAuthTokenAsync(cancellationToken).ConfigureAwait(false));
+        return Ok(await _tokenService.GenerateAndStoreTokenAsync(cancellationToken).ConfigureAwait(false));
     }
 
     /// <summary>
