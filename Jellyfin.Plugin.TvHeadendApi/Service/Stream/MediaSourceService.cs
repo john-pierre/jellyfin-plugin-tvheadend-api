@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using MediaBrowser.Controller.Entities;
@@ -116,63 +117,62 @@ internal sealed class MediaSourceService : IMediaSourceService
         }
 
         var profileSnapshot = await _streamProfileContainerResolver.ResolveProfileSnapshotAsync(config, cancellationToken).ConfigureAwait(false);
-        await TryLogProfileAndCacheMatchAsync(channelId, profileSnapshot).ConfigureAwait(false);
-
-        if (config.EnableMediaInfoCacheWrite)
-        {
-            await TryWriteMediaInfoCacheAsync(channelId, streamUrl, container).ConfigureAwait(false);
-        }
+        await EnsureMediaInfoCacheStateAsync(channelId, streamUrl, profileSnapshot, config.EnableMediaInfoCacheWrite).ConfigureAwait(false);
 
         return mediaSource;
     }
 
-    private async Task TryLogProfileAndCacheMatchAsync(string channelId, ProfileSnapshot profileSnapshot)
+    private async Task EnsureMediaInfoCacheStateAsync(string channelId, string streamUrl, ProfileSnapshot profileSnapshot, bool proactiveCacheEnabled)
     {
         try
         {
-            _logger.LogInformation(
-                "TVHeadend stream profile for channel {ChannelId}: Profile={ProfileName}, Uuid={ProfileUuid}, Class={ProfileClass}, Container={Container}, VideoCodecRef={VideoCodecRef}, AudioCodecRef={AudioCodecRef}, VideoCodec={VideoCodec}, AudioCodec={AudioCodec}",
-                channelId,
-                profileSnapshot.ProfileName,
-                profileSnapshot.ProfileUuid,
-                profileSnapshot.ProfileClass,
-                profileSnapshot.Container,
-                profileSnapshot.VideoCodecReference,
-                profileSnapshot.AudioCodecReference,
-                profileSnapshot.VideoCodec,
-                profileSnapshot.AudioCodec);
-
             var cacheSnapshot = await TryGetMediainfoCacheSnapshotAsync(channelId).ConfigureAwait(false);
             if (cacheSnapshot == null)
             {
-                _logger.LogInformation("No mediainfo cache entry found for channel {ChannelId}.", channelId);
+                if (proactiveCacheEnabled)
+                {
+                    await TryWriteMediaInfoCacheAsync(channelId, streamUrl, profileSnapshot).ConfigureAwait(false);
+                }
+
                 return;
             }
-
-            _logger.LogInformation(
-                "Mediainfo cache for channel {ChannelId}: CacheFile={CacheFile}, Profile={ProfileName}, VideoCodec={VideoCodec}, AudioCodec={AudioCodec}",
-                channelId,
-                cacheSnapshot.CacheFilePath,
-                cacheSnapshot.ProfileName,
-                cacheSnapshot.VideoCodec,
-                cacheSnapshot.AudioCodec);
 
             var profileMatches = string.Equals(profileSnapshot.ProfileName, cacheSnapshot.ProfileName, StringComparison.OrdinalIgnoreCase);
             var videoCodecMatches = string.Equals(profileSnapshot.VideoCodec, cacheSnapshot.VideoCodec, StringComparison.OrdinalIgnoreCase);
             var audioCodecMatches = string.Equals(profileSnapshot.AudioCodec, cacheSnapshot.AudioCodec, StringComparison.OrdinalIgnoreCase);
-            var allMatch = profileMatches && videoCodecMatches && audioCodecMatches;
+            var containerMatches = string.Equals(profileSnapshot.Container, cacheSnapshot.Container, StringComparison.OrdinalIgnoreCase);
+            var allMatch = profileMatches && videoCodecMatches && audioCodecMatches && containerMatches;
 
             _logger.LogInformation(
-                "TVHeadend profile and mediainfo cache comparison for channel {ChannelId}: IsMatch={IsMatch}, ProfileMatch={ProfileMatch}, VideoCodecMatch={VideoCodecMatch}, AudioCodecMatch={AudioCodecMatch}",
+                "TVHeadend profile and mediainfo cache comparison for channel {ChannelId}: IsMatch={IsMatch}, ProfileMatch={ProfileMatch}, VideoCodecMatch={VideoCodecMatch}, AudioCodecMatch={AudioCodecMatch}, ContainerMatch={ContainerMatch}",
                 channelId,
                 allMatch,
                 profileMatches,
                 videoCodecMatches,
-                audioCodecMatches);
+                audioCodecMatches,
+                containerMatches);
+
+            if (allMatch)
+            {
+                return;
+            }
+
+            if (!proactiveCacheEnabled)
+            {
+                if (!string.IsNullOrWhiteSpace(cacheSnapshot.CacheFilePath) && File.Exists(cacheSnapshot.CacheFilePath))
+                {
+                    File.Delete(cacheSnapshot.CacheFilePath);
+                    _logger.LogInformation("Deleted mismatching mediainfo cache file for channel {ChannelId}: {CacheFile}", channelId, cacheSnapshot.CacheFilePath);
+                }
+
+                return;
+            }
+
+            await TryWriteMediaInfoCacheAsync(channelId, streamUrl, profileSnapshot).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to compare TVHeadend profile with mediainfo cache for channel {ChannelId}.", channelId);
+            _logger.LogWarning(ex, "Failed to enforce mediainfo cache state for channel {ChannelId}.", channelId);
         }
     }
 
@@ -206,8 +206,11 @@ internal sealed class MediaSourceService : IMediaSourceService
         var profileName = ExtractQueryParameter(path, "profile");
         var videoCodec = ExtractCodecFromMediaStreams(root, "Video");
         var audioCodec = ExtractCodecFromMediaStreams(root, "Audio");
+        var container = root.TryGetProperty("Container", out var containerElement) && containerElement.ValueKind == JsonValueKind.String
+            ? containerElement.GetString()
+            : null;
 
-        return new CacheSnapshot(profileName, videoCodec, audioCodec, cacheFilePath);
+        return new CacheSnapshot(profileName, videoCodec, audioCodec, container, cacheFilePath);
     }
 
     private static string? ExtractCodecFromMediaStreams(JsonElement root, string streamType)
@@ -274,15 +277,10 @@ internal sealed class MediaSourceService : IMediaSourceService
         return null;
     }
 
-    private async Task TryWriteMediaInfoCacheAsync(string channelId, string streamUrl, string container)
+    private async Task TryWriteMediaInfoCacheAsync(string channelId, string streamUrl, ProfileSnapshot profileSnapshot)
     {
         try
         {
-            if (!string.Equals(container, "mp4", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
             var cachePath = Plugin.Instance?.CachePath;
             if (string.IsNullOrWhiteSpace(cachePath))
             {
@@ -296,22 +294,27 @@ internal sealed class MediaSourceService : IMediaSourceService
             var cacheFileName = BuildMediainfoCacheFileName(providerTypeFullName, itemTypeName, itemIdN, channelId);
             var mediaInfoDir = Path.Combine(cachePath, "mediainfo");
             var cacheFilePath = Path.Combine(mediaInfoDir, cacheFileName);
-            if (File.Exists(cacheFilePath))
-            {
-                return;
-            }
 
             if (!Directory.Exists(mediaInfoDir))
             {
                 Directory.CreateDirectory(mediaInfoDir);
             }
 
+            var normalizedContainer = NormalizeContainerForCache(profileSnapshot.Container);
+            var videoCodec = string.IsNullOrWhiteSpace(profileSnapshot.VideoCodec) ? "h264" : profileSnapshot.VideoCodec;
+            var audioCodec = string.IsNullOrWhiteSpace(profileSnapshot.AudioCodec) ? "aac" : profileSnapshot.AudioCodec;
+            var videoCodecTag = string.Equals(videoCodec, "h264", StringComparison.OrdinalIgnoreCase) ? "avc1" : videoCodec;
+            var audioCodecTag = string.Equals(audioCodec, "aac", StringComparison.OrdinalIgnoreCase) ? "mp4a" : audioCodec;
+            var displayContainer = string.Equals(normalizedContainer, "mpegts", StringComparison.OrdinalIgnoreCase)
+                ? "mpegts,ts"
+                : "mov,mp4,m4a,3gp,3g2,mj2";
+
             var cacheContent = new Dictionary<string, object?>
             {
                 ["Protocol"] = "Http",
                 ["Path"] = streamUrl,
                 ["Type"] = "Default",
-                ["Container"] = "mov,mp4,m4a,3gp,3g2,mj2",
+                ["Container"] = displayContainer,
                 ["IsRemote"] = true,
                 ["ReadAtNativeFramerate"] = false,
                 ["IgnoreDts"] = false,
@@ -324,9 +327,9 @@ internal sealed class MediaSourceService : IMediaSourceService
                 {
                     new Dictionary<string, object?>
                     {
-                        ["Codec"] = "h264",
-                        ["CodecTag"] = "avc1",
-                        ["DisplayTitle"] = "720p H264 SDR",
+                        ["Codec"] = videoCodec,
+                        ["CodecTag"] = videoCodecTag,
+                        ["DisplayTitle"] = "720p " + videoCodec.ToUpperInvariant() + " SDR",
                         ["IsDefault"] = true,
                         ["Height"] = 720,
                         ["Width"] = 1280,
@@ -336,9 +339,9 @@ internal sealed class MediaSourceService : IMediaSourceService
                     },
                     new Dictionary<string, object?>
                     {
-                        ["Codec"] = "aac",
-                        ["CodecTag"] = "mp4a",
-                        ["DisplayTitle"] = "AAC - Stereo",
+                        ["Codec"] = audioCodec,
+                        ["CodecTag"] = audioCodecTag,
+                        ["DisplayTitle"] = audioCodec.ToUpperInvariant() + " - Stereo",
                         ["BitRate"] = 128000,
                         ["Channels"] = 2,
                         ["SampleRate"] = 48000,
@@ -351,11 +354,30 @@ internal sealed class MediaSourceService : IMediaSourceService
 
             var json = JsonSerializer.Serialize(cacheContent);
             await File.WriteAllTextAsync(cacheFilePath, json).ConfigureAwait(false);
+            _logger.LogInformation(
+                "Wrote proactive mediainfo cache for channel {ChannelId}: Profile={ProfileName}, Container={Container}, VideoCodec={VideoCodec}, AudioCodec={AudioCodec}",
+                channelId,
+                profileSnapshot.ProfileName,
+                normalizedContainer,
+                videoCodec,
+                audioCodec);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to write mediainfo cache file for channel {ChannelId}.", channelId);
         }
+    }
+
+    private static string NormalizeContainerForCache(string container)
+    {
+        if (string.IsNullOrWhiteSpace(container))
+        {
+            return "mpegts";
+        }
+
+        return string.Equals(container, "mp4", StringComparison.OrdinalIgnoreCase)
+            ? "mp4"
+            : "mpegts";
     }
 
     private Guid GetInternalChannelId(string externalId)
@@ -399,5 +421,6 @@ internal sealed class MediaSourceService : IMediaSourceService
         string? ProfileName,
         string? VideoCodec,
         string? AudioCodec,
+        string? Container,
         string? CacheFilePath);
 }

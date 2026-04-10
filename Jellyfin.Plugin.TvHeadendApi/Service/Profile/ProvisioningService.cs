@@ -747,23 +747,4 @@ internal sealed class ProvisioningService : IProvisioningService
 
         return values;
     }
-
-    private sealed class ProfileListResponse
-    {
-        public IReadOnlyList<ProfileListEntry>? Entries { get; init; }
-    }
-
-    private sealed class ProfileListEntry
-    {
-        public string Key { get; init; } = string.Empty;
-
-        public string Val { get; init; } = string.Empty;
-    }
-
-    private sealed class CodecProfileListEntry
-    {
-        public string Key { get; init; } = string.Empty;
-
-        public string Val { get; init; } = string.Empty;
-    }
 }

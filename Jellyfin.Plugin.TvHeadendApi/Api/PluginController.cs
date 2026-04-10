@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
@@ -123,5 +124,21 @@ public class PluginController : ControllerBase
     public async Task<ActionResult<AuthTokenGenerationResult>> GenerateAuthToken(CancellationToken cancellationToken)
     {
         return Ok(await _profileProvisioningService.GenerateAuthTokenAsync(cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Returns available streaming and DVR profiles for configuration dropdowns.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Streaming and recording profile names available in TVHeadend.</returns>
+    [HttpGet("ProfileOptions")]
+    public async Task<ActionResult<ProfileOptionsResult>> GetProfileOptions(CancellationToken cancellationToken)
+    {
+        var diagnose = await _diagnoseService.DiagnoseAsync(cancellationToken).ConfigureAwait(false);
+        return Ok(new ProfileOptionsResult
+        {
+            StreamingProfiles = diagnose.AvailableStreamingProfiles.ToArray(),
+            RecordingProfiles = diagnose.AvailableRecordingProfiles.ToArray(),
+        });
     }
 }

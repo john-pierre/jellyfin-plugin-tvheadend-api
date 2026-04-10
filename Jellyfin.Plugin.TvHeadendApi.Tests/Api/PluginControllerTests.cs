@@ -43,6 +43,27 @@ public class PluginControllerTests
     }
 
     [Fact]
+    public async Task GetProfileOptions_ReturnsStreamingAndRecordingProfiles()
+    {
+        var diagnose = new DiagnoseResult { OverallStatus = "OK" };
+        diagnose.AvailableStreamingProfiles.Add("pass");
+        diagnose.AvailableStreamingProfiles.Add("jellyfin");
+        diagnose.AvailableRecordingProfiles.Add("default");
+
+        var sut = new PluginController(
+            new FakeDiagnosticService(diagnose),
+            new FakeProvisioningService());
+
+        var result = await sut.GetProfileOptions(CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var payload = Assert.IsType<ProfileOptionsResult>(ok.Value);
+        Assert.Contains("pass", payload.StreamingProfiles);
+        Assert.Contains("jellyfin", payload.StreamingProfiles);
+        Assert.Contains("default", payload.RecordingProfiles);
+    }
+
+    [Fact]
     public void ResetToDefaults_WhenPluginInstanceUnavailable_ReturnsBadRequest()
     {
         var sut = new PluginController(

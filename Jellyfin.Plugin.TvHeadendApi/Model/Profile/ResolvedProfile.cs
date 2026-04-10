@@ -1,8 +1,8 @@
 using System.Collections.Generic;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 
-internal sealed record ProfileDetails(
+internal sealed record ResolvedProfile(
     string Key,
     string Name,
     string ProfileClass,
@@ -10,6 +10,9 @@ internal sealed record ProfileDetails(
     string RawContainer,
     string ProVideoCodec,
     string ProAudioCodec,
+    string ResolvedVideoCodec,
+    string ResolvedAudioCodec,
     IReadOnlyList<string> SrcVideoCodecs,
     IReadOnlyList<string> SrcAudioCodecs,
-    bool? Deinterlace);
+    bool? ProfileDeinterlace,
+    bool? VideoCodecDeinterlace);

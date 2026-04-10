@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 

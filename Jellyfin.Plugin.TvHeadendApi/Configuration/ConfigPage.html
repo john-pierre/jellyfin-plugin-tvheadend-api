@@ -591,20 +591,20 @@
             var configuredRecording = (config.RecordingProfile || '').trim();
             console.log('[TVH-Profiles] Config received — StreamingProfile:', JSON.stringify(configuredStreaming), 'RecordingProfile:', JSON.stringify(configuredRecording));
 
-            return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Diagnose'), dataType: 'json' }).then(function (diag) {
-                console.log('[TVH-Profiles] Diagnose — AvailableStreamingProfiles:', diag.AvailableStreamingProfiles, 'AvailableRecordingProfiles:', diag.AvailableRecordingProfiles);
+            return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/ProfileOptions'), dataType: 'json' }).then(function (options) {
+                console.log('[TVH-Profiles] ProfileOptions — StreamingProfiles:', options.StreamingProfiles, 'RecordingProfiles:', options.RecordingProfiles);
 
                 // Collect streaming profiles: from TVHeadend + currently configured
                 var streamingProfiles = new Set();
-                if (diag.AvailableStreamingProfiles && diag.AvailableStreamingProfiles.length > 0) {
-                    diag.AvailableStreamingProfiles.forEach(function (p) { if (p && p.trim()) streamingProfiles.add(p); });
+                if (options.StreamingProfiles && options.StreamingProfiles.length > 0) {
+                    options.StreamingProfiles.forEach(function (p) { if (p && p.trim()) streamingProfiles.add(p); });
                 }
                 if (configuredStreaming) streamingProfiles.add(configuredStreaming);
 
                 // Collect recording/DVR profiles: from TVHeadend + currently configured
                 var recordingProfiles = new Set();
-                if (diag.AvailableRecordingProfiles && diag.AvailableRecordingProfiles.length > 0) {
-                    diag.AvailableRecordingProfiles.forEach(function (p) { if (p && p.trim()) recordingProfiles.add(p); });
+                if (options.RecordingProfiles && options.RecordingProfiles.length > 0) {
+                    options.RecordingProfiles.forEach(function (p) { if (p && p.trim()) recordingProfiles.add(p); });
                 }
                 if (configuredRecording) recordingProfiles.add(configuredRecording);
 

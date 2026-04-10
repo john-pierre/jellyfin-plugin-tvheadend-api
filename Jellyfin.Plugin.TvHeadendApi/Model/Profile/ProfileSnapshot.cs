@@ -1,4 +1,4 @@
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 
 /// <summary>
 /// Snapshot of the configured TVHeadend streaming profile resolved for live playback.
