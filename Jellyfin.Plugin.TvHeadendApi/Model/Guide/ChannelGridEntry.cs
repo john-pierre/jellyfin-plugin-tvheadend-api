@@ -8,7 +8,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 /// This model is used to map the channel information returned by the TVHeadEnd `/api/channel/grid` endpoint.
 /// A TV channel includes details such as its unique identifier, name, number, status, and associated metadata.
 /// </summary>
-public sealed class TvhApiChannelGridEntry
+public sealed class ChannelGridEntry
 {
     /// <summary>
     /// Gets the universally unique identifier (UUID) of the channel.

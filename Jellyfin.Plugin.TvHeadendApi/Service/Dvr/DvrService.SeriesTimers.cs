@@ -245,7 +245,7 @@ internal sealed partial class DvrService
             using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<TvhApiDvrAutoRecGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<DvrAutoRecGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
             return result?.Entries?.Select(entry => new SeriesTimerInfo
             {
                 Id = entry.Uuid,

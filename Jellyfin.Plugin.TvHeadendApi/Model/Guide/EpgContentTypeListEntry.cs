@@ -5,7 +5,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 /// <summary>
 /// Represents a single entry in the content type list.
 /// </summary>
-public sealed class TvhApiEpgContentTypeListEntry
+public sealed class EpgContentTypeListEntry
 {
     /// <summary>
     /// Gets the unique key (ID) of the content type.

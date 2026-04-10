@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 /// Represents an automatic recording rule in TVHeadEnd.
 /// Maps the details of a DVR autorec rule as returned by the TVHeadEnd `/api/dvr/autorec/grid` endpoint.
 /// </summary>
-public sealed class TvhApiDvrAutoRecGridEntry
+public sealed class DvrAutoRecGridEntry
 {
     /// <summary>
     /// Gets the type of broadcast for the auto-recording rule.

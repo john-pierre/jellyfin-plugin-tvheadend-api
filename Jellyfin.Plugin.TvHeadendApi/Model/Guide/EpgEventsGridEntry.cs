@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 /// Represents an individual program entry in the TVHeadEnd EPG.
 /// This model maps the fields from the TVHeadEnd API response exactly.
 /// </summary>
-public sealed class TvhApiEpgEventsGridEntry
+public sealed class EpgEventsGridEntry
 {
     /// <summary>
     /// Gets the unique identifier for the event.

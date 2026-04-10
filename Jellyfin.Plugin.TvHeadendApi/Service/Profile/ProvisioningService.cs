@@ -505,7 +505,7 @@ internal sealed class ProvisioningService : IProvisioningService
 
         var listUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
         var response = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
-        var list = JsonSerializer.Deserialize<TvhApiCodecProfileListResponse>(response, JsonOptions);
+        var list = JsonSerializer.Deserialize<CodecProfileListResponse>(response, JsonOptions);
         if (list?.Entries == null || list.Entries.Length == 0)
         {
             return null;
@@ -554,7 +554,7 @@ internal sealed class ProvisioningService : IProvisioningService
         {
             var loadUrl = $"{baseUrl}{webRoot}api/idnode/load?uuid={Uri.EscapeDataString(streamProfileUuid)}";
             var loadBody = await _tvheadendApiClient.GetStringAsync(httpClient, loadUrl, cancellationToken).ConfigureAwait(false);
-            var loadResponse = JsonSerializer.Deserialize<TvhApiIdNodeLoadResponse>(loadBody, JsonOptions);
+            var loadResponse = JsonSerializer.Deserialize<IdNodeLoadResponse>(loadBody, JsonOptions);
             if (loadResponse?.Entries == null || loadResponse.Entries.Length == 0)
             {
                 _logger.LogWarning("Could not load stream profile UUID {Uuid} before linking codec profiles.", streamProfileUuid);
@@ -638,28 +638,28 @@ internal sealed class ProvisioningService : IProvisioningService
         return array;
     }
 
-    private static string? ReadStringOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    private static string? ReadStringOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         return ReadString(directValue) ?? ReadString(GetParamValue(parameters, parameterName));
     }
 
-    private static int? ReadIntOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    private static int? ReadIntOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         return ReadInt(directValue) ?? ReadInt(GetParamValue(parameters, parameterName));
     }
 
-    private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         return ReadBool(directValue) ?? ReadBool(GetParamValue(parameters, parameterName));
     }
 
-    private static IReadOnlyList<string> ReadStringArrayOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    private static IReadOnlyList<string> ReadStringArrayOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         var values = ReadStringArray(directValue);
         return values.Count > 0 ? values : ReadStringArray(GetParamValue(parameters, parameterName));
     }
 
-    private static JsonElement GetParamValue(IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    private static JsonElement GetParamValue(IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         foreach (var parameter in parameters)
         {

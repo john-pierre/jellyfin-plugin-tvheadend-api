@@ -8,16 +8,16 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 /// <summary>
 /// Represents a TVHeadend /api/idnode/load response.
 /// </summary>
-internal sealed class TvhApiIdNodeLoadResponse
+internal sealed class IdNodeLoadResponse
 {
     [JsonPropertyName("entries")]
-    public TvhApiIdNodeEntry[] Entries { get; init; } = Array.Empty<TvhApiIdNodeEntry>();
+    public IdNodeEntry[] Entries { get; init; } = Array.Empty<IdNodeEntry>();
 }
 
 /// <summary>
 /// Represents one TVHeadend idnode entry with common fields used by this plugin.
 /// </summary>
-internal sealed class TvhApiIdNodeEntry
+internal sealed class IdNodeEntry
 {
     [JsonPropertyName("name")]
     public JsonElement Name { get; init; }
@@ -95,13 +95,13 @@ internal sealed class TvhApiIdNodeEntry
     public JsonElement SourceSubtitleCodecs { get; init; }
 
     [JsonPropertyName("params")]
-    public IReadOnlyList<TvhApiIdNodeParam> Params { get; init; } = Array.Empty<TvhApiIdNodeParam>();
+    public IReadOnlyList<IdNodeParam> Params { get; init; } = Array.Empty<IdNodeParam>();
 }
 
 /// <summary>
 /// Represents one idnode parameter entry from TVHeadend.
 /// </summary>
-internal sealed class TvhApiIdNodeParam
+internal sealed class IdNodeParam
 {
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;

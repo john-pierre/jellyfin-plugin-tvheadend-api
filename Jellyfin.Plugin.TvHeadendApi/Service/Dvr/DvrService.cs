@@ -45,7 +45,7 @@ internal sealed partial class DvrService : IDvrService
         using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        var result = await JsonSerializer.DeserializeAsync<TvhApiDvrConfigGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+        var result = await JsonSerializer.DeserializeAsync<DvrConfigGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
         var matchingProfile = result?.Entries?.FirstOrDefault(profile => string.Equals(profile.Name, profileName, StringComparison.OrdinalIgnoreCase));
         if (string.IsNullOrWhiteSpace(matchingProfile?.Uuid))
         {

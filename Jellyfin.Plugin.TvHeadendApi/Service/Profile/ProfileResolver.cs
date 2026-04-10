@@ -39,7 +39,7 @@ internal sealed class ProfileResolver : IProfileResolver
         var listUrl = $"{baseUrl}{webRoot}api/profile/list";
         var listBody = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
 
-        var listResponse = JsonSerializer.Deserialize<TvhApiProfileListResponse>(listBody, JsonOptions);
+        var listResponse = JsonSerializer.Deserialize<ProfileListResponse>(listBody, JsonOptions);
         if (listResponse?.Entries == null || listResponse.Entries.Length == 0)
         {
             return Array.Empty<ProfileReference>();
@@ -70,7 +70,7 @@ internal sealed class ProfileResolver : IProfileResolver
         CancellationToken cancellationToken)
     {
         using var profileDoc = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, profileUuid, cancellationToken).ConfigureAwait(false);
-        var profileResponse = JsonSerializer.Deserialize<TvhApiIdNodeLoadResponse>(profileDoc.RootElement.GetRawText(), JsonOptions);
+        var profileResponse = JsonSerializer.Deserialize<IdNodeLoadResponse>(profileDoc.RootElement.GetRawText(), JsonOptions);
         if (profileResponse?.Entries == null || profileResponse.Entries.Length == 0)
         {
             return null;
@@ -175,7 +175,7 @@ internal sealed class ProfileResolver : IProfileResolver
 
         var codecProfileListUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
         var codecProfileListBody = await _tvheadendApiClient.GetStringAsync(httpClient, codecProfileListUrl, cancellationToken).ConfigureAwait(false);
-        var codecProfileList = JsonSerializer.Deserialize<TvhApiCodecProfileListResponse>(codecProfileListBody, JsonOptions);
+        var codecProfileList = JsonSerializer.Deserialize<CodecProfileListResponse>(codecProfileListBody, JsonOptions);
         if (codecProfileList?.Entries == null || codecProfileList.Entries.Length == 0)
         {
             return null;
@@ -207,7 +207,7 @@ internal sealed class ProfileResolver : IProfileResolver
         }
 
         using var codecDoc = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, codecProfileUuid, cancellationToken).ConfigureAwait(false);
-        var codecResponse = JsonSerializer.Deserialize<TvhApiIdNodeLoadResponse>(codecDoc.RootElement.GetRawText(), JsonOptions);
+        var codecResponse = JsonSerializer.Deserialize<IdNodeLoadResponse>(codecDoc.RootElement.GetRawText(), JsonOptions);
         if (codecResponse?.Entries == null || codecResponse.Entries.Length == 0)
         {
             return new CodecProfileDetails(codecProfileUuid, codecProfileName ?? string.Empty, string.Empty, string.Empty, null);
@@ -299,28 +299,28 @@ internal sealed class ProfileResolver : IProfileResolver
         return JsonDocument.Parse(body);
     }
 
-    private static string? ReadStringOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    private static string? ReadStringOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         return ReadString(directValue) ?? ReadString(GetParamValue(parameters, parameterName));
     }
 
-    private static int? ReadIntOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    private static int? ReadIntOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         return ReadInt(directValue) ?? ReadInt(GetParamValue(parameters, parameterName));
     }
 
-    private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         return ReadBool(directValue) ?? ReadBool(GetParamValue(parameters, parameterName));
     }
 
-    private static IReadOnlyList<string> ReadStringArrayOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    private static IReadOnlyList<string> ReadStringArrayOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         var values = ReadStringArray(directValue);
         return values.Count > 0 ? values : ReadStringArray(GetParamValue(parameters, parameterName));
     }
 
-    private static JsonElement GetParamValue(IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    private static JsonElement GetParamValue(IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         foreach (var parameter in parameters)
         {

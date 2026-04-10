@@ -5,7 +5,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 /// <summary>
 /// Represents one codec profile list entry from TVHeadend.
 /// </summary>
-internal sealed class TvhApiCodecProfileListEntry
+internal sealed class CodecProfileListEntry
 {
     [JsonPropertyName("uuid")]
     public string Uuid { get; init; } = string.Empty;

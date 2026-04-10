@@ -6,7 +6,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 /// Represents a recording configuration profile from TVHeadEnd.
 /// Maps all fields from the `/api/dvr/config/grid` response.
 /// </summary>
-public sealed class TvhApiDvrConfigGridEntry
+public sealed class DvrConfigGridEntry
 {
     /// <summary>
     /// Gets the unique identifier (UUID) of the profile.

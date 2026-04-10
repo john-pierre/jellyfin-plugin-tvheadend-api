@@ -178,7 +178,7 @@ public class LiveTvGuideServiceTests
         var json = """{"entries": [], "total": 0}""";
 
         // Act
-        var response = JsonSerializer.Deserialize<TvhApiChannelGridResponse>(json);
+        var response = JsonSerializer.Deserialize<ChannelGridResponse>(json);
 
         // Assert
         Assert.NotNull(response);

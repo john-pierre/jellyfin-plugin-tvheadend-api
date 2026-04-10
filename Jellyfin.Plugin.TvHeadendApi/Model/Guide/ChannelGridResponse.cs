@@ -8,15 +8,15 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 /// This class maps the JSON response returned by the `/api/channel/grid` endpoint,
 /// which provides a list of all available TV channels and additional metadata about the response.
 /// </summary>
-public sealed class TvhApiChannelGridResponse
+public sealed class ChannelGridResponse
 {
     /// <summary>
     /// Gets the list of TV channels returned by the TVHeadEnd API.
-    /// Each channel is represented as a <see cref="TvhApiChannelGridEntry"/> object.
+    /// Each channel is represented as a <see cref="ChannelGridEntry"/> object.
     /// The `Entries` property corresponds to the "entries" field in the JSON response.
     /// </summary>
     [JsonPropertyName("entries")]
-    public IReadOnlyList<TvhApiChannelGridEntry> Entries { get; init; } = new List<TvhApiChannelGridEntry>();
+    public IReadOnlyList<ChannelGridEntry> Entries { get; init; } = new List<ChannelGridEntry>();
 
     /// <summary>
     /// Gets the total number of channels available in the TVHeadEnd system.

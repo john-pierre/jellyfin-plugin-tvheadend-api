@@ -137,7 +137,7 @@ internal sealed partial class DvrService
             using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<TvhApiDvrEntryGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<DvrEntryGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
             return result?.Entries?
                 .Where(entry => entry.Enabled && entry.FileRemoved == 0 && entry.Stop >= now)
                 .Select(entry => new TimerInfo

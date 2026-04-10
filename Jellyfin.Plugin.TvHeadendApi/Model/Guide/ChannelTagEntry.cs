@@ -5,7 +5,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 /// <summary>
 /// Represents a single entry in the channel tag list.
 /// </summary>
-public sealed class TvhApiChannelTagEntry
+public sealed class ChannelTagEntry
 {
     /// <summary>
     /// Gets the unique key (ID) of the channel tag.

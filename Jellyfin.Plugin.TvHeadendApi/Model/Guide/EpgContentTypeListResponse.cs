@@ -7,12 +7,12 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 /// Represents the response model for the TVHeadEnd content type API.
 /// This class maps the JSON response returned by the `/api/epg/content_type/list` endpoint.
 /// </summary>
-public sealed class TvhApiEpgContentTypeListResponse
+public sealed class EpgContentTypeListResponse
 {
     /// <summary>
     /// Gets the list of content types returned by the TVHeadEnd API.
     /// Each entry contains a key-value pair representing the content type ID and its description.
     /// </summary>
     [JsonPropertyName("entries")]
-    public IReadOnlyList<TvhApiEpgContentTypeListEntry> Entries { get; init; } = new List<TvhApiEpgContentTypeListEntry>();
+    public IReadOnlyList<EpgContentTypeListEntry> Entries { get; init; } = new List<EpgContentTypeListEntry>();
 }

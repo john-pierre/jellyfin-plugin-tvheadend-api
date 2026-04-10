@@ -6,8 +6,8 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 /// <summary>
 /// Represents the TVHeadend /api/codec_profile/list response.
 /// </summary>
-internal sealed class TvhApiCodecProfileListResponse
+internal sealed class CodecProfileListResponse
 {
     [JsonPropertyName("entries")]
-    public TvhApiCodecProfileListEntry[] Entries { get; init; } = Array.Empty<TvhApiCodecProfileListEntry>();
+    public CodecProfileListEntry[] Entries { get; init; } = Array.Empty<CodecProfileListEntry>();
 }

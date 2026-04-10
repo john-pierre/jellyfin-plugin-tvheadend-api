@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 /// Represents a recording from the TVHeadEnd API.
 /// Maps all fields from the `/api/dvr/entry/grid` response.
 /// </summary>
-public sealed class TvhApiDvrEntryGridEntry
+public sealed class DvrEntryGridEntry
 {
     /// <summary>
     /// Gets the age rating for the recording.

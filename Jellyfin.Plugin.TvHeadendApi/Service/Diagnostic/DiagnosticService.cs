@@ -161,7 +161,7 @@ internal sealed class DiagnosticService : IDiagnosticService
                 sw.Stop();
                 report.LatencyMs = (int)sw.ElapsedMilliseconds;
 
-                var serverInfo = JsonSerializer.Deserialize<TvhApiServerInfoResponse>(infoResponse, SerializerOptions) ?? new TvhApiServerInfoResponse();
+                var serverInfo = JsonSerializer.Deserialize<ServerInfoResponse>(infoResponse, SerializerOptions) ?? new ServerInfoResponse();
 
                 var swVersion = string.IsNullOrWhiteSpace(serverInfo.SwVersion) ? "unknown" : serverInfo.SwVersion;
                 var apiVersion = serverInfo.ApiVersion?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?";
@@ -208,7 +208,7 @@ internal sealed class DiagnosticService : IDiagnosticService
             {
                 var chUrl = $"{baseUrl}{webRoot}api/channel/grid?limit=500&sort=number";
                 var chResponse = await _tvheadendApiClient.GetStringAsync(httpClient, chUrl, cancellationToken).ConfigureAwait(false);
-                var channelGrid = JsonSerializer.Deserialize<TvhApiChannelGridResponse>(chResponse, SerializerOptions);
+                var channelGrid = JsonSerializer.Deserialize<ChannelGridResponse>(chResponse, SerializerOptions);
                 if (channelGrid != null)
                 {
                     report.ChannelCount = channelGrid.Total;
@@ -349,7 +349,7 @@ internal sealed class DiagnosticService : IDiagnosticService
                 {
                     var dvrUrl = $"{baseUrl}{webRoot}api/dvr/entry/grid?limit=1";
                     var dvrResponse = await _tvheadendApiClient.GetStringAsync(httpClient, dvrUrl, cancellationToken).ConfigureAwait(false);
-                    var dvrEntries = JsonSerializer.Deserialize<TvhApiDvrEntryGridResponse>(dvrResponse, SerializerOptions);
+                    var dvrEntries = JsonSerializer.Deserialize<DvrEntryGridResponse>(dvrResponse, SerializerOptions);
                     report.DvrEntryCount = dvrEntries?.Total ?? 0;
                 }
                 catch (Exception ex)
@@ -600,7 +600,7 @@ internal sealed class DiagnosticService : IDiagnosticService
 
         var listUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
         var response = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
-        var list = JsonSerializer.Deserialize<TvhApiCodecProfileListResponse>(response, SerializerOptions);
+        var list = JsonSerializer.Deserialize<CodecProfileListResponse>(response, SerializerOptions);
         if (list?.Entries == null || list.Entries.Length == 0)
         {
             return null;
@@ -638,14 +638,14 @@ internal sealed class DiagnosticService : IDiagnosticService
         return separatorIndex > 0 ? title[..separatorIndex] : title;
     }
 
-    private async Task<TvhApiIdNodeLoadResponse?> LoadIdNodeByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string uuid, CancellationToken cancellationToken)
+    private async Task<IdNodeLoadResponse?> LoadIdNodeByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string uuid, CancellationToken cancellationToken)
     {
         var url = $"{baseUrl}{webRoot}api/idnode/load?uuid={Uri.EscapeDataString(uuid)}";
         var body = await _tvheadendApiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
-        return JsonSerializer.Deserialize<TvhApiIdNodeLoadResponse>(body, SerializerOptions);
+        return JsonSerializer.Deserialize<IdNodeLoadResponse>(body, SerializerOptions);
     }
 
-    private static JsonElement GetIdNodeProperty(TvhApiIdNodeEntry entry, string name)
+    private static JsonElement GetIdNodeProperty(IdNodeEntry entry, string name)
     {
         return name switch
         {
@@ -677,12 +677,12 @@ internal sealed class DiagnosticService : IDiagnosticService
         };
     }
 
-    private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         return ReadBool(directValue) ?? ReadBool(GetParamValue(parameters, parameterName));
     }
 
-    private static JsonElement GetParamValue(IReadOnlyList<TvhApiIdNodeParam> parameters, string parameterName)
+    private static JsonElement GetParamValue(IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         foreach (var parameter in parameters)
         {

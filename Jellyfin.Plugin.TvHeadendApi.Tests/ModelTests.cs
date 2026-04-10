@@ -135,13 +135,13 @@ public class ModelTests
     }
 
     [Fact]
-    public void TvhApiChannelGridResponse_CanBeDeserialized()
+    public void ChannelGridResponse_CanBeDeserialized()
     {
         // Arrange
         var json = """{"entries":[],"total":0}""";
 
         // Act
-        var model = JsonSerializer.Deserialize<TvhApiChannelGridResponse>(json);
+        var model = JsonSerializer.Deserialize<ChannelGridResponse>(json);
 
         // Assert
         Assert.NotNull(model);
@@ -151,13 +151,13 @@ public class ModelTests
     }
 
     [Fact]
-    public void TvhApiChannelTagResponse_CanBeDeserialized()
+    public void ChannelTagResponse_CanBeDeserialized()
     {
         // Arrange
         var json = """{"entries":[],"total":0}""";
 
         // Act
-        var model = JsonSerializer.Deserialize<TvhApiChannelTagResponse>(json);
+        var model = JsonSerializer.Deserialize<ChannelTagResponse>(json);
 
         // Assert
         Assert.NotNull(model);
@@ -172,8 +172,8 @@ public class ModelTests
         var tagJson = """{"entries":[],"total":0}""";
 
         // Act
-        var channelResponse = JsonSerializer.Deserialize<TvhApiChannelGridResponse>(channelJson);
-        var tagResponse = JsonSerializer.Deserialize<TvhApiChannelTagResponse>(tagJson);
+        var channelResponse = JsonSerializer.Deserialize<ChannelGridResponse>(channelJson);
+        var tagResponse = JsonSerializer.Deserialize<ChannelTagResponse>(tagJson);
 
         // Assert
         Assert.NotNull(channelResponse);
@@ -183,7 +183,7 @@ public class ModelTests
     }
 
     [Fact]
-    public void TvhApiChannelGridEntry_CanBeDeserialized()
+    public void ChannelGridEntry_CanBeDeserialized()
     {
         var json = """
                    {
@@ -194,7 +194,7 @@ public class ModelTests
                    }
                    """;
 
-        var model = JsonSerializer.Deserialize<TvhApiChannelGridEntry>(json);
+        var model = JsonSerializer.Deserialize<ChannelGridEntry>(json);
 
         Assert.NotNull(model);
         Assert.Equal("ch-1", model.Uuid);
@@ -204,7 +204,7 @@ public class ModelTests
     }
 
     [Fact]
-    public void TvhApiEpgEventsGridResponse_WithEntry_CanBeDeserialized()
+    public void EpgEventsGridResponse_WithEntry_CanBeDeserialized()
     {
         var json = """
                    {
@@ -223,7 +223,7 @@ public class ModelTests
                    }
                    """;
 
-        var model = JsonSerializer.Deserialize<TvhApiEpgEventsGridResponse>(json);
+        var model = JsonSerializer.Deserialize<EpgEventsGridResponse>(json);
 
         Assert.NotNull(model);
         Assert.Single(model.Entries);
@@ -233,7 +233,7 @@ public class ModelTests
     }
 
     [Fact]
-    public void TvhApiDvrConfigGridResponse_WithEntry_CanBeDeserialized()
+    public void DvrConfigGridResponse_WithEntry_CanBeDeserialized()
     {
         var json = """
                    {
@@ -250,7 +250,7 @@ public class ModelTests
                    }
                    """;
 
-        var model = JsonSerializer.Deserialize<TvhApiDvrConfigGridResponse>(json);
+        var model = JsonSerializer.Deserialize<DvrConfigGridResponse>(json);
 
         Assert.NotNull(model);
         Assert.Single(model.Entries);
@@ -261,9 +261,9 @@ public class ModelTests
     }
 
     [Fact]
-    public void TvhApiDvrEntryGridEntry_DefaultInitialization_HasSafeDefaults()
+    public void DvrEntryGridEntry_DefaultInitialization_HasSafeDefaults()
     {
-        var model = new TvhApiDvrEntryGridEntry();
+        var model = new DvrEntryGridEntry();
 
         Assert.NotNull(model);
         Assert.Equal(string.Empty, model.Uuid);
@@ -274,9 +274,9 @@ public class ModelTests
     }
 
     [Fact]
-    public void TvhApiDvrAutoRecGridEntry_DefaultInitialization_HasSafeDefaults()
+    public void DvrAutoRecGridEntry_DefaultInitialization_HasSafeDefaults()
     {
-        var model = new TvhApiDvrAutoRecGridEntry();
+        var model = new DvrAutoRecGridEntry();
 
         Assert.NotNull(model);
         Assert.Equal(string.Empty, model.Uuid);

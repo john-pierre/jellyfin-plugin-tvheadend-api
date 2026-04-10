@@ -6,14 +6,14 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 /// <summary>
 /// Represents the response from the `/api/dvr/config/grid` endpoint.
 /// </summary>
-public sealed class TvhApiDvrConfigGridResponse
+public sealed class DvrConfigGridResponse
 {
     /// <summary>
     /// Gets the list of recording profiles.
     /// Corresponds to the "entries" field in the JSON response.
     /// </summary>
     [JsonPropertyName("entries")]
-    public IReadOnlyList<TvhApiDvrConfigGridEntry> Entries { get; init; } = new List<TvhApiDvrConfigGridEntry>();
+    public IReadOnlyList<DvrConfigGridEntry> Entries { get; init; } = new List<DvrConfigGridEntry>();
 
     /// <summary>
     /// Gets the total number of recording profiles.

@@ -6,8 +6,8 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 /// <summary>
 /// Represents the TVHeadend /api/profile/list response.
 /// </summary>
-internal sealed class TvhApiProfileListResponse
+internal sealed class ProfileListResponse
 {
     [JsonPropertyName("entries")]
-    public TvhApiProfileListEntry[] Entries { get; init; } = Array.Empty<TvhApiProfileListEntry>();
+    public ProfileListEntry[] Entries { get; init; } = Array.Empty<ProfileListEntry>();
 }

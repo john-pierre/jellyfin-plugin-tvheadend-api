@@ -131,7 +131,7 @@ internal sealed class GuideService : IGuideService
             using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<TvhApiChannelGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<ChannelGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
             if (result?.Entries == null || !result.Entries.Any())
             {
                 _logger.LogWarning("No channels retrieved from TVHeadEnd.");
@@ -173,7 +173,7 @@ internal sealed class GuideService : IGuideService
             }
 
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<TvhApiEpgEventsGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<EpgEventsGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
             return result?.Entries?
                 .Where(entry =>
                 {
@@ -240,7 +240,7 @@ internal sealed class GuideService : IGuideService
             }
 
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<TvhApiEpgContentTypeListResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<EpgContentTypeListResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
             return result?.Entries?.ToDictionary(entry => entry.Key, entry => entry.Val) ?? new Dictionary<int, string>();
         }
         catch (Exception ex)
@@ -264,7 +264,7 @@ internal sealed class GuideService : IGuideService
             }
 
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<TvhApiChannelTagResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<ChannelTagResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
             return result?.Entries?.ToDictionary(entry => entry.Key, entry => entry.Val) ?? new Dictionary<string, string>();
         }
         catch (Exception ex)
