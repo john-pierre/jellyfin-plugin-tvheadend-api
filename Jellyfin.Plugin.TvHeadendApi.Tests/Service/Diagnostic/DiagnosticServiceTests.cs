@@ -484,7 +484,7 @@ public class DiagnosticServiceTests
     {
         var sut = CreateSut(out var apiClient, out var streamResolver, out _);
         var config = CreateConfig();
-        config.AuthToken = "abc.def-123";
+        config.AuthToken = "abc_def-123";
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());

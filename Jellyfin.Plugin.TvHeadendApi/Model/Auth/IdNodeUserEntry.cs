@@ -20,9 +20,6 @@ internal sealed class IdNodeUserEntry
     [JsonPropertyName("comment")]
     public string? Comment { get; set; }
 
-    /// <summary>
-    /// Gets the persistent auth code (field "authcode" in passwd_entry_class, PO_RDONLY).
-    /// </summary>
     [JsonPropertyName("authcode")]
     public string? AuthCode { get; set; }
 }

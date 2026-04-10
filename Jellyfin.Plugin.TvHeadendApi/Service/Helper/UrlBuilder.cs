@@ -19,8 +19,9 @@ internal static class UrlHelper
         }
 
         // Ensure the webroot always starts with / and ends with /
-        // e.g. "tvh" → "/tvh/", "/tvh" → "/tvh/", "tvh/" → "/tvh/"
-        return "/" + config.Webroot.Trim('/') + "/";
+        // e.g. "tvh" -> "/tvh/", "/tvh" -> "/tvh/", "tvh/" -> "/tvh/", "/" -> "/"
+        var trimmedWebroot = config.Webroot.Trim('/');
+        return string.IsNullOrEmpty(trimmedWebroot) ? "/" : "/" + trimmedWebroot + "/";
     }
 
     public static string GetBaseUrl(PluginConfiguration config)

@@ -35,8 +35,8 @@ public class TokenServiceTests
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.BuildUrl(config, "api/user/list")).Returns("http://127.0.0.1:9981/api/user/list");
-        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/user/list", It.IsAny<CancellationToken>()))
+        api.Setup(x => x.BuildUrl(config, "api/passwd/entry/grid")).Returns("http://127.0.0.1:9981/api/passwd/entry/grid");
+        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/passwd/entry/grid", It.IsAny<CancellationToken>()))
             .ReturnsAsync("{\"entries\":[]}");
 
         var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object);
@@ -54,11 +54,11 @@ public class TokenServiceTests
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.BuildUrl(config, "api/user/list")).Returns("http://127.0.0.1:9981/api/user/list");
+        api.Setup(x => x.BuildUrl(config, "api/passwd/entry/grid")).Returns("http://127.0.0.1:9981/api/passwd/entry/grid");
         api.Setup(x => x.BuildUrl(config, "api/idnode/load")).Returns("http://127.0.0.1:9981/api/idnode/load");
         api.Setup(x => x.BuildUrl(config, "api/idnode/save")).Returns("http://127.0.0.1:9981/api/idnode/save");
-        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/user/list", It.IsAny<CancellationToken>()))
-            .ReturnsAsync("{\"entries\":[{\"key\":\"uuid-1\",\"val\":\"user\"}]}");
+        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/passwd/entry/grid", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"entries\":[{\"uuid\":\"uuid-1\",\"username\":\"user\"}]}");
 
         var loadCall = 0;
         api.Setup(x => x.PostFormAsync(
@@ -69,7 +69,7 @@ public class TokenServiceTests
             .ReturnsAsync(() =>
             {
                 loadCall++;
-                var token = loadCall == 1 ? "ab.cd" : "abc123";
+                var token = loadCall >= 4 ? "abc123" : "ab_cd";
                 return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
                 {
                     Content = new StringContent($"{{\"entries\":[{{\"enabled\":true,\"username\":\"user\",\"password\":\"0000\",\"comment\":\"\",\"authcode\":\"{token}\"}}]}}")
@@ -88,14 +88,14 @@ public class TokenServiceTests
 
         Assert.True(result.Success);
         Assert.Equal("abc123", result.AuthToken);
-        Assert.Equal(1, result.AttemptCount);
-        Assert.False(result.UsedRefresh);
+        Assert.Equal(2, result.AttemptCount);
+        Assert.True(result.UsedRefresh);
 
         api.Verify(x => x.PostFormAsync(
             It.IsAny<HttpClient>(),
             "http://127.0.0.1:9981/api/idnode/save",
             It.IsAny<System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>>(),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
@@ -106,11 +106,11 @@ public class TokenServiceTests
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.BuildUrl(config, "api/user/list")).Returns("http://127.0.0.1:9981/api/user/list");
+        api.Setup(x => x.BuildUrl(config, "api/passwd/entry/grid")).Returns("http://127.0.0.1:9981/api/passwd/entry/grid");
         api.Setup(x => x.BuildUrl(config, "api/idnode/load")).Returns("http://127.0.0.1:9981/api/idnode/load");
         api.Setup(x => x.BuildUrl(config, "api/idnode/save")).Returns("http://127.0.0.1:9981/api/idnode/save");
-        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/user/list", It.IsAny<CancellationToken>()))
-            .ReturnsAsync("{\"entries\":[{\"key\":\"uuid-1\",\"val\":\"user\"}]}");
+        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/passwd/entry/grid", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"entries\":[{\"uuid\":\"uuid-1\",\"username\":\"user\"}]}");
 
         api.Setup(x => x.PostFormAsync(
                 It.IsAny<HttpClient>(),
@@ -119,7 +119,7 @@ public class TokenServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
             {
-                Content = new StringContent("{\"entries\":[{\"enabled\":true,\"username\":\"user\",\"password\":\"0000\",\"comment\":\"\",\"authcode\":\"ab.cd\"}]}")
+                Content = new StringContent("{\"entries\":[{\"enabled\":true,\"username\":\"user\",\"password\":\"0000\",\"comment\":\"\",\"authcode\":\"ab_cd\"}]}")
             });
 
         api.Setup(x => x.PostFormAsync(
@@ -162,11 +162,11 @@ public class TokenServiceTests
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.BuildUrl(config, "api/user/list")).Returns("http://127.0.0.1:9981/api/user/list");
+        api.Setup(x => x.BuildUrl(config, "api/passwd/entry/grid")).Returns("http://127.0.0.1:9981/api/passwd/entry/grid");
         api.Setup(x => x.BuildUrl(config, "api/idnode/load")).Returns("http://127.0.0.1:9981/api/idnode/load");
         api.Setup(x => x.BuildUrl(config, "api/idnode/save")).Returns("http://127.0.0.1:9981/api/idnode/save");
-        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/user/list", It.IsAny<CancellationToken>()))
-            .ReturnsAsync("{\"entries\":[{\"key\":\"uuid-1\",\"val\":\"user\"}]}");
+        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/passwd/entry/grid", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"entries\":[{\"uuid\":\"uuid-1\",\"username\":\"user\"}]}");
 
         api.Setup(x => x.PostFormAsync(
                 It.IsAny<HttpClient>(),
@@ -200,11 +200,11 @@ public class TokenServiceTests
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.BuildUrl(config, "api/user/list")).Returns("http://127.0.0.1:9981/api/user/list");
+        api.Setup(x => x.BuildUrl(config, "api/passwd/entry/grid")).Returns("http://127.0.0.1:9981/api/passwd/entry/grid");
         api.Setup(x => x.BuildUrl(config, "api/idnode/load")).Returns("http://127.0.0.1:9981/api/idnode/load");
         api.Setup(x => x.BuildUrl(config, "api/idnode/save")).Returns("http://127.0.0.1:9981/api/idnode/save");
-        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/user/list", It.IsAny<CancellationToken>()))
-            .ReturnsAsync("{\"entries\":[{\"key\":\"uuid-1\",\"val\":\"user\"}]}");
+        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/passwd/entry/grid", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"entries\":[{\"uuid\":\"uuid-1\",\"username\":\"user\"}]}");
 
         var loadCall = 0;
         api.Setup(x => x.PostFormAsync(

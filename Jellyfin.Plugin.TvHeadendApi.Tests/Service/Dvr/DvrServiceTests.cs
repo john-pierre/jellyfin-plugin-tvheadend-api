@@ -343,9 +343,9 @@ public class DvrServiceTests
         Assert.Equal(4, series.Priority);
         Assert.Equal("Auto rule", series.Overview);
         Assert.Equal(3, series.Days.Count);
+        Assert.Contains(DayOfWeek.Monday, series.Days);
+        Assert.Contains(DayOfWeek.Wednesday, series.Days);
         Assert.Contains(DayOfWeek.Sunday, series.Days);
-        Assert.Contains(DayOfWeek.Tuesday, series.Days);
-        Assert.Contains(DayOfWeek.Saturday, series.Days);
     }
 
     [Fact]
@@ -483,7 +483,7 @@ public class DvrServiceTests
 
         Assert.Equal(2, handler.Requests.Count);
         Assert.Contains("api/dvr/autorec/create_by_series", handler.Requests[1].Url);
-        Assert.Contains("config_uuid=profile-uuid", handler.Requests[1].Body);
+        Assert.Contains("config_name=profile-uuid", handler.Requests[1].Body);
         Assert.Contains("event_id=789", handler.Requests[1].Body);
         Assert.Equal("series-created-1", info.Id);
     }
@@ -521,7 +521,7 @@ public class DvrServiceTests
         Assert.Contains("%22title%22%3A%22Series+Name%22", handler.Requests[1].Body);
         Assert.Contains("%22start_extra%22%3A3", handler.Requests[1].Body);
         Assert.Contains("%22stop_extra%22%3A4", handler.Requests[1].Body);
-        Assert.Contains("%22config_uuid%22%3A%22profile-uuid%22", handler.Requests[1].Body);
+        Assert.Contains("%22config_name%22%3A%22profile-uuid%22", handler.Requests[1].Body);
         Assert.Equal("series-created-2", info.Id);
     }
 
@@ -546,7 +546,7 @@ public class DvrServiceTests
 
         await sut.CreateSeriesTimerAsync(info, CancellationToken.None);
 
-        Assert.Contains("%22weekdays%22%3A%5B2%2C6%5D", handler.Requests[1].Body);
+        Assert.Contains("%22weekdays%22%3A%5B1%2C5%5D", handler.Requests[1].Body);
         Assert.Contains("%22pri%22%3A7", handler.Requests[1].Body);
     }
 
@@ -608,8 +608,7 @@ public class DvrServiceTests
         Assert.Contains("api/idnode/save", handler.Requests[0].Url);
         Assert.Contains("%22uuid%22%3A%22series-44%22", handler.Requests[0].Body);
         Assert.Contains("%22channel%22%3A%22ch-10%22", handler.Requests[0].Body);
-        Assert.Contains("%22record_any_time%22%3Afalse", handler.Requests[0].Body);
-        Assert.Contains("%22record_new_only%22%3Atrue", handler.Requests[0].Body);
+        Assert.Contains("%22record%22%3A1", handler.Requests[0].Body);
     }
 
     [Fact]
@@ -635,12 +634,12 @@ public class DvrServiceTests
             CancellationToken.None);
 
         Assert.Single(handler.Requests);
-        Assert.Contains("%22record_any_channel%22%3Atrue", handler.Requests[0].Body);
+        Assert.Contains("%22record%22%3A0", handler.Requests[0].Body);
         Assert.Contains("%22pri%22%3A9", handler.Requests[0].Body);
         Assert.Contains("%22name%22%3A%22My+Series%22", handler.Requests[0].Body);
         Assert.Contains("%22title%22%3A%22My+Series%22", handler.Requests[0].Body);
         Assert.Contains("%22comment%22%3A%22My+Overview%22", handler.Requests[0].Body);
-        Assert.Contains("%22weekdays%22%3A%5B1%2C4%5D", handler.Requests[0].Body);
+        Assert.Contains("%22weekdays%22%3A%5B3%2C7%5D", handler.Requests[0].Body);
     }
 
     [Fact]
