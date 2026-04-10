@@ -5,18 +5,16 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 
 /// <summary>
-/// Creates and links recommended TVHeadend codec and streaming profiles for Jellyfin playback.
+/// Creates and links the recommended TVHeadend default codec and streaming profiles for Jellyfin playback.
 /// </summary>
-internal sealed class ProvisioningService : IProvisioningService
+internal sealed class DefaultProfileService : IDefaultProfileService
 {
     private static readonly string[] DefaultSourceVideoCodecs =
     {
@@ -45,24 +43,20 @@ internal sealed class ProvisioningService : IProvisioningService
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly ILogger<ProvisioningService> _logger;
+    private readonly ILogger<DefaultProfileService> _logger;
     private readonly IApiClient _tvheadendApiClient;
-    private readonly ITokenService _tokenService;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="ProvisioningService"/> class.
+    /// Initializes a new instance of the <see cref="DefaultProfileService"/> class.
     /// </summary>
     /// <param name="logger">Logger instance.</param>
     /// <param name="tvheadendApiClient">TVHeadend API client.</param>
-    /// <param name="tokenService">Service that creates/refreshes auth tokens until valid.</param>
-    public ProvisioningService(
-        ILogger<ProvisioningService> logger,
-        IApiClient tvheadendApiClient,
-        ITokenService tokenService)
+    public DefaultProfileService(
+        ILogger<DefaultProfileService> logger,
+        IApiClient tvheadendApiClient)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
-        _tokenService = tokenService ?? throw new ArgumentNullException(nameof(tokenService));
     }
 
     /// <inheritdoc />
