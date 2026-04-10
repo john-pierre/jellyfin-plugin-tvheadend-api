@@ -56,7 +56,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     /// <summary>
     /// Gets the Jellyfin application cache directory path.
-    /// Used by <see cref="LiveTvService"/> to read Jellyfin's mediainfo probe cache files.
+    /// Used by <see cref="OrchestratorService"/> to read Jellyfin's mediainfo probe cache files.
     /// </summary>
     public string CachePath => ApplicationPaths.CachePath;
 

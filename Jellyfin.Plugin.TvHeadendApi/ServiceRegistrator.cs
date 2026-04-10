@@ -1,10 +1,10 @@
 using Jellyfin.Plugin.TvHeadendApi.Service;
-using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Profiles;
-using Jellyfin.Plugin.TvHeadendApi.Service.Streaming;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Plugins;
@@ -33,21 +33,21 @@ public class ServiceRegistrator : IPluginServiceRegistrator
     /// </param>
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
-        serviceCollection.AddSingleton<ITvheadendUrlBuilder, TvheadendUrlBuilder>();
-        serviceCollection.AddSingleton<ITvheadendJsonReader, TvheadendJsonReader>();
-        serviceCollection.AddSingleton<IJellyfinEncodingOptionsReader, JellyfinEncodingOptionsReader>();
-        serviceCollection.AddSingleton<ITvheadendIdNodeService, TvheadendIdNodeService>();
-        serviceCollection.AddSingleton<ITvheadendStreamProfileResolver, TvheadendStreamProfileResolver>();
-        serviceCollection.AddSingleton<IDiagnoseService, DiagnoseService>();
-        serviceCollection.AddSingleton<ILiveTvGuideService, LiveTvGuideService>();
-        serviceCollection.AddSingleton<ITvheadendDvrService, TvheadendDvrService>();
-        serviceCollection.AddSingleton<ILiveStreamSourceService, LiveStreamSourceService>();
-        serviceCollection.AddSingleton<ILiveStreamLifecycleService, LiveStreamLifecycleService>();
-        serviceCollection.AddSingleton<IProfileProvisioningService, ProfileProvisioningService>();
-        serviceCollection.AddSingleton<ILiveStreamProfileContainerResolver, LiveStreamProfileContainerResolver>();
-        serviceCollection.AddSingleton<ITvheadendApiClient, TvheadendApiClient>();
+        serviceCollection.AddSingleton<IUrlBuilder, UrlBuilder>();
+        serviceCollection.AddSingleton<IJsonReader, JsonReader>();
+        serviceCollection.AddSingleton<IEncodingOptionsReader, EncodingOptionsReader>();
+        serviceCollection.AddSingleton<IIdNodeService, IdNodeService>();
+        serviceCollection.AddSingleton<IProfileResolver, ProfileResolver>();
+        serviceCollection.AddSingleton<IDiagnosticService, DiagnosticService>();
+        serviceCollection.AddSingleton<IGuideService, GuideService>();
+        serviceCollection.AddSingleton<IDvrService, DvrService>();
+        serviceCollection.AddSingleton<IMediaSourceService, MediaSourceService>();
+        serviceCollection.AddSingleton<ILifecycleService, LifecycleService>();
+        serviceCollection.AddSingleton<IProvisioningService, ProvisioningService>();
+        serviceCollection.AddSingleton<IProfileContainerResolver, ProfileContainerResolver>();
+        serviceCollection.AddSingleton<IApiClient, ApiClient>();
 
-        // Register LiveTvService as the implementation of ILiveTvService
-        serviceCollection.AddSingleton<ILiveTvService, LiveTvService>();
+        // Register OrchestratorService as the implementation of ILiveTvService
+        serviceCollection.AddSingleton<ILiveTvService, OrchestratorService>();
     }
 }

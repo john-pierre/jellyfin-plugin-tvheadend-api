@@ -1,0 +1,183 @@
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+using Microsoft.Extensions.Logging;
+
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+
+/// <summary>
+/// Resolves and caches the effective output container from TVHeadend streaming profiles.
+/// </summary>
+internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDisposable
+{
+    private static readonly TimeSpan ProfileContainerCacheTtl = TimeSpan.FromMinutes(5);
+
+    private readonly SemaphoreSlim _profileContainerLock = new(1, 1);
+    private readonly ILogger<ProfileContainerResolver> _logger;
+    private readonly IApiClient _tvheadendApiClient;
+    private readonly IProfileResolver _streamProfileResolver;
+
+    private ProfileCacheEntry? _profileCache;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ProfileContainerResolver"/> class.
+    /// </summary>
+    /// <param name="logger">Logger instance.</param>
+    /// <param name="tvheadendApiClient">TVHeadend API client.</param>
+    /// <param name="streamProfileResolver">TVHeadend stream profile resolver.</param>
+    public ProfileContainerResolver(
+        ILogger<ProfileContainerResolver> logger,
+        IApiClient tvheadendApiClient,
+        IProfileResolver streamProfileResolver)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
+        _streamProfileResolver = streamProfileResolver ?? throw new ArgumentNullException(nameof(streamProfileResolver));
+    }
+
+    /// <summary>
+    /// Releases resources used by this resolver.
+    /// </summary>
+    public void Dispose()
+    {
+        _profileContainerLock.Dispose();
+    }
+
+    /// <inheritdoc />
+    public async Task<string> ResolveContainerAsync(PluginConfiguration config, CancellationToken cancellationToken)
+    {
+        var snapshot = await ResolveProfileSnapshotAsync(config, cancellationToken).ConfigureAwait(false);
+        return snapshot.Container;
+    }
+
+    /// <inheritdoc />
+    public async Task<ProfileSnapshot> ResolveProfileSnapshotAsync(PluginConfiguration config, CancellationToken cancellationToken)
+    {
+        var profileName = config.StreamingProfile;
+
+        if (_profileCache is { } cached
+            && string.Equals(cached.ProfileName, profileName, StringComparison.OrdinalIgnoreCase)
+            && DateTime.UtcNow - cached.Timestamp < ProfileContainerCacheTtl)
+        {
+            return cached.Snapshot;
+        }
+
+        await _profileContainerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_profileCache is { } cached2
+                && string.Equals(cached2.ProfileName, profileName, StringComparison.OrdinalIgnoreCase)
+                && DateTime.UtcNow - cached2.Timestamp < ProfileContainerCacheTtl)
+            {
+                return cached2.Snapshot;
+            }
+
+            var snapshot = await DetectProfileSnapshotAsync(config, profileName, cancellationToken).ConfigureAwait(false);
+            _profileCache = new ProfileCacheEntry(DateTime.UtcNow, profileName, snapshot);
+            return snapshot;
+        }
+        finally
+        {
+            _profileContainerLock.Release();
+        }
+    }
+
+    private async Task<ProfileSnapshot> DetectProfileSnapshotAsync(PluginConfiguration config, string profileName, CancellationToken cancellationToken)
+    {
+        const string fallbackContainer = "mpegts";
+
+        if (string.IsNullOrWhiteSpace(profileName))
+        {
+            _logger.LogWarning("No streaming profile configured. Defaulting container to '{Container}'.", fallbackContainer);
+            return BuildFallbackSnapshot(profileName, fallbackContainer);
+        }
+
+        try
+        {
+            using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
+            var baseUrl = _tvheadendApiClient.GetBaseUrl(config);
+            var webRoot = _tvheadendApiClient.GetWebRoot(config);
+
+            var resolved = await _streamProfileResolver
+                .ResolveProfileByNameAsync(httpClient, baseUrl, webRoot, profileName, cancellationToken)
+                .ConfigureAwait(false);
+            if (resolved == null)
+            {
+                _logger.LogWarning(
+                    "Streaming profile '{ProfileName}' not found in TVHeadend. Defaulting container to '{Container}'.",
+                    profileName,
+                    fallbackContainer);
+                return BuildFallbackSnapshot(profileName, fallbackContainer);
+            }
+
+            if (resolved.ProfileClass.Contains("transcode", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(resolved.Container))
+                {
+                    _logger.LogWarning(
+                        "Transcode profile '{ProfileName}' has no container set (raw='{Raw}'). Defaulting to '{Container}'.",
+                        profileName,
+                        resolved.RawContainer,
+                        fallbackContainer);
+                    return BuildSnapshot(resolved, fallbackContainer);
+                }
+
+                _logger.LogInformation(
+                    "Streaming profile '{ProfileName}' (class={ProfileClass}) uses container '{Container}'.",
+                    profileName,
+                    resolved.ProfileClass,
+                    resolved.Container);
+                return BuildSnapshot(resolved, resolved.Container);
+            }
+
+            _logger.LogInformation(
+                "Streaming profile '{ProfileName}' (class={ProfileClass}) -> container '{Container}' (derived from class).",
+                profileName,
+                resolved.ProfileClass,
+                resolved.Container);
+            return BuildSnapshot(resolved, resolved.Container);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to detect container for streaming profile '{ProfileName}'. Defaulting to '{Container}'.",
+                profileName,
+                fallbackContainer);
+            return BuildFallbackSnapshot(profileName, fallbackContainer);
+        }
+    }
+
+    private static ProfileSnapshot BuildSnapshot(ResolvedProfile resolved, string container)
+    {
+        return new ProfileSnapshot(
+            resolved.Name,
+            resolved.Key,
+            resolved.ProfileClass,
+            string.IsNullOrWhiteSpace(container) ? "mpegts" : container,
+            resolved.ProVideoCodec,
+            resolved.ProAudioCodec,
+            resolved.ResolvedVideoCodec,
+            resolved.ResolvedAudioCodec,
+            resolved.ProfileDeinterlace ?? resolved.VideoCodecDeinterlace);
+    }
+
+    private static ProfileSnapshot BuildFallbackSnapshot(string? profileName, string fallbackContainer)
+    {
+        return new ProfileSnapshot(
+            profileName ?? string.Empty,
+            string.Empty,
+            string.Empty,
+            fallbackContainer,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            null);
+    }
+
+    private sealed record ProfileCacheEntry(DateTime Timestamp, string ProfileName, ProfileSnapshot Snapshot);
+}

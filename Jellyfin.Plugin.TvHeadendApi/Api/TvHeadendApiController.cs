@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model;
-using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
-using Jellyfin.Plugin.TvHeadendApi.Service.Profiles;
+using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -19,8 +19,8 @@ namespace Jellyfin.Plugin.TvHeadendApi.Api;
 [Authorize(Policy = Policies.RequiresElevation)]
 public class TvHeadendApiController : ControllerBase
 {
-    private readonly IDiagnoseService _diagnoseService;
-    private readonly IProfileProvisioningService _profileProvisioningService;
+    private readonly IDiagnosticService _diagnoseService;
+    private readonly IProvisioningService _profileProvisioningService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TvHeadendApiController"/> class.
@@ -28,8 +28,8 @@ public class TvHeadendApiController : ControllerBase
     /// <param name="diagnoseService">Service that builds the diagnostic report.</param>
     /// <param name="profileProvisioningService">Service that provisions recommended TVHeadend profiles.</param>
     public TvHeadendApiController(
-        IDiagnoseService diagnoseService,
-        IProfileProvisioningService profileProvisioningService)
+        IDiagnosticService diagnoseService,
+        IProvisioningService profileProvisioningService)
     {
         _diagnoseService = diagnoseService ?? throw new ArgumentNullException(nameof(diagnoseService));
         _profileProvisioningService = profileProvisioningService ?? throw new ArgumentNullException(nameof(profileProvisioningService));
