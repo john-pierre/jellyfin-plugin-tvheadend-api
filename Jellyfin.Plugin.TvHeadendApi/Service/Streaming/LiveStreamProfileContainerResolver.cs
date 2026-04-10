@@ -20,7 +20,7 @@ internal sealed class LiveStreamProfileContainerResolver : ILiveStreamProfileCon
     private readonly ITvheadendApiClient _tvheadendApiClient;
     private readonly ITvheadendStreamProfileResolver _streamProfileResolver;
 
-    private ContainerCacheEntry? _profileContainerCache;
+    private ProfileCacheEntry? _profileCache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="LiveStreamProfileContainerResolver"/> class.
@@ -49,28 +49,35 @@ internal sealed class LiveStreamProfileContainerResolver : ILiveStreamProfileCon
     /// <inheritdoc />
     public async Task<string> ResolveContainerAsync(PluginConfiguration config, CancellationToken cancellationToken)
     {
+        var snapshot = await ResolveProfileSnapshotAsync(config, cancellationToken).ConfigureAwait(false);
+        return snapshot.Container;
+    }
+
+    /// <inheritdoc />
+    public async Task<LiveStreamProfileSnapshot> ResolveProfileSnapshotAsync(PluginConfiguration config, CancellationToken cancellationToken)
+    {
         var profileName = config.StreamingProfile;
 
-        if (_profileContainerCache is { } cached
+        if (_profileCache is { } cached
             && string.Equals(cached.ProfileName, profileName, StringComparison.OrdinalIgnoreCase)
             && DateTime.UtcNow - cached.Timestamp < ProfileContainerCacheTtl)
         {
-            return cached.Container;
+            return cached.Snapshot;
         }
 
         await _profileContainerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_profileContainerCache is { } cached2
+            if (_profileCache is { } cached2
                 && string.Equals(cached2.ProfileName, profileName, StringComparison.OrdinalIgnoreCase)
                 && DateTime.UtcNow - cached2.Timestamp < ProfileContainerCacheTtl)
             {
-                return cached2.Container;
+                return cached2.Snapshot;
             }
 
-            var container = await DetectProfileContainerAsync(config, profileName, cancellationToken).ConfigureAwait(false);
-            _profileContainerCache = new ContainerCacheEntry(DateTime.UtcNow, profileName, container);
-            return container;
+            var snapshot = await DetectProfileSnapshotAsync(config, profileName, cancellationToken).ConfigureAwait(false);
+            _profileCache = new ProfileCacheEntry(DateTime.UtcNow, profileName, snapshot);
+            return snapshot;
         }
         finally
         {
@@ -78,14 +85,14 @@ internal sealed class LiveStreamProfileContainerResolver : ILiveStreamProfileCon
         }
     }
 
-    private async Task<string> DetectProfileContainerAsync(PluginConfiguration config, string profileName, CancellationToken cancellationToken)
+    private async Task<LiveStreamProfileSnapshot> DetectProfileSnapshotAsync(PluginConfiguration config, string profileName, CancellationToken cancellationToken)
     {
         const string fallbackContainer = "mpegts";
 
         if (string.IsNullOrWhiteSpace(profileName))
         {
             _logger.LogWarning("No streaming profile configured. Defaulting container to '{Container}'.", fallbackContainer);
-            return fallbackContainer;
+            return BuildFallbackSnapshot(profileName, fallbackContainer);
         }
 
         try
@@ -94,55 +101,44 @@ internal sealed class LiveStreamProfileContainerResolver : ILiveStreamProfileCon
             var baseUrl = _tvheadendApiClient.GetBaseUrl(config);
             var webRoot = _tvheadendApiClient.GetWebRoot(config);
 
-            var profiles = await _streamProfileResolver.GetProfilesAsync(httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
-            var profileReference = profiles.FirstOrDefault(p => string.Equals(p.Name, profileName, StringComparison.OrdinalIgnoreCase));
-            if (profileReference == null)
+            var resolved = await _streamProfileResolver
+                .ResolveProfileByNameAsync(httpClient, baseUrl, webRoot, profileName, cancellationToken)
+                .ConfigureAwait(false);
+            if (resolved == null)
             {
                 _logger.LogWarning(
                     "Streaming profile '{ProfileName}' not found in TVHeadend. Defaulting container to '{Container}'.",
                     profileName,
                     fallbackContainer);
-                return fallbackContainer;
+                return BuildFallbackSnapshot(profileName, fallbackContainer);
             }
 
-            var profileDetails = await _streamProfileResolver
-                .GetProfileDetailsByUuidAsync(httpClient, baseUrl, webRoot, profileReference.Key, profileReference.Name, cancellationToken)
-                .ConfigureAwait(false);
-            if (profileDetails == null)
+            if (resolved.ProfileClass.Contains("transcode", StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogWarning(
-                    "TVHeadend returned empty data for profile UUID '{Uuid}'. Defaulting container to '{Container}'.",
-                    profileReference.Key,
-                    fallbackContainer);
-                return fallbackContainer;
-            }
-
-            if (profileDetails.ProfileClass.Contains("transcode", StringComparison.OrdinalIgnoreCase))
-            {
-                if (string.IsNullOrWhiteSpace(profileDetails.Container))
+                if (string.IsNullOrWhiteSpace(resolved.Container))
                 {
                     _logger.LogWarning(
                         "Transcode profile '{ProfileName}' has no container set (raw='{Raw}'). Defaulting to '{Container}'.",
                         profileName,
-                        profileDetails.RawContainer,
+                        resolved.RawContainer,
                         fallbackContainer);
-                    return fallbackContainer;
+                    return BuildSnapshot(resolved, fallbackContainer);
                 }
 
                 _logger.LogInformation(
                     "Streaming profile '{ProfileName}' (class={ProfileClass}) uses container '{Container}'.",
                     profileName,
-                    profileDetails.ProfileClass,
-                    profileDetails.Container);
-                return profileDetails.Container;
+                    resolved.ProfileClass,
+                    resolved.Container);
+                return BuildSnapshot(resolved, resolved.Container);
             }
 
             _logger.LogInformation(
                 "Streaming profile '{ProfileName}' (class={ProfileClass}) -> container '{Container}' (derived from class).",
                 profileName,
-                profileDetails.ProfileClass,
-                profileDetails.Container);
-            return profileDetails.Container;
+                resolved.ProfileClass,
+                resolved.Container);
+            return BuildSnapshot(resolved, resolved.Container);
         }
         catch (Exception ex)
         {
@@ -151,9 +147,37 @@ internal sealed class LiveStreamProfileContainerResolver : ILiveStreamProfileCon
                 "Failed to detect container for streaming profile '{ProfileName}'. Defaulting to '{Container}'.",
                 profileName,
                 fallbackContainer);
-            return fallbackContainer;
+            return BuildFallbackSnapshot(profileName, fallbackContainer);
         }
     }
 
-    private sealed record ContainerCacheEntry(DateTime Timestamp, string ProfileName, string Container);
+    private static LiveStreamProfileSnapshot BuildSnapshot(TvheadendResolvedStreamProfile resolved, string container)
+    {
+        return new LiveStreamProfileSnapshot(
+            resolved.Name,
+            resolved.Key,
+            resolved.ProfileClass,
+            string.IsNullOrWhiteSpace(container) ? "mpegts" : container,
+            resolved.ProVideoCodec,
+            resolved.ProAudioCodec,
+            resolved.ResolvedVideoCodec,
+            resolved.ResolvedAudioCodec,
+            resolved.ProfileDeinterlace ?? resolved.VideoCodecDeinterlace);
+    }
+
+    private static LiveStreamProfileSnapshot BuildFallbackSnapshot(string? profileName, string fallbackContainer)
+    {
+        return new LiveStreamProfileSnapshot(
+            profileName ?? string.Empty,
+            string.Empty,
+            string.Empty,
+            fallbackContainer,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            null);
+    }
+
+    private sealed record ProfileCacheEntry(DateTime Timestamp, string ProfileName, LiveStreamProfileSnapshot Snapshot);
 }

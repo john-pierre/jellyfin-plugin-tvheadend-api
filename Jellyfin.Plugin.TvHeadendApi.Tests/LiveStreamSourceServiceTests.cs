@@ -1,4 +1,6 @@
 using System;
+using System.Reflection;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
@@ -79,6 +81,8 @@ public class LiveStreamSourceServiceTests
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LiveStreamProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var sut = new LiveStreamSourceService(NullLogger<LiveStreamSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder);
         var mediaSource = await sut.GetChannelStreamAsync("ch-42", CancellationToken.None);
@@ -110,6 +114,8 @@ public class LiveStreamSourceServiceTests
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LiveStreamProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var sut = new LiveStreamSourceService(NullLogger<LiveStreamSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder);
         var mediaSource = await sut.GetChannelStreamAsync("ch-1", CancellationToken.None);
@@ -137,6 +143,8 @@ public class LiveStreamSourceServiceTests
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LiveStreamProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var sut = new LiveStreamSourceService(NullLogger<LiveStreamSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder);
         var result = await sut.GetChannelStreamMediaSourcesAsync("ch-2", CancellationToken.None);
@@ -165,6 +173,8 @@ public class LiveStreamSourceServiceTests
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LiveStreamProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var sut = new LiveStreamSourceService(NullLogger<LiveStreamSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder);
         var mediaSource = await sut.GetChannelStreamAsync("ch-99", CancellationToken.None);
@@ -191,11 +201,42 @@ public class LiveStreamSourceServiceTests
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LiveStreamProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var sut = new LiveStreamSourceService(NullLogger<LiveStreamSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder);
         var mediaSource = await sut.GetChannelStreamAsync("ch-cache", CancellationToken.None);
 
         Assert.NotNull(mediaSource);
         Assert.Equal("mpegts", mediaSource.Container);
+    }
+
+    [Fact]
+    public void ExtractQueryParameter_WithProfileInUrl_ReturnsExpectedValue()
+    {
+        var result = InvokePrivateStatic<string?>("ExtractQueryParameter", "http://tvh.local:9981/stream/channel/ch-1?profile=Pass&ticket=abc", "profile");
+        Assert.Equal("Pass", result);
+    }
+
+    [Fact]
+    public void ExtractCodecFromMediaStreams_WithVideoAndAudioEntries_ReturnsExpectedCodec()
+    {
+        using var doc = JsonDocument.Parse("{\"MediaStreams\":[{\"Type\":\"Video\",\"Codec\":\"h264\"},{\"Type\":\"Audio\",\"Codec\":\"aac\"}]}");
+        var root = doc.RootElement;
+
+        var video = InvokePrivateStatic<string?>("ExtractCodecFromMediaStreams", root, "Video");
+        var audio = InvokePrivateStatic<string?>("ExtractCodecFromMediaStreams", root, "Audio");
+
+        Assert.Equal("h264", video);
+        Assert.Equal("aac", audio);
+    }
+
+    private static T InvokePrivateStatic<T>(string methodName, params object?[] args)
+    {
+        var method = typeof(LiveStreamSourceService).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var result = method!.Invoke(null, args);
+        return Assert.IsType<T>(result);
     }
 }

@@ -16,4 +16,12 @@ public interface ILiveStreamProfileContainerResolver
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Resolved container format.</returns>
     Task<string> ResolveContainerAsync(PluginConfiguration config, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Resolves a snapshot of the configured TVHeadend streaming profile including codec metadata.
+    /// </summary>
+    /// <param name="config">Plugin configuration.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Resolved profile snapshot.</returns>
+    Task<LiveStreamProfileSnapshot> ResolveProfileSnapshotAsync(PluginConfiguration config, CancellationToken cancellationToken);
 }

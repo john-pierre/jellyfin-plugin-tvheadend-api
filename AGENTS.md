@@ -31,6 +31,8 @@ Maintain and improve the Jellyfin TVHeadend API plugin while preserving:
 - Prefer minimal, focused diffs over broad refactors.
 - Keep generated artifacts out of git (`reports/` is ignored except marker files).
 - Keep GitHub Actions `uses:` references tag-based by default; do not auto-convert tags to commit SHAs unless explicitly requested.
+- When plugin behavior depends on Jellyfin internals, also validate against the sibling core repository `../jellyfin` when available.
+- Use portable relative paths in docs, issues, reviews, and agent output (`Jellyfin.Plugin.TvHeadendApi/...`, `docs/...`, `../jellyfin/...`); avoid local absolute paths.
 
 ## Naming And Layout Rules
 

@@ -264,9 +264,11 @@ If you are an AI coding assistant working in this repository:
 
 - Read `AGENTS.md` first.
 - Then read `.github/copilot-instructions.md`.
+- When validating Jellyfin core behavior, also reference the sibling core repository `../jellyfin` if it is present in your workspace.
 - Keep docs and comments in English.
 - Prefer minimal, focused diffs.
 - Preserve plugin behavior unless change is requested and documented.
+- Use portable paths only (`Jellyfin.Plugin.TvHeadendApi/...`, `docs/...`, `../jellyfin/...`); do not use machine-specific absolute paths.
 
 Primary architecture files:
 
@@ -283,6 +285,10 @@ If you want to build from source:
 dotnet restore Jellyfin.Plugin.TvHeadendApi.sln
 dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release --no-restore
 ```
+
+For cross-repo debugging and behavior checks, keep the Jellyfin core repository as a sibling folder (for example `../jellyfin`) and add it to your IDE workspace.
+
+In issues, docs, and review notes, prefer repository-relative paths so instructions remain portable for all contributors.
 
 For full contributor flow, see `CONTRIBUTING.md` and docs under `docs/ai/`.
 

@@ -31,7 +31,7 @@ public class LiveStreamProfileContainerResolverTests
 
         Assert.Equal("mp4", first);
         Assert.Equal("mp4", second);
-        Assert.Equal(2, profileResolver.ResolveCalls);
+        Assert.Equal(1, profileResolver.ResolveCalls);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public class LiveStreamProfileContainerResolverTests
 
         Assert.Equal("mp4", first);
         Assert.Equal("mp4", second);
-        Assert.Equal(4, profileResolver.ResolveCalls);
+        Assert.Equal(2, profileResolver.ResolveCalls);
     }
 
     private sealed class FakeProfileResolver : ITvheadendStreamProfileResolver
@@ -61,7 +61,6 @@ public class LiveStreamProfileContainerResolverTests
 
         public Task<IReadOnlyList<TvheadendStreamProfileReference>> GetProfilesAsync(HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
         {
-            ResolveCalls++;
             return Task.FromResult<IReadOnlyList<TvheadendStreamProfileReference>>(
                 new[]
                 {
@@ -72,7 +71,6 @@ public class LiveStreamProfileContainerResolverTests
 
         public Task<TvheadendStreamProfileDetails?> GetProfileDetailsByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileUuid, string profileName, CancellationToken cancellationToken)
         {
-            ResolveCalls++;
             return Task.FromResult<TvheadendStreamProfileDetails?>(new TvheadendStreamProfileDetails(
                 profileUuid,
                 profileName,
@@ -84,6 +82,25 @@ public class LiveStreamProfileContainerResolverTests
                 Array.Empty<string>(),
                 Array.Empty<string>(),
                 null));
+        }
+
+        public Task<TvheadendResolvedStreamProfile?> ResolveProfileByNameAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
+        {
+            ResolveCalls++;
+            return Task.FromResult<TvheadendResolvedStreamProfile?>(new TvheadendResolvedStreamProfile(
+                "uuid-" + profileName,
+                profileName,
+                "profile-transcode",
+                "mp4",
+                "9",
+                "jellyfin-h264",
+                "jellyfin-aac",
+                "h264",
+                "aac",
+                Array.Empty<string>(),
+                Array.Empty<string>(),
+                true,
+                true));
         }
     }
 

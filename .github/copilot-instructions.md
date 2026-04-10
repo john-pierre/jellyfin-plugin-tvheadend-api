@@ -15,6 +15,11 @@ Use this file together with `AGENTS.md`.
 - `Jellyfin.Plugin.TvHeadendApi/Api/TvHeadendApiController.cs`
 - `README.md`
 
+## Cross-Repo and Path Rules
+
+- When plugin questions depend on Jellyfin core behavior, also reference `../jellyfin` if available in the workspace.
+- Use portable relative paths only (`Jellyfin.Plugin.TvHeadendApi/...`, `docs/...`, `../jellyfin/...`); do not use machine-specific absolute paths.
+
 ## Code Change Expectations
 
 - Keep changes small and scoped.

@@ -23,4 +23,11 @@ internal interface ITvheadendStreamProfileResolver
         string profileUuid,
         string profileName,
         CancellationToken cancellationToken);
+
+    Task<TvheadendResolvedStreamProfile?> ResolveProfileByNameAsync(
+        HttpClient httpClient,
+        string baseUrl,
+        string webRoot,
+        string profileName,
+        CancellationToken cancellationToken);
 }

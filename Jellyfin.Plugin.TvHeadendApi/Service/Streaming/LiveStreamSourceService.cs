@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -25,6 +26,8 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Streaming;
 internal sealed class LiveStreamSourceService : ILiveStreamSourceService
 {
     private const char StreamIdDelimiter = '_';
+    private const string LiveTvServiceName = "TvHeadendApi";
+    private const string InternalChannelVersionNumber = "4";
 
     private readonly ILogger<LiveStreamSourceService> _logger;
     private readonly ILibraryManager _libraryManager;
@@ -59,7 +62,7 @@ internal sealed class LiveStreamSourceService : ILiveStreamSourceService
 
         var providerTypeFullName = "Jellyfin.LiveTv.LiveTvMediaSourceProvider";
         var itemTypeName = "LiveTvChannel";
-        var internalChannelId = GetInternalChannelId("TvHeadendApi", channelId);
+        var internalChannelId = GetInternalChannelId(channelId);
         var itemIdN = internalChannelId.ToString("N", CultureInfo.InvariantCulture);
         var sourceIdFromMediaSource = mediaSource.Id ?? string.Empty;
         var cacheFile = BuildMediainfoCacheFileName(providerTypeFullName, itemTypeName, itemIdN, sourceIdFromMediaSource);
@@ -110,12 +113,163 @@ internal sealed class LiveStreamSourceService : ILiveStreamSourceService
             mediaSource.BufferMs = config.BufferMs;
         }
 
+        var profileSnapshot = await _streamProfileContainerResolver.ResolveProfileSnapshotAsync(config, cancellationToken).ConfigureAwait(false);
+        await TryLogProfileAndCacheMatchAsync(channelId, profileSnapshot).ConfigureAwait(false);
+
         if (config.EnableMediaInfoCacheWrite)
         {
             await TryWriteMediaInfoCacheAsync(channelId, streamUrl, container).ConfigureAwait(false);
         }
 
         return mediaSource;
+    }
+
+    private async Task TryLogProfileAndCacheMatchAsync(string channelId, LiveStreamProfileSnapshot profileSnapshot)
+    {
+        try
+        {
+            _logger.LogInformation(
+                "TVHeadend stream profile for channel {ChannelId}: Profile={ProfileName}, Uuid={ProfileUuid}, Class={ProfileClass}, Container={Container}, VideoCodecRef={VideoCodecRef}, AudioCodecRef={AudioCodecRef}, VideoCodec={VideoCodec}, AudioCodec={AudioCodec}",
+                channelId,
+                profileSnapshot.ProfileName,
+                profileSnapshot.ProfileUuid,
+                profileSnapshot.ProfileClass,
+                profileSnapshot.Container,
+                profileSnapshot.VideoCodecReference,
+                profileSnapshot.AudioCodecReference,
+                profileSnapshot.VideoCodec,
+                profileSnapshot.AudioCodec);
+
+            var cacheSnapshot = await TryGetMediainfoCacheSnapshotAsync(channelId).ConfigureAwait(false);
+            if (cacheSnapshot == null)
+            {
+                _logger.LogInformation("No mediainfo cache entry found for channel {ChannelId}.", channelId);
+                return;
+            }
+
+            _logger.LogInformation(
+                "Mediainfo cache for channel {ChannelId}: CacheFile={CacheFile}, Profile={ProfileName}, VideoCodec={VideoCodec}, AudioCodec={AudioCodec}",
+                channelId,
+                cacheSnapshot.CacheFilePath,
+                cacheSnapshot.ProfileName,
+                cacheSnapshot.VideoCodec,
+                cacheSnapshot.AudioCodec);
+
+            var profileMatches = string.Equals(profileSnapshot.ProfileName, cacheSnapshot.ProfileName, StringComparison.OrdinalIgnoreCase);
+            var videoCodecMatches = string.Equals(profileSnapshot.VideoCodec, cacheSnapshot.VideoCodec, StringComparison.OrdinalIgnoreCase);
+            var audioCodecMatches = string.Equals(profileSnapshot.AudioCodec, cacheSnapshot.AudioCodec, StringComparison.OrdinalIgnoreCase);
+            var allMatch = profileMatches && videoCodecMatches && audioCodecMatches;
+
+            _logger.LogInformation(
+                "TVHeadend profile and mediainfo cache comparison for channel {ChannelId}: IsMatch={IsMatch}, ProfileMatch={ProfileMatch}, VideoCodecMatch={VideoCodecMatch}, AudioCodecMatch={AudioCodecMatch}",
+                channelId,
+                allMatch,
+                profileMatches,
+                videoCodecMatches,
+                audioCodecMatches);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to compare TVHeadend profile with mediainfo cache for channel {ChannelId}.", channelId);
+        }
+    }
+
+    private async Task<CacheSnapshot?> TryGetMediainfoCacheSnapshotAsync(string channelId)
+    {
+        var cachePath = Plugin.Instance?.CachePath;
+        if (string.IsNullOrWhiteSpace(cachePath))
+        {
+            return null;
+        }
+
+        var providerTypeFullName = "Jellyfin.LiveTv.LiveTvMediaSourceProvider";
+        var itemTypeName = "LiveTvChannel";
+        var internalChannelId = GetInternalChannelId(channelId);
+        var itemIdN = internalChannelId.ToString("N", CultureInfo.InvariantCulture);
+        var cacheFileName = BuildMediainfoCacheFileName(providerTypeFullName, itemTypeName, itemIdN, channelId);
+        var cacheFilePath = Path.Combine(cachePath, "mediainfo", cacheFileName);
+
+        if (!File.Exists(cacheFilePath))
+        {
+            return null;
+        }
+
+        var json = await File.ReadAllTextAsync(cacheFilePath).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        var path = root.TryGetProperty("Path", out var pathElement) && pathElement.ValueKind == JsonValueKind.String
+            ? pathElement.GetString()
+            : null;
+        var profileName = ExtractQueryParameter(path, "profile");
+        var videoCodec = ExtractCodecFromMediaStreams(root, "Video");
+        var audioCodec = ExtractCodecFromMediaStreams(root, "Audio");
+
+        return new CacheSnapshot(profileName, videoCodec, audioCodec, cacheFilePath);
+    }
+
+    private static string? ExtractCodecFromMediaStreams(JsonElement root, string streamType)
+    {
+        if (!root.TryGetProperty("MediaStreams", out var mediaStreams) || mediaStreams.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var stream in mediaStreams.EnumerateArray())
+        {
+            var type = stream.TryGetProperty("Type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String
+                ? typeElement.GetString()
+                : null;
+            if (!string.Equals(type, streamType, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return stream.TryGetProperty("Codec", out var codecElement) && codecElement.ValueKind == JsonValueKind.String
+                ? codecElement.GetString()
+                : null;
+        }
+
+        return null;
+    }
+
+    private static string? ExtractQueryParameter(string? url, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(parameterName))
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        var query = uri.Query;
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var splitIndex = pair.IndexOf('=', StringComparison.Ordinal);
+            if (splitIndex <= 0)
+            {
+                continue;
+            }
+
+            var key = pair.Substring(0, splitIndex);
+            if (!string.Equals(key, parameterName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var value = pair.Substring(splitIndex + 1);
+            return Uri.UnescapeDataString(value);
+        }
+
+        return null;
     }
 
     private async Task TryWriteMediaInfoCacheAsync(string channelId, string streamUrl, string container)
@@ -135,7 +289,7 @@ internal sealed class LiveStreamSourceService : ILiveStreamSourceService
 
             var providerTypeFullName = "Jellyfin.LiveTv.LiveTvMediaSourceProvider";
             var itemTypeName = "LiveTvChannel";
-            var internalChannelId = GetInternalChannelId("TvHeadendApi", channelId);
+            var internalChannelId = GetInternalChannelId(channelId);
             var itemIdN = internalChannelId.ToString("N", CultureInfo.InvariantCulture);
             var cacheFileName = BuildMediainfoCacheFileName(providerTypeFullName, itemTypeName, itemIdN, channelId);
             var mediaInfoDir = Path.Combine(cachePath, "mediainfo");
@@ -202,13 +356,13 @@ internal sealed class LiveStreamSourceService : ILiveStreamSourceService
         }
     }
 
-    private Guid GetInternalChannelId(string serviceName, string externalId)
+    private Guid GetInternalChannelId(string externalId)
     {
-        const string internalVersionNumber = "4";
-        var name = serviceName + externalId + internalVersionNumber;
-        var channelType = Type.GetType("MediaBrowser.Controller.LiveTv.LiveTvChannel, Jellyfin.Controller")
-            ?? typeof(Jellyfin.Plugin.TvHeadendApi.Service.LiveTvService);
-        return _libraryManager.GetNewItemId(name.ToLowerInvariant(), channelType);
+        ArgumentException.ThrowIfNullOrWhiteSpace(externalId);
+
+        // Mirrors Jellyfin.LiveTv.LiveTvDtoService.GetInternalChannelId.
+        var name = LiveTvServiceName + externalId + InternalChannelVersionNumber;
+        return _libraryManager.GetNewItemId(name.ToLowerInvariant(), typeof(LiveTvChannel));
     }
 
     private static string BuildMediainfoCacheFileName(string providerTypeOrHash, string itemTypeName, string itemIdN, string? sourceId)
@@ -238,4 +392,10 @@ internal sealed class LiveStreamSourceService : ILiveStreamSourceService
         return _tvheadendApiClient.GetCurrentConfiguration()
             ?? throw new InvalidOperationException("Plugin configuration is not available.");
     }
+
+    private sealed record CacheSnapshot(
+        string? ProfileName,
+        string? VideoCodec,
+        string? AudioCodec,
+        string? CacheFilePath);
 }

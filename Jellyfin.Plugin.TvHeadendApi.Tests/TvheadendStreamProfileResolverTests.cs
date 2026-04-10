@@ -99,4 +99,44 @@ public class TvheadendStreamProfileResolverTests
         Assert.Equal("jellyfin-h264", result.ProVideoCodec);
         Assert.Equal("jellyfin-aac", result.ProAudioCodec);
     }
+
+    [Fact]
+    public async Task ResolveProfileByNameAsync_WithCodecProfileLink_ResolvesCodecAndDeinterlace()
+    {
+        var api = new Mock<ITvheadendApiClient>();
+        var idNode = new Mock<ITvheadendIdNodeService>();
+        var reader = new TvheadendJsonReader();
+
+        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
+            {
+                if (url.Contains("api/profile/list", System.StringComparison.Ordinal))
+                {
+                    return Task.FromResult("{\"entries\":[{\"key\":\"profile-1\",\"val\":\"jellyfin\"}]}");
+                }
+
+                if (url.Contains("api/codec_profile/list", System.StringComparison.Ordinal))
+                {
+                    return Task.FromResult("{\"entries\":[{\"uuid\":\"codec-1\",\"title\":\"jellyfin-h264 (libx264)\"}]}");
+                }
+
+                return Task.FromResult("{}");
+            });
+
+        idNode.Setup(x => x.LoadIdNodeByUuidAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), "profile-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(System.Text.Json.JsonDocument.Parse("{\"entries\":[{\"class\":\"profile-transcode\",\"container\":\"9\",\"pro_vcodec\":\"jellyfin-h264\",\"pro_acodec\":\"jellyfin-aac\",\"deinterlace\":false}]}") );
+        idNode.Setup(x => x.LoadIdNodeByUuidAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), "codec-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(System.Text.Json.JsonDocument.Parse("{\"entries\":[{\"class\":\"codec_profile_libx264\",\"codec\":\"libx264\",\"deinterlace\":true}]}") );
+
+        var sut = new TvheadendStreamProfileResolver(api.Object, idNode.Object, reader);
+        using var http = new HttpClient();
+        var result = await sut.ResolveProfileByNameAsync(http, "http://tvh:9981", "/", "jellyfin", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("profile-1", result.Key);
+        Assert.Equal("h264", result.ResolvedVideoCodec);
+        Assert.Equal("aac", result.ResolvedAudioCodec);
+        Assert.False(result.ProfileDeinterlace);
+        Assert.True(result.VideoCodecDeinterlace);
+    }
 }

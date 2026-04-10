@@ -17,6 +17,10 @@ These docs describe:
 - expected testing workflow
 - analyzer/report output expectations
 
+When a plugin question depends on Jellyfin internals, also inspect the sibling core repository at `../jellyfin` (if available in the workspace).
+
+Path style rule for all agent output and docs: use portable relative paths only (for example `Jellyfin.Plugin.TvHeadendApi/...` or `../jellyfin/...`), never local absolute paths.
+
 Use this index when onboarding a new agent session.
 
 ## Naming Rules (Required)
