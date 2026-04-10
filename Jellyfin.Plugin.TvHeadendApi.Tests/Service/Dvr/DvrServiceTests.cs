@@ -483,8 +483,9 @@ public class DvrServiceTests
 
         Assert.Equal(2, handler.Requests.Count);
         Assert.Contains("api/dvr/autorec/create_by_series", handler.Requests[1].Url);
-        Assert.Contains("config_name=profile-uuid", handler.Requests[1].Body);
+        Assert.Contains("config_uuid=profile-uuid", handler.Requests[1].Body);
         Assert.Contains("event_id=789", handler.Requests[1].Body);
+        Assert.DoesNotContain("config_name=", handler.Requests[1].Body);
         Assert.Equal("series-created-1", info.Id);
     }
 

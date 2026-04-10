@@ -25,15 +25,22 @@ internal sealed partial class DvrService
 
         var config = GetConfig();
         var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/dvr/entry/cancel");
+        var requestPayload = new[] { new KeyValuePair<string, string>("uuid", timerId) };
         using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
         using var response = await _tvheadendApiClient.PostFormAsync(
             httpClient,
             url,
-            new[] { new KeyValuePair<string, string>("uuid", timerId) },
+            requestPayload,
             cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogError(
+                "TVHeadend timer cancel failed. URL={Url}, RequestPayload={RequestPayload}, Status={Status}, Response={Response}",
+                url,
+                JsonSerializer.Serialize(requestPayload),
+                response.StatusCode,
+                responseContent);
             throw new InvalidOperationException($"Failed to cancel timer with ID: {timerId}. HTTP Status: {response.StatusCode}. Response: {responseContent}.");
         }
     }
@@ -52,16 +59,19 @@ internal sealed partial class DvrService
         var config = GetConfig();
         var configUuid = await GetRecordingProfileUuidAsync(config.RecordingProfile, cancellationToken).ConfigureAwait(false);
         string path;
+        string requestBodyJson;
         FormUrlEncodedContent content;
 
         if (!string.IsNullOrWhiteSpace(info.ProgramId))
         {
             path = "api/dvr/entry/create_by_event";
-            content = new FormUrlEncodedContent(new[]
+            var pairs = new[]
             {
                 new KeyValuePair<string, string>("config_uuid", configUuid),
                 new KeyValuePair<string, string>("event_id", info.ProgramId),
-            });
+            };
+            requestBodyJson = JsonSerializer.Serialize(pairs);
+            content = new FormUrlEncodedContent(pairs);
         }
         else
         {
@@ -79,18 +89,29 @@ internal sealed partial class DvrService
                 config_name = configUuid,
             };
 
+            requestBodyJson = JsonSerializer.Serialize(timerJson, JsonOptions);
             content = new FormUrlEncodedContent(new[]
             {
-                new KeyValuePair<string, string>("conf", JsonSerializer.Serialize(timerJson, JsonOptions)),
+                new KeyValuePair<string, string>("conf", requestBodyJson),
             });
         }
 
         var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, path);
+        _logger.LogDebug(
+            "TVHeadend timer create request. URL={Url}, RequestBody={RequestBody}",
+            url,
+            requestBodyJson);
         using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
         using var response = await httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogError(
+                "TVHeadend timer create failed. URL={Url}, RequestBody={RequestBody}, Status={Status}, Response={Response}",
+                url,
+                requestBodyJson,
+                response.StatusCode,
+                responseContent);
             throw new InvalidOperationException($"Failed to create timer for program '{info.Name}' on channel ID: '{info.ChannelId}'. HTTP Status: {response.StatusCode}. Response: {responseContent}");
         }
     }
@@ -110,12 +131,23 @@ internal sealed partial class DvrService
             { "stop_extra", (int)Math.Round((double)updatedTimer.PostPaddingSeconds / 60) },
         };
 
-        var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("node", JsonSerializer.Serialize(new[] { updates })) });
+        var nodeJson = JsonSerializer.Serialize(new[] { updates });
+        var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("node", nodeJson) });
+        _logger.LogDebug(
+            "TVHeadend timer update request. URL={Url}, RequestBody={RequestBody}",
+            url,
+            nodeJson);
         using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
         using var response = await httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogError(
+                "TVHeadend timer update failed. URL={Url}, RequestBody={RequestBody}, Status={Status}, Response={Response}",
+                url,
+                nodeJson,
+                response.StatusCode,
+                responseContent);
             throw new InvalidOperationException($"Failed to update timer with ID: {updatedTimer.Id}. HTTP Status: {response.StatusCode}. Response: {responseContent}");
         }
     }
