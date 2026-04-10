@@ -1,34 +1,35 @@
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using Moq;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
-public class TvheadendStreamProfileResolverTests
+public class ProfileResolverTests
 {
     [Fact]
     public void Constructor_WithNullApiClient_Throws()
     {
-        var idNode = new Mock<ITvheadendIdNodeService>();
-        var reader = new Mock<ITvheadendJsonReader>();
+        var idNode = new Mock<IIdNodeService>();
+        var reader = new Mock<IJsonReader>();
 
         Assert.Throws<System.ArgumentNullException>(() =>
-            new TvheadendStreamProfileResolver(null!, idNode.Object, reader.Object));
+            new ProfileResolver(null!, idNode.Object, reader.Object));
     }
 
     [Fact]
     public async Task GetProfilesAsync_WhenEntriesMissing_ReturnsEmpty()
     {
-        var api = new Mock<ITvheadendApiClient>();
-        var idNode = new Mock<ITvheadendIdNodeService>();
-        var reader = new Mock<ITvheadendJsonReader>();
+        var api = new Mock<IApiClient>();
+        var idNode = new Mock<IIdNodeService>();
+        var reader = new Mock<IJsonReader>();
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("{}");
 
-        var sut = new TvheadendStreamProfileResolver(api.Object, idNode.Object, reader.Object);
+        var sut = new ProfileResolver(api.Object, idNode.Object, reader.Object);
         using var http = new HttpClient();
         var result = await sut.GetProfilesAsync(http, "http://tvh:9981", "/", CancellationToken.None);
 
@@ -38,15 +39,15 @@ public class TvheadendStreamProfileResolverTests
     [Fact]
     public async Task GetProfilesAsync_WithValidEntries_ReturnsReferences()
     {
-        var api = new Mock<ITvheadendApiClient>();
-        var idNode = new Mock<ITvheadendIdNodeService>();
-        var reader = new Mock<ITvheadendJsonReader>();
+        var api = new Mock<IApiClient>();
+        var idNode = new Mock<IIdNodeService>();
+        var reader = new Mock<IJsonReader>();
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("{\"entries\":[{\"key\":\"uuid-1\",\"val\":\"jellyfin\"}]}");
         reader.Setup(x => x.GetStringProp(It.IsAny<System.Text.Json.JsonElement>(), "key")).Returns("uuid-1");
         reader.Setup(x => x.GetStringProp(It.IsAny<System.Text.Json.JsonElement>(), "val")).Returns("jellyfin");
 
-        var sut = new TvheadendStreamProfileResolver(api.Object, idNode.Object, reader.Object);
+        var sut = new ProfileResolver(api.Object, idNode.Object, reader.Object);
         using var http = new HttpClient();
         var result = await sut.GetProfilesAsync(http, "http://tvh:9981", "/", CancellationToken.None);
 
@@ -58,13 +59,13 @@ public class TvheadendStreamProfileResolverTests
     [Fact]
     public async Task GetProfileDetailsByUuidAsync_WhenEntriesEmpty_ReturnsNull()
     {
-        var api = new Mock<ITvheadendApiClient>();
-        var idNode = new Mock<ITvheadendIdNodeService>();
-        var reader = new Mock<ITvheadendJsonReader>();
+        var api = new Mock<IApiClient>();
+        var idNode = new Mock<IIdNodeService>();
+        var reader = new Mock<IJsonReader>();
         idNode.Setup(x => x.LoadIdNodeByUuidAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(System.Text.Json.JsonDocument.Parse("{\"entries\":[]}"));
 
-        var sut = new TvheadendStreamProfileResolver(api.Object, idNode.Object, reader.Object);
+        var sut = new ProfileResolver(api.Object, idNode.Object, reader.Object);
         using var http = new HttpClient();
         var result = await sut.GetProfileDetailsByUuidAsync(http, "http://tvh:9981", "/", "uuid-1", "jellyfin", CancellationToken.None);
 
@@ -74,9 +75,9 @@ public class TvheadendStreamProfileResolverTests
     [Fact]
     public async Task GetProfileDetailsByUuidAsync_WithValidEntry_ReturnsDetails()
     {
-        var api = new Mock<ITvheadendApiClient>();
-        var idNode = new Mock<ITvheadendIdNodeService>();
-        var reader = new Mock<ITvheadendJsonReader>();
+        var api = new Mock<IApiClient>();
+        var idNode = new Mock<IIdNodeService>();
+        var reader = new Mock<IJsonReader>();
         idNode.Setup(x => x.LoadIdNodeByUuidAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(System.Text.Json.JsonDocument.Parse("{\"entries\":[{}]}"));
 
@@ -88,7 +89,7 @@ public class TvheadendStreamProfileResolverTests
         reader.Setup(x => x.GetStringArrayPropOrParam(It.IsAny<System.Text.Json.JsonElement>(), "src_acodec")).Returns(new[] { "AAC" });
         reader.Setup(x => x.GetBoolPropOrParam(It.IsAny<System.Text.Json.JsonElement>(), "deinterlace")).Returns(true);
 
-        var sut = new TvheadendStreamProfileResolver(api.Object, idNode.Object, reader.Object);
+        var sut = new ProfileResolver(api.Object, idNode.Object, reader.Object);
         using var http = new HttpClient();
         var result = await sut.GetProfileDetailsByUuidAsync(http, "http://tvh:9981", "/", "uuid-1", "jellyfin", CancellationToken.None);
 
@@ -103,9 +104,9 @@ public class TvheadendStreamProfileResolverTests
     [Fact]
     public async Task ResolveProfileByNameAsync_WithCodecProfileLink_ResolvesCodecAndDeinterlace()
     {
-        var api = new Mock<ITvheadendApiClient>();
-        var idNode = new Mock<ITvheadendIdNodeService>();
-        var reader = new TvheadendJsonReader();
+        var api = new Mock<IApiClient>();
+        var idNode = new Mock<IIdNodeService>();
+        var reader = new JsonReader();
 
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
@@ -128,7 +129,7 @@ public class TvheadendStreamProfileResolverTests
         idNode.Setup(x => x.LoadIdNodeByUuidAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), "codec-1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(System.Text.Json.JsonDocument.Parse("{\"entries\":[{\"class\":\"codec_profile_libx264\",\"codec\":\"libx264\",\"deinterlace\":true}]}") );
 
-        var sut = new TvheadendStreamProfileResolver(api.Object, idNode.Object, reader);
+        var sut = new ProfileResolver(api.Object, idNode.Object, reader);
         using var http = new HttpClient();
         var result = await sut.ResolveProfileByNameAsync(http, "http://tvh:9981", "/", "jellyfin", CancellationToken.None);
 

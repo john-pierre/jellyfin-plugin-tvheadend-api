@@ -8,7 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.LiveTv;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,31 +17,31 @@ using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
-public class TvheadendDvrServiceTests
+public class DvrServiceTests
 {
     [Fact]
     public void Constructor_WithNullLogger_Throws()
     {
-        var apiClient = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var apiClient = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
-        Assert.Throws<ArgumentNullException>(() => new TvheadendDvrService(null!, apiClient.Object, urlBuilder.Object));
+        Assert.Throws<ArgumentNullException>(() => new DvrService(null!, apiClient.Object, urlBuilder.Object));
     }
 
     [Fact]
     public void Constructor_WithNullApiClient_Throws()
     {
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
-        Assert.Throws<ArgumentNullException>(() => new TvheadendDvrService(NullLogger<TvheadendDvrService>.Instance, null!, urlBuilder.Object));
+        Assert.Throws<ArgumentNullException>(() => new DvrService(NullLogger<DvrService>.Instance, null!, urlBuilder.Object));
     }
 
     [Fact]
     public void Constructor_WithNullUrlBuilder_Throws()
     {
-        var apiClient = new Mock<ITvheadendApiClient>();
+        var apiClient = new Mock<IApiClient>();
 
-        Assert.Throws<ArgumentNullException>(() => new TvheadendDvrService(NullLogger<TvheadendDvrService>.Instance, apiClient.Object, null!));
+        Assert.Throws<ArgumentNullException>(() => new DvrService(NullLogger<DvrService>.Instance, apiClient.Object, null!));
     }
 
     [Fact]
@@ -596,22 +596,30 @@ public class TvheadendDvrServiceTests
         Assert.Equal(7, defaults.Days.Count);
     }
 
-    private static TvheadendDvrService CreateSut(
+    private static DvrService CreateSut(
         QueueHttpMessageHandler handler,
-        out Mock<ITvheadendUrlBuilder> urlBuilder,
-        out Mock<ITvheadendApiClient> apiClient,
+        out Mock<IUrlBuilder> urlBuilder,
+        out Mock<IApiClient> apiClient,
         PluginConfiguration? configuration)
     {
-        urlBuilder = new Mock<ITvheadendUrlBuilder>();
-        apiClient = new Mock<ITvheadendApiClient>();
+        urlBuilder = new Mock<IUrlBuilder>();
+        apiClient = new Mock<IApiClient>();
 
         urlBuilder
-            .Setup(x => x.BuildUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>(), It.IsAny<string>()))
-            .Returns<PluginConfiguration, string, string>((_, endpoint, _) =>
+            .Setup(x => x.BuildUrlWithHeaderAuth(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) =>
+                "http://tvheadend.local/" + endpoint.TrimStart('/'));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithParameterAuth(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) =>
+                "http://tvheadend.local/" + endpoint.TrimStart('/'));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithUrlAuth(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) =>
                 "http://tvheadend.local/" + endpoint.TrimStart('/'));
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(configuration);
-        apiClient.Setup(x => x.CreateHttpClient(It.IsAny<PluginConfiguration>()))
+        apiClient.Setup(x => x.BuildHttpClient(It.IsAny<PluginConfiguration>()))
             .Returns(() => new HttpClient(handler, disposeHandler: false));
         apiClient.Setup(x => x.PostFormAsync(
                 It.IsAny<HttpClient>(),
@@ -620,7 +628,7 @@ public class TvheadendDvrServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK));
 
-        return new TvheadendDvrService(NullLogger<TvheadendDvrService>.Instance, apiClient.Object, urlBuilder.Object);
+        return new DvrService(NullLogger<DvrService>.Instance, apiClient.Object, urlBuilder.Object);
     }
 
     private static PluginConfiguration CreateConfig(int priority = 5, string recordingProfile = "default")

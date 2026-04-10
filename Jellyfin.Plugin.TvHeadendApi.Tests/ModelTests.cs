@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Jellyfin.Plugin.TvHeadendApi.Model;
 using Xunit;
 

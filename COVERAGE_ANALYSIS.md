@@ -1,3 +1,7 @@
+﻿- `Service/Streaming/LiveStreamSourceService.cs` - Stream management
+- `Service/Streaming/LiveStreamLifecycleService.cs` - Stream lifecycle
+- `Service/Profiles/ProfileProvisioningService.cs` - Codec profile setup
+- `Service/Diagnostics/DiagnoseService.cs` - System diagnostics
 # Unit Test Coverage Analysis Report
 
 **Date:** 2026-04-08  
@@ -30,12 +34,14 @@ These are the main business logic files with **zero test coverage**:
 - `Service/LiveTvService.cs` - Main ILiveTvService implementation
 - `Service/Guide/LiveTvGuideService.cs` - Channel/Program guide integration
 - `Service/Dvr/TvheadendDvrService.cs` - DVR recording management
+- `Service/Guide/GuideService.cs` - Channel/Program guide integration
+- `Service/Dvr/DvrService.cs` - DVR recording management
   - `.SingleTimers.cs` partial
   - `.SeriesTimers.cs` partial
-- `Service/Streaming/LiveStreamSourceService.cs` - Stream management
-- `Service/Streaming/LiveStreamLifecycleService.cs` - Stream lifecycle
-- `Service/Profiles/ProfileProvisioningService.cs` - Codec profile setup
-- `Service/Diagnostics/DiagnoseService.cs` - System diagnostics
+- `Service/Stream/SourceService.cs` - Stream management
+- `Service/Stream/LifecycleService.cs` - Stream lifecycle
+- `Service/Profile/ProvisioningService.cs` - Codec profile setup
+- `Service/Diagnostic/DiagnosticService.cs` - System diagnostics
 
 #### 2. **API Controller** (HTTP Endpoints)
 - `Api/TvHeadendApiController.cs` - REST endpoints
@@ -146,7 +152,7 @@ Based on complexity and branching:
 ### Phase 2: Core Service Tests (60% → 80% Coverage)
 **Effort: 2-3 weeks**
 1. Create fixtures for `TvheadendApiClient` HTTP interactions
-2. Mock TVHeadend responses and test `LiveTvGuideService`
+2. Mock TVHeadend responses and test `GuideService`
 3. Test DVR timer CRUD operations
 4. Test stream lifecycle management
 
@@ -164,9 +170,9 @@ Based on complexity and branching:
 ### For Service Classes
 ```csharp
 // Use Moq for dependencies
-var mockGuide = new Mock<ILiveTvGuideService>();
-var mockDvr = new Mock<ITvheadendDvrService>();
-var sut = new LiveTvService(mockGuide.Object, mockDvr.Object, ...);
+var mockGuide = new Mock<IGuideService>();
+var mockDvr = new Mock<IDvrService>();
+var sut = new OrchestratorService(mockGuide.Object, mockDvr.Object, ...);
 ```
 
 ### For TVHeadend API Client

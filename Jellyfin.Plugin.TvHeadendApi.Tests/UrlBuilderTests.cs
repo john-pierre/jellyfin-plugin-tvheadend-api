@@ -1,15 +1,15 @@
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
-public class TvheadendUrlBuilderTests
+public class UrlBuilderTests
 {
     [Fact]
-    public void BuildUrl_WithAnonymousAccess_ReturnsPlainEndpointUrl()
+    public void BuildUrlWithUrlAuth_WithAnonymousAccess_ReturnsPlainEndpointUrl()
     {
-        var sut = new TvheadendUrlBuilder();
+        var sut = new UrlBuilder();
         var config = new PluginConfiguration
         {
             Host = "tvh.local",
@@ -18,15 +18,15 @@ public class TvheadendUrlBuilderTests
             AllowAnonymousAccess = true,
         };
 
-        var url = sut.BuildUrl(config, "api/serverinfo", "url");
+        var url = sut.BuildUrlWithUrlAuth(config, "api/serverinfo");
 
         Assert.Equal("http://tvh.local:9981/tvh/api/serverinfo", url);
     }
 
     [Fact]
-    public void BuildUrl_WithUrlAuth_EmbedsEscapedCredentials()
+    public void BuildUrlWithUrlAuth_EmbedsEscapedCredentials()
     {
-        var sut = new TvheadendUrlBuilder();
+        var sut = new UrlBuilder();
         var config = new PluginConfiguration
         {
             Host = "tvh.local",
@@ -38,15 +38,15 @@ public class TvheadendUrlBuilderTests
             Password = "pa:ss",
         };
 
-        var url = sut.BuildUrl(config, "api/serverinfo", "url");
+        var url = sut.BuildUrlWithUrlAuth(config, "api/serverinfo");
 
         Assert.StartsWith("https://user%40domain:pa%3Ass@tvh.local:9982/", url);
     }
 
     [Fact]
-    public void BuildUrl_WithParameterAuth_AppendsToken()
+    public void BuildUrlWithParameterAuth_AppendsToken()
     {
-        var sut = new TvheadendUrlBuilder();
+        var sut = new UrlBuilder();
         var config = new PluginConfiguration
         {
             Host = "tvh.local",
@@ -55,7 +55,7 @@ public class TvheadendUrlBuilderTests
             AuthToken = "abc123",
         };
 
-        var url = sut.BuildUrl(config, "api/serverinfo?x=1", "parameter");
+        var url = sut.BuildUrlWithParameterAuth(config, "api/serverinfo?x=1");
 
         Assert.Equal("http://tvh.local:9981/api/serverinfo?x=1&auth=abc123", url);
     }
@@ -63,7 +63,7 @@ public class TvheadendUrlBuilderTests
     [Fact]
     public void MaskSensitiveData_MasksTokenAndCredentials()
     {
-        var sut = new TvheadendUrlBuilder();
+        var sut = new UrlBuilder();
         var config = new PluginConfiguration
         {
             Username = "alice",
@@ -79,4 +79,3 @@ public class TvheadendUrlBuilderTests
         Assert.Contains("***", output);
     }
 }
-

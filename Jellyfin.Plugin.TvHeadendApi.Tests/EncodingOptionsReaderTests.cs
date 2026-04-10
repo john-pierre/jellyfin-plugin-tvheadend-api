@@ -1,5 +1,5 @@
 using System;
-using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using MediaBrowser.Controller.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -7,12 +7,12 @@ using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
-public class JellyfinEncodingOptionsReaderTests
+public class EncodingOptionsReaderTests
 {
     [Fact]
     public void ReadFfmpegSettings_WithNullServerConfigManager_Throws()
     {
-        var sut = new JellyfinEncodingOptionsReader();
+        var sut = new EncodingOptionsReader();
 
         Assert.Throws<ArgumentNullException>(() =>
             sut.ReadFfmpegSettings(null!, NullLogger.Instance));
@@ -21,7 +21,7 @@ public class JellyfinEncodingOptionsReaderTests
     [Fact]
     public void ReadFfmpegSettings_WithNullLogger_Throws()
     {
-        var sut = new JellyfinEncodingOptionsReader();
+        var sut = new EncodingOptionsReader();
         var serverConfigManager = new Mock<IServerConfigurationManager>();
 
         Assert.Throws<ArgumentNullException>(() =>
@@ -31,7 +31,7 @@ public class JellyfinEncodingOptionsReaderTests
     [Fact]
     public void ReadFfmpegSettings_ReadsValuesFromEncodingConfiguration()
     {
-        var sut = new JellyfinEncodingOptionsReader();
+        var sut = new EncodingOptionsReader();
         var serverConfigManager = new Mock<IServerConfigurationManager>();
         serverConfigManager
             .Setup(x => x.GetConfiguration("encoding"))
@@ -58,7 +58,7 @@ public class JellyfinEncodingOptionsReaderTests
             Environment.SetEnvironmentVariable("JELLYFIN_FFmpeg__ProbeSize", "777777");
             Environment.SetEnvironmentVariable("JELLYFIN_FFmpeg__AnalyzeDuration", "888888");
 
-            var sut = new JellyfinEncodingOptionsReader();
+            var sut = new EncodingOptionsReader();
             var serverConfigManager = new Mock<IServerConfigurationManager>();
             serverConfigManager.Setup(x => x.GetConfiguration("encoding")).Throws(new InvalidOperationException("boom"));
 

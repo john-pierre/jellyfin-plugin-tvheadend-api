@@ -29,8 +29,8 @@ Before creating or renaming files, follow `README.md` section **"Naming and Stru
 
 Short version:
 
-- Keep TVHeadend-specific helpers under `Jellyfin.Plugin.TvHeadendApi/Service/Tvheadend/`.
+- Keep TVHeadend-specific infrastructure adapters under `Jellyfin.Plugin.TvHeadendApi/Service/Infrastructure/`.
 - Do not reintroduce a generic `Utility/` folder.
 - Match C# file names and primary type names exactly.
-- Use `Tvheadend*` for service/helper classes; reserve `TvhApi*` for API DTO models.
+- Prefer descriptive service/helper names without source-system prefixes when the folder namespace already provides context; reserve `TvhApi*` for API DTO models.
 

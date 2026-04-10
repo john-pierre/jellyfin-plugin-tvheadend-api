@@ -272,10 +272,10 @@ If you are an AI coding assistant working in this repository:
 
 Primary architecture files:
 
-- `Jellyfin.Plugin.TvHeadendApi/Service/LiveTvService.cs`
+- `Jellyfin.Plugin.TvHeadendApi/Service/OrchestratorService.cs`
 - `Jellyfin.Plugin.TvHeadendApi/Configuration/PluginConfiguration.cs`
 - `Jellyfin.Plugin.TvHeadendApi/Api/TvHeadendApiController.cs`
-- `Jellyfin.Plugin.TvHeadendApi/Service/Guide/LiveTvGuideService.cs`
+- `Jellyfin.Plugin.TvHeadendApi/Service/Guide/GuideService.cs`
 
 ## Developer Notes
 

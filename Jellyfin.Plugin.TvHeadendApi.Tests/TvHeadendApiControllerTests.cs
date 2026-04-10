@@ -2,8 +2,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Api;
 using Jellyfin.Plugin.TvHeadendApi.Model;
-using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
-using Jellyfin.Plugin.TvHeadendApi.Service.Profiles;
+using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Microsoft.AspNetCore.Mvc;
 using Xunit;
 
@@ -16,8 +16,8 @@ public class TvHeadendApiControllerTests
     {
         var expected = new DiagnoseResult { OverallStatus = "OK", CompatibilityScore = 100 };
         var sut = new TvHeadendApiController(
-            new FakeDiagnoseService(expected),
-            new FakeProfileProvisioningService());
+            new FakeDiagnosticService(expected),
+            new FakeProvisioningService());
 
         var result = await sut.Diagnose(CancellationToken.None);
 
@@ -30,8 +30,8 @@ public class TvHeadendApiControllerTests
     public async Task CreateProfile_ReturnsOkWithPayload()
     {
         var sut = new TvHeadendApiController(
-            new FakeDiagnoseService(new DiagnoseResult()),
-            new FakeProfileProvisioningService());
+            new FakeDiagnosticService(new DiagnoseResult()),
+            new FakeProvisioningService());
 
         var result = await sut.CreateProfile(CancellationToken.None);
 
@@ -44,8 +44,8 @@ public class TvHeadendApiControllerTests
     public void ResetToDefaults_WhenPluginInstanceUnavailable_ReturnsBadRequest()
     {
         var sut = new TvHeadendApiController(
-            new FakeDiagnoseService(new DiagnoseResult()),
-            new FakeProfileProvisioningService());
+            new FakeDiagnosticService(new DiagnoseResult()),
+            new FakeProvisioningService());
 
         var result = sut.ResetToDefaults();
 
@@ -53,11 +53,11 @@ public class TvHeadendApiControllerTests
     }
 
 
-    private sealed class FakeDiagnoseService : IDiagnoseService
+    private sealed class FakeDiagnosticService : IDiagnosticService
     {
         private readonly DiagnoseResult _result;
 
-        public FakeDiagnoseService(DiagnoseResult result)
+        public FakeDiagnosticService(DiagnoseResult result)
         {
             _result = result;
         }
@@ -66,7 +66,7 @@ public class TvHeadendApiControllerTests
             => Task.FromResult(_result);
     }
 
-    private sealed class FakeProfileProvisioningService : IProfileProvisioningService
+    private sealed class FakeProvisioningService : IProvisioningService
     {
         public Task<ProfileDetectionResult> CreateProfileAsync(CancellationToken cancellationToken)
         {

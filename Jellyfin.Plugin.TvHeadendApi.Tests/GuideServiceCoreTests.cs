@@ -7,21 +7,21 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
-public class LiveTvGuideServiceCoreTests
+public class GuideServiceCoreTests
 {
     [Fact]
     public async Task GetChannelsAsync_WithSuccessResponse_MapsNumberAndImageProxyUrl()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
         var json = """
                    {
@@ -38,13 +38,19 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((value, _) => value);
         urlBuilder
-            .Setup(x => x.BuildUrl(config, It.IsAny<string>(), It.IsAny<string>()))
-            .Returns<PluginConfiguration, string, string>((_, endpoint, _) => "http://tvh/" + endpoint.TrimStart('/'));
+            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithUrlAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
 
         Assert.Equal(2, result.Count);
@@ -60,8 +66,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetChannelsAsync_WhenEntriesEmpty_ReturnsEmpty()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -69,11 +75,12 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, It.IsAny<string>(), It.IsAny<string>())).Returns("http://tvh/channels");
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/channels");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/channels");
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns("http://tvh/channels");
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetChannelsAsync(CancellationToken.None);
 
         Assert.Empty(result);
@@ -83,8 +90,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetChannelsAsync_WhenHttpNonSuccess_ReturnsEmpty()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.BadGateway)
         {
@@ -92,11 +99,12 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, It.IsAny<string>(), It.IsAny<string>())).Returns("http://tvh/channels");
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/channels");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/channels");
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns("http://tvh/channels");
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetChannelsAsync(CancellationToken.None);
 
         Assert.Empty(result);
@@ -105,10 +113,10 @@ public class LiveTvGuideServiceCoreTests
     [Fact]
     public async Task GetChannelsAsync_WhenConfigMissing_ReturnsEmpty()
     {
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
 
         var result = await sut.GetChannelsAsync(CancellationToken.None);
 
@@ -120,8 +128,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetChannelsAsync_WithWhitespaceIcon_DoesNotBuildImageProxyUrl()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -131,24 +139,25 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, It.IsAny<string>(), It.IsAny<string>())).Returns<PluginConfiguration, string, string>((_, endpoint, _) => "http://tvh/" + endpoint.TrimStart('/'));
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((value, _) => value);
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = (await sut.GetChannelsAsync(CancellationToken.None)).Single();
 
         Assert.False(result.HasImage);
         Assert.Null(result.ImageUrl);
-        urlBuilder.Verify(x => x.BuildUrl(config, It.Is<string>(endpoint => endpoint.StartsWith("imagecache/", StringComparison.Ordinal)), It.IsAny<string>()), Times.Never);
+        urlBuilder.Verify(x => x.BuildUrlWithParameterAuth(config, It.Is<string>(endpoint => endpoint.StartsWith("imagecache/", StringComparison.Ordinal))), Times.Never);
     }
 
     [Fact]
     public async Task GetChannelsAsync_WithInvalidJson_ReturnsEmpty()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -156,11 +165,12 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, It.IsAny<string>(), It.IsAny<string>())).Returns("http://tvh/channels");
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/channels");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/channels");
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns("http://tvh/channels");
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetChannelsAsync(CancellationToken.None);
 
         Assert.Empty(result);
@@ -169,9 +179,9 @@ public class LiveTvGuideServiceCoreTests
     [Fact]
     public async Task GetProgramsAsync_WithEmptyChannelId_ThrowsArgumentException()
     {
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             sut.GetProgramsAsync(string.Empty, DateTime.UtcNow, DateTime.UtcNow.AddHours(1), CancellationToken.None));
@@ -181,8 +191,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetProgramsAsync_FiltersByChannelAndDateRange()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
         var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
         var endUtc = startUtc.AddHours(1);
         var eventStart = new DateTimeOffset(startUtc.AddMinutes(10)).ToUnixTimeSeconds();
@@ -204,10 +214,11 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, It.IsAny<string>(), It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = (await sut.GetProgramsAsync("ch-1", startUtc, endUtc, CancellationToken.None)).ToList();
 
         Assert.Single(result);
@@ -219,8 +230,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetProgramsAsync_ImageCachePath_UsesImageProxyUrl()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
         var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
         var endUtc = startUtc.AddHours(1);
 
@@ -238,12 +249,15 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
         urlBuilder
-            .Setup(x => x.BuildUrl(config, It.IsAny<string>(), It.IsAny<string>()))
-            .Returns<PluginConfiguration, string, string>((_, endpoint, _) => "http://tvh/" + endpoint.TrimStart('/'));
+            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal("http://tvh/imagecache/poster 1.png", program.ImageUrl);
@@ -254,8 +268,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetProgramsAsync_ChannelIconFallback_UsesImageProxyUrlWhenImageMissing()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
         var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
         var endUtc = startUtc.AddHours(1);
 
@@ -273,12 +287,15 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
         urlBuilder
-            .Setup(x => x.BuildUrl(config, It.IsAny<string>(), It.IsAny<string>()))
-            .Returns<PluginConfiguration, string, string>((_, endpoint, _) => "http://tvh/" + endpoint.TrimStart('/'));
+            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal("http://tvh/imagecache/ch1.png", program.ImageUrl);
@@ -289,8 +306,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetProgramsAsync_MapsGenresAndCategoryFlags()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
         var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
         var endUtc = startUtc.AddHours(1);
 
@@ -308,10 +325,11 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, It.IsAny<string>(), It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Contains("Comedy", program.Genres);
@@ -330,8 +348,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetProgramsAsync_BoundaryEventsAreExcluded()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
         var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
         var endUtc = startUtc.AddHours(1);
 
@@ -350,10 +368,11 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, It.IsAny<string>(), It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetProgramsAsync("ch-1", startUtc, endUtc, CancellationToken.None);
 
         Assert.Empty(result);
@@ -363,8 +382,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetProgramsAsync_ExternalImageUrl_IsKeptAsIs()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
         var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
         var endUtc = startUtc.AddHours(1);
         const string externalImage = "https://cdn.example/poster.jpg";
@@ -383,23 +402,24 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, It.IsAny<string>(), It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal(externalImage, program.ImageUrl);
         Assert.True(program.HasImage);
-        urlBuilder.Verify(x => x.BuildUrl(config, It.Is<string>(endpoint => endpoint.Contains("imagecache/", StringComparison.Ordinal)), It.IsAny<string>()), Times.Never);
+        urlBuilder.Verify(x => x.BuildUrlWithParameterAuth(config, It.Is<string>(endpoint => endpoint.Contains("imagecache/", StringComparison.Ordinal))), Times.Never);
     }
 
     [Fact]
     public async Task GetProgramsAsync_WhenHttpNonSuccess_ReturnsEmpty()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.BadGateway)
         {
@@ -407,10 +427,11 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, It.IsAny<string>(), It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, "api/epg/content_type/list")).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, "api/epg/content_type/list")).Returns("http://tvh/epg");
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetProgramsAsync("ch-1", DateTime.UtcNow.AddHours(-1), DateTime.UtcNow.AddHours(1), CancellationToken.None);
 
         Assert.Empty(result);
@@ -419,10 +440,10 @@ public class LiveTvGuideServiceCoreTests
     [Fact]
     public async Task GetContentTypesAsync_WhenConfigMissing_ReturnsEmpty()
     {
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
 
         var result = await sut.GetContentTypesAsync(CancellationToken.None);
 
@@ -433,8 +454,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetContentTypesAsync_WithSuccessResponse_ReturnsMappedDictionary()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -442,10 +463,11 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, "api/epg/content_type/list", "header")).Returns("http://tvh/content-types");
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetContentTypesAsync(CancellationToken.None);
 
         Assert.Single(result);
@@ -456,8 +478,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetContentTypesAsync_WithNonSuccessStatus_ReturnsEmpty()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.BadRequest)
         {
@@ -465,10 +487,11 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, "api/epg/content_type/list", "header")).Returns("http://tvh/content-types");
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetContentTypesAsync(CancellationToken.None);
 
         Assert.Empty(result);
@@ -478,8 +501,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetChannelTagsAsync_WithSuccessResponse_ReturnsMappedDictionary()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -487,10 +510,11 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, "api/channeltag/list", "header")).Returns("http://tvh/channel-tags");
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetChannelTagsAsync(CancellationToken.None);
 
         Assert.Single(result);
@@ -501,8 +525,8 @@ public class LiveTvGuideServiceCoreTests
     public async Task GetChannelTagsAsync_WithBrokenJson_ReturnsEmpty()
     {
         var config = new PluginConfiguration();
-        var api = new Mock<ITvheadendApiClient>();
-        var urlBuilder = new Mock<ITvheadendUrlBuilder>();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -510,10 +534,11 @@ public class LiveTvGuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrl(config, "api/channeltag/list", "header")).Returns("http://tvh/channel-tags");
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
 
-        var sut = new LiveTvGuideService(NullLogger<LiveTvGuideService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetChannelTagsAsync(CancellationToken.None);
 
         Assert.Empty(result);

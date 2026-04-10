@@ -1,10 +1,10 @@
 using Jellyfin.Plugin.TvHeadendApi.Service;
-using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Profiles;
-using Jellyfin.Plugin.TvHeadendApi.Service.Streaming;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.LiveTv;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,13 +24,13 @@ public class ServiceRegistratorTests
 
         sut.RegisterServices(services, host.Object);
 
-        Assert.Contains(services, d => d.ServiceType == typeof(ITvheadendUrlBuilder) && d.ImplementationType == typeof(TvheadendUrlBuilder));
-        Assert.Contains(services, d => d.ServiceType == typeof(ILiveTvGuideService) && d.ImplementationType == typeof(LiveTvGuideService));
-        Assert.Contains(services, d => d.ServiceType == typeof(ITvheadendDvrService) && d.ImplementationType == typeof(TvheadendDvrService));
-        Assert.Contains(services, d => d.ServiceType == typeof(ILiveStreamSourceService) && d.ImplementationType == typeof(LiveStreamSourceService));
-        Assert.Contains(services, d => d.ServiceType == typeof(ILiveStreamLifecycleService) && d.ImplementationType == typeof(LiveStreamLifecycleService));
-        Assert.Contains(services, d => d.ServiceType == typeof(IProfileProvisioningService) && d.ImplementationType == typeof(ProfileProvisioningService));
-        Assert.Contains(services, d => d.ServiceType == typeof(ILiveTvService) && d.ImplementationType == typeof(LiveTvService));
-        Assert.Contains(services, d => d.ServiceType == typeof(IDiagnoseService) && d.ImplementationType == typeof(DiagnoseService));
+        Assert.Contains(services, d => d.ServiceType == typeof(IUrlBuilder) && d.ImplementationType == typeof(UrlBuilder));
+        Assert.Contains(services, d => d.ServiceType == typeof(IGuideService) && d.ImplementationType == typeof(GuideService));
+        Assert.Contains(services, d => d.ServiceType == typeof(IDvrService) && d.ImplementationType == typeof(DvrService));
+        Assert.Contains(services, d => d.ServiceType == typeof(IMediaSourceService) && d.ImplementationType == typeof(MediaSourceService));
+        Assert.Contains(services, d => d.ServiceType == typeof(ILifecycleService) && d.ImplementationType == typeof(LifecycleService));
+        Assert.Contains(services, d => d.ServiceType == typeof(IProvisioningService) && d.ImplementationType == typeof(ProvisioningService));
+        Assert.Contains(services, d => d.ServiceType == typeof(ILiveTvService) && d.ImplementationType == typeof(OrchestratorService));
+        Assert.Contains(services, d => d.ServiceType == typeof(IDiagnosticService) && d.ImplementationType == typeof(DiagnosticService));
     }
 }

@@ -1,9 +1,9 @@
-﻿using System.Threading;
+using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Api;
 using Jellyfin.Plugin.TvHeadendApi.Model;
-using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
-using Jellyfin.Plugin.TvHeadendApi.Service.Profiles;
+using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
@@ -26,15 +26,15 @@ public class TvHeadendApiControllerExtendedTests
             CompatibilityScore = 95
         };
 
-        var mockDiagnoseService = new Mock<IDiagnoseService>();
-        mockDiagnoseService
+        var mockDiagnosticService = new Mock<IDiagnosticService>();
+        mockDiagnosticService
             .Setup(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedResult);
 
-        var mockProfileService = new Mock<IProfileProvisioningService>();
+        var mockProfileService = new Mock<IProvisioningService>();
 
         var controller = new TvHeadendApiController(
-            mockDiagnoseService.Object,
+            mockDiagnosticService.Object,
             mockProfileService.Object);
 
         // Act
@@ -52,22 +52,22 @@ public class TvHeadendApiControllerExtendedTests
     public async Task Diagnose_CallsServiceOnce()
     {
         // Arrange
-        var mockDiagnoseService = new Mock<IDiagnoseService>();
-        mockDiagnoseService
+        var mockDiagnosticService = new Mock<IDiagnosticService>();
+        mockDiagnosticService
             .Setup(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DiagnoseResult { OverallStatus = "OK" });
 
-        var mockProfileService = new Mock<IProfileProvisioningService>();
+        var mockProfileService = new Mock<IProvisioningService>();
 
         var controller = new TvHeadendApiController(
-            mockDiagnoseService.Object,
+            mockDiagnosticService.Object,
             mockProfileService.Object);
 
         // Act
         await controller.Diagnose(CancellationToken.None);
 
         // Assert
-        mockDiagnoseService.Verify(
+        mockDiagnosticService.Verify(
             x => x.DiagnoseAsync(It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -83,15 +83,15 @@ public class TvHeadendApiControllerExtendedTests
             ProfileName = "jellyfin"
         };
 
-        var mockProfileService = new Mock<IProfileProvisioningService>();
+        var mockProfileService = new Mock<IProvisioningService>();
         mockProfileService
             .Setup(x => x.CreateProfileAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedResult);
 
-        var mockDiagnoseService = new Mock<IDiagnoseService>();
+        var mockDiagnosticService = new Mock<IDiagnosticService>();
 
         var controller = new TvHeadendApiController(
-            mockDiagnoseService.Object,
+            mockDiagnosticService.Object,
             mockProfileService.Object);
 
         // Act
@@ -115,15 +115,15 @@ public class TvHeadendApiControllerExtendedTests
             Message = "Profile creation failed"
         };
 
-        var mockProfileService = new Mock<IProfileProvisioningService>();
+        var mockProfileService = new Mock<IProvisioningService>();
         mockProfileService
             .Setup(x => x.CreateProfileAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(failureResult);
 
-        var mockDiagnoseService = new Mock<IDiagnoseService>();
+        var mockDiagnosticService = new Mock<IDiagnosticService>();
 
         var controller = new TvHeadendApiController(
-            mockDiagnoseService.Object,
+            mockDiagnosticService.Object,
             mockProfileService.Object);
 
         // Act
@@ -146,15 +146,15 @@ public class TvHeadendApiControllerExtendedTests
             Message = "Token generated"
         };
 
-        var mockProfileService = new Mock<IProfileProvisioningService>();
+        var mockProfileService = new Mock<IProvisioningService>();
         mockProfileService
             .Setup(x => x.GenerateAuthTokenAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(tokenResult);
 
-        var mockDiagnoseService = new Mock<IDiagnoseService>();
+        var mockDiagnosticService = new Mock<IDiagnosticService>();
 
         var controller = new TvHeadendApiController(
-            mockDiagnoseService.Object,
+            mockDiagnosticService.Object,
             mockProfileService.Object);
 
         // Act
@@ -172,11 +172,11 @@ public class TvHeadendApiControllerExtendedTests
     public void ResetToDefaults_WithoutPluginInstance_ReturnsBadRequest()
     {
         // Arrange
-        var mockDiagnoseService = new Mock<IDiagnoseService>();
-        var mockProfileService = new Mock<IProfileProvisioningService>();
+        var mockDiagnosticService = new Mock<IDiagnosticService>();
+        var mockProfileService = new Mock<IProvisioningService>();
 
         var controller = new TvHeadendApiController(
-            mockDiagnoseService.Object,
+            mockDiagnosticService.Object,
             mockProfileService.Object);
 
         // Act
@@ -191,13 +191,13 @@ public class TvHeadendApiControllerExtendedTests
 /// <summary>
 /// Tests for profile provisioning service interactions.
 /// </summary>
-public class ProfileProvisioningServiceInteractionTests
+public class ProvisioningServiceInteractionTests
 {
     [Fact]
     public async Task CreateProfileAsync_SuccessfulResult_HasProfileName()
     {
         // Arrange
-        var mockService = new Mock<IProfileProvisioningService>();
+        var mockService = new Mock<IProvisioningService>();
         mockService
             .Setup(x => x.CreateProfileAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileDetectionResult
@@ -219,7 +219,7 @@ public class ProfileProvisioningServiceInteractionTests
     public async Task GenerateAuthTokenAsync_ReturnsToken()
     {
         // Arrange
-        var mockService = new Mock<IProfileProvisioningService>();
+        var mockService = new Mock<IProvisioningService>();
         mockService
             .Setup(x => x.GenerateAuthTokenAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AuthTokenGenerationResult

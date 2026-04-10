@@ -1,4 +1,4 @@
-# Contributing to jellyfin-plugin-tvheadend-api
+﻿# Contributing to jellyfin-plugin-tvheadend-api
 
 Thank you for your interest in contributing! This document explains how to set up the project, the coding standards we follow, and how to submit changes.
 
@@ -110,7 +110,7 @@ To keep release changelog entries aligned with PR titles, maintainers should use
 
 | Path | Description |
 |------|-------------|
-| `Jellyfin.Plugin.TvHeadendApi/Service/LiveTvService.cs` | Core service implementing `ILiveTvService` |
+| `Jellyfin.Plugin.TvHeadendApi/Service/OrchestratorService.cs` | Core service implementing `ILiveTvService` |
 | `Jellyfin.Plugin.TvHeadendApi/Plugin.cs` | Plugin entry point and configuration page registration |
 | `Jellyfin.Plugin.TvHeadendApi/ServiceRegistrator.cs` | Dependency injection setup |
 | `Jellyfin.Plugin.TvHeadendApi/Configuration/` | Configuration model and embedded HTML settings page |

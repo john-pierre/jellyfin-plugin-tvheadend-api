@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
@@ -6,17 +6,17 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using Moq;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
 /// <summary>
-/// Infrastructure Tests for TvheadendApiClient and HTTP operations.
+/// Infrastructure Tests for ApiClient and HTTP operations.
 /// Tests the HTTP abstraction layer and basic client operations.
 /// </summary>
-public class TvheadendApiClientTests
+public class ApiClientTests
 {
     private readonly PluginConfiguration _testConfig = new()
     {
@@ -28,13 +28,13 @@ public class TvheadendApiClientTests
     };
 
     [Fact]
-    public void CreateHttpClient_WithValidConfig_ReturnsHttpClient()
+    public void BuildHttpClient_WithValidConfig_ReturnsHttpClient()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
 
         // Act
-        var result = client.CreateHttpClient(_testConfig);
+        var result = client.BuildHttpClient(_testConfig);
 
         // Assert
         Assert.NotNull(result);
@@ -42,14 +42,14 @@ public class TvheadendApiClientTests
     }
 
     [Fact]
-    public void CreateHttpClient_CreatesNewInstanceEachTime()
+    public void BuildHttpClient_CreatesNewInstanceEachTime()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
 
         // Act
-        var client1 = client.CreateHttpClient(_testConfig);
-        var client2 = client.CreateHttpClient(_testConfig);
+        var client1 = client.BuildHttpClient(_testConfig);
+        var client2 = client.BuildHttpClient(_testConfig);
 
         // Assert
         Assert.NotSame(client1, client2);
@@ -59,7 +59,7 @@ public class TvheadendApiClientTests
     public void GetBaseUrl_WithValidConfig_ReturnsUrl()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
 
         // Act
         var url = client.GetBaseUrl(_testConfig);
@@ -74,7 +74,7 @@ public class TvheadendApiClientTests
     public void GetBaseUrl_IncludesHostAndPort()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
 
         // Act
         var url = client.GetBaseUrl(_testConfig);
@@ -88,7 +88,7 @@ public class TvheadendApiClientTests
     public void GetWebRoot_ReturnsNormalizedWebroot()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
 
         // Act
         var webroot = client.GetWebRoot(_testConfig);
@@ -102,7 +102,7 @@ public class TvheadendApiClientTests
     public void BuildUrl_WithEndpoint_ConstructsFullUrl()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
 
         // Act
         var url = client.BuildUrl(_testConfig, "/api/channel/grid");
@@ -117,7 +117,7 @@ public class TvheadendApiClientTests
     public async Task GetStringAsync_WithMockedHttpClient_ReturnsString()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
         var mockHandler = new MockHttpMessageHandler
         {
             Response = new HttpResponseMessage(HttpStatusCode.OK)
@@ -140,7 +140,7 @@ public class TvheadendApiClientTests
     public async Task GetStringAsync_WithCancellation_ThrowsOperationCanceledException()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
         var mockHandler = new MockHttpMessageHandler
         {
             Delay = 1000
@@ -158,7 +158,7 @@ public class TvheadendApiClientTests
     public async Task PostFormAsync_WithValidData_ReturnsHttpResponse()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
         var mockHandler = new MockHttpMessageHandler
         {
             Response = new HttpResponseMessage(HttpStatusCode.OK)
@@ -183,7 +183,7 @@ public class TvheadendApiClientTests
     public async Task PostFormAsync_WithFormContent_IncludesFormData()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
         var capturedRequest = false;
         var mockHandler = new MockHttpMessageHandler
         {
@@ -211,7 +211,7 @@ public class TvheadendApiClientTests
     public async Task GetStreamAsync_WithValidResponse_ReturnsStream()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
         var mockHandler = new MockHttpMessageHandler
         {
             Response = new HttpResponseMessage(HttpStatusCode.OK)
@@ -235,7 +235,7 @@ public class TvheadendApiClientTests
     public async Task GetStreamAsync_WithFailedResponse_ThrowsHttpRequestException()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
         var mockHandler = new MockHttpMessageHandler
         {
             Response = new HttpResponseMessage(HttpStatusCode.NotFound)
@@ -253,7 +253,7 @@ public class TvheadendApiClientTests
     public void BuildUrl_WithDifferentEndpoints_ReturnsDifferentUrls()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
 
         // Act
         var url1 = client.BuildUrl(_testConfig, "/api/channel/grid");
@@ -269,7 +269,7 @@ public class TvheadendApiClientTests
     public async Task GetStringAsync_MultipleRequests_BothSucceed()
     {
         // Arrange
-        var client = new TvheadendApiClient();
+        var client = new ApiClient();
         var mockHandler = new MockHttpMessageHandler
         {
             ResponseFactory = () => new HttpResponseMessage(HttpStatusCode.OK)

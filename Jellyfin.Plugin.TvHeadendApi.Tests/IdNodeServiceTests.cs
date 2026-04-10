@@ -5,12 +5,12 @@ using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
-public class TvheadendIdNodeServiceTests
+public class IdNodeServiceTests
 {
     [Fact]
     public async Task LoadIdNodeByUuidAsync_BuildsExpectedGetUrl()
@@ -23,7 +23,7 @@ public class TvheadendIdNodeServiceTests
             }
         };
         using var httpClient = new HttpClient(handler);
-        var sut = new TvheadendIdNodeService();
+        var sut = new IdNodeService();
 
         using var doc = await sut.LoadIdNodeByUuidAsync(httpClient, "http://tvh:9981", "/", "uuid 123", CancellationToken.None);
 
@@ -44,7 +44,7 @@ public class TvheadendIdNodeServiceTests
             }
         };
         using var httpClient = new HttpClient(handler);
-        var sut = new TvheadendIdNodeService();
+        var sut = new IdNodeService();
 
         using var doc = await sut.LoadDvrConfigsAsync(httpClient, "http://tvh:9981", "/", CancellationToken.None);
 
@@ -66,7 +66,7 @@ public class TvheadendIdNodeServiceTests
             }
         };
         using var httpClient = new HttpClient(handler);
-        var sut = new TvheadendIdNodeService();
+        var sut = new IdNodeService();
 
         await Assert.ThrowsAsync<HttpRequestException>(() =>
             sut.LoadDvrConfigsAsync(httpClient, "http://tvh:9981", "/", CancellationToken.None));

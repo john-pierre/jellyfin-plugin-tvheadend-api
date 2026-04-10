@@ -1,4 +1,4 @@
-# AI Skills for This Plugin
+﻿# AI Skills for This Plugin
 
 Use these skill playbooks when implementing changes.
 
@@ -6,7 +6,7 @@ Use these skill playbooks when implementing changes.
 
 Goal: keep Jellyfin LiveTV behavior stable while changing plugin internals.
 
-- Start from `LiveTvService.cs` and trace request/response boundaries.
+- Start from `OrchestratorService.cs` and trace request/response boundaries.
 - Preserve `ILiveTvService` contract semantics.
 - Prefer additive flags/config over breaking behavior changes.
 

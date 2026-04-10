@@ -1,9 +1,9 @@
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
-public class TvheadendProfileMappingHelperTests
+public class ProfileMappingHelperTests
 {
     [Theory]
     [InlineData("1", "matroska")]
@@ -14,7 +14,7 @@ public class TvheadendProfileMappingHelperTests
     [InlineData("not set", "")]
     public void MapContainer_MapsKnownValues(string raw, string expected)
     {
-        var result = TvheadendProfileMappingHelper.MapContainer(raw);
+        var result = ProfileMappingHelper.MapContainer(raw);
 
         Assert.Equal(expected, result);
     }
@@ -22,7 +22,7 @@ public class TvheadendProfileMappingHelperTests
     [Fact]
     public void MapContainer_UnknownValue_ReturnsLowercaseOriginal()
     {
-        var result = TvheadendProfileMappingHelper.MapContainer("CustomContainer");
+        var result = ProfileMappingHelper.MapContainer("CustomContainer");
 
         Assert.Equal("customcontainer", result);
     }
@@ -35,7 +35,7 @@ public class TvheadendProfileMappingHelperTests
     [InlineData("unknown-profile", "mpegts")]
     public void MapProfileClassToContainer_MapsExpected(string profileClass, string expected)
     {
-        var result = TvheadendProfileMappingHelper.MapProfileClassToContainer(profileClass);
+        var result = ProfileMappingHelper.MapProfileClassToContainer(profileClass);
 
         Assert.Equal(expected, result);
     }

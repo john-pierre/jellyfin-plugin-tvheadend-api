@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.LiveTv;
 using Moq;
@@ -16,16 +16,16 @@ using Xunit;
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
 /// <summary>
-/// Service Layer Tests for LiveTvGuideService.
+/// Service Layer Tests for GuideService.
 /// Tests channel retrieval, EPG data fetching, and genre mapping.
 /// </summary>
-public class LiveTvGuideServiceTests
+public class GuideServiceTests
 {
     [Fact]
-    public void LiveTvGuideService_CanBeInstantiated()
+    public void GuideService_CanBeInstantiated()
     {
         // Arrange & Act - Note: Real implementation requires dependencies
-        var service = new Mock<ILiveTvGuideService>();
+        var service = new Mock<IGuideService>();
 
         // Assert
         Assert.NotNull(service);

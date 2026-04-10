@@ -15,7 +15,7 @@ Maintain and improve the Jellyfin TVHeadend API plugin while preserving:
 
 - `Jellyfin.Plugin.TvHeadendApi/Plugin.cs`
   - Plugin entrypoint and metadata.
-- `Jellyfin.Plugin.TvHeadendApi/Service/LiveTvService.cs`
+- `Jellyfin.Plugin.TvHeadendApi/Service/OrchestratorService.cs`
   - Core `ILiveTvService` implementation and stream/channel integration logic.
 - `Jellyfin.Plugin.TvHeadendApi/Configuration/PluginConfiguration.cs`
   - Runtime configuration model used by API and UI.
@@ -37,9 +37,10 @@ Maintain and improve the Jellyfin TVHeadend API plugin while preserving:
 ## Naming And Layout Rules
 
 - Follow `README.md` section **"Naming and Structure Conventions"** as the naming source of truth.
-- Keep TVHeadend helpers in `Jellyfin.Plugin.TvHeadendApi/Service/Tvheadend/`.
+- Keep TVHeadend infrastructure adapters in `Jellyfin.Plugin.TvHeadendApi/Service/Infrastructure/`.
 - Do not add new files back into a generic `Utility/` folder.
 - Keep C# file name == primary type name.
+- Prefer descriptive service names without source-system prefixes when the folder namespace already provides context.
 
 ## Testing Workflow
 

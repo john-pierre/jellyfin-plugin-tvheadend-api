@@ -1,14 +1,14 @@
-﻿using System.Text.Json;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using System.Text.Json;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
 /// <summary>
-/// Tests for TvheadendJsonHelper utility methods.
+/// Tests for JsonHelper utility methods.
 /// JSON Helper Coverage
 /// </summary>
-public class TvheadendJsonHelperTests
+public class JsonHelperTests
 {
     [Fact]
     public void GetStringProp_WithValidProperty_ReturnsValue()
@@ -18,7 +18,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetStringProp(element, "name");
+        var result = JsonHelper.GetStringProp(element, "name");
 
         // Assert
         Assert.Equal("Test", result);
@@ -32,7 +32,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetStringProp(element, "name");
+        var result = JsonHelper.GetStringProp(element, "name");
 
         // Assert
         Assert.Null(result);
@@ -46,7 +46,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetStringProp(element, "name");
+        var result = JsonHelper.GetStringProp(element, "name");
 
         // Assert
         Assert.Equal(string.Empty, result);
@@ -60,7 +60,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetIntProp(element, "count");
+        var result = JsonHelper.GetIntProp(element, "count");
 
         // Assert
         Assert.Equal(42, result);
@@ -74,7 +74,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetIntProp(element, "count");
+        var result = JsonHelper.GetIntProp(element, "count");
 
         // Assert
         Assert.Null(result);
@@ -88,7 +88,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetIntProp(element, "count");
+        var result = JsonHelper.GetIntProp(element, "count");
 
         // Assert
         Assert.Null(result);
@@ -102,7 +102,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetBoolProp(element, "enabled");
+        var result = JsonHelper.GetBoolProp(element, "enabled");
 
         // Assert
         Assert.True(result);
@@ -116,7 +116,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetBoolProp(element, "enabled");
+        var result = JsonHelper.GetBoolProp(element, "enabled");
 
         // Assert
         Assert.False(result);
@@ -130,7 +130,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetBoolProp(element, "enabled");
+        var result = JsonHelper.GetBoolProp(element, "enabled");
 
         // Assert
         Assert.Null(result);
@@ -144,7 +144,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetBoolProp(element, "enabled");
+        var result = JsonHelper.GetBoolProp(element, "enabled");
 
         // Assert
         Assert.True(result);
@@ -158,7 +158,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetStringPropOrParam(element, "title");
+        var result = JsonHelper.GetStringPropOrParam(element, "title");
 
         // Assert
         Assert.Equal("My Title", result);
@@ -172,7 +172,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetIntPropOrParam(element, "duration");
+        var result = JsonHelper.GetIntPropOrParam(element, "duration");
 
         // Assert
         Assert.Equal(3600, result);
@@ -186,7 +186,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetBoolPropOrParam(element, "enabled");
+        var result = JsonHelper.GetBoolPropOrParam(element, "enabled");
 
         // Assert
         Assert.True(result);
@@ -200,7 +200,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetStringPropOrParam(element, "name");
+        var result = JsonHelper.GetStringPropOrParam(element, "name");
 
         // Assert
         Assert.Equal("test", result);
@@ -214,7 +214,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetIntPropOrParam(element, "timeout");
+        var result = JsonHelper.GetIntPropOrParam(element, "timeout");
 
         // Assert
         Assert.Equal(5000, result);
@@ -228,7 +228,7 @@ public class TvheadendJsonHelperTests
         var element = json.RootElement;
 
         // Act
-        var result = TvheadendJsonHelper.GetBoolPropOrParam(element, "debug");
+        var result = JsonHelper.GetBoolPropOrParam(element, "debug");
 
         // Assert
         Assert.True(result);

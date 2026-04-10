@@ -1,3 +1,23 @@
+﻿1. `ProfileProvisioningService` (20-25 tests)
+2. `LiveTvGuideService` (15-20 tests)
+3. `TvheadendDvrService` (25-35 tests)
+4. `LiveStreamSourceService` (15-20 tests)
+1. `TvheadendHttpClientFactory` (5-8 tests)
+2. `TvheadendApiClient` (10-15 tests)
+3. `TvheadendIdNodeService` (8-12 tests)
+4. `TvheadendStreamProfileResolver` (10-15 tests)
+2. **TvheadendUrlBuilder** edge cases (5-10 tests) - Already 91% coverage
+3. **TvheadendJsonHelper** (10-15 tests)
+### 15. Service/Streaming/LiveStreamLifecycleService.cs
+### 12. Service/Diagnostics/DiagnoseService.cs
+### 9. Service/Tvheadend/TvheadendStreamProfileResolver.cs
+### 8. Service/Tvheadend/TvheadendIdNodeService.cs
+### 7. Service/Tvheadend/TvheadendHttpClientFactory.cs
+### 6. Service/Tvheadend/TvheadendApiClient.cs
+### 5. Service/Streaming/LiveStreamSourceService.cs
+### 4. Service/Profiles/ProfileProvisioningService.cs
+### 3. Service/Dvr/TvheadendDvrService.cs
+### 2. Service/Guide/LiveTvGuideService.cs
 # 🚨 PRIORITIZED TEST ROADMAP FOR 99% COVERAGE
 
 ## Summary
@@ -26,7 +46,7 @@ These 15 files **MUST** be tested first. They contain core business logic.
   - `UpdateTimerAsync()` / `UpdateSeriesTimerAsync()`
   - `CancelTimerAsync()` / `CancelSeriesTimerAsync()`
 
-### 2. Service/Guide/LiveTvGuideService.cs
+### 2. Service/Guide/GuideService.cs
 **Importance:** ⭐⭐⭐⭐⭐ (Channel & Program data)
 - Fetches channels and programs from TVHeadend
 - **Lines:** ~150 lines
@@ -37,7 +57,7 @@ These 15 files **MUST** be tested first. They contain core business logic.
   - `GetChannelTagsAsync()` - channel categories
   - `GetContentTypesAsync()` - program content types
 
-### 3. Service/Dvr/TvheadendDvrService.cs
+### 3. Service/Dvr/DvrService.cs
 **Importance:** ⭐⭐⭐⭐⭐ (Recording management)
 - Manages DVR timers and recordings
 - Split across two partial files (.SingleTimers.cs, .SeriesTimers.cs)
@@ -48,7 +68,7 @@ These 15 files **MUST** be tested first. They contain core business logic.
   - Series timer management
   - Recording queries
 
-### 4. Service/Profiles/ProfileProvisioningService.cs
+### 4. Service/Profile/ProvisioningService.cs
 **Importance:** ⭐⭐⭐⭐ (Codec profiles)
 - Sets up streaming profiles in TVHeadend
 - Complex async operations
@@ -60,7 +80,7 @@ These 15 files **MUST** be tested first. They contain core business logic.
   - `GetStreamingProfileByNameAsync()`
   - Profile validation
 
-### 5. Service/Streaming/LiveStreamSourceService.cs
+### 5. Service/Stream/SourceService.cs
 **Importance:** ⭐⭐⭐⭐ (Stream delivery)
 - Manages streaming URLs and media sources
 - **Lines:** ~180 lines
@@ -81,7 +101,7 @@ These 15 files **MUST** be tested first. They contain core business logic.
 - **Tests needed:** 10-15 tests
 - **Key methods to test:**
   - `GetCurrentConfiguration()`
-  - `CreateHttpClient()`
+  - `BuildHttpClient()`
   - `GetStringAsync()` / `PostFormAsync()`
 
 ### 7. Service/Tvheadend/TvheadendHttpClientFactory.cs
@@ -135,7 +155,7 @@ These 15 files **MUST** be tested first. They contain core business logic.
 - **Tests needed:** 8-10 tests
 - **Key methods:** Proxy image retrieval
 
-### 12. Service/Diagnostics/DiagnoseService.cs
+### 12. Service/Diagnostic/DiagnosticService.cs
 **Importance:** ⭐⭐⭐ (System diagnostics)
 - **Lines:** ~150 lines
 - **Tests needed:** 12-15 tests
@@ -153,7 +173,7 @@ These 15 files **MUST** be tested first. They contain core business logic.
 - **Tests needed:** 5-8 tests
 - **Key tests:** Configuration validation, defaults
 
-### 15. Service/Streaming/LiveStreamLifecycleService.cs
+### 15. Service/Stream/LifecycleService.cs
 **Importance:** ⭐⭐ (Stream cleanup)
 - **Lines:** ~50 lines
 - **Tests needed:** 5-8 tests
@@ -195,16 +215,16 @@ All model/DTO classes need serialization tests:
 4. `TvheadendStreamProfileResolver` (10-15 tests)
 
 ### Week 3-5: Core Services (80-120 tests)
-1. `ProfileProvisioningService` (20-25 tests)
-2. `LiveTvGuideService` (15-20 tests)
-3. `TvheadendDvrService` (25-35 tests)
-4. `LiveStreamSourceService` (15-20 tests)
-5. `LiveStreamLifecycleService` (5-8 tests)
+1. `ProvisioningService` (20-25 tests)
+2. `GuideService` (15-20 tests)
+3. `DvrService` (25-35 tests)
+4. `SourceService` (15-20 tests)
+5. `LifecycleService` (5-8 tests)
 
 ### Week 5-6: Integration & Controllers (50-80 tests)
 1. Expand `TvHeadendApiController` (12-18 tests)
 2. `ImageProxyService` (8-10 tests)
-3. `DiagnoseService` (12-15 tests)
+3. `DiagnosticService` (12-15 tests)
 4. `Plugin` & `ServiceRegistrator` (8-10 tests)
 5. Integration workflows (10-17 tests)
 

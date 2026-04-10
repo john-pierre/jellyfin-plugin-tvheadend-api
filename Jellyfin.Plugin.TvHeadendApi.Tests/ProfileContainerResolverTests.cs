@@ -5,22 +5,22 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Streaming;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
-public class LiveStreamProfileContainerResolverTests
+public class ProfileContainerResolverTests
 {
     [Fact]
     public async Task ResolveContainerAsync_UsesCacheForSameProfile()
     {
         var apiClient = new FakeApiClient();
         var profileResolver = new FakeProfileResolver();
-        var sut = new LiveStreamProfileContainerResolver(
-            NullLogger<LiveStreamProfileContainerResolver>.Instance,
+        var sut = new ProfileContainerResolver(
+            NullLogger<ProfileContainerResolver>.Instance,
             apiClient,
             profileResolver);
 
@@ -39,8 +39,8 @@ public class LiveStreamProfileContainerResolverTests
     {
         var apiClient = new FakeApiClient();
         var profileResolver = new FakeProfileResolver();
-        var sut = new LiveStreamProfileContainerResolver(
-            NullLogger<LiveStreamProfileContainerResolver>.Instance,
+        var sut = new ProfileContainerResolver(
+            NullLogger<ProfileContainerResolver>.Instance,
             apiClient,
             profileResolver);
 
@@ -55,23 +55,23 @@ public class LiveStreamProfileContainerResolverTests
         Assert.Equal(2, profileResolver.ResolveCalls);
     }
 
-    private sealed class FakeProfileResolver : ITvheadendStreamProfileResolver
+    private sealed class FakeProfileResolver : IProfileResolver
     {
         public int ResolveCalls { get; private set; }
 
-        public Task<IReadOnlyList<TvheadendStreamProfileReference>> GetProfilesAsync(HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<ProfileReference>> GetProfilesAsync(HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
         {
-            return Task.FromResult<IReadOnlyList<TvheadendStreamProfileReference>>(
+            return Task.FromResult<IReadOnlyList<ProfileReference>>(
                 new[]
                 {
-                    new TvheadendStreamProfileReference("uuid1", "jellyfin"),
-                    new TvheadendStreamProfileReference("uuid2", "jellyfin-alt"),
+                    new ProfileReference("uuid1", "jellyfin"),
+                    new ProfileReference("uuid2", "jellyfin-alt"),
                 });
         }
 
-        public Task<TvheadendStreamProfileDetails?> GetProfileDetailsByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileUuid, string profileName, CancellationToken cancellationToken)
+        public Task<ProfileDetails?> GetProfileDetailsByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileUuid, string profileName, CancellationToken cancellationToken)
         {
-            return Task.FromResult<TvheadendStreamProfileDetails?>(new TvheadendStreamProfileDetails(
+            return Task.FromResult<ProfileDetails?>(new ProfileDetails(
                 profileUuid,
                 profileName,
                 "profile-transcode",
@@ -84,10 +84,10 @@ public class LiveStreamProfileContainerResolverTests
                 null));
         }
 
-        public Task<TvheadendResolvedStreamProfile?> ResolveProfileByNameAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
+        public Task<ResolvedProfile?> ResolveProfileByNameAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
         {
             ResolveCalls++;
-            return Task.FromResult<TvheadendResolvedStreamProfile?>(new TvheadendResolvedStreamProfile(
+            return Task.FromResult<ResolvedProfile?>(new ResolvedProfile(
                 "uuid-" + profileName,
                 profileName,
                 "profile-transcode",
@@ -104,13 +104,13 @@ public class LiveStreamProfileContainerResolverTests
         }
     }
 
-    private sealed class FakeApiClient : ITvheadendApiClient
+    private sealed class FakeApiClient : IApiClient
     {
         private static readonly HttpClient SharedClient = new();
 
         public PluginConfiguration? GetCurrentConfiguration() => new PluginConfiguration();
 
-        public HttpClient CreateHttpClient(PluginConfiguration config) => SharedClient;
+        public HttpClient BuildHttpClient(PluginConfiguration config) => SharedClient;
 
         public string GetBaseUrl(PluginConfiguration config) => "http://tvh:9981";
 

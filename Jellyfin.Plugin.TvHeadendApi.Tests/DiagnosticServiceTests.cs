@@ -6,8 +6,9 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostics;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -15,18 +16,18 @@ using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
-public class DiagnoseServiceTests
+public class DiagnosticServiceTests
 {
     [Fact]
     public void Constructor_WithNullLogger_Throws()
     {
-        var sutFactory = new Func<DiagnoseService>(() => new DiagnoseService(
+        var sutFactory = new Func<DiagnosticService>(() => new DiagnosticService(
             null!,
             Mock.Of<IServerConfigurationManager>(),
-            Mock.Of<IJellyfinEncodingOptionsReader>(),
-            Mock.Of<ITvheadendIdNodeService>(),
-            Mock.Of<ITvheadendStreamProfileResolver>(),
-            Mock.Of<ITvheadendApiClient>()));
+            Mock.Of<IEncodingOptionsReader>(),
+            Mock.Of<IIdNodeService>(),
+            Mock.Of<IProfileResolver>(),
+            Mock.Of<IApiClient>()));
 
         Assert.Throws<ArgumentNullException>(sutFactory);
     }
@@ -49,7 +50,7 @@ public class DiagnoseServiceTests
     {
         var sut = CreateSut(out var apiClient);
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(CreateConfig());
-        apiClient.Setup(x => x.CreateHttpClient(It.IsAny<PluginConfiguration>())).Throws(new InvalidOperationException("boom"));
+        apiClient.Setup(x => x.BuildHttpClient(It.IsAny<PluginConfiguration>())).Throws(new InvalidOperationException("boom"));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -67,7 +68,7 @@ public class DiagnoseServiceTests
         var sut = CreateSut(out var apiClient);
         var config = CreateConfig();
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
         apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
         apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.Is<string>(u => u.Contains("api/serverinfo", StringComparison.Ordinal)), It.IsAny<CancellationToken>()))
@@ -90,7 +91,7 @@ public class DiagnoseServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
         apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
         apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -98,13 +99,13 @@ public class DiagnoseServiceTests
 
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<TvheadendStreamProfileReference>
+            .ReturnsAsync(new List<ProfileReference>
             {
                 new("profile-1", "pass")
             });
         streamResolver
             .Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "profile-1", "pass", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TvheadendStreamProfileDetails(
+            .ReturnsAsync(new ProfileDetails(
                 "profile-1",
                 "pass",
                 "profile",
@@ -143,7 +144,7 @@ public class DiagnoseServiceTests
         config.StreamingProfile = "missing-profile";
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
         apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
         apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -151,7 +152,7 @@ public class DiagnoseServiceTests
 
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<TvheadendStreamProfileReference>
+            .ReturnsAsync(new List<ProfileReference>
             {
                 new("profile-1", "pass")
             });
@@ -178,7 +179,7 @@ public class DiagnoseServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
         apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
         apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -196,10 +197,10 @@ public class DiagnoseServiceTests
 
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<TvheadendStreamProfileReference> { new("profile-1", "pass") });
+            .ReturnsAsync(new List<ProfileReference> { new("profile-1", "pass") });
         streamResolver
             .Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "profile-1", "pass", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TvheadendStreamProfileDetails(
+            .ReturnsAsync(new ProfileDetails(
                 "profile-1",
                 "pass",
                 "profile-mpegts-transcode",
@@ -237,7 +238,7 @@ public class DiagnoseServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
         apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
         apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -245,10 +246,10 @@ public class DiagnoseServiceTests
 
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<TvheadendStreamProfileReference> { new("profile-1", "pass") });
+            .ReturnsAsync(new List<ProfileReference> { new("profile-1", "pass") });
         streamResolver
             .Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "profile-1", "pass", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TvheadendStreamProfileDetails(
+            .ReturnsAsync(new ProfileDetails(
                 "profile-1",
                 "pass",
                 "profile-mpegts-transcode",
@@ -281,7 +282,7 @@ public class DiagnoseServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
         apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
         apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -299,10 +300,10 @@ public class DiagnoseServiceTests
 
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<TvheadendStreamProfileReference> { new("profile-1", "pass") });
+            .ReturnsAsync(new List<ProfileReference> { new("profile-1", "pass") });
         streamResolver
             .Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "profile-1", "pass", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TvheadendStreamProfileDetails(
+            .ReturnsAsync(new ProfileDetails(
                 "profile-1",
                 "pass",
                 "profile-mpegts-transcode",
@@ -337,7 +338,7 @@ public class DiagnoseServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
         apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
         apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -355,10 +356,10 @@ public class DiagnoseServiceTests
 
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<TvheadendStreamProfileReference> { new("profile-1", "pass") });
+            .ReturnsAsync(new List<ProfileReference> { new("profile-1", "pass") });
         streamResolver
             .Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "profile-1", "pass", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TvheadendStreamProfileDetails(
+            .ReturnsAsync(new ProfileDetails(
                 "profile-1",
                 "pass",
                 "profile-mpegts-transcode",
@@ -393,7 +394,7 @@ public class DiagnoseServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
         apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
         apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -411,10 +412,10 @@ public class DiagnoseServiceTests
 
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<TvheadendStreamProfileReference> { new("profile-1", "pass") });
+            .ReturnsAsync(new List<ProfileReference> { new("profile-1", "pass") });
         streamResolver
             .Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "profile-1", "pass", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TvheadendStreamProfileDetails(
+            .ReturnsAsync(new ProfileDetails(
                 "profile-1",
                 "pass",
                 "profile-mpegts-transcode",
@@ -452,7 +453,7 @@ public class DiagnoseServiceTests
         config.StreamingProfile = string.Empty;
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
         apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
         apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -477,7 +478,7 @@ public class DiagnoseServiceTests
 
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<TvheadendStreamProfileReference>());
+            .ReturnsAsync(new List<ProfileReference>());
         idNodeService
             .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
             .ReturnsAsync(JsonDocument.Parse("""
@@ -500,7 +501,7 @@ public class DiagnoseServiceTests
         config.AnalyzeDurationMs = 0;
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
         apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
         apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -508,10 +509,10 @@ public class DiagnoseServiceTests
 
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<TvheadendStreamProfileReference> { new("profile-1", "pass") });
+            .ReturnsAsync(new List<ProfileReference> { new("profile-1", "pass") });
         streamResolver
             .Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "profile-1", "pass", It.IsAny<CancellationToken>()))
-            .ReturnsAsync((TvheadendStreamProfileDetails?)null);
+            .ReturnsAsync((ProfileDetails?)null);
         idNodeService
             .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
             .ReturnsAsync(JsonDocument.Parse("""
@@ -532,7 +533,7 @@ public class DiagnoseServiceTests
         config.AuthToken = "abc.def-123";
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.CreateHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
         apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
         apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -540,7 +541,7 @@ public class DiagnoseServiceTests
 
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<TvheadendStreamProfileReference> { new("profile-1", "pass") });
+            .ReturnsAsync(new List<ProfileReference> { new("profile-1", "pass") });
         idNodeService
             .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
             .ReturnsAsync(JsonDocument.Parse("""
@@ -608,26 +609,26 @@ public class DiagnoseServiceTests
         };
     }
 
-    private static DiagnoseService CreateSut(
-        out Mock<ITvheadendApiClient> apiClient,
-        out Mock<ITvheadendStreamProfileResolver> streamResolver,
-        out Mock<ITvheadendIdNodeService> idNodeService,
-        out Mock<IJellyfinEncodingOptionsReader> encodingReader)
+    private static DiagnosticService CreateSut(
+        out Mock<IApiClient> apiClient,
+        out Mock<IProfileResolver> streamResolver,
+        out Mock<IIdNodeService> idNodeService,
+        out Mock<IEncodingOptionsReader> encodingReader)
     {
-        apiClient = new Mock<ITvheadendApiClient>(MockBehavior.Strict);
-        streamResolver = new Mock<ITvheadendStreamProfileResolver>(MockBehavior.Strict);
-        idNodeService = new Mock<ITvheadendIdNodeService>(MockBehavior.Strict);
-        encodingReader = new Mock<IJellyfinEncodingOptionsReader>(MockBehavior.Strict);
+        apiClient = new Mock<IApiClient>(MockBehavior.Strict);
+        streamResolver = new Mock<IProfileResolver>(MockBehavior.Strict);
+        idNodeService = new Mock<IIdNodeService>(MockBehavior.Strict);
+        encodingReader = new Mock<IEncodingOptionsReader>(MockBehavior.Strict);
 
         var serverConfigManager = new Mock<IServerConfigurationManager>();
 
         // Default no-op values; tests can override these setups.
         streamResolver
             .Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<TvheadendStreamProfileReference>());
+            .ReturnsAsync(new List<ProfileReference>());
         streamResolver
             .Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((TvheadendStreamProfileDetails?)null);
+            .ReturnsAsync((ProfileDetails?)null);
         idNodeService
             .Setup(x => x.LoadDvrConfigsAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(JsonDocument.Parse("{ \"entries\": [] }"));
@@ -635,8 +636,8 @@ public class DiagnoseServiceTests
             .Setup(x => x.ReadFfmpegSettings(It.IsAny<IServerConfigurationManager>(), It.IsAny<Microsoft.Extensions.Logging.ILogger>()))
             .Returns((null, null));
 
-        return new DiagnoseService(
-            NullLogger<DiagnoseService>.Instance,
+        return new DiagnosticService(
+            NullLogger<DiagnosticService>.Instance,
             serverConfigManager.Object,
             encodingReader.Object,
             idNodeService.Object,
@@ -644,7 +645,7 @@ public class DiagnoseServiceTests
             apiClient.Object);
     }
 
-    private static DiagnoseService CreateSut(out Mock<ITvheadendApiClient> apiClient)
+    private static DiagnosticService CreateSut(out Mock<IApiClient> apiClient)
     {
         var sut = CreateSut(out apiClient, out _, out _, out _);
         return sut;

@@ -1,21 +1,21 @@
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Tvheadend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
 /// <summary>
-/// Tests for TvheadendUrlBuilder edge cases and URL construction.
+/// Tests for UrlBuilder edge cases and URL construction.
 /// </summary>
-public class TvheadendUrlBuilderEdgeCaseTests
+public class UrlBuilderEdgeCaseTests
 {
-    private readonly TvheadendUrlBuilder _sut = new();
+    private readonly UrlBuilder _sut = new();
 
     [Fact]
-    public void BuildUrl_IncludesHostnameAndPort()
+    public void BuildUrlWithHeaderAuth_IncludesHostnameAndPort()
     {
         var config = new PluginConfiguration { Host = "tvheadend.local", Port = 9981 };
-        var url = _sut.BuildUrl(config, "/api/test", "header");
+        var url = _sut.BuildUrlWithHeaderAuth(config, "/api/test");
 
         Assert.NotEmpty(url);
         Assert.Contains("tvheadend.local", url);
@@ -23,25 +23,25 @@ public class TvheadendUrlBuilderEdgeCaseTests
     }
 
     [Fact]
-    public void BuildUrl_WithLocalhost_WorksCorrectly()
+    public void BuildUrlWithHeaderAuth_WithLocalhost_WorksCorrectly()
     {
         var config = new PluginConfiguration { Host = "localhost", Port = 9981 };
-        var url = _sut.BuildUrl(config, "/api/test", "header");
+        var url = _sut.BuildUrlWithHeaderAuth(config, "/api/test");
 
         Assert.Contains("localhost", url);
     }
 
     [Fact]
-    public void BuildUrl_WithIPAddress_WorksCorrectly()
+    public void BuildUrlWithHeaderAuth_WithIPAddress_WorksCorrectly()
     {
         var config = new PluginConfiguration { Host = "192.168.1.100", Port = 9981 };
-        var url = _sut.BuildUrl(config, "/api/test", "header");
+        var url = _sut.BuildUrlWithHeaderAuth(config, "/api/test");
 
         Assert.Contains("192.168.1.100", url);
     }
 
     [Fact]
-    public void BuildUrl_WithHttps_UsesCorrectProtocol()
+    public void BuildUrlWithHeaderAuth_WithHttps_UsesCorrectProtocol()
     {
         var config = new PluginConfiguration
         {
@@ -50,13 +50,13 @@ public class TvheadendUrlBuilderEdgeCaseTests
             UseSSL = true
         };
 
-        var url = _sut.BuildUrl(config, "/api/channel/grid", "header");
+        var url = _sut.BuildUrlWithHeaderAuth(config, "/api/channel/grid");
 
         Assert.StartsWith("https://", url);
     }
 
     [Fact]
-    public void BuildUrl_WithHttp_UsesCorrectProtocol()
+    public void BuildUrlWithHeaderAuth_WithHttp_UsesCorrectProtocol()
     {
         var config = new PluginConfiguration
         {
@@ -65,13 +65,13 @@ public class TvheadendUrlBuilderEdgeCaseTests
             UseSSL = false
         };
 
-        var url = _sut.BuildUrl(config, "/api/channel/grid", "header");
+        var url = _sut.BuildUrlWithHeaderAuth(config, "/api/channel/grid");
 
         Assert.StartsWith("http://", url);
     }
 
     [Fact]
-    public void BuildUrl_WithParameterAuth_IncludesAuthToken()
+    public void BuildUrlWithParameterAuth_IncludesAuthToken()
     {
         var config = new PluginConfiguration
         {
@@ -81,18 +81,18 @@ public class TvheadendUrlBuilderEdgeCaseTests
             AllowAnonymousAccess = false,
         };
 
-        var url = _sut.BuildUrl(config, "/api/channel/grid", "parameter");
+        var url = _sut.BuildUrlWithParameterAuth(config, "/api/channel/grid");
 
         Assert.Contains("auth=token123", url);
     }
 
     [Fact]
-    public void BuildUrl_MultipleCallsWithSameConfig_ProduceConsistentResults()
+    public void BuildUrlWithHeaderAuth_MultipleCallsWithSameConfig_ProduceConsistentResults()
     {
         var config = new PluginConfiguration { Host = "localhost", Port = 9981 };
 
-        var url1 = _sut.BuildUrl(config, "/api/test", "header");
-        var url2 = _sut.BuildUrl(config, "/api/test", "header");
+        var url1 = _sut.BuildUrlWithHeaderAuth(config, "/api/test");
+        var url2 = _sut.BuildUrlWithHeaderAuth(config, "/api/test");
 
         Assert.Equal(url1, url2);
     }
