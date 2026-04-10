@@ -3,7 +3,8 @@ using System.Text.Json.Serialization;
 namespace Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 
 /// <summary>
-/// Represents one TVHeadend idnode user entry.
+/// Represents one TVHeadend passwd idnode entry as returned by /api/idnode/load.
+/// Field names match the passwd_entry_class idnode property IDs (access.c).
 /// </summary>
 internal sealed class IdNodeUserEntry
 {
@@ -19,12 +20,9 @@ internal sealed class IdNodeUserEntry
     [JsonPropertyName("comment")]
     public string? Comment { get; set; }
 
+    /// <summary>
+    /// Gets the persistent auth code (field "authcode" in passwd_entry_class, PO_RDONLY).
+    /// </summary>
     [JsonPropertyName("authcode")]
     public string? AuthCode { get; set; }
-
-    [JsonPropertyName("token")]
-    public string? Token { get; set; }
-
-    [JsonPropertyName("auth")]
-    public string? Auth { get; set; }
 }

@@ -4,7 +4,8 @@ using System.Text.Json.Serialization;
 namespace Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 
 /// <summary>
-/// Represents TVHeadend /api/user/list response.
+/// Represents TVHeadend /api/passwd/entry/grid response.
+/// Each entry contains the UUID and username of a password/user entry.
 /// </summary>
 internal sealed class UserListResponse
 {

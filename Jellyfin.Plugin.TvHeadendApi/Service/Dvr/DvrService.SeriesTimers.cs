@@ -222,8 +222,8 @@ internal sealed partial class DvrService
 
         if (!string.IsNullOrWhiteSpace(info.Overview))
         {
+            // TVH autorec has no "description" idnode field; "comment" is the correct field
             updates["comment"] = info.Overview;
-            updates["description"] = info.Overview;
         }
 
         var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("node", JsonSerializer.Serialize(new[] { updates }, JsonOptions)) });

@@ -202,7 +202,9 @@ internal sealed class TokenService : ITokenService
         string username,
         CancellationToken cancellationToken)
     {
-        var listUrl = _apiClient.BuildUrl(config, "api/access/entry/userlist");
+        // passwd/entry/grid returns a proper idnode grid with "uuid" and "username" per entry.
+        // access/entry/userlist only returns key=val=username pairs (no UUID) and cannot be used here.
+        var listUrl = _apiClient.BuildUrl(config, "api/passwd/entry/grid");
         var response = await _apiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
         var userList = JsonSerializer.Deserialize<UserListResponse>(response, JsonOptions);
         if (userList == null || userList.Entries.Length == 0)
@@ -242,7 +244,7 @@ internal sealed class TokenService : ITokenService
             {
                 new KeyValuePair<string, string>("uuid", JsonSerializer.Serialize(new[] { userUuid })),
                 new KeyValuePair<string, string>("grid", "1"),
-                new KeyValuePair<string, string>("list", "enabled,username,password,auth,authcode,comment")
+                new KeyValuePair<string, string>("list", "enabled,username,password,authcode,comment")
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -262,7 +264,7 @@ internal sealed class TokenService : ITokenService
             Username = string.IsNullOrWhiteSpace(entry.Username) ? config.Username : entry.Username.Trim(),
             Password = string.IsNullOrWhiteSpace(entry.Password) ? config.Password : entry.Password,
             Comment = entry.Comment ?? string.Empty,
-            AuthToken = (entry.AuthCode ?? entry.Token ?? entry.Auth ?? string.Empty).Trim(),
+            AuthToken = (entry.AuthCode ?? string.Empty).Trim(),
         };
     }
 
