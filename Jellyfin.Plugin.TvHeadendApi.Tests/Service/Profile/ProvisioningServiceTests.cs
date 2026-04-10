@@ -101,4 +101,3 @@ public class ProvisioningServiceTests
         Assert.Contains("Cannot connect", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 }
-

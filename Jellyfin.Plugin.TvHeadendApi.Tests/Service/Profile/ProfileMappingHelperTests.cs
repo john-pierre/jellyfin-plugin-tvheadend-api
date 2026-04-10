@@ -1,4 +1,4 @@
-using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;

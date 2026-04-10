@@ -37,7 +37,7 @@ Maintain and improve the Jellyfin TVHeadend API plugin while preserving:
 ## Naming And Layout Rules
 
 - Follow `docs/NAMING_CONVENTIONS.md` as the **authoritative** source of truth for all naming and structure conventions.
-- Keep TVHeadend infrastructure adapters in `Jellyfin.Plugin.TvHeadendApi/Service/Infrastructure/`.
+- Keep TVHeadend helper adapters in `Jellyfin.Plugin.TvHeadendApi/Service/Helper/`.
 - Do not add new files back into a generic `Utility/` folder.
 - Keep C# file name == primary type name (e.g., `TokenValidator.cs` contains `TokenValidator` class).
 - Prefer descriptive service names without source-system prefixes when the folder namespace already provides context.

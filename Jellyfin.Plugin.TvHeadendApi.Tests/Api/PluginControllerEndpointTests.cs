@@ -307,5 +307,3 @@ public class DiagnosticCheckTests
         Assert.Equal(85, result.CompatibilityScore);
     }
 }
-
-

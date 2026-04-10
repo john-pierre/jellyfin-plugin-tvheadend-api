@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Moq;
 using Xunit;
@@ -23,7 +24,6 @@ public class IdNodeApiCallTests
     {
         // Verify that DiagnosticService POSTs to api/idnode/load with dvrconfig form params.
         var capturedUrl = string.Empty;
-        var capturedBody = string.Empty;
 
         var api = new Mock<IApiClient>();
         var config = new PluginConfiguration { EnableTvhDvr = true };
@@ -32,9 +32,29 @@ public class IdNodeApiCallTests
         api.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh:9981");
         api.Setup(x => x.GetWebRoot(config)).Returns("/");
 
-        // serverinfo call — fails to short-circuit the test without extra setup
+        // Minimal successful responses so diagnostics reaches the DVR profile inspection path.
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new HttpRequestException("offline"));
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
+            {
+                if (url.Contains("api/serverinfo", StringComparison.Ordinal))
+                {
+                    return Task.FromResult("{\"sw_version\":\"4.3\",\"api_version\":19,\"name\":\"tvh\"}");
+                }
+
+                if (url.Contains("api/channel/grid", StringComparison.Ordinal)
+                    || url.Contains("api/dvr/entry/grid", StringComparison.Ordinal))
+                {
+                    return Task.FromResult("{\"total\":0,\"entries\":[]}");
+                }
+
+                if (url.Contains("api/codec_profile/list", StringComparison.Ordinal)
+                    || url.Contains("api/idnode/load", StringComparison.Ordinal))
+                {
+                    return Task.FromResult("{\"entries\":[]}");
+                }
+
+                return Task.FromResult("{}");
+            });
 
         // DVR POST
         api.Setup(x => x.PostFormAsync(

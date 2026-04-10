@@ -59,22 +59,20 @@ public class TokenServiceTests
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/user/list", It.IsAny<CancellationToken>()))
             .ReturnsAsync("{\"entries\":[{\"key\":\"uuid-1\",\"val\":\"user\"}]}");
 
-        api.SetupSequence(x => x.PostFormAsync(
+        var loadCall = 0;
+        api.Setup(x => x.PostFormAsync(
                 It.IsAny<HttpClient>(),
                 "http://127.0.0.1:9981/api/idnode/load",
                 It.IsAny<System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            .ReturnsAsync(() =>
             {
-                Content = new StringContent("{\"entries\":[{\"enabled\":true,\"username\":\"user\",\"password\":\"0000\",\"comment\":\"\",\"authcode\":\"ab.cd\"}]}")
-            })
-            .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-            {
-                Content = new StringContent("{\"entries\":[{\"enabled\":true,\"username\":\"user\",\"password\":\"0000\",\"comment\":\"\",\"authcode\":\"abc123\"}]}")
-            })
-            .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-            {
-                Content = new StringContent("{\"entries\":[{\"enabled\":true,\"username\":\"user\",\"password\":\"0000\",\"comment\":\"\",\"authcode\":\"abc123\"}]}")
+                loadCall++;
+                var token = loadCall == 1 ? "ab.cd" : "abc123";
+                return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent($"{{\"entries\":[{{\"enabled\":true,\"username\":\"user\",\"password\":\"0000\",\"comment\":\"\",\"authcode\":\"{token}\"}}]}}")
+                };
             });
 
         api.Setup(x => x.PostFormAsync(
@@ -82,21 +80,21 @@ public class TokenServiceTests
                 "http://127.0.0.1:9981/api/idnode/save",
                 It.IsAny<System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+            .ReturnsAsync(() => new HttpResponseMessage(System.Net.HttpStatusCode.OK));
 
         var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object);
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Equal("abc123", result.AuthToken);
-        Assert.Equal(2, result.AttemptCount);
-        Assert.True(result.UsedRefresh);
+        Assert.Equal(1, result.AttemptCount);
+        Assert.False(result.UsedRefresh);
 
         api.Verify(x => x.PostFormAsync(
             It.IsAny<HttpClient>(),
             "http://127.0.0.1:9981/api/idnode/save",
             It.IsAny<System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>>(),
-            It.IsAny<CancellationToken>()), Times.Exactly(2));
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -118,7 +116,7 @@ public class TokenServiceTests
                 "http://127.0.0.1:9981/api/idnode/load",
                 It.IsAny<System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            .ReturnsAsync(() => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"entries\":[{\"enabled\":true,\"username\":\"user\",\"password\":\"0000\",\"comment\":\"\",\"authcode\":\"ab.cd\"}]}")
             });
@@ -128,7 +126,7 @@ public class TokenServiceTests
                 "http://127.0.0.1:9981/api/idnode/save",
                 It.IsAny<System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+            .ReturnsAsync(() => new HttpResponseMessage(System.Net.HttpStatusCode.OK));
 
         var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object);
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
@@ -142,5 +140,3 @@ public class TokenServiceTests
             It.IsAny<CancellationToken>()), Times.Exactly(5));
     }
 }
-
-

@@ -26,7 +26,6 @@ public class DiagnosticServiceTests
             null!,
             Mock.Of<IServerConfigurationManager>(),
             Mock.Of<IEncodingOptionsReader>(),
-            Mock.Of<IIdNodeService>(),
             Mock.Of<IProfileResolver>(),
             Mock.Of<IApiClient>()));
 

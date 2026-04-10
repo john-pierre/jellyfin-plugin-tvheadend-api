@@ -46,7 +46,7 @@ Jellyfin.Plugin.TvHeadendApi/
 │   │   ├── StreamUrlBuilder.cs        → public class StreamUrlBuilder { }
 │   ├── Diagnostic/                    → Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic
 │   │   ├── DiagnosticService.cs       → public class DiagnosticService { }
-│   ├── Infrastructure/                → Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure
+│   ├── Helper/                        → Jellyfin.Plugin.TvHeadendApi.Service.Helper
 │   │   ├── IdNodeService.cs           → public class IdNodeService { }
 │   │   ├── ApiClient.cs               → public class ApiClient { }
 ├── Api/                               → Jellyfin.Plugin.TvHeadendApi.Api
@@ -78,7 +78,7 @@ Services are organized by **domain responsibility**, not by implementation detai
 | **Service.Profile** | TVHeadend profile configuration and provisioning | `ProfileResolver`, `ProvisioningService`, `ProfileDetails` |
 | **Service.Stream** | Stream URL construction and stream lifecycle | `MediaSourceService`, stream URL building |
 | **Service.Diagnostic** | Plugin diagnostics and health checks | `DiagnosticService` |
-| **Service.Infrastructure** | Low-level HTTP and JSON utilities | `ApiClient`, `IdNodeService`, `JsonHelper` |
+| **Service.Helper** | Low-level HTTP and URL helpers | `ApiClient`, `UrlBuilder`, `HttpClientFactory` |
 
 ### Service Type Suffixes
 - **Service**: Full lifecycle service (e.g., `DiagnosticService`, `ProvisioningService`)
@@ -106,7 +106,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
-using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller.Configuration;
