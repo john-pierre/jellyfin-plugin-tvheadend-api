@@ -8,7 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 

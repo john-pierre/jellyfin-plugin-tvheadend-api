@@ -2,11 +2,11 @@ using System;
 using System.Text;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 
 /// <summary>
 /// Builds normalized TVHeadend base and endpoint URLs.
-/// Merged from UrlHelper – kept internal static for use by ApiClient.
+/// Merged from UrlHelper ï¿½ kept internal static for use by ApiClient.
 /// </summary>
 internal static class UrlHelper
 {
@@ -43,7 +43,7 @@ internal sealed class UrlBuilder : IUrlBuilder
         ArgumentNullException.ThrowIfNull(config);
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
 
-        // Credentials are sent via HTTP header – no auth data embedded in the URL.
+        // Credentials are sent via HTTP header ï¿½ no auth data embedded in the URL.
         return UrlHelper.BuildEndpointUrl(config, endpoint);
     }
 

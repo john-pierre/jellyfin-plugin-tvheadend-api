@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 
 /// <summary>
 /// Defines a minimal TVHeadend API client abstraction for configuration, URL building, and HTTP client creation.

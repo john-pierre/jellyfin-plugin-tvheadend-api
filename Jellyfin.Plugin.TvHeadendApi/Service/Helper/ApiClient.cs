@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 
 /// <summary>
 /// Provides centralized access to TVHeadend configuration, URL creation, and HTTP client setup.

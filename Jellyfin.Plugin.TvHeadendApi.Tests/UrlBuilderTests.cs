@@ -1,5 +1,5 @@
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;

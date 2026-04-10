@@ -4,7 +4,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 
 /// <summary>
 /// Creates HTTP clients configured for TVHeadend API communication.

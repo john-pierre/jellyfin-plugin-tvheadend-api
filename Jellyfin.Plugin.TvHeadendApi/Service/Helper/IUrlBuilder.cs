@@ -1,6 +1,6 @@
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Infrastructure;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 
 /// <summary>
 /// Builds TVHeadend URLs and masks sensitive values for logging.
