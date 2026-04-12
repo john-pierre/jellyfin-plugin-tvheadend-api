@@ -110,7 +110,7 @@ internal sealed class MediaSourceService : IMediaSourceService
             RequiresClosing = true,
             ReadAtNativeFramerate = false,
             SupportsProbing = config.SupportsProbing,
-            AnalyzeDurationMs = config.AnalyzeDurationMs > 0 ? config.AnalyzeDurationMs : 200,
+            AnalyzeDurationMs = config.AnalyzeDurationMs,
         };
 
         if (config.BufferMs > 0)

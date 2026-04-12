@@ -36,9 +36,9 @@ public class PluginConfiguration : BasePluginConfiguration
         // Playback behaviour
         this.SupportsDirectPlay = true;
         this.SupportsDirectStream = true;
-        this.SupportsTranscoding = false;
+        this.SupportsTranscoding = true;
         this.SupportsProbing = true;
-        this.IgnoreDts = false;
+        this.IgnoreDts = true;
         this.BufferMs = 0;
         this.AnalyzeDurationMs = 200;
         this.EnableMediaInfoCacheWrite = true;
@@ -48,7 +48,6 @@ public class PluginConfiguration : BasePluginConfiguration
         this.Priority = 5;
         this.PrePaddingSeconds = 5;
         this.PostPaddingSeconds = 5;
-        // TVHeadend's built-in default profile has an empty name (""); "default" is not a valid TVH profile name.
         this.RecordingProfile = string.Empty;
     }
 

@@ -88,7 +88,6 @@ public sealed class OrchestratorService : ILiveTvService, IDisposable
     public Task ResetTuner(string id, CancellationToken cancellationToken)
         => _streamLifecycleService.ResetTunerAsync(id, cancellationToken);
 
-    // Public helper methods used by plugin components and diagnostics.
     public Task<Dictionary<int, string>> GetContentTypesAsync(CancellationToken cancellationToken)
         => _guideService.GetContentTypesAsync(cancellationToken);
 
