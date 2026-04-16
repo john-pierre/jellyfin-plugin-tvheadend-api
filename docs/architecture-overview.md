@@ -27,7 +27,7 @@ The plugin integrates TVHeadend with Jellyfin's Live TV subsystem using TVHeaden
 │         │                  │                     │              │
 │  ┌──────▼──────────────────▼─────────────────────▼──────────┐  │
 │  │                   Helper Layer                            │  │
-│  │  IApiClient · IUrlBuilder · GridFetcher · HttpClientFactory│  │
+│  │  IApiClient · IUrlBuilder · GridFetcher                    │  │
 │  └──────────────────────────┬────────────────────────────────┘  │
 │                             │ HTTP/JSON                         │
 └─────────────────────────────┼───────────────────────────────────┘

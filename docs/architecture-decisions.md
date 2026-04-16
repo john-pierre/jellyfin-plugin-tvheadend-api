@@ -97,7 +97,7 @@ This document records significant architecture decisions for the plugin using li
 
 **Consequences:**
 - Services must be thread-safe.
-- `HttpClient` instances are created per-call (not ideal; see future improvement for `IHttpClientFactory`).
+- `HttpClient` instances are managed by `IHttpClientFactory` with named clients (`TvHeadend`, `TvHeadendUnsafe`).
 
 ---
 

@@ -1,3 +1,4 @@
+using System.Net.Http;
 using Jellyfin.Plugin.TvHeadendApi.Service;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
@@ -36,6 +37,22 @@ public class ServiceRegistrator : IPluginServiceRegistrator
     /// </param>
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
+        // Register named HttpClients for TVHeadend API communication.
+        // "TvHeadend" — standard client with certificate revocation checks.
+        // "TvHeadendUnsafe" — skips certificate validation (self-signed certs).
+        serviceCollection.AddHttpClient(ApiClient.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                CheckCertificateRevocationList = true,
+            });
+
+        serviceCollection.AddHttpClient(ApiClient.HttpClientUnsafeName)
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                CheckCertificateRevocationList = false,
+                ServerCertificateCustomValidationCallback = static (_, _, _, _) => true,
+            });
+
         serviceCollection.AddSingleton<IUrlBuilder, UrlBuilder>();
         serviceCollection.AddSingleton<IEncodingOptionsReader, EncodingOptionsReader>();
         serviceCollection.AddSingleton<ITokenService, TokenService>();

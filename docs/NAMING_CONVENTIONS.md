@@ -53,7 +53,6 @@ Jellyfin.Plugin.TvHeadendApi/
 │   │   ├── ApiClient.cs               → public class ApiClient { }
 │   │   ├── UrlBuilder.cs              → public class UrlBuilder { }
 │   │   ├── GridFetcher.cs             → public class GridFetcher { }
-│   │   ├── HttpClientFactory.cs       → public class HttpClientFactory { }
 ├── Api/                               → Jellyfin.Plugin.TvHeadendApi.Api
 │   ├── PluginController.cs            → public class PluginController { }
 ├── Configuration/                     → Jellyfin.Plugin.TvHeadendApi.Configuration
@@ -83,7 +82,7 @@ Services are organized by **domain responsibility**, not by implementation detai
 | **Service.Profile** | TVHeadend profile configuration and provisioning | `ProfileResolver`, `ProvisioningService`, `ProfileDetails` |
 | **Service.Stream** | Stream URL construction and stream lifecycle | `MediaSourceService`, stream URL building |
 | **Service.Diagnostic** | Plugin diagnostics and health checks | `DiagnosticService` |
-| **Service.Helper** | Low-level HTTP and URL helpers | `ApiClient`, `UrlBuilder`, `HttpClientFactory` |
+| **Service.Helper** | Low-level HTTP and URL helpers | `ApiClient`, `UrlBuilder` |
 
 ### Service Type Suffixes
 - **Service**: Full lifecycle service (e.g., `DiagnosticService`, `ProvisioningService`)

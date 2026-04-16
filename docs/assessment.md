@@ -102,7 +102,7 @@ No circular dependencies detected. All domain services depend on `IApiClient` + 
 | ID | Severity | Finding |
 |---|---|---|
 | Q1 | Low | Duplicated `JsonSerializerOptions` instances across services. |
-| Q2 | Low | `HttpClient` created via `using var httpClient = _tvheadendApiClient.BuildHttpClient(config)` in every call — creates new HttpClient per request. Factory already exists but not using `IHttpClientFactory` from Microsoft. |
+| Q2 | ~~Low~~ | ~~`HttpClient` created via `using var httpClient = _tvheadendApiClient.BuildHttpClient(config)` in every call — creates new HttpClient per request.~~ ✅ Resolved: migrated to `IHttpClientFactory` with named clients in Milestone 8. |
 | Q3 | Info | `GetStreamAsync` in `ApiClient` reads full response into `MemoryStream` — fine for current use (images) but not for large streams. |
 | Q4 | Info | No retry/resilience logic for TVHeadend API calls. |
 

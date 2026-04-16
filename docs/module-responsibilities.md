@@ -47,7 +47,7 @@ Quick reference for what each module owns and its boundaries.
 - **Boundary:** Listens to Jellyfin `ISessionManager` playback events.
 - **Does not:** Interact with TVHeadend.
 
-### Service/Helper (`ApiClient`, `UrlBuilder`, `GridFetcher`, `HttpClientFactory`, `IdNodeValueHelper`)
+### Service/Helper (`ApiClient`, `UrlBuilder`, `GridFetcher`, `IdNodeValueHelper`)
 
 - **Owns:** HTTP client creation, URL building (base URL, auth variants), paginated grid fetching, idnode value extraction.
 - **Boundary:** Generic TVHeadend HTTP infrastructure — no domain logic.

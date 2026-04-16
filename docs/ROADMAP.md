@@ -94,7 +94,7 @@ This document tracks the structured refactor and quality improvement of the Jell
 
 | ID | Severity | Item |
 |---|---|---|
-| Q2 | Low | `HttpClient` created per-call via `IApiClient.BuildHttpClient()` — should migrate to `IHttpClientFactory` |
+| Q2 | ~~Low~~ | ~~`HttpClient` created per-call via `IApiClient.BuildHttpClient()` — should migrate to `IHttpClientFactory`~~ ✅ Resolved in Milestone 8 |
 | Q4 | Low | No retry/resilience for TVHeadend API calls |
 | A3 | Info | `Plugin.Instance` static singleton — standard Jellyfin pattern but creates test friction (already mitigated with constructor injection in `MediaSourceService` and `StatisticsService`) |
 | T3 | Info | No live integration tests against real TVHeadend (contract tests cover JSON shape, but not HTTP behavior) |
@@ -106,12 +106,14 @@ This document tracks the structured refactor and quality improvement of the Jell
 
 ### Milestone 8 — HTTP Client Modernization (Short-Term, addresses Q2)
 
-- [ ] Introduce `IHttpClientFactory` registration in `ServiceRegistrator`
-- [ ] Refactor `IApiClient` / `ApiClient` to accept `HttpClient` via factory instead of `BuildHttpClient()`
-- [ ] Remove per-call `HttpClient` creation
-- [ ] Update unit tests to use injected `HttpClient` (via `MockHttpMessageHandler`)
-- [ ] Verify build: 0 warnings, 0 errors
-- [ ] Verify tests: all passing
+- [x] Introduce `IHttpClientFactory` registration in `ServiceRegistrator` — two named clients (`TvHeadend`, `TvHeadendUnsafe`)
+- [x] Refactor `ApiClient` to accept `IHttpClientFactory` via constructor injection instead of static `HttpClientFactory`
+- [x] Remove per-call `HttpClient` creation — `BuildHttpClient` now delegates to `IHttpClientFactory.CreateClient()`
+- [x] Delete static `HttpClientFactory.cs`
+- [x] Add `Microsoft.Extensions.Http` package reference
+- [x] Update unit tests to use injected `IHttpClientFactory` mock — added 2 new tests (factory delegation, unsafe client selection, auth header)
+- [x] Verify build: 0 warnings, 0 errors
+- [x] Verify tests: 270 passing (268 existing + 2 new)
 
 ### Milestone 9 — Resilience Layer (Short-Term, addresses Q4)
 

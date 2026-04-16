@@ -17,6 +17,7 @@
   <ItemGroup>
     <PackageReference Include="Jellyfin.Controller" Version="[10.10.7,)" />
     <PackageReference Include="Jellyfin.Model" Version="[10.10.7,)" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
   </ItemGroup>
 
   <ItemGroup>

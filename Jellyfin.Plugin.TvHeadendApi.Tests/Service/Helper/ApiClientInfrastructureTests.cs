@@ -27,11 +27,19 @@ public class ApiClientTests
         AllowAnonymousAccess = true
     };
 
+    private static IHttpClientFactory CreateMockFactory(HttpMessageHandler? handler = null)
+    {
+        var mock = new Mock<IHttpClientFactory>();
+        mock.Setup(f => f.CreateClient(It.IsAny<string>()))
+            .Returns(() => handler != null ? new HttpClient(handler) : new HttpClient());
+        return mock.Object;
+    }
+
     [Fact]
     public void BuildHttpClient_WithValidConfig_ReturnsHttpClient()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
 
         // Act
         var result = client.BuildHttpClient(_testConfig);
@@ -42,24 +50,63 @@ public class ApiClientTests
     }
 
     [Fact]
-    public void BuildHttpClient_CreatesNewInstanceEachTime()
+    public void BuildHttpClient_UsesHttpClientFactory()
     {
         // Arrange
-        var client = new ApiClient();
+        var factoryMock = new Mock<IHttpClientFactory>();
+        var expectedClient = new HttpClient();
+        factoryMock.Setup(f => f.CreateClient(ApiClient.HttpClientName)).Returns(expectedClient);
+        var client = new ApiClient(factoryMock.Object);
 
         // Act
-        var client1 = client.BuildHttpClient(_testConfig);
-        var client2 = client.BuildHttpClient(_testConfig);
+        var result = client.BuildHttpClient(_testConfig);
 
         // Assert
-        Assert.NotSame(client1, client2);
+        Assert.Same(expectedClient, result);
+        factoryMock.Verify(f => f.CreateClient(ApiClient.HttpClientName), Times.Once);
+    }
+
+    [Fact]
+    public void BuildHttpClient_WithIgnoreCertificateErrors_UsesUnsafeClient()
+    {
+        // Arrange
+        var factoryMock = new Mock<IHttpClientFactory>();
+        factoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(new HttpClient());
+        var client = new ApiClient(factoryMock.Object);
+        var config = new PluginConfiguration { UseSSL = true, IgnoreCertificateErrors = true, AllowAnonymousAccess = true };
+
+        // Act
+        client.BuildHttpClient(config);
+
+        // Assert
+        factoryMock.Verify(f => f.CreateClient(ApiClient.HttpClientUnsafeName), Times.Once);
+    }
+
+    [Fact]
+    public void BuildHttpClient_WithCredentials_SetsAuthorizationHeader()
+    {
+        // Arrange
+        var client = new ApiClient(CreateMockFactory());
+        var config = new PluginConfiguration
+        {
+            AllowAnonymousAccess = false,
+            Username = "admin",
+            Password = "secret"
+        };
+
+        // Act
+        var httpClient = client.BuildHttpClient(config);
+
+        // Assert
+        Assert.NotNull(httpClient.DefaultRequestHeaders.Authorization);
+        Assert.Equal("Basic", httpClient.DefaultRequestHeaders.Authorization.Scheme);
     }
 
     [Fact]
     public void GetBaseUrl_WithValidConfig_ReturnsUrl()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
 
         // Act
         var url = client.GetBaseUrl(_testConfig);
@@ -74,7 +121,7 @@ public class ApiClientTests
     public void GetBaseUrl_IncludesHostAndPort()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
 
         // Act
         var url = client.GetBaseUrl(_testConfig);
@@ -88,7 +135,7 @@ public class ApiClientTests
     public void GetWebRoot_ReturnsNormalizedWebroot()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
 
         // Act
         var webroot = client.GetWebRoot(_testConfig);
@@ -102,7 +149,7 @@ public class ApiClientTests
     public void BuildUrl_WithEndpoint_ConstructsFullUrl()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
 
         // Act
         var url = client.BuildUrl(_testConfig, "/api/channel/grid");
@@ -117,7 +164,7 @@ public class ApiClientTests
     public async Task GetStringAsync_WithMockedHttpClient_ReturnsString()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
         var mockHandler = new MockHttpMessageHandler
         {
             Response = new HttpResponseMessage(HttpStatusCode.OK)
@@ -140,7 +187,7 @@ public class ApiClientTests
     public async Task GetStringAsync_WithCancellation_ThrowsOperationCanceledException()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
         var mockHandler = new MockHttpMessageHandler
         {
             Delay = 1000
@@ -158,7 +205,7 @@ public class ApiClientTests
     public async Task PostFormAsync_WithValidData_ReturnsHttpResponse()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
         var mockHandler = new MockHttpMessageHandler
         {
             Response = new HttpResponseMessage(HttpStatusCode.OK)
@@ -183,7 +230,7 @@ public class ApiClientTests
     public async Task PostFormAsync_WithFormContent_IncludesFormData()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
         var capturedRequest = false;
         var mockHandler = new MockHttpMessageHandler
         {
@@ -211,7 +258,7 @@ public class ApiClientTests
     public async Task GetStreamAsync_WithValidResponse_ReturnsStream()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
         var mockHandler = new MockHttpMessageHandler
         {
             Response = new HttpResponseMessage(HttpStatusCode.OK)
@@ -235,7 +282,7 @@ public class ApiClientTests
     public async Task GetStreamAsync_WithFailedResponse_ThrowsHttpRequestException()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
         var mockHandler = new MockHttpMessageHandler
         {
             Response = new HttpResponseMessage(HttpStatusCode.NotFound)
@@ -253,7 +300,7 @@ public class ApiClientTests
     public void BuildUrl_WithDifferentEndpoints_ReturnsDifferentUrls()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
 
         // Act
         var url1 = client.BuildUrl(_testConfig, "/api/channel/grid");
@@ -269,7 +316,7 @@ public class ApiClientTests
     public async Task GetStringAsync_MultipleRequests_BothSucceed()
     {
         // Arrange
-        var client = new ApiClient();
+        var client = new ApiClient(CreateMockFactory());
         var mockHandler = new MockHttpMessageHandler
         {
             ResponseFactory = () => new HttpResponseMessage(HttpStatusCode.OK)
