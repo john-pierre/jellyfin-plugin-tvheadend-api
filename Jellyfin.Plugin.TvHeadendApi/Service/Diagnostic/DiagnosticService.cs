@@ -94,7 +94,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         report.PluginSettings.Add($"Jellyfin FFmpeg ProbeSize: {probeSizeDisplay}");
         report.PluginSettings.Add($"Jellyfin FFmpeg AnalyzeDuration: {jellyfinAnalyzeDuration ?? "(not set / default)"}");
 
-        report.PluginSettings.Add($"DVR enabled: {config.EnableTvhDvr}, Recording Profile: {config.RecordingProfile}");
+        report.PluginSettings.Add($"Recording Profile: {config.RecordingProfile}");
 
         if (string.IsNullOrWhiteSpace(config.AuthToken))
         {
@@ -343,76 +343,73 @@ internal sealed class DiagnosticService : IDiagnosticService
                 report.Warnings.Add($"Could not fetch profile list: {ex.Message}");
             }
 
-            if (config.EnableTvhDvr)
+            try
             {
-                try
-                {
-                    var dvrUrl = $"{baseUrl}{webRoot}api/dvr/entry/grid?limit=1";
-                    var dvrResponse = await _tvheadendApiClient.GetStringAsync(httpClient, dvrUrl, cancellationToken).ConfigureAwait(false);
-                    var dvrEntries = JsonSerializer.Deserialize<DvrEntryGridResponse>(dvrResponse, SerializerOptions);
-                    report.DvrEntryCount = dvrEntries?.Total ?? 0;
-                }
-                catch (Exception ex)
-                {
-                    report.Warnings.Add($"Could not fetch DVR entries: {ex.Message}");
-                }
+                var dvrUrl = $"{baseUrl}{webRoot}api/dvr/entry/grid?limit=1";
+                var dvrResponse = await _tvheadendApiClient.GetStringAsync(httpClient, dvrUrl, cancellationToken).ConfigureAwait(false);
+                var dvrEntries = JsonSerializer.Deserialize<DvrEntryGridResponse>(dvrResponse, SerializerOptions);
+                report.DvrEntryCount = dvrEntries?.Total ?? 0;
+            }
+            catch (Exception ex)
+            {
+                report.Warnings.Add($"Could not fetch DVR entries: {ex.Message}");
+            }
 
-                try
-                {
-                    var dvrLoadUrl = $"{baseUrl}{webRoot}api/idnode/load";
-                    using var dvrHttpResponse = await _tvheadendApiClient.PostFormAsync(
-                        httpClient,
-                        dvrLoadUrl,
-                        new[]
-                        {
-                            new KeyValuePair<string, string>("enum", "1"),
-                            new KeyValuePair<string, string>("class", "dvrconfig"),
-                        },
-                        cancellationToken).ConfigureAwait(false);
-                    dvrHttpResponse.EnsureSuccessStatusCode();
-                    var dvrBody = await dvrHttpResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                    var dvrConfigList = JsonSerializer.Deserialize<DvrConfigListResponse>(dvrBody, SerializerOptions);
-                    if (dvrConfigList != null && dvrConfigList.Entries.Length > 0)
+            try
+            {
+                var dvrLoadUrl = $"{baseUrl}{webRoot}api/idnode/load";
+                using var dvrHttpResponse = await _tvheadendApiClient.PostFormAsync(
+                    httpClient,
+                    dvrLoadUrl,
+                    new[]
                     {
-                        foreach (var entry in dvrConfigList.Entries)
+                        new KeyValuePair<string, string>("enum", "1"),
+                        new KeyValuePair<string, string>("class", "dvrconfig"),
+                    },
+                    cancellationToken).ConfigureAwait(false);
+                dvrHttpResponse.EnsureSuccessStatusCode();
+                var dvrBody = await dvrHttpResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                var dvrConfigList = JsonSerializer.Deserialize<DvrConfigListResponse>(dvrBody, SerializerOptions);
+                if (dvrConfigList != null && dvrConfigList.Entries.Length > 0)
+                {
+                    foreach (var entry in dvrConfigList.Entries)
+                    {
+                        var name = entry.EffectiveName;
+                        if (!string.IsNullOrWhiteSpace(name))
                         {
-                            var name = entry.EffectiveName;
-                            if (!string.IsNullOrWhiteSpace(name))
-                            {
-                                dvrProfileNames.Add(name);
-                            }
-                        }
-
-                        configuredDvrProfileExists = dvrProfileNames.Any(name => string.Equals(name, config.RecordingProfile, StringComparison.OrdinalIgnoreCase));
-                        report.PluginSettings.Add($"TVH DVR profiles: {(dvrProfileNames.Count == 0 ? "(none found)" : string.Join(", ", dvrProfileNames))}");
-
-                        foreach (var profile in dvrProfileNames)
-                        {
-                            report.AvailableRecordingProfiles.Add(profile);
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(config.RecordingProfile) && configuredDvrProfileExists)
-                        {
-                            report.Checks.Add(new DiagnoseCheck { Category = "Recording", Name = "DVR Profile", Status = "OK", Message = $"Recording profile '{config.RecordingProfile}' exists in TVHeadend." });
-                        }
-                        else if (!string.IsNullOrWhiteSpace(config.RecordingProfile) && !configuredDvrProfileExists)
-                        {
-                            report.Checks.Add(new DiagnoseCheck
-                            {
-                                Category = "Recording",
-                                Name = "DVR Profile",
-                                Status = "WARNING",
-                                Message = $"Recording profile '{config.RecordingProfile}' not found in TVHeadend.",
-                                Recommendation = $"Available DVR profiles: {string.Join(", ", dvrProfileNames)}."
-                            });
-                            scoreDeductions += 10;
+                            dvrProfileNames.Add(name);
                         }
                     }
+
+                    configuredDvrProfileExists = dvrProfileNames.Any(name => string.Equals(name, config.RecordingProfile, StringComparison.OrdinalIgnoreCase));
+                    report.PluginSettings.Add($"TVH DVR profiles: {(dvrProfileNames.Count == 0 ? "(none found)" : string.Join(", ", dvrProfileNames))}");
+
+                    foreach (var profile in dvrProfileNames)
+                    {
+                        report.AvailableRecordingProfiles.Add(profile);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(config.RecordingProfile) && configuredDvrProfileExists)
+                    {
+                        report.Checks.Add(new DiagnoseCheck { Category = "Recording", Name = "DVR Profile", Status = "OK", Message = $"Recording profile '{config.RecordingProfile}' exists in TVHeadend." });
+                    }
+                    else if (!string.IsNullOrWhiteSpace(config.RecordingProfile) && !configuredDvrProfileExists)
+                    {
+                        report.Checks.Add(new DiagnoseCheck
+                        {
+                            Category = "Recording",
+                            Name = "DVR Profile",
+                            Status = "WARNING",
+                            Message = $"Recording profile '{config.RecordingProfile}' not found in TVHeadend.",
+                            Recommendation = $"Available DVR profiles: {string.Join(", ", dvrProfileNames)}."
+                        });
+                        scoreDeductions += 10;
+                    }
                 }
-                catch (Exception ex)
-                {
-                    report.Warnings.Add($"Could not inspect DVR profiles: {ex.Message}");
-                }
+            }
+            catch (Exception ex)
+            {
+                report.Warnings.Add($"Could not inspect DVR profiles: {ex.Message}");
             }
         }
 

@@ -14,8 +14,6 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 /// </summary>
 internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDisposable
 {
-    private static readonly TimeSpan ProfileContainerCacheTtl = TimeSpan.FromMinutes(5);
-
     private readonly SemaphoreSlim _profileContainerLock = new(1, 1);
     private readonly ILogger<ProfileContainerResolver> _logger;
     private readonly IApiClient _tvheadendApiClient;
@@ -58,10 +56,11 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
     public async Task<ProfileSnapshot> ResolveProfileSnapshotAsync(PluginConfiguration config, CancellationToken cancellationToken)
     {
         var profileName = config.StreamingProfile;
+        var cacheTtl = TimeSpan.FromMinutes(config.ProfileCacheTtlMinutes > 0 ? config.ProfileCacheTtlMinutes : 5);
 
         if (_profileCache is { } cached
             && string.Equals(cached.ProfileName, profileName, StringComparison.OrdinalIgnoreCase)
-            && DateTime.UtcNow - cached.Timestamp < ProfileContainerCacheTtl)
+            && DateTime.UtcNow - cached.Timestamp < cacheTtl)
         {
             return cached.Snapshot;
         }
@@ -71,7 +70,7 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
         {
             if (_profileCache is { } cached2
                 && string.Equals(cached2.ProfileName, profileName, StringComparison.OrdinalIgnoreCase)
-                && DateTime.UtcNow - cached2.Timestamp < ProfileContainerCacheTtl)
+                && DateTime.UtcNow - cached2.Timestamp < cacheTtl)
             {
                 return cached2.Snapshot;
             }

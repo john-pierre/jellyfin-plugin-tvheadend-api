@@ -5,11 +5,13 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Jellyfin.Plugin.TvHeadendApi;
 
@@ -46,6 +48,9 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IDefaultProfileService, DefaultProfileService>();
         serviceCollection.AddSingleton<IProfileContainerResolver, ProfileContainerResolver>();
         serviceCollection.AddSingleton<IApiClient, ApiClient>();
+        serviceCollection.AddSingleton<StatisticsService>();
+        serviceCollection.AddSingleton<IStatisticsService>(sp => sp.GetRequiredService<StatisticsService>());
+        serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StatisticsService>());
 
         // Register OrchestratorService as the implementation of ILiveTvService
         serviceCollection.AddSingleton<ILiveTvService, OrchestratorService>();

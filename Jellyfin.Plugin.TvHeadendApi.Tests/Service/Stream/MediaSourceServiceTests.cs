@@ -97,7 +97,7 @@ public class MediaSourceServiceTests
     }
 
     [Fact]
-    public async Task GetChannelStreamAsync_UsesAnalyzeDurationFallback200_WhenConfigValueIsZero()
+    public async Task GetChannelStreamAsync_PassesAnalyzeDurationFromConfig_WhenValueIsZero()
     {
         var config = new PluginConfiguration
         {
@@ -122,7 +122,7 @@ public class MediaSourceServiceTests
         var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder);
         var mediaSource = await sut.GetChannelStreamAsync("ch-1", CancellationToken.None);
 
-        Assert.Equal(200, mediaSource.AnalyzeDurationMs);
+        Assert.Equal(0, mediaSource.AnalyzeDurationMs);
     }
 
     [Fact]

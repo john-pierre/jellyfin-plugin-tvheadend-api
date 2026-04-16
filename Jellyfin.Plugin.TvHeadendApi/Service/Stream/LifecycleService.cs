@@ -21,11 +21,12 @@ internal sealed class LifecycleService : ILifecycleService
     {
         if (string.IsNullOrWhiteSpace(id))
         {
-            _logger.LogWarning("Stream ID is null or empty. No action required.");
+            _logger.LogDebug("CloseLiveStream called with empty ID. No action required.");
         }
         else
         {
-            _logger.LogInformation("TVHeadEnd does not support closing live streams directly. No action taken for Stream ID: {StreamId}.", id);
+            // TVH HTTP streams close when the client disconnects; no explicit server-side close needed.
+            _logger.LogDebug("CloseLiveStream called for Stream ID: {StreamId}. TVH closes HTTP streams on client disconnect.", id);
         }
 
         return Task.CompletedTask;
@@ -35,11 +36,11 @@ internal sealed class LifecycleService : ILifecycleService
     {
         if (string.IsNullOrWhiteSpace(id))
         {
-            _logger.LogWarning("Tuner ID is null or empty. No reset action required.");
+            _logger.LogDebug("ResetTuner called with empty ID. No action required.");
         }
         else
         {
-            _logger.LogInformation("TVHeadEnd does not require or support resetting tuners. No action taken for Tuner ID: {TunerId}.", id);
+            _logger.LogDebug("ResetTuner called for Tuner ID: {TunerId}. TVH manages tuner lifecycle internally.", id);
         }
 
         return Task.CompletedTask;

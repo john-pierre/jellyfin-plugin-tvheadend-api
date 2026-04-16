@@ -773,8 +773,7 @@ public class DvrServiceTests
             Webroot = "/",
             AllowAnonymousAccess = true,
             Priority = priority,
-            RecordingProfile = recordingProfile,
-            EnableTvhDvr = true
+            RecordingProfile = recordingProfile
         };
     }
 

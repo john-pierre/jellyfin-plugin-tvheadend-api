@@ -119,12 +119,12 @@ internal sealed class MediaSourceService : IMediaSourceService
         }
 
         var profileSnapshot = await _streamProfileContainerResolver.ResolveProfileSnapshotAsync(config, cancellationToken).ConfigureAwait(false);
-        await EnsureMediaInfoCacheStateAsync(channelId, streamUrl, profileSnapshot, config.EnableMediaInfoCacheWrite).ConfigureAwait(false);
+        await EnsureMediaInfoCacheStateAsync(channelId, streamUrl, profileSnapshot, config.EnableMediaInfoCacheWrite, config.EnableMediaInfoCacheValidation).ConfigureAwait(false);
 
         return mediaSource;
     }
 
-    private async Task EnsureMediaInfoCacheStateAsync(string channelId, string streamUrl, ProfileSnapshot profileSnapshot, bool proactiveCacheEnabled)
+    private async Task EnsureMediaInfoCacheStateAsync(string channelId, string streamUrl, ProfileSnapshot profileSnapshot, bool proactiveCacheEnabled, bool validationEnabled)
     {
         try
         {
@@ -136,6 +136,11 @@ internal sealed class MediaSourceService : IMediaSourceService
                     await TryWriteMediaInfoCacheAsync(channelId, streamUrl, profileSnapshot).ConfigureAwait(false);
                 }
 
+                return;
+            }
+
+            if (!validationEnabled)
+            {
                 return;
             }
 

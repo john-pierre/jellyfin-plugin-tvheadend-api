@@ -42,7 +42,7 @@
                         <button id="DiagnoseBtn" is="emby-button" type="button" class="raised emby-button" style="min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
                             <span>🔍 Run Diagnose</span>
                         </button>
-                        <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button" style="background:#00a4dc; color:#fff; font-weight:bold; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
+                        <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button" style="background:#00a4dc; color:#fff; font-weight:bold; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;" title="Requires TVHeadend admin credentials">
                             <span>Create &quot;jellyfin&quot; Profile</span>
                         </button>
                         <button id="ResetDefaultsBtn" is="emby-button" type="button" class="raised emby-button" style="background:#444; color:#fff; min-height:48px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
@@ -54,46 +54,62 @@
                     <div id="ProfileActionMsg" style="margin-top:0.5em; font-style:italic;"></div>
 
                     <div id="DiagnoseReport" style="margin-top:1em; padding:1em; border:1px solid #444; border-radius:6px; background:#1a1a2e; font-family:monospace; font-size:0.9em; line-height:1.6;">
-                        <em>Diagnose wird geladen…</em>
+                        <em>Running diagnostics…</em>
                     </div>
                 </div>
 
                 <!-- ── 0b. Setup Guide ───────────────────────────────────── -->
-                <div class="section">
-                    <details>
-                        <summary style="cursor:pointer; font-size:1.15em; font-weight:bold;">📖 Recommended Setup Guide (TVHeadend + Jellyfin)</summary>
+                <div class="section" style="border:2px solid #00a4dc; border-radius:8px; padding:1em 1.2em; background:rgba(0,164,220,0.06);">
+                    <details open>
+                        <summary style="cursor:pointer; font-size:1.15em; font-weight:bold;">⚡ Fast Channel Switching Guide (< 3 seconds)</summary>
                         <div style="margin-top:0.75em; line-height:1.7;">
-                            <p>Follow these steps for the <strong>fastest channel switching</strong> (stream open &lt; 3 seconds, even on first tune):</p>
-
-                            <h3 style="margin:1em 0 0.3em;">1. TVHeadend: Create a transcode profile</h3>
-                            <ul style="margin:0 0 0 1.5em;">
-                                <li>Click <strong>"Create jellyfin Profile"</strong> in the top action bar to auto-create an optimised profile in TVHeadend.</li>
-                                <li>This creates a transcode profile named <code>jellyfin</code> that outputs <strong>MP4 / H.264 / AAC</strong>.</li>
-                                <li>Alternatively, create the profile manually in TVHeadend: <em>Configuration → Stream → Stream Profiles → Add profile-transcode</em>,
-                                    set Container = <code>MPEG-TS</code> or <code>MP4</code>, Video Codec = <code>libx264</code>, Audio Codec = <code>AAC</code>.</li>
-                            </ul>
-
-                            <h3 style="margin:1em 0 0.3em;">2. Plugin: Set Streaming Profile</h3>
-                            <ul style="margin:0 0 0 1.5em;">
-                                <li>In the <em>Streaming</em> section below, set the <strong>Streaming Profile</strong> to <code>jellyfin</code>.</li>
-                            </ul>
-
-                            <h3 style="margin:1em 0 0.3em;">3. Plugin: Playback Settings</h3>
-                            <ul style="margin:0 0 0 1.5em;">
-                                <li>Enable <strong>Direct Play</strong> ✅</li>
-                                <li>Enable <strong>Direct Stream</strong> ✅</li>
-                                <li>Enable <strong>Stream Probing</strong> ✅ — this allows Jellyfin to use the pre-created mediainfo cache immediately.</li>
-                                <li>Enable <strong>Pre-create Probe Cache Files</strong> ✅ — the plugin writes cache files automatically so that even the very first tune to a channel is fast.</li>
-                            </ul>
-
-
-                            <h3 style="margin:1em 0 0.3em;">How it works</h3>
-                            <p style="margin:0 0 0 0.5em;">
-                                TVHeadend pre-transcodes every channel to a consistent format (H.264 + AAC).
-                                The plugin pre-creates Jellyfin's mediainfo cache files with matching stream metadata.
-                                When Jellyfin opens a channel it finds the cache, skips FFmpeg probing, and starts
-                                Direct Play immediately — resulting in channel switching under 3 seconds.
+                            <p style="margin-bottom:0.5em;">
+                                <strong>Goal:</strong> Switch channels in under 3 seconds — even on the very first tune.
+                                Follow these three steps:
                             </p>
+
+                            <div style="display:grid; grid-template-columns:auto 1fr; gap:0.4em 0.8em; margin:0.8em 0;">
+                                <span style="font-size:1.4em;">①</span>
+                                <div>
+                                    <strong>Create the "jellyfin" transcode profile</strong><br>
+                                    Click <strong>"Create jellyfin Profile"</strong> above. This tells TVHeadend to output every channel as <strong>H.264 + AAC</strong> — a format Jellyfin can Direct Play without any conversion.
+                                    <br><em style="font-size:0.9em; opacity:0.8;">👤 Requires TVHeadend admin credentials to be configured in the Authentication section.</em>
+                                    <details style="margin-top:0.3em;">
+                                        <summary style="cursor:pointer; font-size:0.9em; opacity:0.7;">Manual alternative…</summary>
+                                        <span style="font-size:0.9em;">In TVHeadend: <em>Configuration → Stream → Stream Profiles → Add profile-transcode</em>, set Container = <code>MP4</code>, Video = <code>libx264</code>, Audio = <code>AAC</code>.</span>
+                                    </details>
+                                </div>
+
+                                <span style="font-size:1.4em;">②</span>
+                                <div>
+                                    <strong>Select the profile</strong><br>
+                                    In the <em>Streaming</em> section below, set <strong>Streaming Profile</strong> → <code>jellyfin</code>.
+                                </div>
+
+                                <span style="font-size:1.4em;">③</span>
+                                <div>
+                                    <strong>Enable fast playback settings</strong><br>
+                                    In <em>Playback Behaviour</em> below, enable:
+                                    <strong>Direct Play</strong> ✅,
+                                    <strong>Direct Stream</strong> ✅,
+                                    <strong>Stream Probing</strong> ✅,
+                                    <strong>Pre-create Probe Cache</strong> ✅.
+                                </div>
+                            </div>
+
+                            <details style="margin-top:0.6em;">
+                                <summary style="cursor:pointer; font-weight:bold;">How it works</summary>
+                                <p style="margin:0.4em 0 0 0.5em; font-size:0.95em;">
+                                    TVHeadend transcodes every channel to a consistent format (H.264 + AAC).
+                                    The plugin pre-creates Jellyfin's mediainfo cache files with matching metadata.
+                                    When you switch channels, Jellyfin finds the cache instantly, skips FFmpeg probing,
+                                    and starts Direct Play — channel switch in <strong>under 3 seconds</strong>.
+                                </p>
+                                <p style="margin:0.3em 0 0 0.5em; font-size:0.9em; opacity:0.8;">
+                                    Without this setup, Jellyfin probes the stream for 3 s, may fall back to transcoding
+                                    (another 3 s delay), plus FFmpeg startup — easily <strong>8+ seconds</strong> per switch.
+                                </p>
+                            </details>
                         </div>
                     </details>
                 </div>
@@ -159,7 +175,7 @@
                     <div class="inputContainer">
                         <label class="inputLabel" for="AuthToken">Auth Token <span style="color: #e74c3c; font-weight: bold;">*</span></label>
                         <input id="AuthToken" name="AuthToken" type="password" is="emby-input" />
-                        <div class="fieldDescription"><strong>Required.</strong> A persistent access token used for direct stream playback by clients. This token is appended as <code>?auth=…</code> to all stream and image URLs, allowing clients to play channels without additional authentication.<br/><br/><strong>Allowed token format:</strong> letters and digits only (<code>A-Z</code>, <code>a-z</code>, <code>0-9</code>).<br/><br/>👤 <strong>To generate a new auth token, you need TVHeadend admin access.</strong><br/>Click <strong>"Generate Auth Token"</strong> below to create one automatically from TVHeadend, or generate manually in TVHeadend admin panel and paste it here.</div>
+                        <div class="fieldDescription"><strong>Required.</strong> A persistent access token used for direct stream playback by clients. This token is appended as <code>?auth=…</code> to all stream and image URLs, allowing clients to play channels without additional authentication.<br/><br/><strong>Allowed token format:</strong> letters and digits only (<code>A-Z</code>, <code>a-z</code>, <code>0-9</code>).<br/><br/>👤 <strong>To generate a new auth token, the configured TVHeadend user credentials are used.</strong><br/>Click <strong>"Generate Auth Token"</strong> below to create one automatically from TVHeadend, or generate manually in TVHeadend admin panel and paste it here.</div>
                         <div style="margin-top:0.75em; display:flex; gap:0.75em; align-items:center; flex-wrap:wrap;">
                             <button id="GenerateAuthTokenBtn" is="emby-button" type="button" class="raised emby-button" style="background:#4caf50; color:#fff; font-weight:bold; min-height:44px; display:flex; align-items:center; justify-content:center; padding:0.5em 1.2em; margin:0;">
                                 <span>Generate Auth Token</span>
@@ -202,28 +218,28 @@
                 <!-- ── 4. Playback Behaviour ────────────────────────────── -->
                 <div class="section">
                     <h2>Playback Behaviour</h2>
-                    <p class="sectionDescription">Fine-tune how Jellyfin handles the incoming stream. If you are unsure, leave the defaults.</p>
+                    <p class="sectionDescription">Controls how Jellyfin handles the incoming stream. Settings marked ⚡ directly affect channel switching speed.</p>
 
                     <div class="checkboxContainer">
                         <label>
                             <input id="SupportsDirectPlay" name="SupportsDirectPlay" type="checkbox" is="emby-checkbox" />
-                            <span>Direct Play</span>
+                            <span>⚡ Direct Play</span>
                         </label>
-                        <div class="fieldDescription">Allow the client to play the stream as-is, without any server-side processing. Best for performance.</div>
+                        <div class="fieldDescription">Lets the client play the stream as-is without server-side processing. <strong>Fastest option — keep enabled.</strong></div>
                     </div>
                     <div class="checkboxContainer">
                         <label>
                             <input id="SupportsDirectStream" name="SupportsDirectStream" type="checkbox" is="emby-checkbox" />
-                            <span>Direct Stream (Remux)</span>
+                            <span>⚡ Direct Stream (Remux)</span>
                         </label>
-                        <div class="fieldDescription">Allow Jellyfin to change the container format without re-encoding the video/audio.</div>
+                        <div class="fieldDescription">Allows Jellyfin to change the container format without re-encoding. Fast fallback when Direct Play isn't possible.</div>
                     </div>
                     <div class="checkboxContainer">
                         <label>
                             <input id="SupportsTranscoding" name="SupportsTranscoding" type="checkbox" is="emby-checkbox" />
                             <span>Transcoding</span>
                         </label>
-                        <div class="fieldDescription">Allow Jellyfin to transcode the stream on-the-fly if a client cannot play the original format. Increases server load.</div>
+                        <div class="fieldDescription">Allows Jellyfin to transcode on-the-fly if a client can't play the original format. <strong>Slowest path — adds ~3 s extra delay.</strong> Only needed as last resort.</div>
                     </div>
                     <div class="checkboxContainer">
                         <label>
@@ -235,51 +251,43 @@
                     <div class="checkboxContainer">
                         <label>
                             <input id="SupportsProbing" name="SupportsProbing" type="checkbox" is="emby-checkbox" />
-                            <span>Stream Probing</span>
+                            <span>⚡ Stream Probing</span>
                         </label>
                         <div class="fieldDescription">
-                            Probing means Jellyfin resolves the stream metadata it needs before playback
-                            starts, so it can decide whether <strong>Direct Play</strong>, remuxing, or
-                            transcoding is required.
-                            <strong>Recommended: ON</strong> when using a transcode profile with
-                            <em>Pre-create Probe Cache Files</em> enabled, because that gives Jellyfin the
-                            metadata it needs immediately and helps it start in <strong>Direct Play</strong>
-                            as fast as possible.<br>
-                            <em>Important: Jellyfin has a hard-coded live TV delay of <strong>3 seconds</strong>
-                            when it has to probe a stream. If Direct Play is not possible and Jellyfin falls
-                            back to transcoding, there is another hard-coded <strong>3 second</strong> live TV
-                            startup delay on that path as well. Together with FFmpeg startup overhead, channel
-                            switching can easily end up around <strong>8 seconds</strong>. With probing enabled
-                            and matching cache files already present, Jellyfin gets the data it needs right away
-                            and can stay on the fast Direct Play path.</em>
+                            Jellyfin analyses stream metadata before playback to choose Direct Play, remux, or transcode.
+                            <strong>Keep enabled</strong> when using a transcode profile with pre-created cache files — Jellyfin gets the metadata instantly and stays on the fast Direct Play path.
+                            <details style="margin-top:0.3em;">
+                                <summary style="cursor:pointer; font-size:0.9em; opacity:0.7;">Technical details…</summary>
+                                <span style="font-size:0.9em;">
+                                    Without cached metadata, Jellyfin's core adds a hard-coded 3 s probe delay for live streams.
+                                    If it then falls back to transcoding, there's another 3 s delay plus FFmpeg startup — totalling ~8 s.
+                                    With matching cache files present, the probe resolves instantly.
+                                </span>
+                            </details>
                         </div>
                     </div>
 
-                    <div style="background-color:#f0f0f0; border-left:4px solid #00a4dc; padding:1em; margin:1em 0; border-radius:4px;">
-                        <h4 style="margin:0 0 0.5em 0; color:#00a4dc;">💡 FFmpeg Settings (Optional)</h4>
-                        <p style="margin:0 0 0.5em 0; font-size:0.95em;">
-                            To optimize stream analysis, you can configure Jellyfin's FFmpeg ProbeSize setting:
-                        </p>
-                        <ul style="margin:0 0 0 1.5em; font-size:0.95em;">
-                            <li>Go to <em>Dashboard → Playback → FFmpeg</em></li>
-                            <li>Set <strong>ProbeSize</strong> to <code>1000000</code> for faster stream analysis</li>
-                            <li>Or set the environment variable <code>JELLYFIN_FFmpeg__ProbeSize=1000000</code></li>
-                        </ul>
-                    </div>
 
                     <div class="checkboxContainer">
                         <label>
                             <input id="EnableMediaInfoCacheWrite" name="EnableMediaInfoCacheWrite" type="checkbox" is="emby-checkbox" />
-                            <span>Pre-create Probe Cache Files</span>
+                            <span>⚡ Pre-create Probe Cache Files</span>
                         </label>
                         <div class="fieldDescription">
-                            When enabled, the plugin automatically creates mediainfo cache files for channels
-                            that don't have one yet. The files contain H.264 + AAC stream metadata matching the
-                            output of TVHeadend's "jellyfin" transcode profile. This makes even the very first
-                            tune to a channel fast by eliminating FFmpeg probing entirely.<br>
-                            <em>⚠️ Only enable this when using a transcode profile that outputs MP4/H.264/AAC
-                            (e.g. the "jellyfin" profile). Do <strong>not</strong> enable with "pass" or other
-                            variable-output profiles — the cached metadata would not match the actual stream.</em>
+                            Queries the selected TVHeadend streaming profile for its actual codec and container settings
+                            and pre-creates matching mediainfo cache files for all channels.
+                            This makes even the <strong>very first tune</strong> to a channel fast by skipping FFmpeg probing entirely.
+                        </div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="EnableMediaInfoCacheValidation" name="EnableMediaInfoCacheValidation" type="checkbox" is="emby-checkbox" />
+                            <span>⚡ Validate Cache Against Profile</span>
+                        </label>
+                        <div class="fieldDescription">
+                            Compares existing cache files with the currently selected TVHeadend streaming profile on every channel access.
+                            If the profile has changed (e.g. switched from "pass" to "jellyfin"), outdated cache files are automatically
+                            deleted and — when <strong>Pre-create Probe Cache</strong> is also enabled — replaced with correct ones.
                         </div>
                     </div>
                     <div class="inputContainer">
@@ -291,14 +299,16 @@
                         <label class="inputLabel" for="AnalyzeDurationMs">FFmpeg Analyze Duration (ms)</label>
                         <input id="AnalyzeDurationMs" name="AnalyzeDurationMs" type="number" is="emby-input" min="0" placeholder="200" />
                         <div class="fieldDescription">
-                            Time FFmpeg spends analysing the stream before playback starts, in <strong>milliseconds</strong>.
-                            <strong>Default: 200 ms.</strong> This is the recommended value for fast startup.
-                            You can still set <code>0</code> to use the plugin's automatic fallback behaviour for older setups.<br>
-                            <em>⚠️ Important: When <strong>Stream Probing</strong> is enabled, Jellyfin's core always overrides this value
-                            to <strong>3000 ms</strong> for live streams. This plugin's value only takes effect reliably when probing is <strong>OFF</strong>
-                            and the plugin provides stream details from TVHeadend.</em><br>
-                            <em>Note: <code>-probesize</code> is controlled by Jellyfin's global FFmpeg settings
-                            (Dashboard → Playback → FFmpeg) and cannot be changed from this plugin.</em>
+                            Time FFmpeg spends analysing the stream before playback, in milliseconds. <strong>Default: 200 ms</strong> (recommended for fast startup).
+                            Set <code>0</code> for automatic fallback behaviour.
+                            <details style="margin-top:0.3em;">
+                                <summary style="cursor:pointer; font-size:0.9em; opacity:0.7;">Technical details…</summary>
+                                <span style="font-size:0.9em;">
+                                    When <strong>Stream Probing</strong> is ON, Jellyfin's core overrides this to 3000 ms for live streams.
+                                    This plugin's value only applies when probing is OFF.
+                                    <code>-probesize</code> is controlled by Jellyfin's global FFmpeg settings (Dashboard → Playback → FFmpeg).
+                                </span>
+                            </details>
                         </div>
                     </div>
                 </div>
@@ -306,15 +316,8 @@
                 <!-- ── 5. Recording (DVR) ───────────────────────────────── -->
                 <div class="section">
                     <h2>Recording (DVR)</h2>
-                    <p class="sectionDescription">Settings for TVHeadend-managed recordings. Disable if you want Jellyfin to handle DVR on its own.</p>
+                    <p class="sectionDescription">Settings for TVHeadend-managed recordings.</p>
 
-                    <div class="checkboxContainer">
-                        <label>
-                            <input id="EnableTvhDvr" name="EnableTvhDvr" type="checkbox" is="emby-checkbox" />
-                            <span>Enable TVHeadend DVR</span>
-                        </label>
-                        <div class="fieldDescription">When enabled, recording timers and series timers are managed by TVHeadend. Disable to let Jellyfin record from the live stream instead.</div>
-                    </div>
                     <div class="inputContainer">
                         <label class="inputLabel" for="Priority">Priority</label>
                         <input id="Priority" name="Priority" type="number" is="emby-input" placeholder="5" />
@@ -337,6 +340,107 @@
                         </select>
                         <div class="fieldDescription">Name of the TVHeadend DVR configuration profile. Must exist in your TVHeadend setup.</div>
                     </div>
+                </div>
+
+                <!-- ── 6. Viewing Statistics ────────────────────────────── -->
+                <div class="section">
+                    <h2>📊 Viewing Statistics</h2>
+                    <p class="sectionDescription">Live TV viewing history — who watched what, from which device, and how the stream was played.</p>
+
+                    <div style="display:flex; flex-wrap:wrap; gap:0.75em; margin-bottom:1em; align-items:center;">
+                        <label class="inputLabel" for="StatsDays" style="margin:0;">Time range:</label>
+                        <select id="StatsDays" style="width:auto; min-width:120px; padding:0.3em 0.5em;">
+                            <option value="1">Last 24 hours</option>
+                            <option value="7" selected>Last 7 days</option>
+                            <option value="30">Last 30 days</option>
+                            <option value="0">All time</option>
+                        </select>
+                        <button id="RefreshStatsBtn" is="emby-button" type="button" class="raised emby-button" style="min-height:40px; padding:0.4em 1em; margin:0;">
+                            <span>🔄 Refresh</span>
+                        </button>
+                        <button id="ClearStatsBtn" is="emby-button" type="button" class="raised emby-button" style="background:#c0392b; color:#fff; min-height:40px; padding:0.4em 1em; margin:0;">
+                            <span>🗑️ Clear All</span>
+                        </button>
+                        <span id="StatsStatusMsg" style="font-style:italic; opacity:0.8;"></span>
+                    </div>
+
+                    <div id="StatsEmpty" style="display:none; padding:1em; text-align:center; opacity:0.6;">
+                        <em>No viewing sessions recorded yet. Statistics will appear after users watch live TV.</em>
+                    </div>
+
+                    <div id="StatsCharts" style="display:none;">
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5em; margin-bottom:1.5em;">
+                            <div style="background:rgba(255,255,255,0.03); border:1px solid #333; border-radius:8px; padding:1em;">
+                                <h3 style="margin:0 0 0.5em 0; font-size:0.95em;">Viewing Hours per User</h3>
+                                <canvas id="ChartUserHours" height="200"></canvas>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.03); border:1px solid #333; border-radius:8px; padding:1em;">
+                                <h3 style="margin:0 0 0.5em 0; font-size:0.95em;">Play Method Distribution</h3>
+                                <canvas id="ChartPlayMethod" height="200"></canvas>
+                            </div>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5em; margin-bottom:1.5em;">
+                            <div style="background:rgba(255,255,255,0.03); border:1px solid #333; border-radius:8px; padding:1em;">
+                                <h3 style="margin:0 0 0.5em 0; font-size:0.95em;">Sessions per Device</h3>
+                                <canvas id="ChartDevices" height="200"></canvas>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.03); border:1px solid #333; border-radius:8px; padding:1em;">
+                                <h3 style="margin:0 0 0.5em 0; font-size:0.95em;">Most Watched Channels</h3>
+                                <canvas id="ChartChannels" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="StatsTable" style="display:none;">
+                        <h3 style="margin:0.5em 0;">Recent Sessions</h3>
+                        <div style="overflow-x:auto;">
+                            <table style="width:100%; border-collapse:collapse; font-size:0.9em;">
+                                <thead>
+                                    <tr style="border-bottom:2px solid #444; text-align:left;">
+                                        <th style="padding:0.5em;">User</th>
+                                        <th style="padding:0.5em;">Device</th>
+                                        <th style="padding:0.5em;">Client</th>
+                                        <th style="padding:0.5em;">Channel</th>
+                                        <th style="padding:0.5em;">Play Method</th>
+                                        <th style="padding:0.5em;">Start</th>
+                                        <th style="padding:0.5em;">Duration</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="StatsTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── 7. Expert ────────────────────────────────────────── -->
+                <div class="section">
+                    <details>
+                        <summary style="cursor:pointer; font-size:1.15em; font-weight:bold;">🔧 Expert Settings</summary>
+                        <p class="sectionDescription" style="margin-top:0.5em;">
+                            Advanced tuning parameters. Default values work well for most setups — only change these if you know what you're doing.
+                        </p>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="AuthTokenMaxAttempts">Auth Token Max Attempts</label>
+                            <input id="AuthTokenMaxAttempts" name="AuthTokenMaxAttempts" type="number" is="emby-input" min="1" max="20" placeholder="5" />
+                            <div class="fieldDescription">Maximum retries when generating an alphanumeric auth token. Default: 5.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="ProfileCacheTtlMinutes">Profile Cache TTL (minutes)</label>
+                            <input id="ProfileCacheTtlMinutes" name="ProfileCacheTtlMinutes" type="number" is="emby-input" min="1" placeholder="5" />
+                            <div class="fieldDescription">How long the resolved streaming profile metadata is cached before re-fetching from TVHeadend. Default: 5 min.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="StatisticsRetentionDays">Statistics Retention (days)</label>
+                            <input id="StatisticsRetentionDays" name="StatisticsRetentionDays" type="number" is="emby-input" min="1" placeholder="30" />
+                            <div class="fieldDescription">Number of days to keep viewing statistics before pruning. Default: 30.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="StatisticsSaveIntervalMinutes">Statistics Save Interval (minutes)</label>
+                            <input id="StatisticsSaveIntervalMinutes" name="StatisticsSaveIntervalMinutes" type="number" is="emby-input" min="1" placeholder="5" />
+                            <div class="fieldDescription">How often viewing statistics are auto-saved to disk. Default: 5 min.</div>
+                        </div>
+                    </details>
                 </div>
 
                 <div>
@@ -409,7 +513,11 @@
                 config.BufferMs = parseIntegerOrDefault('#BufferMs', config.BufferMs);
                 config.AnalyzeDurationMs = parseIntegerOrDefault('#AnalyzeDurationMs', config.AnalyzeDurationMs);
                 config.EnableMediaInfoCacheWrite = document.querySelector('#EnableMediaInfoCacheWrite').checked;
-                config.EnableTvhDvr = document.querySelector('#EnableTvhDvr').checked;
+                config.EnableMediaInfoCacheValidation = document.querySelector('#EnableMediaInfoCacheValidation').checked;
+                config.AuthTokenMaxAttempts = parseIntegerOrDefault('#AuthTokenMaxAttempts', config.AuthTokenMaxAttempts);
+                config.ProfileCacheTtlMinutes = parseIntegerOrDefault('#ProfileCacheTtlMinutes', config.ProfileCacheTtlMinutes);
+                config.StatisticsRetentionDays = parseIntegerOrDefault('#StatisticsRetentionDays', config.StatisticsRetentionDays);
+                config.StatisticsSaveIntervalMinutes = parseIntegerOrDefault('#StatisticsSaveIntervalMinutes', config.StatisticsSaveIntervalMinutes);
                 config.Priority = parseIntegerOrDefault('#Priority', config.Priority);
                 config.PrePaddingSeconds = parseIntegerOrDefault('#PrePaddingSeconds', config.PrePaddingSeconds);
                 config.PostPaddingSeconds = parseIntegerOrDefault('#PostPaddingSeconds', config.PostPaddingSeconds);
@@ -574,12 +682,17 @@
             document.querySelector('#BufferMs').value = config.BufferMs || '0';
             document.querySelector('#AnalyzeDurationMs').value = config.AnalyzeDurationMs || '0';
             document.querySelector('#EnableMediaInfoCacheWrite').checked = config.EnableMediaInfoCacheWrite !== false;
-            document.querySelector('#EnableTvhDvr').checked = config.EnableTvhDvr !== false;
+            document.querySelector('#EnableMediaInfoCacheValidation').checked = config.EnableMediaInfoCacheValidation !== false;
+            document.querySelector('#AuthTokenMaxAttempts').value = config.AuthTokenMaxAttempts || '';
+            document.querySelector('#ProfileCacheTtlMinutes').value = config.ProfileCacheTtlMinutes || '';
+            document.querySelector('#StatisticsRetentionDays').value = config.StatisticsRetentionDays || '';
+            document.querySelector('#StatisticsSaveIntervalMinutes').value = config.StatisticsSaveIntervalMinutes || '';
             document.querySelector('#Priority').value = config.Priority || '';
             document.querySelector('#PrePaddingSeconds').value = config.PrePaddingSeconds || '';
             document.querySelector('#PostPaddingSeconds').value = config.PostPaddingSeconds || '';
             document.querySelector('#RecordingProfile').value = config.RecordingProfile || '';
             updateAuthRequiredState();
+            updateAuthTokenButtonLabel();
         }
 
         // ── Load available profiles from TVHeadend ──────────────────────
@@ -655,6 +768,7 @@
             }).then(function () {
                 Dashboard.hideLoadingMsg();
                 loadDiagnose();
+                loadStatistics();
             }).catch(function (err) {
                 Dashboard.hideLoadingMsg();
                 console.error('Error loading configuration:', err);
@@ -662,6 +776,141 @@
         });
 
         document.querySelector('#AllowAnonymousAccess').addEventListener('change', updateAuthRequiredState);
+
+        function updateAuthTokenButtonLabel() {
+            var hasToken = !!document.querySelector('#AuthToken').value.trim();
+            document.querySelector('#GenerateAuthTokenBtn span').textContent = hasToken ? 'Regenerate Auth Token' : 'Generate Auth Token';
+        }
+
+        document.querySelector('#AuthToken').addEventListener('input', updateAuthTokenButtonLabel);
+
+        // ── Statistics ──────────────────────────────────────────────────
+        var statsChartInstances = {};
+
+        function loadChartJs() {
+            if (window.Chart) return Promise.resolve();
+            return new Promise(function (resolve, reject) {
+                var s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js';
+                s.onload = resolve;
+                s.onerror = function () { console.warn('Chart.js CDN failed'); reject(); };
+                document.head.appendChild(s);
+            });
+        }
+
+        function destroyChart(key) {
+            if (statsChartInstances[key]) { statsChartInstances[key].destroy(); delete statsChartInstances[key]; }
+        }
+
+        var chartColors = ['#00a4dc','#4caf50','#f0ad4e','#e74c3c','#9b59b6','#3498db','#1abc9c','#e67e22','#2ecc71','#e91e63'];
+
+        function renderStats(data) {
+            var empty = document.querySelector('#StatsEmpty');
+            var charts = document.querySelector('#StatsCharts');
+            var table = document.querySelector('#StatsTable');
+            var sessions = data.Sessions || [];
+
+            if (sessions.length === 0 && data.ActiveCount === 0) {
+                empty.style.display = ''; charts.style.display = 'none'; table.style.display = 'none';
+                return;
+            }
+            empty.style.display = 'none'; charts.style.display = ''; table.style.display = '';
+
+            // Aggregate: hours per user
+            var userHours = {};
+            sessions.forEach(function (s) {
+                var mins = s.DurationMinutes || 0;
+                userHours[s.UserName] = (userHours[s.UserName] || 0) + mins / 60;
+            });
+            destroyChart('userHours');
+            var userLabels = Object.keys(userHours);
+            statsChartInstances.userHours = new Chart(document.querySelector('#ChartUserHours'), {
+                type: 'bar',
+                data: { labels: userLabels, datasets: [{ label: 'Hours', data: userLabels.map(function (u) { return +userHours[u].toFixed(1); }), backgroundColor: chartColors }] },
+                options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+            });
+
+            // Play method distribution
+            var methods = {};
+            sessions.forEach(function (s) { methods[s.PlayMethod || 'Unknown'] = (methods[s.PlayMethod || 'Unknown'] || 0) + 1; });
+            destroyChart('playMethod');
+            var methodLabels = Object.keys(methods);
+            var methodColors = { DirectPlay: '#4caf50', DirectStream: '#00a4dc', Transcode: '#e74c3c', Unknown: '#888' };
+            statsChartInstances.playMethod = new Chart(document.querySelector('#ChartPlayMethod'), {
+                type: 'doughnut',
+                data: { labels: methodLabels, datasets: [{ data: methodLabels.map(function (m) { return methods[m]; }), backgroundColor: methodLabels.map(function (m) { return methodColors[m] || '#888'; }) }] },
+                options: { responsive: true }
+            });
+
+            // Sessions per device
+            var devices = {};
+            sessions.forEach(function (s) { devices[s.DeviceName || 'Unknown'] = (devices[s.DeviceName || 'Unknown'] || 0) + 1; });
+            destroyChart('devices');
+            var devLabels = Object.keys(devices).sort(function (a, b) { return devices[b] - devices[a]; });
+            statsChartInstances.devices = new Chart(document.querySelector('#ChartDevices'), {
+                type: 'bar',
+                data: { labels: devLabels, datasets: [{ label: 'Sessions', data: devLabels.map(function (d) { return devices[d]; }), backgroundColor: chartColors.slice(2) }] },
+                options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } } }
+            });
+
+            // Most watched channels
+            var channels = {};
+            sessions.forEach(function (s) {
+                var mins = s.DurationMinutes || 0;
+                channels[s.ChannelName || 'Unknown'] = (channels[s.ChannelName || 'Unknown'] || 0) + mins / 60;
+            });
+            destroyChart('channels');
+            var chLabels = Object.keys(channels).sort(function (a, b) { return channels[b] - channels[a]; }).slice(0, 10);
+            statsChartInstances.channels = new Chart(document.querySelector('#ChartChannels'), {
+                type: 'bar',
+                data: { labels: chLabels, datasets: [{ label: 'Hours', data: chLabels.map(function (c) { return +channels[c].toFixed(1); }), backgroundColor: chartColors.slice(1) }] },
+                options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } } }
+            });
+
+            // Table
+            var tbody = document.querySelector('#StatsTableBody');
+            tbody.innerHTML = '';
+            sessions.slice(0, 50).forEach(function (s) {
+                var dur = s.DurationMinutes != null ? s.DurationMinutes.toFixed(0) + ' min' : '<em>active</em>';
+                var start = s.StartTimeUtc ? new Date(s.StartTimeUtc).toLocaleString() : '—';
+                var methodBadge = s.PlayMethod === 'DirectPlay' ? '🟢' : s.PlayMethod === 'Transcode' ? '🔴' : '🔵';
+                tbody.innerHTML += '<tr style="border-bottom:1px solid #333;">'
+                    + '<td style="padding:0.4em;">' + escapeHtml(s.UserName) + '</td>'
+                    + '<td style="padding:0.4em;">' + escapeHtml(s.DeviceName) + '</td>'
+                    + '<td style="padding:0.4em;">' + escapeHtml(s.ClientName) + '</td>'
+                    + '<td style="padding:0.4em;">' + escapeHtml(s.ChannelName) + '</td>'
+                    + '<td style="padding:0.4em;">' + methodBadge + ' ' + escapeHtml(s.PlayMethod || 'Unknown') + '</td>'
+                    + '<td style="padding:0.4em;">' + start + '</td>'
+                    + '<td style="padding:0.4em;">' + dur + '</td>'
+                    + '</tr>';
+            });
+        }
+
+        function loadStatistics() {
+            var days = document.querySelector('#StatsDays').value;
+            var msgEl = document.querySelector('#StatsStatusMsg');
+            msgEl.textContent = 'Loading…';
+
+            loadChartJs().then(function () {
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Statistics?days=' + days), dataType: 'json' });
+            }).then(function (data) {
+                msgEl.textContent = data.TotalCount + ' sessions' + (data.ActiveCount > 0 ? ' (' + data.ActiveCount + ' active)' : '');
+                renderStats(data);
+            }).catch(function (err) {
+                msgEl.textContent = 'Failed to load statistics.';
+                console.error('Statistics load error:', err);
+            });
+        }
+
+        document.querySelector('#RefreshStatsBtn').addEventListener('click', loadStatistics);
+        document.querySelector('#StatsDays').addEventListener('change', loadStatistics);
+        document.querySelector('#ClearStatsBtn').addEventListener('click', function () {
+            if (!confirm('Delete all viewing statistics?')) return;
+            ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('TvHeadendApi/Statistics') }).then(function () {
+                document.querySelector('#StatsStatusMsg').textContent = 'Statistics cleared.';
+                loadStatistics();
+            });
+        });
 
         // ── Save config ────────────────────────────────────────────────
         document.querySelector('#TvHeadendApiConfigForm').addEventListener('submit', function (e) {
@@ -673,6 +922,22 @@
             });
             return false;
         });
+
+        // ── Auto-save on field change ──────────────────────────────────
+        var autoSaveTimer = null;
+        function scheduleAutoSave() {
+            if (autoSaveTimer) clearTimeout(autoSaveTimer);
+            autoSaveTimer = setTimeout(function () {
+                saveCurrentFormToConfig().then(function () {
+                    console.log('[TVH-AutoSave] Configuration saved.');
+                }).catch(function (err) {
+                    console.warn('[TVH-AutoSave] Save failed:', err);
+                });
+            }, 800);
+        }
+
+        document.querySelector('#TvHeadendApiConfigForm').addEventListener('change', scheduleAutoSave);
+        document.querySelector('#TvHeadendApiConfigForm').addEventListener('input', scheduleAutoSave);
     </script>
 </div>
 </body>

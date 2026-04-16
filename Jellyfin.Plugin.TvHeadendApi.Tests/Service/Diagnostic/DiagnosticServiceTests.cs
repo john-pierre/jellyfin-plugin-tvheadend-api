@@ -555,7 +555,6 @@ public class DiagnosticServiceTests
             AllowAnonymousAccess = true,
             StreamingProfile = "pass",
             RecordingProfile = "default",
-            EnableTvhDvr = true,
             AuthToken = "abc123",
             SupportsDirectPlay = true,
             SupportsDirectStream = true,

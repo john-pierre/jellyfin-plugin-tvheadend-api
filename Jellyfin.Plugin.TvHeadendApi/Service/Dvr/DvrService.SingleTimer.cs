@@ -20,7 +20,6 @@ internal sealed partial class DvrService
 {
     public async Task CancelTimerAsync(string timerId, CancellationToken cancellationToken)
     {
-        EnsureDvrEnabled();
         ArgumentException.ThrowIfNullOrWhiteSpace(timerId);
 
         var config = GetConfig();
@@ -47,7 +46,6 @@ internal sealed partial class DvrService
 
     public async Task CreateTimerAsync(TimerInfo info, CancellationToken cancellationToken)
     {
-        EnsureDvrEnabled();
         ArgumentNullException.ThrowIfNull(info);
         ArgumentException.ThrowIfNullOrWhiteSpace(info.ChannelId);
 
@@ -118,7 +116,6 @@ internal sealed partial class DvrService
 
     public async Task UpdateTimerAsync(TimerInfo updatedTimer, CancellationToken cancellationToken)
     {
-        EnsureDvrEnabled();
         ArgumentNullException.ThrowIfNull(updatedTimer);
         ArgumentException.ThrowIfNullOrWhiteSpace(updatedTimer.Id);
 
@@ -154,22 +151,18 @@ internal sealed partial class DvrService
 
     public async Task<IEnumerable<TimerInfo>> GetTimersAsync(CancellationToken cancellationToken)
     {
-        if (!IsTvhDvrEnabled())
-        {
-            return Enumerable.Empty<TimerInfo>();
-        }
-
         try
         {
             var config = GetConfig();
-            const int limit = 10000;
             var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, $"api/dvr/entry/grid?limit={limit}");
+            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/dvr/entry/grid");
             using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
-            using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<DvrEntryGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+            var result = await Helper.GridFetcher.FetchAllAsync<DvrEntryGridResponse>(
+                httpClient,
+                url,
+                r => r.Total,
+                _logger,
+                cancellationToken).ConfigureAwait(false);
             return result?.Entries?
                 .Where(entry => entry.Enabled && entry.FileRemoved == 0 && entry.Stop >= now)
                 .Select(entry => new TimerInfo
@@ -185,6 +178,10 @@ internal sealed partial class DvrService
                     EndDate = DateTimeOffset.FromUnixTimeSeconds(entry.Stop).UtcDateTime,
                     PrePaddingSeconds = Math.Max(0, entry.StartExtra * 60),
                     PostPaddingSeconds = Math.Max(0, entry.StopExtra * 60),
+                    // Link single timer to its parent series timer (autorec rule)
+                    SeriesTimerId = string.IsNullOrWhiteSpace(entry.AutoRec) ? null : entry.AutoRec,
+                    // TVH sched_status: "scheduled", "recording", "completed", "completedError", "missed", "invalid"
+                    Status = MapRecordingStatus(entry.SchedStatus),
                 })
                 .ToList() ?? Enumerable.Empty<TimerInfo>();
         }
@@ -193,5 +190,24 @@ internal sealed partial class DvrService
             _logger.LogError(ex, "Error occurred while fetching timers from TVHeadEnd.");
             return Enumerable.Empty<TimerInfo>();
         }
+    }
+
+    /// <summary>
+    /// Maps a TVHeadend <c>sched_status</c> string to a Jellyfin <see cref="RecordingStatus"/>.
+    /// TVH values: "scheduled", "recording", "completed", "completedError", "completedWarning", "missed", "invalid".
+    /// </summary>
+    private static RecordingStatus MapRecordingStatus(string? schedStatus)
+    {
+        return schedStatus switch
+        {
+            "recording" => RecordingStatus.InProgress,
+            "completed" => RecordingStatus.Completed,
+            "completedError" => RecordingStatus.Error,
+            "completedWarning" => RecordingStatus.Completed,
+            "missed" => RecordingStatus.Error,
+            "invalid" => RecordingStatus.Error,
+            // "scheduled" or null/empty = new/pending timer
+            _ => RecordingStatus.New,
+        };
     }
 }

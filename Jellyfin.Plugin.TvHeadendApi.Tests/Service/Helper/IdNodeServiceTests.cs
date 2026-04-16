@@ -26,7 +26,7 @@ public class IdNodeApiCallTests
         var capturedUrl = string.Empty;
 
         var api = new Mock<IApiClient>();
-        var config = new PluginConfiguration { EnableTvhDvr = true };
+        var config = new PluginConfiguration();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
         api.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh:9981");

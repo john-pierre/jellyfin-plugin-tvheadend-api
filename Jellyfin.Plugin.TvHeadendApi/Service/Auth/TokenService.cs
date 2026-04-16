@@ -15,7 +15,6 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 /// </summary>
 internal sealed class TokenService : ITokenService
 {
-    private const int MaxAttempts = 5;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -68,7 +67,9 @@ internal sealed class TokenService : ITokenService
                 };
             }
 
-            for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+            var maxAttempts = config.AuthTokenMaxAttempts > 0 ? config.AuthTokenMaxAttempts : 5;
+
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
                 var useRefresh = attempt > 1;
                 var userSnapshot = await LoadUserSnapshotAsync(httpClient, config, userUuid, cancellationToken).ConfigureAwait(false);
@@ -87,7 +88,7 @@ internal sealed class TokenService : ITokenService
                     useRefresh ? "Refreshing" : "Creating",
                     config.Username,
                     attempt,
-                    MaxAttempts);
+                    maxAttempts);
 
                 await SaveUserAuthTokenAsync(httpClient, config, userSnapshot, useRefresh, cancellationToken).ConfigureAwait(false);
 
@@ -95,7 +96,7 @@ internal sealed class TokenService : ITokenService
                 var token = tokenSnapshot?.AuthToken;
                 if (string.IsNullOrWhiteSpace(token))
                 {
-                    _logger.LogWarning("Attempt {Attempt}/{MaxAttempts} returned no token for user '{Username}'.", attempt, MaxAttempts, config.Username);
+                    _logger.LogWarning("Attempt {Attempt}/{MaxAttempts} returned no token for user '{Username}'.", attempt, maxAttempts, config.Username);
                     continue;
                 }
 
@@ -116,14 +117,14 @@ internal sealed class TokenService : ITokenService
                 _logger.LogWarning(
                     "Attempt {Attempt}/{MaxAttempts} produced token with unsupported characters for user '{Username}'.",
                     attempt,
-                    MaxAttempts,
+                    maxAttempts,
                     config.Username);
             }
 
             return new AuthTokenGenerationResult
             {
                 Success = false,
-                AttemptCount = MaxAttempts,
+                AttemptCount = maxAttempts,
                 Message = "Could not generate an alphanumeric auth token. TVHeadend generated unsupported characters in all attempts."
             };
         }

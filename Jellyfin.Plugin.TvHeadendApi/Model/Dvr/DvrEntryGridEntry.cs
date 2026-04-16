@@ -434,9 +434,10 @@ public sealed class DvrEntryGridEntry
     public long Start { get; init; }
 
     /// <summary>
-    /// Gets the extra start time for the recording in seconds.
+    /// Gets the extra start time for the recording in minutes.
     /// Corresponds to the "start_extra" field in the JSON response.
-    /// Example: 0.
+    /// TVHeadend stores this value in minutes; the plugin converts to seconds via × 60.
+    /// Example: 5.
     /// </summary>
     [JsonPropertyName("start_extra")]
     public int StartExtra { get; init; }
@@ -466,9 +467,10 @@ public sealed class DvrEntryGridEntry
     public long Stop { get; init; }
 
     /// <summary>
-    /// Gets the extra stop time for the recording in seconds.
+    /// Gets the extra stop time for the recording in minutes.
     /// Corresponds to the "stop_extra" field in the JSON response.
-    /// Example: 0.
+    /// TVHeadend stores this value in minutes; the plugin converts to seconds via × 60.
+    /// Example: 5.
     /// </summary>
     [JsonPropertyName("stop_extra")]
     public int StopExtra { get; init; }

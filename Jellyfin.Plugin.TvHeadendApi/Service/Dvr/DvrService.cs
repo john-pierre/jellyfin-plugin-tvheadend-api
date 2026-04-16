@@ -43,10 +43,12 @@ internal sealed partial class DvrService : IDvrService
         var config = GetConfig();
         var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/dvr/config/grid");
         using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
-        using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        var result = await JsonSerializer.DeserializeAsync<DvrConfigGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+        var result = await Helper.GridFetcher.FetchAllAsync<DvrConfigGridResponse>(
+            httpClient,
+            url,
+            r => r.Total,
+            _logger,
+            cancellationToken).ConfigureAwait(false);
 
         // When profileName is empty, match the TVHeadend default profile (empty name).
         var matchingProfile = result?.Entries?.FirstOrDefault(profile =>
@@ -64,16 +66,6 @@ internal sealed partial class DvrService : IDvrService
         }
 
         return matchingProfile.Uuid;
-    }
-
-    private static bool IsTvhDvrEnabled() => Plugin.Instance?.Configuration.EnableTvhDvr ?? true;
-
-    private void EnsureDvrEnabled()
-    {
-        if (!IsTvhDvrEnabled())
-        {
-            throw new NotSupportedException("TVHeadend DVR is disabled in the plugin configuration.");
-        }
     }
 
     private PluginConfiguration GetConfig()

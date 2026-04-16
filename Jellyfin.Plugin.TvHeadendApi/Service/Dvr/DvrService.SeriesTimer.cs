@@ -19,7 +19,6 @@ internal sealed partial class DvrService
 {
     public async Task CancelSeriesTimerAsync(string timerId, CancellationToken cancellationToken)
     {
-        EnsureDvrEnabled();
         ArgumentException.ThrowIfNullOrWhiteSpace(timerId);
 
         var config = GetConfig();
@@ -46,7 +45,6 @@ internal sealed partial class DvrService
 
     public async Task CreateSeriesTimerAsync(SeriesTimerInfo info, CancellationToken cancellationToken)
     {
-        EnsureDvrEnabled();
         ArgumentNullException.ThrowIfNull(info);
         ArgumentException.ThrowIfNullOrWhiteSpace(info.Name);
 
@@ -211,7 +209,6 @@ internal sealed partial class DvrService
 
     public async Task UpdateSeriesTimerAsync(SeriesTimerInfo info, CancellationToken cancellationToken)
     {
-        EnsureDvrEnabled();
         ArgumentNullException.ThrowIfNull(info);
         ArgumentException.ThrowIfNullOrWhiteSpace(info.Id);
 
@@ -271,11 +268,6 @@ internal sealed partial class DvrService
 
     public Task<SeriesTimerInfo> GetNewTimerDefaultsAsync(ProgramInfo program, CancellationToken cancellationToken)
     {
-        if (!IsTvhDvrEnabled())
-        {
-            return Task.FromResult(new SeriesTimerInfo());
-        }
-
         var config = GetConfig();
         return Task.FromResult(new SeriesTimerInfo
         {
@@ -296,20 +288,17 @@ internal sealed partial class DvrService
 
     public async Task<IEnumerable<SeriesTimerInfo>> GetSeriesTimersAsync(CancellationToken cancellationToken)
     {
-        if (!IsTvhDvrEnabled())
-        {
-            return Enumerable.Empty<SeriesTimerInfo>();
-        }
-
         try
         {
             var config = GetConfig();
             var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/dvr/autorec/grid");
             using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
-            using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<DvrAutoRecGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+            var result = await Helper.GridFetcher.FetchAllAsync<DvrAutoRecGridResponse>(
+                httpClient,
+                url,
+                r => r.Total,
+                _logger,
+                cancellationToken).ConfigureAwait(false);
             return result?.Entries?.Select(entry => new SeriesTimerInfo
             {
                 Id = entry.Uuid,

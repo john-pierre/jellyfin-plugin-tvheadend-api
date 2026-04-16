@@ -42,13 +42,21 @@ public class PluginConfiguration : BasePluginConfiguration
         this.BufferMs = 0;
         this.AnalyzeDurationMs = 200;
         this.EnableMediaInfoCacheWrite = true;
+        this.EnableMediaInfoCacheValidation = true;
 
         // Recording settings
-        this.EnableTvhDvr = true;
         this.Priority = 5;
         this.PrePaddingSeconds = 5;
         this.PostPaddingSeconds = 5;
         this.RecordingProfile = string.Empty;
+
+        // Statistics
+        this.StatisticsRetentionDays = 30;
+
+        // Expert
+        this.AuthTokenMaxAttempts = 5;
+        this.ProfileCacheTtlMinutes = 5;
+        this.StatisticsSaveIntervalMinutes = 5;
     }
 
     // ── Connection ─────────────────────────────────────────────────────
@@ -205,24 +213,26 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets a value indicating whether the plugin should pre-create Jellyfin mediainfo
     /// cache files when no cache entry exists for a channel.
     /// <para>
-    /// When enabled, the plugin writes a cache file with H264+AAC stream metadata
-    /// (matching the output of TVHeadend's "jellyfin" transcode profile) so that Jellyfin
-    /// can skip actual FFmpeg probing. This makes even the very first tune to a channel fast.
-    /// </para>
-    /// <para>
-    /// <strong>Requires:</strong> The TVHeadend streaming profile must produce MP4/H264/AAC
-    /// output (e.g. the "jellyfin" profile). Do not enable this with "pass" or other
-    /// variable-output profiles.
+    /// When enabled, the plugin queries the selected TVHeadend streaming profile for its actual
+    /// codec and container settings and writes a matching cache file so that Jellyfin can skip
+    /// FFmpeg probing. This makes even the very first tune to a channel fast.
     /// </para>
     /// </summary>
     public bool EnableMediaInfoCacheWrite { get; set; }
 
-    // ── Recording (DVR) ────────────────────────────────────────────────
-
     /// <summary>
-    /// Gets or sets a value indicating whether TVHeadend-side DVR is enabled.
+    /// Gets or sets a value indicating whether the plugin should validate existing mediainfo
+    /// cache files against the currently selected TVHeadend streaming profile.
+    /// <para>
+    /// When enabled, the plugin compares the cached codec/container metadata with the active
+    /// profile on every channel access. If the profile has changed (e.g. switched from "pass"
+    /// to "jellyfin"), the outdated cache file is deleted and — if
+    /// <see cref="EnableMediaInfoCacheWrite"/> is also enabled — replaced with a correct one.
+    /// </para>
     /// </summary>
-    public bool EnableTvhDvr { get; set; }
+    public bool EnableMediaInfoCacheValidation { get; set; }
+
+    // ── Recording (DVR) ────────────────────────────────────────────────
 
     /// <summary>
     /// Gets or sets the recording priority (lower = higher priority).
@@ -243,4 +253,28 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the DVR configuration profile name in TVHeadend.
     /// </summary>
     public string RecordingProfile { get; set; }
+
+    // ── Statistics ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Gets or sets the number of days to retain viewing statistics. Default: 30. Max: 90.
+    /// </summary>
+    public int StatisticsRetentionDays { get; set; }
+
+    // ── Expert ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Gets or sets the maximum number of attempts when generating an auth token. Default: 5.
+    /// </summary>
+    public int AuthTokenMaxAttempts { get; set; }
+
+    /// <summary>
+    /// Gets or sets the TTL in minutes for the cached streaming profile metadata. Default: 5.
+    /// </summary>
+    public int ProfileCacheTtlMinutes { get; set; }
+
+    /// <summary>
+    /// Gets or sets the interval in minutes for auto-saving viewing statistics to disk. Default: 5.
+    /// </summary>
+    public int StatisticsSaveIntervalMinutes { get; set; }
 }

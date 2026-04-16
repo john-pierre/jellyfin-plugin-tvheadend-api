@@ -6,9 +6,11 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -26,6 +28,7 @@ public class PluginController : ControllerBase
     private readonly IDiagnosticService _diagnoseService;
     private readonly IDefaultProfileService _defaultProfileService;
     private readonly ITokenService _tokenService;
+    private readonly IStatisticsService _statisticsService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginController"/> class.
@@ -33,14 +36,17 @@ public class PluginController : ControllerBase
     /// <param name="diagnoseService">Service that builds the diagnostic report.</param>
     /// <param name="defaultProfileService">Service that provisions recommended TVHeadend default profiles.</param>
     /// <param name="tokenService">Service that manages TVHeadend auth tokens.</param>
+    /// <param name="statisticsService">Service that tracks live TV viewing statistics.</param>
     public PluginController(
         IDiagnosticService diagnoseService,
         IDefaultProfileService defaultProfileService,
-        ITokenService tokenService)
+        ITokenService tokenService,
+        IStatisticsService statisticsService)
     {
         _diagnoseService = diagnoseService ?? throw new ArgumentNullException(nameof(diagnoseService));
         _defaultProfileService = defaultProfileService ?? throw new ArgumentNullException(nameof(defaultProfileService));
         _tokenService = tokenService ?? throw new ArgumentNullException(nameof(tokenService));
+        _statisticsService = statisticsService ?? throw new ArgumentNullException(nameof(statisticsService));
     }
 
     /// <summary>
@@ -121,7 +127,7 @@ public class PluginController : ControllerBase
 
     /// <summary>
     /// Generates a new authentication token from TVHeadend and stores it in the plugin configuration.
-    /// Requires TVHeadend admin privileges.
+    /// Uses the configured TVHeadend user credentials.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The token generation result with the new auth token.</returns>
@@ -145,5 +151,27 @@ public class PluginController : ControllerBase
             StreamingProfiles = diagnose.AvailableStreamingProfiles.ToArray(),
             RecordingProfiles = diagnose.AvailableRecordingProfiles.ToArray(),
         });
+    }
+
+    /// <summary>
+    /// Returns live TV viewing statistics for the given time range.
+    /// </summary>
+    /// <param name="days">Number of days to look back. 0 = all history.</param>
+    /// <returns>Viewing sessions with user, device, channel, and play method data.</returns>
+    [HttpGet("Statistics")]
+    public ActionResult<ViewingStatisticsResult> GetStatistics([FromQuery] int days = 30)
+    {
+        return Ok(_statisticsService.GetStatistics(days));
+    }
+
+    /// <summary>
+    /// Clears all recorded viewing statistics.
+    /// </summary>
+    /// <returns>Success confirmation.</returns>
+    [HttpDelete("Statistics")]
+    public ActionResult ClearStatistics()
+    {
+        _statisticsService.ClearStatistics();
+        return Ok(new { Success = true, Message = "Viewing statistics cleared." });
     }
 }

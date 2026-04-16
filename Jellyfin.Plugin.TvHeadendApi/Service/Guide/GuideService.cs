@@ -123,15 +123,16 @@ internal sealed class GuideService : IGuideService
         try
         {
             var config = GetConfig();
-            const int limit = 10000;
-            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, $"api/channel/grid?limit={limit}");
-            _logger.LogInformation("Fetching channels from TVHeadEnd at {Url}...", _tvheadendUrlBuilder.MaskSensitiveData(url, config));
+            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/channel/grid");
+            _logger.LogDebug("Fetching channels from TVHeadEnd at {Url}...", _tvheadendUrlBuilder.MaskSensitiveData(url, config));
 
             using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
-            using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<ChannelGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+            var result = await GridFetcher.FetchAllAsync<ChannelGridResponse>(
+                httpClient,
+                url,
+                r => r.Total,
+                _logger,
+                cancellationToken).ConfigureAwait(false);
             if (result?.Entries == null || !result.Entries.Any())
             {
                 _logger.LogWarning("No channels retrieved from TVHeadEnd.");
@@ -163,7 +164,6 @@ internal sealed class GuideService : IGuideService
         try
         {
             var config = GetConfig();
-            const int limit = 5000;
             var encodedChannelId = Uri.EscapeDataString(channelId);
 
             // Pass server-side time-window filter to TVHeadend to reduce payload size.
@@ -174,16 +174,14 @@ internal sealed class GuideService : IGuideService
                 + ",\"comparison\":\"gt\"},{\"field\":\"start\",\"type\":\"numeric\",\"value\":" + endUnix
                 + ",\"comparison\":\"lt\"}]";
             var encodedFilter = Uri.EscapeDataString(filterJson);
-            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, $"api/epg/events/grid?channel={encodedChannelId}&limit={limit}&filter={encodedFilter}");
+            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, $"api/epg/events/grid?channel={encodedChannelId}&filter={encodedFilter}");
             using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
-            using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                return Enumerable.Empty<ProgramInfo>();
-            }
-
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<EpgEventsGridResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+            var result = await GridFetcher.FetchAllAsync<EpgEventsGridResponse>(
+                httpClient,
+                url,
+                r => r.TotalCount,
+                _logger,
+                cancellationToken).ConfigureAwait(false);
             return result?.Entries?
                 .Where(entry =>
                 {
@@ -224,7 +222,13 @@ internal sealed class GuideService : IGuideService
                         IsSports = entry.Genre?.Any(genreId => genreId >= 64 && genreId <= 75) ?? false,
                         IsNews = entry.Genre?.Any(genreId => genreId >= 32 && genreId <= 36) ?? false,
                         IsKids = entry.Genre?.Any(genreId => genreId >= 80 && genreId <= 83) ?? false,
-                        IsSeries = entry.Genre?.Any(genreId => genreId >= 48 && genreId <= 51) ?? false,
+                        // IsSeries: prefer SerieslinkUri presence (definitive), fall back to genre 48-51 (Show/Game Show)
+                        IsSeries = !string.IsNullOrWhiteSpace(entry.SerieslinkUri)
+                            || (entry.Genre?.Any(genreId => genreId >= 48 && genreId <= 51) ?? false),
+                        // SeriesId: use SerieslinkUri as a stable identifier for series-timer linking
+                        SeriesId = string.IsNullOrWhiteSpace(entry.SerieslinkUri) ? null : entry.SerieslinkUri,
+                        // ProductionYear from TVH copyright_year (0 = unknown)
+                        ProductionYear = entry.CopyrightYear > 0 ? entry.CopyrightYear : null,
                     };
                 })
                 .ToList() ?? Enumerable.Empty<ProgramInfo>();
