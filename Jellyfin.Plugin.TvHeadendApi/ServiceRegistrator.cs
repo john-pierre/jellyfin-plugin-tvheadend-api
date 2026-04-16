@@ -44,14 +44,18 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
             {
                 CheckCertificateRevocationList = true,
-            });
+            })
+            .AddPolicyHandler(ResiliencePolicies.GetRetryPolicy())
+            .AddPolicyHandler(ResiliencePolicies.GetCircuitBreakerPolicy());
 
         serviceCollection.AddHttpClient(ApiClient.HttpClientUnsafeName)
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
             {
                 CheckCertificateRevocationList = false,
                 ServerCertificateCustomValidationCallback = static (_, _, _, _) => true,
-            });
+            })
+            .AddPolicyHandler(ResiliencePolicies.GetRetryPolicy())
+            .AddPolicyHandler(ResiliencePolicies.GetCircuitBreakerPolicy());
 
         serviceCollection.AddSingleton<IUrlBuilder, UrlBuilder>();
         serviceCollection.AddSingleton<IEncodingOptionsReader, EncodingOptionsReader>();

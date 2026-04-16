@@ -125,9 +125,17 @@ Every service test suite should include:
 
 ## Coverage
 
-- **Current:** 230 tests, no formal coverage threshold.
-- **Target:** Coverage reporting enabled in CI (via Coverlet). No hard threshold initially, but trending dashboard is recommended.
-- **Gap:** `StatisticsService` has no tests.
+- **Baseline (2026-04-17):** 280 tests, 76.95% line coverage, 58.21% branch coverage.
+- **Tooling:** Coverlet (Cobertura XML) → `irongut/CodeCoverageSummary` in CI.
+- **Thresholds (enforced in CI):**
+  - **50% minimum** — PR fails if line coverage drops below this (`fail_below_min: true`).
+  - **75% good** — coverage badge turns green at or above this level.
+- **Policy:**
+  - The 50% floor is a hard quality gate. PRs that reduce coverage below this threshold are blocked.
+  - The 75% target is aspirational. New code should aim for ≥75% line coverage.
+  - Threshold values live in `.github/workflows/build-release.yaml` (`thresholds: '50 75'`).
+  - Coverage results are posted as a sticky comment on every PR.
+- **Gap:** No per-module coverage enforcement. Overall project-level gate only.
 
 ## Minimum Expectations for New Changes
 

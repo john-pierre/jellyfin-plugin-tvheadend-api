@@ -95,10 +95,10 @@ This document tracks the structured refactor and quality improvement of the Jell
 | ID | Severity | Item |
 |---|---|---|
 | Q2 | ~~Low~~ | ~~`HttpClient` created per-call via `IApiClient.BuildHttpClient()` — should migrate to `IHttpClientFactory`~~ ✅ Resolved in Milestone 8 |
-| Q4 | Low | No retry/resilience for TVHeadend API calls |
+| Q4 | ~~Low~~ | ~~No retry/resilience for TVHeadend API calls~~ ✅ Resolved in Milestone 9 |
 | A3 | Info | `Plugin.Instance` static singleton — standard Jellyfin pattern but creates test friction (already mitigated with constructor injection in `MediaSourceService` and `StatisticsService`) |
 | T3 | Info | No live integration tests against real TVHeadend (contract tests cover JSON shape, but not HTTP behavior) |
-| P2 | Info | Coverage thresholds are advisory (50/75) — not enforced as quality gate |
+| P2 | ~~Info~~ | ~~Coverage thresholds are advisory (50/75) — not enforced as quality gate~~ ✅ Resolved in Milestone 10 |
 
 ---
 
@@ -117,20 +117,22 @@ This document tracks the structured refactor and quality improvement of the Jell
 
 ### Milestone 9 — Resilience Layer (Short-Term, addresses Q4)
 
-- [ ] Add `Microsoft.Extensions.Http.Polly` (or `Microsoft.Extensions.Http.Resilience`) dependency
-- [ ] Define retry + circuit-breaker policy for TVHeadend API calls
-- [ ] Apply policy via `IHttpClientFactory` named/typed client pipeline
-- [ ] Add unit tests for retry behavior (transient failures, timeout, circuit open)
-- [ ] Verify build: 0 warnings, 0 errors
-- [ ] Verify tests: all passing
+- [x] Add `Microsoft.Extensions.Http.Polly` 8.0.26 dependency
+- [x] Define retry policy (3 retries, exponential back-off, transient errors + 429) in `ResiliencePolicies.cs`
+- [x] Define circuit breaker policy (5 failures, 30s open duration) in `ResiliencePolicies.cs`
+- [x] Apply both policies via `IHttpClientFactory` named client pipeline in `ServiceRegistrator`
+- [x] Add 10 unit tests: retry on 5xx/408/429/HttpRequestException, no retry on 4xx, max retries exhausted, circuit breaker open/closed, constants validation
+- [x] Verify build: 0 warnings, 0 errors
+- [x] Verify tests: 280 passing (270 existing + 10 new)
 
 ### Milestone 10 — Coverage Quality Gate (Short-Term, addresses P2)
 
-- [ ] Determine stable coverage baseline from current CI runs
-- [ ] Convert advisory thresholds (50/75) to enforced `fail_below_min` in CI workflow
-- [ ] Add PR-blocking check so coverage regressions fail the build
-- [ ] Document threshold policy in `docs/test-strategy.md`
-- [ ] Verify pipeline rejects a deliberately lowered threshold
+- [x] Determine stable coverage baseline from current CI runs — 76.95% line, 58.21% branch (280 tests)
+- [x] Convert advisory thresholds (50/75) to enforced `fail_below_min: true` in CI workflow
+- [x] PR-blocking check: PRs dropping below 50% line coverage are now rejected
+- [x] Document threshold policy in `docs/test-strategy.md`
+- [x] Verify build: 0 warnings, 0 errors
+- [x] Verify tests: 280 passing
 
 ### Milestone 11 — Observability and Performance (Medium-Term)
 

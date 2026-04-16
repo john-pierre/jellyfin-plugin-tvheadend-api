@@ -94,7 +94,7 @@ No circular dependencies detected. All domain services depend on `IApiClient` + 
 | ID | Severity | Finding |
 |---|---|---|
 | P1 | Low | No formatting/lint step (StyleCop is build-integrated, so this is already enforced — acceptable). |
-| P2 | Low | No code coverage threshold or report published to PR. |
+| P2 | ~~Low~~ | ~~No code coverage threshold or report published to PR.~~ ✅ Resolved: `fail_below_min: true` enforced in Milestone 10. |
 | P3 | Info | `pr-title-check.yaml` uses `pull_request_target` — fine but requires awareness of fork security. |
 
 #### Code Quality
@@ -104,7 +104,7 @@ No circular dependencies detected. All domain services depend on `IApiClient` + 
 | Q1 | Low | Duplicated `JsonSerializerOptions` instances across services. |
 | Q2 | ~~Low~~ | ~~`HttpClient` created via `using var httpClient = _tvheadendApiClient.BuildHttpClient(config)` in every call — creates new HttpClient per request.~~ ✅ Resolved: migrated to `IHttpClientFactory` with named clients in Milestone 8. |
 | Q3 | Info | `GetStreamAsync` in `ApiClient` reads full response into `MemoryStream` — fine for current use (images) but not for large streams. |
-| Q4 | Info | No retry/resilience logic for TVHeadend API calls. |
+| Q4 | ~~Info~~ | ~~No retry/resilience logic for TVHeadend API calls.~~ ✅ Resolved: retry + circuit breaker via Polly in Milestone 9. |
 
 ## 3. Quick Wins vs Larger Structural Issues
 

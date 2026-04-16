@@ -113,6 +113,7 @@ jobs:
           format: markdown
           output: both
           thresholds: '50 75'
+          fail_below_min: true
 
       - name: Add Coverage to PR
         if: always() && github.event_name == 'pull_request'
