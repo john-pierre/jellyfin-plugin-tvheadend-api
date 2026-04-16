@@ -23,6 +23,21 @@ Compared to the official TVHeadend plugin path many users know, this plugin is o
 - Richer EPG mapping (for example repeat/premiere/live hints and original air date).
 - New timer creation now returns stable backend IDs where available.
 
+### Comparison at a Glance
+
+The official Jellyfin TVHeadend plugin and this plugin are both valid choices. They differ mainly in
+integration style, setup workflow, and operational focus.
+
+| Topic | This plugin | Official Jellyfin TVHeadend plugin |
+|---|---|---|
+| Integration model | HTTP/JSON API-only integration | HTSP-oriented integration with HTTP support where needed |
+| Setup workflow | Guided setup with diagnostics, profile creation, token generation, and profile dropdowns | Simpler configuration focused on core connection settings |
+| Playback tuning | Focus on direct play, profile strategy, and probe-cache workflow for predictable startup behavior | More traditional live TV flow with fewer plugin-side playback tuning controls |
+| Diagnostics and visibility | Built-in compatibility checks, recommendations, and admin-facing feedback | Minimal built-in diagnostic tooling in the plugin UI |
+| Metadata handling | Focus on active channels, channel tags/groups, and richer EPG mapping hints | Core Live TV integration with a more minimal configuration surface |
+
+Choose the plugin that best fits your deployment goals, client mix, and preferred TVHeadend integration style.
+
 ### Typical Real-World Result
 
 With the recommended setup (`jellyfin` profile, direct play allowed, probing enabled, cache pre-creation enabled), many users can reach channel switching times around 2 seconds or below after warm-up, often even on the first tune.
@@ -35,6 +50,7 @@ For non-Direct-Play paths (Direct Stream or Transcoding), Jellyfin core introduc
 
 ## Table of Contents
 
+- [Comparison at a Glance](#comparison-at-a-glance)
 - [Quick Start (10 Minutes)](#quick-start-10-minutes)
 - [Requirements](#requirements)
 - [How Playback Modes Work](#how-playback-modes-work)
