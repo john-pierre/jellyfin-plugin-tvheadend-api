@@ -194,14 +194,16 @@ internal sealed class GuideService : IGuideService
                     string? imageUrl = null;
                     if (!string.IsNullOrWhiteSpace(entry.Image))
                     {
-                        imageUrl = entry.Image.StartsWith("imagecache/", StringComparison.Ordinal)
-                            ? _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, entry.Image.TrimStart('/'))
-                            : entry.Image;
+                        imageUrl = ResolveTvhImageUrl(config, entry.Image);
                     }
                     else if (!string.IsNullOrWhiteSpace(entry.ChannelIcon))
                     {
-                        imageUrl = _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, entry.ChannelIcon.TrimStart('/'));
+                        imageUrl = ResolveTvhImageUrl(config, entry.ChannelIcon);
                     }
+
+                    var ratingLabelIconUrl = string.IsNullOrWhiteSpace(entry.RatingLabelIcon)
+                        ? null
+                        : ResolveTvhImageUrl(config, entry.RatingLabelIcon);
 
                     return new ProgramInfo
                     {
@@ -217,6 +219,7 @@ internal sealed class GuideService : IGuideService
                         EpisodeTitle = entry.Subtitle,
                         OfficialRating = entry.RatingLabel,
                         ImageUrl = imageUrl,
+                        LogoImageUrl = ratingLabelIconUrl,
                         HasImage = !string.IsNullOrEmpty(imageUrl),
                         IsMovie = entry.Genre?.Any(genreId => genreId >= 16 && genreId <= 24) ?? false,
                         IsSports = entry.Genre?.Any(genreId => genreId >= 64 && genreId <= 75) ?? false,
@@ -311,5 +314,23 @@ internal sealed class GuideService : IGuideService
         return minor > 0
             ? string.Create(CultureInfo.InvariantCulture, $"{major}.{minor}")
             : major.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private string ResolveTvhImageUrl(PluginConfiguration config, string rawImagePath)
+    {
+        var raw = rawImagePath.Trim();
+        var normalized = raw.TrimStart('/');
+
+        if (normalized.StartsWith("imagecache/", StringComparison.OrdinalIgnoreCase))
+        {
+            return _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, normalized);
+        }
+
+        if (Uri.TryCreate(raw, UriKind.Absolute, out _))
+        {
+            return raw;
+        }
+
+        return _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, normalized);
     }
 }

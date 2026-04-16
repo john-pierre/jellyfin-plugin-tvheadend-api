@@ -585,6 +585,135 @@ public class GuideServiceCoreTests
         Assert.Empty(result);
     }
 
+    [Fact]
+    public async Task GetProgramsAsync_ImageCacheWithLeadingSlash_UsesImageProxyUrl()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            Entries = new object[]
+            {
+                new { EventId = 61, ChannelUuid = "ch-1", Title = "Image", Start = new DateTimeOffset(startUtc).ToUnixTimeSeconds(), Stop = new DateTimeOffset(endUtc).ToUnixTimeSeconds(), Image = "/imagecache/poster.png", Genre = new[] { 16 } }
+            },
+            TotalCount = 1
+        });
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(payload)
+        });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.Equal("http://tvh/imagecache/poster.png", program.ImageUrl);
+        Assert.True(program.HasImage);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_ChannelIconRelativePath_UsesImageProxyUrlFallback()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            Entries = new object[]
+            {
+                new { EventId = 71, ChannelUuid = "ch-1", Title = "Fallback", Start = new DateTimeOffset(startUtc).ToUnixTimeSeconds(), Stop = new DateTimeOffset(endUtc).ToUnixTimeSeconds(), Image = string.Empty, ChannelIcon = "/imagecache/ch-fallback.png", Genre = new[] { 16 } }
+            },
+            TotalCount = 1
+        });
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(payload)
+        });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.Equal("http://tvh/imagecache/ch-fallback.png", program.ImageUrl);
+        Assert.True(program.HasImage);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_RatingLabelIcon_MapsToLogoImageUrl()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            Entries = new object[]
+            {
+                new
+                {
+                    EventId = 81,
+                    ChannelUuid = "ch-1",
+                    Title = "Rated",
+                    Start = new DateTimeOffset(startUtc).ToUnixTimeSeconds(),
+                    Stop = new DateTimeOffset(endUtc).ToUnixTimeSeconds(),
+                    Image = "imagecache/poster.png",
+                    RatingLabel = "PG",
+                    RatingLabelIcon = "/imagecache/rating-pg.png",
+                    Genre = new[] { 16 }
+                }
+            },
+            TotalCount = 1
+        });
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(payload)
+        });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+        urlBuilder
+            .Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.Equal("http://tvh/imagecache/poster.png", program.ImageUrl);
+        Assert.Equal("http://tvh/imagecache/rating-pg.png", program.LogoImageUrl);
+        Assert.True(program.HasImage);
+    }
+
     private sealed class FixedResponseHandler : HttpMessageHandler
     {
         private readonly HttpResponseMessage _response;
