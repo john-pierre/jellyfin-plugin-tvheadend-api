@@ -18,6 +18,10 @@ Compared to the official TVHeadend plugin path many users know, this plugin is o
 - Better direct play behavior by combining profile strategy and probe-cache workflow.
 - Built-in diagnostics to explain why playback is fast or slow.
 - Guided setup helpers from the plugin UI (profile creation, token generation, diagnostics).
+- Active-channel focused guide loading (disabled TVHeadend channels are skipped).
+- Better channel grouping/tag metadata mapping for Jellyfin Live TV views.
+- Richer EPG mapping (for example repeat/premiere/live hints and original air date).
+- New timer creation now returns stable backend IDs where available.
 
 ### Typical Real-World Result
 

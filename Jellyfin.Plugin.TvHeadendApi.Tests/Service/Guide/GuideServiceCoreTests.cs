@@ -26,8 +26,8 @@ public class GuideServiceCoreTests
         var json = """
                    {
                      "entries": [
-                       { "uuid": "ch-1", "name": "One", "number": 7000000, "icon_public_url": "/imagecache/my icon.png" },
-                       { "uuid": "ch-2", "name": "Two", "number": 7000005, "icon_public_url": "" }
+                       { "uuid": "ch-1", "name": "One", "number": 7000000, "icon_public_url": "/imagecache/my icon.png", "enabled": true },
+                       { "uuid": "ch-2", "name": "Two", "number": 7000005, "icon_public_url": "", "enabled": true }
                      ],
                      "total": 2
                    }
@@ -135,7 +135,7 @@ public class GuideServiceCoreTests
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("""
-                                        { "entries": [ { "uuid": "ch-1", "name": "One", "number": 1000000, "icon_public_url": "   " } ], "total": 1 }
+                                        { "entries": [ { "uuid": "ch-1", "name": "One", "number": 1000000, "icon_public_url": "   ", "enabled": true } ], "total": 1 }
                                         """)
         });
 

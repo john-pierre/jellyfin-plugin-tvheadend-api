@@ -112,6 +112,18 @@ internal sealed partial class DvrService
                 responseContent);
             throw new InvalidOperationException($"Failed to create timer for program '{info.Name}' on channel ID: '{info.ChannelId}'. HTTP Status: {response.StatusCode}. Response: {responseContent}");
         }
+
+        var createResponse = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var createdId = TryExtractCreatedEntityId(createResponse);
+        if (!string.IsNullOrWhiteSpace(createdId))
+        {
+            info.Id = createdId;
+        }
+        else if (string.IsNullOrWhiteSpace(info.Id))
+        {
+            // Keep downstream socket payloads valid even when TVHeadend omits an ID in create responses.
+            info.Id = Guid.NewGuid().ToString("N");
+        }
     }
 
     public async Task UpdateTimerAsync(TimerInfo updatedTimer, CancellationToken cancellationToken)
@@ -127,6 +139,36 @@ internal sealed partial class DvrService
             { "start_extra", (int)Math.Round((double)updatedTimer.PrePaddingSeconds / 60) },
             { "stop_extra", (int)Math.Round((double)updatedTimer.PostPaddingSeconds / 60) },
         };
+
+        if (updatedTimer.StartDate != default)
+        {
+            updates["start"] = new DateTimeOffset(updatedTimer.StartDate).ToUnixTimeSeconds();
+        }
+
+        if (updatedTimer.EndDate != default)
+        {
+            updates["stop"] = new DateTimeOffset(updatedTimer.EndDate).ToUnixTimeSeconds();
+        }
+
+        if (updatedTimer.Priority != default)
+        {
+            updates["pri"] = updatedTimer.Priority;
+        }
+
+        if (!string.IsNullOrWhiteSpace(updatedTimer.ChannelId))
+        {
+            updates["channel"] = updatedTimer.ChannelId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(updatedTimer.Name))
+        {
+            updates["disp_title"] = updatedTimer.Name;
+        }
+
+        if (!string.IsNullOrWhiteSpace(updatedTimer.Overview))
+        {
+            updates["disp_extratext"] = updatedTimer.Overview;
+        }
 
         var nodeJson = JsonSerializer.Serialize(new[] { updates });
         var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("node", nodeJson) });

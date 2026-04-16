@@ -146,6 +146,21 @@ public sealed class EpgEventsGridEntry
     public int? Audiodesc { get; init; }
 
     /// <summary>
+    /// Gets the audio mode for the program.
+    /// Corresponds to the "stereo" field in the JSON response.
+    /// DVB common values include mono/stereo/surround variants.
+    /// </summary>
+    [JsonPropertyName("stereo")]
+    public int? Stereo { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the event is flagged as new.
+    /// Corresponds to the "new" field in the JSON response.
+    /// </summary>
+    [JsonPropertyName("new")]
+    public int? IsNew { get; init; }
+
+    /// <summary>
     /// Gets the age rating for the program.
     /// Corresponds to the "AgeRating" field in the JSON response.
     /// Example: 9.
@@ -208,6 +223,13 @@ public sealed class EpgEventsGridEntry
     /// </summary>
     [JsonPropertyName("copyright_year")]
     public int CopyrightYear { get; init; }
+
+    /// <summary>
+    /// Gets the original first air date as a Unix timestamp.
+    /// Corresponds to the "first_aired" field in the JSON response.
+    /// </summary>
+    [JsonPropertyName("first_aired")]
+    public long? FirstAired { get; init; }
 
     /// <summary>
     /// Gets the image URL for the event.

@@ -139,16 +139,38 @@ internal sealed class GuideService : IGuideService
                 return Enumerable.Empty<ChannelInfo>();
             }
 
-            return result.Entries.Select(channel => new ChannelInfo
-            {
-                Id = channel.Uuid,
-                Name = channel.Name,
-                Number = FormatChannelNumber(channel.Number),
-                ImageUrl = !string.IsNullOrWhiteSpace(channel.IconPublicUrl)
-                    ? _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, channel.IconPublicUrl.TrimStart('/'))
-                    : null,
-                HasImage = !string.IsNullOrWhiteSpace(channel.IconPublicUrl),
-            }).ToList();
+            var channelTagNames = await GetChannelTagsAsync(cancellationToken).ConfigureAwait(false);
+
+            return result.Entries
+                .Where(channel => channel.Enabled)
+                .Select(channel =>
+                {
+                    var resolvedTags = (channel.Tags ?? Array.Empty<string>())
+                        .Where(tagId => !string.IsNullOrWhiteSpace(tagId))
+                        .Select(tagId => channelTagNames.TryGetValue(tagId, out var tagName) && !string.IsNullOrWhiteSpace(tagName)
+                            ? tagName
+                            : tagId)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+
+                    var channelGroup = !string.IsNullOrWhiteSpace(channel.Bouquet)
+                        ? channel.Bouquet
+                        : resolvedTags.FirstOrDefault();
+
+                    return new ChannelInfo
+                    {
+                        Id = channel.Uuid,
+                        Name = channel.Name,
+                        Number = FormatChannelNumber(channel.Number),
+                        ImageUrl = !string.IsNullOrWhiteSpace(channel.IconPublicUrl)
+                            ? _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, channel.IconPublicUrl.TrimStart('/'))
+                            : null,
+                        HasImage = !string.IsNullOrWhiteSpace(channel.IconPublicUrl),
+                        Tags = resolvedTags,
+                        ChannelGroup = channelGroup,
+                    };
+                })
+                .ToList();
         }
         catch (Exception ex)
         {
@@ -209,6 +231,17 @@ internal sealed class GuideService : IGuideService
                         ? BuildProviderHints(entry)
                         : null;
 
+                    var categories = entry.Category ?? Array.Empty<string>();
+                    var isPremiere = HasCategoryFlag(categories, "premiere", "first run", "new");
+                    var isLive = HasCategoryFlag(categories, "live");
+                    var isRepeat = !isPremiere && (entry.IsNew == 0 || HasCategoryFlag(categories, "repeat", "rerun", "wiederholung"));
+
+                    DateTime? originalAirDate = null;
+                    if (entry.FirstAired.HasValue && entry.FirstAired.Value > 0)
+                    {
+                        originalAirDate = DateTimeOffset.FromUnixTimeSeconds(entry.FirstAired.Value).UtcDateTime;
+                    }
+
                     return new ProgramInfo
                     {
                         Id = entry.EventId.ToString(CultureInfo.InvariantCulture),
@@ -229,11 +262,19 @@ internal sealed class GuideService : IGuideService
                         IsSports = entry.Genre?.Any(genreId => genreId >= 64 && genreId <= 75) ?? false,
                         IsNews = entry.Genre?.Any(genreId => genreId >= 32 && genreId <= 36) ?? false,
                         IsKids = entry.Genre?.Any(genreId => genreId >= 80 && genreId <= 83) ?? false,
+                        IsEducational = entry.Genre?.Any(genreId => genreId >= 144 && genreId <= 150) ?? false,
+                        IsLive = isLive,
+                        IsPremiere = isPremiere,
+                        IsRepeat = isRepeat,
+                        OriginalAirDate = originalAirDate,
+                        Audio = MapProgramAudio(entry.Stereo),
                         // IsSeries: prefer SerieslinkUri presence (definitive), fall back to genre 48-51 (Show/Game Show)
                         IsSeries = !string.IsNullOrWhiteSpace(entry.SerieslinkUri)
                             || (entry.Genre?.Any(genreId => genreId >= 48 && genreId <= 51) ?? false),
                         // SeriesId: use SerieslinkUri as a stable identifier for series-timer linking
                         SeriesId = string.IsNullOrWhiteSpace(entry.SerieslinkUri) ? null : entry.SerieslinkUri,
+                        ShowId = string.IsNullOrWhiteSpace(entry.SerieslinkUri) ? null : entry.SerieslinkUri,
+                        HomePageUrl = Uri.TryCreate(entry.EpisodeUri, UriKind.Absolute, out var episodeUri) ? episodeUri.ToString() : null,
                         ProviderIds = providerHints?.ProviderIds ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
                         SeriesProviderIds = providerHints?.SeriesProviderIds ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
                         // ProductionYear from TVH copyright_year (0 = unknown)
@@ -400,6 +441,39 @@ internal sealed class GuideService : IGuideService
                 target["Tvdb"] = idPart;
             }
         }
+    }
+
+    private static ProgramAudio? MapProgramAudio(int? stereoMode)
+    {
+        return stereoMode switch
+        {
+            1 => ProgramAudio.Mono,
+            2 or 3 => ProgramAudio.Stereo,
+            >= 4 => ProgramAudio.DolbyDigital,
+            _ => null,
+        };
+    }
+
+    private static bool HasCategoryFlag(IEnumerable<string> categories, params string[] patterns)
+    {
+        foreach (var category in categories)
+        {
+            if (string.IsNullOrWhiteSpace(category))
+            {
+                continue;
+            }
+
+            var normalized = category.Trim();
+            foreach (var pattern in patterns)
+            {
+                if (normalized.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private sealed record ProviderHintSet(

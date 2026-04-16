@@ -16,7 +16,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service;
 /// <summary>
 /// Orchestrates LiveTV operations by delegating to focused services.
 /// </summary>
-public sealed class OrchestratorService : ILiveTvService, IDisposable
+public sealed class OrchestratorService : ILiveTvService, ISupportsNewTimerIds, IDisposable
 {
     private readonly IGuideService _guideService;
     private readonly IDvrService _dvrService;
@@ -96,6 +96,18 @@ public sealed class OrchestratorService : ILiveTvService, IDisposable
 
     public Task<string> GetRecordingProfileUuidAsync(string profileName, CancellationToken cancellationToken)
         => _dvrService.GetRecordingProfileUuidAsync(profileName, cancellationToken);
+
+    public async Task<string> CreateTimer(TimerInfo info, CancellationToken cancellationToken)
+    {
+        await _dvrService.CreateTimerAsync(info, cancellationToken).ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(info.Id) ? Guid.NewGuid().ToString("N") : info.Id;
+    }
+
+    public async Task<string> CreateSeriesTimer(SeriesTimerInfo info, CancellationToken cancellationToken)
+    {
+        await _dvrService.CreateSeriesTimerAsync(info, cancellationToken).ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(info.Id) ? Guid.NewGuid().ToString("N") : info.Id;
+    }
 }
 
 #pragma warning restore CS1591
