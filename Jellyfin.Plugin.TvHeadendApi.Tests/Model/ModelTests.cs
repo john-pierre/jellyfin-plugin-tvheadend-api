@@ -189,7 +189,7 @@ public class ModelTests
                    {
                      "Uuid": "ch-1",
                      "Name": "Channel One",
-                     "Number": 1.5,
+                     "Number": 1000005,
                      "icon_public_url": "imagecache/1"
                    }
                    """;
@@ -199,7 +199,7 @@ public class ModelTests
         Assert.NotNull(model);
         Assert.Equal("ch-1", model.Uuid);
         Assert.Equal("Channel One", model.Name);
-        Assert.Equal(1.5, model.Number);
+        Assert.Equal(1000005L, model.Number);
         Assert.Equal("imagecache/1", model.IconPublicUrl);
     }
 

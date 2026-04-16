@@ -143,7 +143,7 @@ internal sealed class GuideService : IGuideService
             {
                 Id = channel.Uuid,
                 Name = channel.Name,
-                Number = channel.Number % 1 == 0 ? ((int)channel.Number).ToString(CultureInfo.InvariantCulture) : channel.Number.ToString(CultureInfo.InvariantCulture),
+                Number = FormatChannelNumber(channel.Number),
                 ImageUrl = !string.IsNullOrWhiteSpace(channel.IconPublicUrl)
                     ? _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, channel.IconPublicUrl.TrimStart('/'))
                     : null,
@@ -292,5 +292,24 @@ internal sealed class GuideService : IGuideService
     {
         return _tvheadendApiClient.GetCurrentConfiguration()
             ?? throw new InvalidOperationException("Plugin configuration is not available.");
+    }
+
+    /// <summary>
+    /// Converts a TVHeadend channel number (encoded as major * 1000000 + minor) to a display string.
+    /// Examples: 101000000 → "101", 7001000 → "7.1", 0 → "0".
+    /// </summary>
+    private static string FormatChannelNumber(long tvhNumber)
+    {
+        const long channelSplit = 1000000;
+        if (tvhNumber <= 0)
+        {
+            return "0";
+        }
+
+        var major = tvhNumber / channelSplit;
+        var minor = tvhNumber % channelSplit;
+        return minor > 0
+            ? string.Create(CultureInfo.InvariantCulture, $"{major}.{minor}")
+            : major.ToString(CultureInfo.InvariantCulture);
     }
 }

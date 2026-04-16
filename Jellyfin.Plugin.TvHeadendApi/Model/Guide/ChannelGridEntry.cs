@@ -26,10 +26,10 @@ public sealed class ChannelGridEntry
 
     /// <summary>
     /// Gets the logical number of the channel.
-    /// This number is used to sort and access the channel in a TV guide or user interface.
-    /// TVHeadend may return integer values (e.g. 101) or decimal values (e.g. 7.1).
+    /// TVHeadend encodes channel numbers as <c>major * 1000000 + minor</c> (int64).
+    /// For example, channel 7.1 is stored as 7001000, and channel 101 is stored as 101000000.
     /// </summary>
-    public double Number { get; init; }
+    public long Number { get; init; }
 
     /// <summary>
     /// Gets the URL to the channel's icon image.
