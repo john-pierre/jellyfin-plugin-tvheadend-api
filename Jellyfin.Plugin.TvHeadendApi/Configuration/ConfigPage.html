@@ -290,6 +290,17 @@
                             deleted and — when <strong>Pre-create Probe Cache</strong> is also enabled — replaced with correct ones.
                         </div>
                     </div>
+
+                    <div class="checkboxContainer">
+                        <label>
+                            <input id="EnableJellyfinMetadataEnrichment" name="EnableJellyfinMetadataEnrichment" type="checkbox" is="emby-checkbox" />
+                            <span>EPG Metadata Enrichment via Jellyfin Plugins</span>
+                        </label>
+                        <div class="fieldDescription">
+                            Allows Jellyfin metadata plugins to enrich EPG entries (movies/series) using provider hints parsed from TVHeadend URIs.
+                            This can add better posters/logos/descriptions when plugins find a match.
+                        </div>
+                    </div>
                     <div class="inputContainer">
                         <label class="inputLabel" for="BufferMs">Buffer (ms)</label>
                         <input id="BufferMs" name="BufferMs" type="number" is="emby-input" min="0" placeholder="0" />
@@ -514,6 +525,7 @@
                 config.AnalyzeDurationMs = parseIntegerOrDefault('#AnalyzeDurationMs', config.AnalyzeDurationMs);
                 config.EnableMediaInfoCacheWrite = document.querySelector('#EnableMediaInfoCacheWrite').checked;
                 config.EnableMediaInfoCacheValidation = document.querySelector('#EnableMediaInfoCacheValidation').checked;
+                config.EnableJellyfinMetadataEnrichment = document.querySelector('#EnableJellyfinMetadataEnrichment').checked;
                 config.AuthTokenMaxAttempts = parseIntegerOrDefault('#AuthTokenMaxAttempts', config.AuthTokenMaxAttempts);
                 config.ProfileCacheTtlMinutes = parseIntegerOrDefault('#ProfileCacheTtlMinutes', config.ProfileCacheTtlMinutes);
                 config.StatisticsRetentionDays = parseIntegerOrDefault('#StatisticsRetentionDays', config.StatisticsRetentionDays);
@@ -683,6 +695,7 @@
             document.querySelector('#AnalyzeDurationMs').value = config.AnalyzeDurationMs || '0';
             document.querySelector('#EnableMediaInfoCacheWrite').checked = config.EnableMediaInfoCacheWrite !== false;
             document.querySelector('#EnableMediaInfoCacheValidation').checked = config.EnableMediaInfoCacheValidation !== false;
+            document.querySelector('#EnableJellyfinMetadataEnrichment').checked = config.EnableJellyfinMetadataEnrichment || false;
             document.querySelector('#AuthTokenMaxAttempts').value = config.AuthTokenMaxAttempts || '';
             document.querySelector('#ProfileCacheTtlMinutes').value = config.ProfileCacheTtlMinutes || '';
             document.querySelector('#StatisticsRetentionDays').value = config.StatisticsRetentionDays || '';

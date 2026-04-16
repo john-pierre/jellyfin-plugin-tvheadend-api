@@ -205,6 +205,10 @@ internal sealed class GuideService : IGuideService
                         ? null
                         : ResolveTvhImageUrl(config, entry.RatingLabelIcon);
 
+                    var providerHints = config.EnableJellyfinMetadataEnrichment
+                        ? BuildProviderHints(entry)
+                        : null;
+
                     return new ProgramInfo
                     {
                         Id = entry.EventId.ToString(CultureInfo.InvariantCulture),
@@ -230,6 +234,8 @@ internal sealed class GuideService : IGuideService
                             || (entry.Genre?.Any(genreId => genreId >= 48 && genreId <= 51) ?? false),
                         // SeriesId: use SerieslinkUri as a stable identifier for series-timer linking
                         SeriesId = string.IsNullOrWhiteSpace(entry.SerieslinkUri) ? null : entry.SerieslinkUri,
+                        ProviderIds = providerHints?.ProviderIds ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                        SeriesProviderIds = providerHints?.SeriesProviderIds ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
                         // ProductionYear from TVH copyright_year (0 = unknown)
                         ProductionYear = entry.CopyrightYear > 0 ? entry.CopyrightYear : null,
                     };
@@ -333,4 +339,70 @@ internal sealed class GuideService : IGuideService
 
         return _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, normalized);
     }
+
+    private static ProviderHintSet BuildProviderHints(EpgEventsGridEntry entry)
+    {
+        var providerIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var seriesProviderIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        TryAddKnownProviderIds(providerIds, entry.EpisodeUri);
+        TryAddKnownProviderIds(seriesProviderIds, entry.SerieslinkUri);
+
+        return new ProviderHintSet(providerIds, seriesProviderIds);
+    }
+
+    private static void TryAddKnownProviderIds(Dictionary<string, string> target, string? source)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return;
+        }
+
+        var text = source.Trim();
+
+        // IMDb ID (tt1234567+)
+        var imdbIdx = text.IndexOf("tt", StringComparison.OrdinalIgnoreCase);
+        if (imdbIdx >= 0)
+        {
+            var end = imdbIdx + 2;
+            while (end < text.Length && char.IsDigit(text[end]))
+            {
+                end++;
+            }
+
+            var candidate = text.Substring(imdbIdx, end - imdbIdx);
+            if (candidate.Length >= 9)
+            {
+                target["Imdb"] = candidate;
+            }
+        }
+
+        // TMDb hints: tmdb://movie/123 or tmdb://tv/123
+        const string tmdbMoviePrefix = "tmdb://movie/";
+        const string tmdbTvPrefix = "tmdb://tv/";
+        if (text.StartsWith(tmdbMoviePrefix, StringComparison.OrdinalIgnoreCase)
+            || text.StartsWith(tmdbTvPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var idPart = text.Substring(text.LastIndexOf('/') + 1);
+            if (idPart.All(char.IsDigit))
+            {
+                target["Tmdb"] = idPart;
+            }
+        }
+
+        // TVDb hints: tvdb://series/123 or thetvdb.com/.../123
+        const string tvdbPrefix = "tvdb://";
+        if (text.StartsWith(tvdbPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var idPart = text.Substring(text.LastIndexOf('/') + 1);
+            if (idPart.All(char.IsDigit))
+            {
+                target["Tvdb"] = idPart;
+            }
+        }
+    }
+
+    private sealed record ProviderHintSet(
+        Dictionary<string, string> ProviderIds,
+        Dictionary<string, string> SeriesProviderIds);
 }

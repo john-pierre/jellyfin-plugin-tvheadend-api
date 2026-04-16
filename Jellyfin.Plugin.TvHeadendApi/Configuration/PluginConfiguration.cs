@@ -43,6 +43,7 @@ public class PluginConfiguration : BasePluginConfiguration
         this.AnalyzeDurationMs = 200;
         this.EnableMediaInfoCacheWrite = true;
         this.EnableMediaInfoCacheValidation = true;
+        this.EnableJellyfinMetadataEnrichment = false;
 
         // Recording settings
         this.Priority = 5;
@@ -231,6 +232,16 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </para>
     /// </summary>
     public bool EnableMediaInfoCacheValidation { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether Jellyfin metadata plugins should be given
+    /// enrichment hints for Live TV EPG programs.
+    /// <para>
+    /// When enabled, the plugin forwards provider-id hints (if detectable from TVHeadend CRID/URI fields)
+    /// so Jellyfin can attempt to enrich EPG items with additional artwork and descriptions.
+    /// </para>
+    /// </summary>
+    public bool EnableJellyfinMetadataEnrichment { get; set; }
 
     // ── Recording (DVR) ────────────────────────────────────────────────
 
