@@ -335,14 +335,14 @@
                         <div class="fieldDescription">Recording priority (lower = higher priority). Default: 5.</div>
                     </div>
                     <div class="inputContainer">
-                        <label class="inputLabel" for="PrePaddingSeconds">Pre-Padding (seconds)</label>
+                        <label class="inputLabel" for="PrePaddingSeconds">Pre-Padding (minutes)</label>
                         <input id="PrePaddingSeconds" name="PrePaddingSeconds" type="number" is="emby-input" min="0" placeholder="5" />
-                        <div class="fieldDescription">Seconds to start recording before the scheduled programme time.</div>
+                        <div class="fieldDescription">Minutes to start recording before the scheduled programme time.</div>
                     </div>
                     <div class="inputContainer">
-                        <label class="inputLabel" for="PostPaddingSeconds">Post-Padding (seconds)</label>
+                        <label class="inputLabel" for="PostPaddingSeconds">Post-Padding (minutes)</label>
                         <input id="PostPaddingSeconds" name="PostPaddingSeconds" type="number" is="emby-input" min="0" placeholder="5" />
-                        <div class="fieldDescription">Seconds to continue recording after the scheduled end time.</div>
+                        <div class="fieldDescription">Minutes to continue recording after the scheduled end time.</div>
                     </div>
                     <div class="inputContainer">
                         <label class="inputLabel" for="RecordingProfile">Recording Profile</label>
@@ -473,6 +473,19 @@
             return Number.isNaN(parsedValue) ? fallbackValue : parsedValue;
         }
 
+        function parseMinutesToSecondsOrDefault(selector, fallbackSeconds) {
+            const minutes = parseIntegerOrDefault(selector, Number.isFinite(fallbackSeconds) ? Math.round(fallbackSeconds / 60) : 0);
+            return Math.max(0, minutes) * 60;
+        }
+
+        function secondsToMinutes(valueInSeconds) {
+            if (!Number.isFinite(valueInSeconds) || valueInSeconds <= 0) {
+                return 0;
+            }
+
+            return Math.round(valueInSeconds / 60);
+        }
+
         function escapeHtml(text) {
             var div = document.createElement('div');
             div.appendChild(document.createTextNode(text));
@@ -531,8 +544,8 @@
                 config.StatisticsRetentionDays = parseIntegerOrDefault('#StatisticsRetentionDays', config.StatisticsRetentionDays);
                 config.StatisticsSaveIntervalMinutes = parseIntegerOrDefault('#StatisticsSaveIntervalMinutes', config.StatisticsSaveIntervalMinutes);
                 config.Priority = parseIntegerOrDefault('#Priority', config.Priority);
-                config.PrePaddingSeconds = parseIntegerOrDefault('#PrePaddingSeconds', config.PrePaddingSeconds);
-                config.PostPaddingSeconds = parseIntegerOrDefault('#PostPaddingSeconds', config.PostPaddingSeconds);
+                config.PrePaddingSeconds = parseMinutesToSecondsOrDefault('#PrePaddingSeconds', config.PrePaddingSeconds);
+                config.PostPaddingSeconds = parseMinutesToSecondsOrDefault('#PostPaddingSeconds', config.PostPaddingSeconds);
 
                 var formRecording = document.querySelector('#RecordingProfile').value;
                 if (formRecording) config.RecordingProfile = formRecording;
@@ -701,8 +714,8 @@
             document.querySelector('#StatisticsRetentionDays').value = config.StatisticsRetentionDays || '';
             document.querySelector('#StatisticsSaveIntervalMinutes').value = config.StatisticsSaveIntervalMinutes || '';
             document.querySelector('#Priority').value = config.Priority || '';
-            document.querySelector('#PrePaddingSeconds').value = config.PrePaddingSeconds || '';
-            document.querySelector('#PostPaddingSeconds').value = config.PostPaddingSeconds || '';
+            document.querySelector('#PrePaddingSeconds').value = secondsToMinutes(config.PrePaddingSeconds);
+            document.querySelector('#PostPaddingSeconds').value = secondsToMinutes(config.PostPaddingSeconds);
             document.querySelector('#RecordingProfile').value = config.RecordingProfile || '';
             updateAuthRequiredState();
             updateAuthTokenButtonLabel();
