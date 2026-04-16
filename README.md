@@ -53,10 +53,13 @@ For non-Direct-Play paths (Direct Stream or Transcoding), Jellyfin core introduc
 - [Comparison at a Glance](#comparison-at-a-glance)
 - [Quick Start (10 Minutes)](#quick-start-10-minutes)
 - [Requirements](#requirements)
+- [Compatibility Matrix](#compatibility-matrix)
 - [How Playback Modes Work](#how-playback-modes-work)
 - [Recommended TVHeadend Configuration](#recommended-tvheadend-configuration)
 - [Recommended Plugin Configuration](#recommended-plugin-configuration)
 - [Performance Tuning for Fast Channel Switching](#performance-tuning-for-fast-channel-switching)
+- [Benchmarking and Performance Baselines](#benchmarking-and-performance-baselines)
+- [Current Limitations and Improvement Areas](#current-limitations-and-improvement-areas)
 - [Troubleshooting](#troubleshooting)
 - [FAQ](#faq)
 - [For Copilot and AI Agents](#for-copilot-and-ai-agents)
@@ -103,6 +106,24 @@ For non-Direct-Play paths (Direct Stream or Transcoding), Jellyfin core introduc
   - Channel/EPG read
   - Stream access
   - DVR access (optional)
+
+## Compatibility Matrix
+
+The matrix below summarizes the deployment patterns currently targeted by this plugin.
+
+| Scenario | Status | Notes |
+|---|---|---|
+| Jellyfin `10.10.x` + TVHeadend `4.3+` + `jellyfin` streaming profile | **Recommended** | Primary optimization path for direct play, cache pre-creation, and predictable startup behavior |
+| Jellyfin `10.10.x` + TVHeadend `4.3+` + `pass` streaming profile | **Supported** | Works, but stream/container behavior can vary more by channel and source |
+| Clients can reach TVHeadend directly | **Recommended** | Best path for direct play and lowest channel-switch time |
+| Clients reach Jellyfin but not TVHeadend directly | **Conditional** | Playback can still work, but remux/transcode paths are more likely and startup is usually slower |
+| Reverse proxy or TVHeadend sub-path (`Webroot`) | **Supported** | Requires correct `Webroot`, reachable stream/image URLs, and working auth token propagation |
+| HTTPS with trusted certificates | **Supported** | Recommended for production deployments |
+| HTTPS with self-signed certificates | **Conditional** | Supported when `Ignore Certificate Errors` is enabled, but not recommended for production |
+| Missing or non-alphanumeric auth token | **Not recommended** | Common cause of stream/image auth failures and inconsistent direct-access behavior |
+| TVHeadend admin credentials for UI helpers | **Optional** | Only required for profile creation and auth-token generation from the plugin UI |
+
+This matrix is intended as operational guidance. Actual playback results still depend on client capabilities, Jellyfin playback policy, network reachability, and TVHeadend profile design.
 
 ## How Playback Modes Work
 
@@ -224,6 +245,53 @@ If your goal is sub-2s switching, use this checklist:
 - For non-Direct-Play (Direct Stream/Transcoding), expect a minimum around 6s in practice due to Jellyfin core live TV wait/analysis behavior.
 - Once cached, repeated Direct Play channel opens are usually much faster.
 - If every channel still takes long, check profile mismatches and auth issues first.
+
+## Benchmarking and Performance Baselines
+
+If you want reproducible performance data for your setup, measure channel-open time by scenario instead of relying on a single average number.
+
+### Recommended Benchmark Method
+
+1. Use a stable test channel with known good reception.
+2. Benchmark each scenario at least 5 times.
+3. Record the elapsed time from channel open request to first visible playback.
+4. Note the actual playback mode reported by Jellyfin (`Direct Play`, `Direct Stream`, or `Transcode`).
+5. Separate first-tune results from warm-cache results.
+6. Repeat after any change to TVHeadend profile, auth token, reverse proxy, or client device.
+
+### Suggested Benchmark Scenarios
+
+| Scenario | Recommended setup | What to record |
+|---|---|---|
+| First tune, recommended fast path | `jellyfin` profile + `Direct Play` enabled + probing enabled + cache pre-creation enabled | Time to first frame, playback mode, whether cache file was created beforehand |
+| Warm tune, recommended fast path | Same as above, after at least one previous successful tune | Time to first frame, playback mode |
+| Variable source profile | `pass` profile with same client/device | Time to first frame, playback mode, detected fallback behavior |
+| No direct TVHeadend reachability | Client forced through Jellyfin path | Time to first frame, playback mode, whether remux/transcode was selected |
+| Compatibility fallback | Client/profile combination that cannot direct play | Time to first frame, playback mode, any transcoding trigger observed |
+
+### Interpreting Results
+
+| Result pattern | Interpretation |
+|---|---|
+| Fast first tune and fast warm tune with `Direct Play` | The recommended profile/cache strategy is working as intended |
+| Warm tune is fast but first tune is slow | Cache pre-creation may be disabled, mismatched, or not aligned with the selected TVHeadend profile |
+| All scenarios are slow and playback is not `Direct Play` | Investigate client codec support, playback policy, and network topology before tuning FFmpeg-related settings |
+| Streams are fast in browser tests but slow in Jellyfin clients | The client is likely forcing remux/transcode or cannot reach TVHeadend directly |
+| Results changed after profile or auth changes | Re-run diagnostics and confirm the cache file matches the active TVHeadend streaming profile |
+
+These benchmark baselines are intended to make performance comparisons reproducible across channels, clients, and configuration changes.
+
+## Current Limitations and Improvement Areas
+
+This plugin is production-oriented, but some behaviors still depend on Jellyfin core, client capabilities, network topology, and TVHeadend configuration.
+
+- Very fast channel switching generally depends on `Direct Play`. Non-direct-play paths remain slower because Jellyfin core applies additional live TV analysis and startup behavior.
+- Playback results still vary by client/device profile, codec support, and Jellyfin user playback policy. A configuration that direct plays on one client may still remux or transcode on another.
+- Best startup behavior usually requires clients to reach TVHeadend directly. Reverse proxies, SSL termination, DNS issues, or restrictive network layouts can increase startup time or break direct access.
+- Authentication remains sensitive to correct TVHeadend permissions and a valid alphanumeric auth token for stable stream and image access.
+- Stream behavior can still vary across TVHeadend profiles, channel types, and source formats, especially outside the recommended `jellyfin` profile.
+- Diagnostics improve visibility into slow or incompatible setups, but they cannot override Jellyfin core stream-selection logic or client-side playback decisions.
+- Ongoing improvement areas include broader compatibility coverage, clearer client-specific guidance, stronger validation of cache/probe assumptions, and deeper diagnostics for slow-path causes.
 
 ## Troubleshooting
 
