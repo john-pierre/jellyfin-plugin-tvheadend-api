@@ -15,9 +15,9 @@
         <Rule Id="SA1128" Action="None" />
         <!-- disable warning SA1130: Use lambda syntax -->
         <Rule Id="SA1130" Action="None" />
-        <!-- disable warning SA1402: File may only contain a single type (UrlHelper is co-located with UrlBuilder intentionally) -->
+        <!-- disable warning SA1402: File may only contain a single type -->
         <Rule Id="SA1402" Action="None" />
-        <!-- disable warning SA1649: File name should match first type name (UrlBuilder.cs contains UrlHelper + UrlBuilder) -->
+        <!-- disable warning SA1649: File name should match first type name -->
         <Rule Id="SA1649" Action="None" />
         <!-- disable warning SA1200: 'using' directive must appear within a namespace declaration -->
         <Rule Id="SA1200" Action="None" />

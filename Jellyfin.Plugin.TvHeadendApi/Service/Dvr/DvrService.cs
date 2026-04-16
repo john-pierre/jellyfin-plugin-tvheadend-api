@@ -16,11 +16,6 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 /// </summary>
 internal sealed partial class DvrService : IDvrService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     private readonly ILogger<DvrService> _logger;
     private readonly IApiClient _tvheadendApiClient;
     private readonly IUrlBuilder _tvheadendUrlBuilder;

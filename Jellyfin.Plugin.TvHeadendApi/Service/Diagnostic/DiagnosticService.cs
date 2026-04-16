@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -24,11 +24,6 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 /// </summary>
 internal sealed class DiagnosticService : IDiagnosticService
 {
-    private static readonly System.Text.Json.JsonSerializerOptions SerializerOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     private readonly ILogger<DiagnosticService> _logger;
     private readonly IServerConfigurationManager _serverConfigManager;
     private readonly IEncodingOptionsReader _encodingOptionsReader;
@@ -161,7 +156,7 @@ internal sealed class DiagnosticService : IDiagnosticService
                 sw.Stop();
                 report.LatencyMs = (int)sw.ElapsedMilliseconds;
 
-                var serverInfo = JsonSerializer.Deserialize<ServerInfoResponse>(infoResponse, SerializerOptions) ?? new ServerInfoResponse();
+                var serverInfo = JsonSerializer.Deserialize<ServerInfoResponse>(infoResponse, JsonDefaults.Api) ?? new ServerInfoResponse();
 
                 var swVersion = string.IsNullOrWhiteSpace(serverInfo.SwVersion) ? "unknown" : serverInfo.SwVersion;
                 var apiVersion = serverInfo.ApiVersion?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?";
@@ -208,7 +203,7 @@ internal sealed class DiagnosticService : IDiagnosticService
             {
                 var chUrl = $"{baseUrl}{webRoot}api/channel/grid?limit=500&sort=number";
                 var chResponse = await _tvheadendApiClient.GetStringAsync(httpClient, chUrl, cancellationToken).ConfigureAwait(false);
-                var channelGrid = JsonSerializer.Deserialize<ChannelGridResponse>(chResponse, SerializerOptions);
+                var channelGrid = JsonSerializer.Deserialize<ChannelGridResponse>(chResponse, JsonDefaults.Api);
                 if (channelGrid != null)
                 {
                     report.ChannelCount = channelGrid.Total;
@@ -347,7 +342,7 @@ internal sealed class DiagnosticService : IDiagnosticService
             {
                 var dvrUrl = $"{baseUrl}{webRoot}api/dvr/entry/grid?limit=1";
                 var dvrResponse = await _tvheadendApiClient.GetStringAsync(httpClient, dvrUrl, cancellationToken).ConfigureAwait(false);
-                var dvrEntries = JsonSerializer.Deserialize<DvrEntryGridResponse>(dvrResponse, SerializerOptions);
+                var dvrEntries = JsonSerializer.Deserialize<DvrEntryGridResponse>(dvrResponse, JsonDefaults.Api);
                 report.DvrEntryCount = dvrEntries?.Total ?? 0;
             }
             catch (Exception ex)
@@ -369,7 +364,7 @@ internal sealed class DiagnosticService : IDiagnosticService
                     cancellationToken).ConfigureAwait(false);
                 dvrHttpResponse.EnsureSuccessStatusCode();
                 var dvrBody = await dvrHttpResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                var dvrConfigList = JsonSerializer.Deserialize<DvrConfigListResponse>(dvrBody, SerializerOptions);
+                var dvrConfigList = JsonSerializer.Deserialize<DvrConfigListResponse>(dvrBody, JsonDefaults.Api);
                 if (dvrConfigList != null && dvrConfigList.Entries.Length > 0)
                 {
                     foreach (var entry in dvrConfigList.Entries)
@@ -597,7 +592,7 @@ internal sealed class DiagnosticService : IDiagnosticService
 
         var listUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
         var response = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
-        var list = JsonSerializer.Deserialize<CodecProfileListResponse>(response, SerializerOptions);
+        var list = JsonSerializer.Deserialize<CodecProfileListResponse>(response, JsonDefaults.Api);
         if (list?.Entries == null || list.Entries.Length == 0)
         {
             return null;
@@ -639,7 +634,7 @@ internal sealed class DiagnosticService : IDiagnosticService
     {
         var url = $"{baseUrl}{webRoot}api/idnode/load?uuid={Uri.EscapeDataString(uuid)}";
         var body = await _tvheadendApiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
-        return JsonSerializer.Deserialize<IdNodeLoadResponse>(body, SerializerOptions);
+        return JsonSerializer.Deserialize<IdNodeLoadResponse>(body, JsonDefaults.Api);
     }
 
     private static JsonElement GetIdNodeProperty(IdNodeEntry entry, string name)

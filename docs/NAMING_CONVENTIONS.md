@@ -39,18 +39,23 @@ Jellyfin.Plugin.TvHeadendApi/
 │   │   ├── TokenValidator.cs          → public class TokenValidator { }
 │   ├── Profile/                       → Jellyfin.Plugin.TvHeadendApi.Service.Profile
 │   │   ├── ProfileResolver.cs         → public class ProfileResolver { }
-│   │   ├── ProvisioningService.cs     → public class ProvisioningService { }
-│   │   ├── ProfileDetails.cs          → public class ProfileDetails { }
+│   │   ├── DefaultProfileService.cs   → public class DefaultProfileService { }
+│   │   ├── ProfileContainerResolver.cs→ public class ProfileContainerResolver { }
+│   │   ├── ProfileMappingHelper.cs    → public class ProfileMappingHelper { }
 │   ├── Stream/                        → Jellyfin.Plugin.TvHeadendApi.Service.Stream
 │   │   ├── MediaSourceService.cs      → public class MediaSourceService { }
-│   │   ├── StreamUrlBuilder.cs        → public class StreamUrlBuilder { }
+│   │   ├── LifecycleService.cs        → public class LifecycleService { }
 │   ├── Diagnostic/                    → Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic
 │   │   ├── DiagnosticService.cs       → public class DiagnosticService { }
+│   │   ├── EncodingOptionsReader.cs   → public class EncodingOptionsReader { }
 │   ├── Helper/                        → Jellyfin.Plugin.TvHeadendApi.Service.Helper
-│   │   ├── IdNodeService.cs           → public class IdNodeService { }
+│   │   ├── IdNodeValueHelper.cs       → public class IdNodeValueHelper { }
 │   │   ├── ApiClient.cs               → public class ApiClient { }
+│   │   ├── UrlBuilder.cs              → public class UrlBuilder { }
+│   │   ├── GridFetcher.cs             → public class GridFetcher { }
+│   │   ├── HttpClientFactory.cs       → public class HttpClientFactory { }
 ├── Api/                               → Jellyfin.Plugin.TvHeadendApi.Api
-│   ├── TvHeadendApiController.cs      → public class TvHeadendApiController { }
+│   ├── PluginController.cs            → public class PluginController { }
 ├── Configuration/                     → Jellyfin.Plugin.TvHeadendApi.Configuration
 │   ├── PluginConfiguration.cs         → public class PluginConfiguration { }
 ├── Model/                             → Jellyfin.Plugin.TvHeadendApi.Model
@@ -158,6 +163,8 @@ When adding or moving files and folders:
 
 ## Related Documentation
 
-- See `AGENTS.md` for architectural overview
-- See `README.md` for project structure details
+- See `AGENTS.md` for agent workflow and repository context
+- See `docs/architecture-overview.md` for architectural layers
+- See `docs/module-responsibilities.md` for module boundaries
+- See `README.md` for project overview
 

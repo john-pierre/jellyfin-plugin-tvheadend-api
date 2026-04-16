@@ -20,11 +20,6 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Guide;
 /// </summary>
 internal sealed class GuideService : IGuideService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     private static readonly Dictionary<int, string> EtsiGenreMapping = new()
     {
         { 0, "Undefined" },
@@ -304,7 +299,7 @@ internal sealed class GuideService : IGuideService
             }
 
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<EpgContentTypeListResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<EpgContentTypeListResponse>(stream, JsonDefaults.Api, cancellationToken).ConfigureAwait(false);
             return result?.Entries?.ToDictionary(entry => entry.Key, entry => entry.Val) ?? new Dictionary<int, string>();
         }
         catch (Exception ex)
@@ -328,7 +323,7 @@ internal sealed class GuideService : IGuideService
             }
 
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<ChannelTagResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<ChannelTagResponse>(stream, JsonDefaults.Api, cancellationToken).ConfigureAwait(false);
             return result?.Entries?.ToDictionary(entry => entry.Key, entry => entry.Val) ?? new Dictionary<string, string>();
         }
         catch (Exception ex)
@@ -346,7 +341,7 @@ internal sealed class GuideService : IGuideService
 
     /// <summary>
     /// Converts a TVHeadend channel number (encoded as major * 1000000 + minor) to a display string.
-    /// Examples: 101000000 → "101", 7001000 → "7.1", 0 → "0".
+    /// Examples: 101000000 â†’ "101", 7001000 â†’ "7.1", 0 â†’ "0".
     /// </summary>
     private static string FormatChannelNumber(long tvhNumber)
     {

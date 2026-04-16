@@ -92,6 +92,7 @@ To keep release changelog entries aligned with PR titles, maintainers should use
 3. **Build and verify** locally:
    ```bash
    dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release
+   dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj -c Release --no-build
    ```
 
 4. **Push and open a PR** against the `main` branch.
@@ -115,6 +116,8 @@ To keep release changelog entries aligned with PR titles, maintainers should use
 | `Jellyfin.Plugin.TvHeadendApi/ServiceRegistrator.cs` | Dependency injection setup |
 | `Jellyfin.Plugin.TvHeadendApi/Configuration/` | Configuration model and embedded HTML settings page |
 | `Jellyfin.Plugin.TvHeadendApi/Model/` | TVHeadend API response DTOs |
+| `Jellyfin.Plugin.TvHeadendApi.Tests/` | Unit and integration tests |
+| `docs/` | Architecture, naming, test strategy, roadmap documentation |
 | `.github/workflows/build-release.yaml` | CI/CD pipeline |
 | `manifest.json` | Jellyfin plugin repository manifest |
 

@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
+using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.LiveTv;
 using Microsoft.Extensions.Logging;
@@ -95,7 +96,7 @@ internal sealed partial class DvrService
                 config_name = configUuid,
             };
 
-            requestBodyJson = JsonSerializer.Serialize(seriesTimerJson, JsonOptions);
+            requestBodyJson = JsonSerializer.Serialize(seriesTimerJson, JsonDefaults.Api);
             content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("conf", requestBodyJson),
@@ -245,7 +246,7 @@ internal sealed partial class DvrService
             updates["comment"] = info.Overview;
         }
 
-        var nodeJson = JsonSerializer.Serialize(new[] { updates }, JsonOptions);
+        var nodeJson = JsonSerializer.Serialize(new[] { updates }, JsonDefaults.Api);
         var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("node", nodeJson) });
         _logger.LogDebug(
             "TVHeadend series timer update request. URL={Url}, RequestBody={RequestBody}",

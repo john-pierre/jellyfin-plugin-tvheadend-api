@@ -21,7 +21,7 @@ Maintain and improve the Jellyfin TVHeadend API plugin while preserving:
   - Runtime configuration model used by API and UI.
 - `Jellyfin.Plugin.TvHeadendApi/Configuration/ConfigPage.html`
   - Plugin settings page rendered in Jellyfin admin.
-- `Jellyfin.Plugin.TvHeadendApi/Api/TvHeadendApiController.cs`
+- `Jellyfin.Plugin.TvHeadendApi/Api/PluginController.cs`
   - Diagnostic and helper endpoints used by tooling.
 
 ## Ground Rules For Changes
@@ -33,6 +33,14 @@ Maintain and improve the Jellyfin TVHeadend API plugin while preserving:
 - Keep GitHub Actions `uses:` references tag-based by default; do not auto-convert tags to commit SHAs unless explicitly requested.
 - When plugin behavior depends on Jellyfin internals, also validate against the sibling core repository `../jellyfin` when available.
 - Use portable relative paths in docs, issues, reviews, and agent output (`Jellyfin.Plugin.TvHeadendApi/...`, `docs/...`, `../jellyfin/...`); avoid local absolute paths.
+
+## Architecture Documentation
+
+- `docs/architecture-overview.md` — layers, dependency direction, module map.
+- `docs/architecture-decisions.md` — ADR-style records for significant design decisions.
+- `docs/module-responsibilities.md` — per-module ownership and boundary rules.
+- `docs/test-strategy.md` — test types, naming, coverage expectations.
+- `docs/assessment.md` — repository assessment and technical debt inventory.
 
 ## Naming And Layout Rules
 

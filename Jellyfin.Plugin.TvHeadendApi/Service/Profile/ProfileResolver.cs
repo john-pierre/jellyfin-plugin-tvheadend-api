@@ -17,11 +17,6 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 /// </summary>
 internal sealed class ProfileResolver : IProfileResolver
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     private readonly IApiClient _tvheadendApiClient;
 
     public ProfileResolver(
@@ -39,7 +34,7 @@ internal sealed class ProfileResolver : IProfileResolver
         var listUrl = $"{baseUrl}{webRoot}api/profile/list";
         var listBody = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
 
-        var listResponse = JsonSerializer.Deserialize<ProfileListResponse>(listBody, JsonOptions);
+        var listResponse = JsonSerializer.Deserialize<ProfileListResponse>(listBody, JsonDefaults.Api);
         if (listResponse?.Entries == null || listResponse.Entries.Length == 0)
         {
             return Array.Empty<ProfileReference>();
@@ -70,7 +65,7 @@ internal sealed class ProfileResolver : IProfileResolver
         CancellationToken cancellationToken)
     {
         using var profileDoc = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, profileUuid, cancellationToken).ConfigureAwait(false);
-        var profileResponse = JsonSerializer.Deserialize<IdNodeLoadResponse>(profileDoc.RootElement.GetRawText(), JsonOptions);
+        var profileResponse = JsonSerializer.Deserialize<IdNodeLoadResponse>(profileDoc.RootElement.GetRawText(), JsonDefaults.Api);
         if (profileResponse?.Entries == null || profileResponse.Entries.Length == 0)
         {
             return null;
@@ -175,7 +170,7 @@ internal sealed class ProfileResolver : IProfileResolver
 
         var codecProfileListUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
         var codecProfileListBody = await _tvheadendApiClient.GetStringAsync(httpClient, codecProfileListUrl, cancellationToken).ConfigureAwait(false);
-        var codecProfileList = JsonSerializer.Deserialize<CodecProfileListResponse>(codecProfileListBody, JsonOptions);
+        var codecProfileList = JsonSerializer.Deserialize<CodecProfileListResponse>(codecProfileListBody, JsonDefaults.Api);
         if (codecProfileList?.Entries == null || codecProfileList.Entries.Length == 0)
         {
             return null;
@@ -207,7 +202,7 @@ internal sealed class ProfileResolver : IProfileResolver
         }
 
         using var codecDoc = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, codecProfileUuid, cancellationToken).ConfigureAwait(false);
-        var codecResponse = JsonSerializer.Deserialize<IdNodeLoadResponse>(codecDoc.RootElement.GetRawText(), JsonOptions);
+        var codecResponse = JsonSerializer.Deserialize<IdNodeLoadResponse>(codecDoc.RootElement.GetRawText(), JsonDefaults.Api);
         if (codecResponse?.Entries == null || codecResponse.Entries.Length == 0)
         {
             return new CodecProfileDetails(codecProfileUuid, codecProfileName ?? string.Empty, string.Empty, string.Empty, null);

@@ -84,15 +84,42 @@ jobs:
           --configuration Release
           --no-build
           --collect:"XPlat Code Coverage"
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory TestResults
 
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: '**/TestResults/'
+          path: 'TestResults/'
           if-no-files-found: ignore
 
+      - name: Publish Test Summary
+        if: always() && github.event_name == 'pull_request'
+        uses: dorny/test-reporter@v1
+        with:
+          name: Unit Tests
+          path: 'TestResults/test-results.trx'
+          reporter: dotnet-trx
+          fail-on-error: true
+
+      - name: Generate Coverage Report Summary
+        if: always() && github.event_name == 'pull_request'
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: 'TestResults/**/coverage.cobertura.xml'
+          badge: true
+          format: markdown
+          output: both
+          thresholds: '50 75'
+
+      - name: Add Coverage to PR
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          recreate: true
+          path: code-coverage-results.md
 
       - name: Create Package
         if: ${{ github.event_name == 'pull_request' || steps.release-please.outputs.release_created == 'true' }}

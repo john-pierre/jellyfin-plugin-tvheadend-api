@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
+using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.LiveTv;
 using Microsoft.Extensions.Logging;
@@ -87,7 +88,7 @@ internal sealed partial class DvrService
                 config_name = configUuid,
             };
 
-            requestBodyJson = JsonSerializer.Serialize(timerJson, JsonOptions);
+            requestBodyJson = JsonSerializer.Serialize(timerJson, JsonDefaults.Api);
             content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("conf", requestBodyJson),

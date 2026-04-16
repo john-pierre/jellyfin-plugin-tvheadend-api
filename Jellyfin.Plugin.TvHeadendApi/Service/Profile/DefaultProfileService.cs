@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -36,11 +36,6 @@ internal sealed class DefaultProfileService : IDefaultProfileService
         "VORBIS",
         "OPUS",
         "AC-4"
-    };
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
     };
 
     private readonly ILogger<DefaultProfileService> _logger;
@@ -215,7 +210,7 @@ internal sealed class DefaultProfileService : IDefaultProfileService
 
             var listUrl = $"{baseUrl}{webRoot}api/profile/list";
             var listResponse = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
-            var profileList = JsonSerializer.Deserialize<ProfileListResponse>(listResponse, JsonOptions);
+            var profileList = JsonSerializer.Deserialize<ProfileListResponse>(listResponse, JsonDefaults.Api);
 
             var existingStreamProfile = profileList?.Entries?.FirstOrDefault(e =>
                 string.Equals(e.Val, "jellyfin", StringComparison.OrdinalIgnoreCase));
@@ -445,7 +440,7 @@ internal sealed class DefaultProfileService : IDefaultProfileService
 
         var listUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
         var response = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
-        var list = JsonSerializer.Deserialize<CodecProfileListResponse>(response, JsonOptions);
+        var list = JsonSerializer.Deserialize<CodecProfileListResponse>(response, JsonDefaults.Api);
         if (list?.Entries == null || list.Entries.Length == 0)
         {
             return null;
@@ -478,7 +473,7 @@ internal sealed class DefaultProfileService : IDefaultProfileService
         {
             var listUrl = $"{baseUrl}{webRoot}api/profile/list";
             var response = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
-            var list = JsonSerializer.Deserialize<ProfileListResponse>(response, JsonOptions);
+            var list = JsonSerializer.Deserialize<ProfileListResponse>(response, JsonDefaults.Api);
             return list?.Entries?.FirstOrDefault(e => string.Equals(e.Val, profileName, StringComparison.OrdinalIgnoreCase));
         }
         catch (Exception ex)
@@ -494,7 +489,7 @@ internal sealed class DefaultProfileService : IDefaultProfileService
         {
             var loadUrl = $"{baseUrl}{webRoot}api/idnode/load?uuid={Uri.EscapeDataString(streamProfileUuid)}";
             var loadBody = await _tvheadendApiClient.GetStringAsync(httpClient, loadUrl, cancellationToken).ConfigureAwait(false);
-            var loadResponse = JsonSerializer.Deserialize<IdNodeLoadResponse>(loadBody, JsonOptions);
+            var loadResponse = JsonSerializer.Deserialize<IdNodeLoadResponse>(loadBody, JsonDefaults.Api);
             if (loadResponse?.Entries == null || loadResponse.Entries.Length == 0)
             {
                 _logger.LogWarning("Could not load stream profile UUID {Uuid} before linking codec profiles.", streamProfileUuid);

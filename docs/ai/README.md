@@ -25,7 +25,7 @@ Use this index when onboarding a new agent session.
 
 ## Naming Rules (Required)
 
-Before creating or renaming files, follow `README.md` section **"Naming and Structure Conventions"**.
+Before creating or renaming files, follow `docs/NAMING_CONVENTIONS.md`.
 
 Short version:
 

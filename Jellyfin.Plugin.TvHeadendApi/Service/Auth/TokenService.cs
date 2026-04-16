@@ -15,11 +15,6 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 /// </summary>
 internal sealed class TokenService : ITokenService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     private readonly ILogger<TokenService> _logger;
     private readonly IApiClient _apiClient;
 
@@ -207,7 +202,7 @@ internal sealed class TokenService : ITokenService
         // access/entry/userlist only returns key=val=username pairs (no UUID) and cannot be used here.
         var listUrl = _apiClient.BuildUrl(config, "api/passwd/entry/grid");
         var response = await _apiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
-        var userList = JsonSerializer.Deserialize<UserListResponse>(response, JsonOptions);
+        var userList = JsonSerializer.Deserialize<UserListResponse>(response, JsonDefaults.Api);
         if (userList == null || userList.Entries.Length == 0)
         {
             return null;
@@ -251,7 +246,7 @@ internal sealed class TokenService : ITokenService
 
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var loadResponse = JsonSerializer.Deserialize<IdNodeUserLoadResponse>(body, JsonOptions);
+        var loadResponse = JsonSerializer.Deserialize<IdNodeUserLoadResponse>(body, JsonDefaults.Api);
         if (loadResponse == null || loadResponse.Entries.Length == 0)
         {
             return null;
@@ -298,7 +293,7 @@ internal sealed class TokenService : ITokenService
             saveUrl,
             new[]
             {
-                new KeyValuePair<string, string>("node", JsonSerializer.Serialize(node, JsonOptions))
+                new KeyValuePair<string, string>("node", JsonSerializer.Serialize(node, JsonDefaults.Api))
             },
             cancellationToken).ConfigureAwait(false);
 

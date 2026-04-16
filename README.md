@@ -364,8 +364,16 @@ Primary architecture files:
 
 - `Jellyfin.Plugin.TvHeadendApi/Service/OrchestratorService.cs`
 - `Jellyfin.Plugin.TvHeadendApi/Configuration/PluginConfiguration.cs`
-- `Jellyfin.Plugin.TvHeadendApi/Api/TvHeadendApiController.cs`
+- `Jellyfin.Plugin.TvHeadendApi/Api/PluginController.cs`
 - `Jellyfin.Plugin.TvHeadendApi/Service/Guide/GuideService.cs`
+
+Architecture documentation:
+
+- `docs/architecture-overview.md` — layers, dependency direction, module map
+- `docs/architecture-decisions.md` — ADR-style records
+- `docs/module-responsibilities.md` — per-module ownership and boundaries
+- `docs/test-strategy.md` — test types, naming, coverage expectations
+- `docs/ROADMAP.md` — milestones and progress tracking
 
 ## Developer Notes
 
@@ -374,6 +382,12 @@ If you want to build from source:
 ```bash
 dotnet restore Jellyfin.Plugin.TvHeadendApi.sln
 dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release --no-restore
+```
+
+Run tests:
+
+```bash
+dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj -c Release --no-build
 ```
 
 For cross-repo debugging and behavior checks, keep the Jellyfin core repository as a sibling folder (for example `../jellyfin`) and add it to your IDE workspace.

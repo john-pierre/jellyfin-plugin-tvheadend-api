@@ -15,11 +15,6 @@ internal static class GridFetcher
 {
     private const int ProbeLimit = 50;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     /// <summary>
     /// Fetches all entries from a TVHeadend grid endpoint by first probing for the total count.
     /// </summary>
@@ -71,6 +66,6 @@ internal static class GridFetcher
         using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        return await JsonSerializer.DeserializeAsync<TResponse>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+        return await JsonSerializer.DeserializeAsync<TResponse>(stream, JsonDefaults.Api, cancellationToken).ConfigureAwait(false);
     }
 }
