@@ -1,71 +1,49 @@
-# GitHub Actions Workflow: Combined CI/CD and PR Validation Pipeline
+# GitHub Actions Workflow: CI/CD Pipeline
 #
-# Description:
-# This workflow combines build validation and release packaging for the Jellyfin plugin.
-# It runs on pull requests for build/test/package validation and on pushes to main for release automation.
-#
-# Key Features:
-# - Uses Release Please to manage versioning and changelogs.
-# - Builds the plugin, runs tests, and packages the artifacts.
-# - Uploads artifacts for pull requests and creates releases for main branch pushes.
-# - Provides immediate feedback to contributors about build/test results.
-#
-# Use Cases:
-# - CI/CD for Jellyfin plugin development, combining validation and deployment processes.
-# - Enforcing high-quality standards for commit history and release management.
-# - Ensuring reliable, automated builds and releases with minimal manual intervention.
+# Jobs:
+#   1. 🔨 Build & Test     — restore, build, unit tests, coverage (every PR + push)
+#   2. 📦 Package           — create plugin zip + checksums (every PR + release)
+#   3. 🚀 Release           — Release Please, upload assets, update manifest (push to main only)
+#   4. 🧪 Integration Tests — live TVHeadend + Jellyfin smoke tests (after build)
 
-name: Build and Release
+name: "CI/CD Pipeline"
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
   push:
-    branches:
-      - main
-    paths-ignore:
-      - 'manifest.json'
+    branches: [main]
+    paths-ignore: ['manifest.json']
 
 permissions:
   contents: write
   pull-requests: write
   checks: write
 
+# ────────────────────────────────────────────────────────────────────
 jobs:
-  build-and-release:
+
+  # ── 1. Build, test, coverage ─────────────────────────────────────
+  build:
+    name: "🔨 Build & Test"
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Release Please
-        id: release-please
-        if: ${{ github.event_name == 'push' }}
-        uses: googleapis/release-please-action@v4
-        with:
-          config-file: .github/release-please-config.json
-          token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
-      - name: Generate Version
+      - name: Determine Version
         id: version
         shell: bash
-        run: |
-          set -euo pipefail
-          if [ "${{ steps.release-please.outputs.release_created }}" = "true" ]; then
-            VERSION_WITHOUT_V="${{ steps.release-please.outputs.tag_name }}"
-            VERSION_WITHOUT_V="${VERSION_WITHOUT_V#v}"
-            echo "version=${VERSION_WITHOUT_V}.0" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=0.0.0.0" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "version=0.0.0.0" >> "$GITHUB_OUTPUT"
 
       - name: Restore Dependencies
         run: dotnet restore Jellyfin.Plugin.TvHeadendApi.sln
@@ -97,16 +75,23 @@ jobs:
           path: 'TestResults/'
           if-no-files-found: ignore
 
+      - name: Upload Build Output
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: Jellyfin.Plugin.TvHeadendApi/bin/Release/net8.0/
+          if-no-files-found: error
+
       - name: Publish Test Summary
         if: always() && github.event_name == 'pull_request'
         uses: dorny/test-reporter@v1
         with:
-          name: Unit Tests
+          name: "Unit Tests"
           path: 'TestResults/test-results.trx'
           reporter: dotnet-trx
           fail-on-error: true
 
-      - name: Generate Coverage Report Summary
+      - name: Generate Coverage Report
         if: always() && github.event_name == 'pull_request'
         uses: irongut/CodeCoverageSummary@v1.3.0
         with:
@@ -117,25 +102,42 @@ jobs:
           thresholds: '85 90'
           fail_below_min: true
 
-      - name: Add Coverage to PR
+      - name: Post Coverage to PR
         if: always() && github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           recreate: true
           path: code-coverage-results.md
 
+  # ── 2. Package plugin zip ────────────────────────────────────────
+  package:
+    name: "📦 Package Plugin"
+    runs-on: ubuntu-24.04
+    needs: build
+    outputs:
+      artifact_md5: ${{ steps.checksums.outputs.artifact_md5 }}
+      artifact_sha256: ${{ steps.checksums.outputs.artifact_sha256 }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Build Output
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: build-output/
+
       - name: Create Package
-        if: ${{ github.event_name == 'pull_request' || steps.release-please.outputs.release_created == 'true' }}
         id: create_package
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ needs.build.outputs.version }}"
           PACKAGE_DIR="tvheadend_api_${VERSION}"
           TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
           mkdir -p "$PACKAGE_DIR"
-          find Jellyfin.Plugin.TvHeadendApi/bin/Release/net8.0 -maxdepth 1 -type f \( -name '*.dll' -o -name '*.pdb' -o -name '*.xml' \) -exec cp {} "$PACKAGE_DIR"/ \;
+          find build-output -maxdepth 1 -type f \( -name '*.dll' -o -name '*.pdb' -o -name '*.xml' \) -exec cp {} "$PACKAGE_DIR"/ \;
 
           jq --arg timestamp "$TIMESTAMP" \
              --arg targetAbi "10.10.3.0" \
@@ -145,53 +147,85 @@ jobs:
           zip -r "${PACKAGE_DIR}.zip" "$PACKAGE_DIR"
 
       - name: Calculate Checksums
-        if: ${{ github.event_name == 'pull_request' || steps.release-please.outputs.release_created == 'true' }}
-        id: calculate_checksums
+        id: checksums
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ needs.build.outputs.version }}"
           md5sum "tvheadend_api_${VERSION}.zip" > "tvheadend_api_${VERSION}.md5"
           sha256sum "tvheadend_api_${VERSION}.zip" > "tvheadend_api_${VERSION}.sha256"
-          CHECKSUM_MD5=$(awk '{print $1}' "tvheadend_api_${VERSION}.md5")
-          CHECKSUM_SHA256=$(awk '{print $1}' "tvheadend_api_${VERSION}.sha256")
-          echo "artifact_md5=${CHECKSUM_MD5}" >> "$GITHUB_OUTPUT"
-          echo "artifact_sha256=${CHECKSUM_SHA256}" >> "$GITHUB_OUTPUT"
+          echo "artifact_md5=$(awk '{print $1}' "tvheadend_api_${VERSION}.md5")" >> "$GITHUB_OUTPUT"
+          echo "artifact_sha256=$(awk '{print $1}' "tvheadend_api_${VERSION}.sha256")" >> "$GITHUB_OUTPUT"
 
-      - name: Upload PR Artifacts
-        if: ${{ github.event_name == 'pull_request' }}
+      - name: Upload Package Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: tvheadend_api_${{ steps.version.outputs.version }}
+          name: tvheadend_api_${{ needs.build.outputs.version }}
           path: |
-            tvheadend_api_${{ steps.version.outputs.version }}.zip
-            tvheadend_api_${{ steps.version.outputs.version }}.md5
-            tvheadend_api_${{ steps.version.outputs.version }}.sha256
+            tvheadend_api_${{ needs.build.outputs.version }}.zip
+            tvheadend_api_${{ needs.build.outputs.version }}.md5
+            tvheadend_api_${{ needs.build.outputs.version }}.sha256
+
+  # ── 3. Release (main push only) ─────────────────────────────────
+  release:
+    name: "🚀 Release"
+    runs-on: ubuntu-24.04
+    needs: [build, package]
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Release Please
+        id: release-please
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: .github/release-please-config.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine Release Version
+        if: steps.release-please.outputs.release_created == 'true'
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_WITHOUT_V="${{ steps.release-please.outputs.tag_name }}"
+          VERSION_WITHOUT_V="${VERSION_WITHOUT_V#v}"
+          echo "version=${VERSION_WITHOUT_V}.0" >> "$GITHUB_OUTPUT"
+
+      - name: Download Package
+        if: steps.release-please.outputs.release_created == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: tvheadend_api_${{ needs.build.outputs.version || '0.0.0.0' }}
 
       - name: Upload Release Assets
-        if: ${{ steps.release-please.outputs.release_created == 'true' }}
+        if: steps.release-please.outputs.release_created == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release-please.outputs.tag_name }}
           files: |
-            tvheadend_api_${{ steps.version.outputs.version }}.zip
-            tvheadend_api_${{ steps.version.outputs.version }}.md5
-            tvheadend_api_${{ steps.version.outputs.version }}.sha256
+            tvheadend_api_*.zip
+            tvheadend_api_*.md5
+            tvheadend_api_*.sha256
 
       - name: Update manifest.json
-        if: ${{ steps.release-please.outputs.release_created == 'true' }}
+        if: steps.release-please.outputs.release_created == 'true'
         shell: bash
         run: |
           set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
           TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           CHANGELOG="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/releases/tag/${{ steps.release-please.outputs.tag_name }}"
-          SOURCE_URL="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/releases/download/${{ steps.release-please.outputs.tag_name }}/tvheadend_api_${{ steps.version.outputs.version }}.zip"
+          SOURCE_URL="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/releases/download/${{ steps.release-please.outputs.tag_name }}/tvheadend_api_${VERSION}.zip"
           TARGET_ABI="10.10.3.0"
           REPOSITORY_NAME="jellyfin-plugin-tvheadend-api"
           REPOSITORY_URL="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api"
 
-          jq --arg version "${{ steps.version.outputs.version }}" \
-             --arg checksum "${{ steps.calculate_checksums.outputs.artifact_md5 }}" \
+          jq --arg version "$VERSION" \
+             --arg checksum "${{ needs.package.outputs.artifact_md5 }}" \
              --arg changelog "$CHANGELOG" \
              --arg timestamp "$TIMESTAMP" \
              --arg source_url "$SOURCE_URL" \
@@ -212,16 +246,18 @@ jobs:
           mv updated_manifest.json manifest.json
 
       - name: Commit manifest.json
-        if: ${{ steps.release-please.outputs.release_created == 'true' }}
+        if: steps.release-please.outputs.release_created == 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           branch: main
           commit_message: "build(release): update manifest for ${{ steps.release-please.outputs.tag_name }} [skip ci]"
           file_pattern: manifest.json
 
-  integration-tests:
+  # ── 4. Live integration tests ───────────────────────────────────
+  integration:
+    name: "🧪 Integration Tests"
     runs-on: ubuntu-24.04
-    needs: build-and-release
+    needs: build
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -234,7 +270,7 @@ jobs:
       - name: Start TVHeadend & Jellyfin
         run: docker compose -f docker-compose.test.yml up -d --build --wait
 
-      - name: Wait for TVHeadend Healthy
+      - name: Wait for TVHeadend
         run: |
           echo "Waiting for TVHeadend to become healthy..."
           for i in $(seq 1 30); do
@@ -254,7 +290,7 @@ jobs:
       - name: Build
         run: dotnet build Jellyfin.Plugin.TvHeadendApi.sln --configuration Release --no-restore
 
-      - name: Run Integration Tests
+      - name: Run Live Integration Tests
         env:
           TVHEADEND_URL: http://localhost:19981
         run: >
@@ -277,7 +313,7 @@ jobs:
         if: always() && github.event_name == 'pull_request'
         uses: dorny/test-reporter@v1
         with:
-          name: Integration Tests
+          name: "Integration Tests"
           path: 'TestResults/integration-results.trx'
           reporter: dotnet-trx
           fail-on-error: true
