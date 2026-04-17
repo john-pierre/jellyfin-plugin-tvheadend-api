@@ -5,9 +5,12 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Plugins;
@@ -57,6 +60,20 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             .AddPolicyHandler(ResiliencePolicies.GetRetryPolicy())
             .AddPolicyHandler(ResiliencePolicies.GetCircuitBreakerPolicy());
 
+        // Plugin path/config providers — decouple services from Plugin.Instance singleton.
+        serviceCollection.AddSingleton(new PluginConfigurationProvider(() => Plugin.Instance?.Configuration as Configuration.PluginConfiguration));
+        serviceCollection.AddSingleton(new CachePathProvider(() => Plugin.Instance?.CachePath));
+        serviceCollection.AddSingleton(new DataFolderPathProvider(() => Plugin.Instance?.DataFolderPath));
+        serviceCollection.AddSingleton(new PluginConfigurationSaver(mutate =>
+        {
+            var plugin = Plugin.Instance;
+            if (plugin?.Configuration is Configuration.PluginConfiguration cfg)
+            {
+                mutate(cfg);
+                plugin.SaveConfiguration();
+            }
+        }));
+
         serviceCollection.AddSingleton<IUrlBuilder, UrlBuilder>();
         serviceCollection.AddSingleton<IEncodingOptionsReader, EncodingOptionsReader>();
         serviceCollection.AddSingleton<ITokenService, TokenService>();
@@ -69,6 +86,9 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IDefaultProfileService, DefaultProfileService>();
         serviceCollection.AddSingleton<IProfileContainerResolver, ProfileContainerResolver>();
         serviceCollection.AddSingleton<IApiClient, ApiClient>();
+        serviceCollection.AddSingleton<IStatusService, StatusService>();
+        serviceCollection.AddSingleton<IInputMonitorService, InputMonitorService>();
+        serviceCollection.AddSingleton<ISubscriptionService, SubscriptionService>();
         serviceCollection.AddSingleton<StatisticsService>();
         serviceCollection.AddSingleton<IStatisticsService>(sp => sp.GetRequiredService<StatisticsService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StatisticsService>());

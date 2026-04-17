@@ -53,6 +53,35 @@ Covered scenarios:
 - Full Jellyfin + TVHeadend E2E testing is out of scope for automated CI.
 - Manual smoke testing is documented in `CONTRIBUTING.md` (Docker Compose workflow).
 
+### Live Integration Tests (`TvHeadendLiveTests`)
+
+Opt-in HTTP tests against a real TVHeadend instance. **Not run in CI** — requires a running server.
+
+- **Location:** `Tests/Integration/TvHeadendLiveTests.cs`
+- **Gate:** `[Trait("Category", "LiveIntegration")]` — excluded from default runs via `--filter "Category!=LiveIntegration"`.
+- **Connection:** `TVHEADEND_URL` environment variable (default: `http://localhost:19981`).
+- **Test stack:** `docker-compose.test.yml` provides a ready-made TVHeadend + Jellyfin environment.
+
+Covered endpoints:
+- `/api/serverinfo` — connectivity and version check
+- `/api/channel/grid` — channel grid structure
+- `/api/epg/events/grid` — EPG grid structure
+- `/api/profile/list` — streaming profile list
+- `/api/dvr/entry/grid` — DVR entry grid structure
+- Invalid endpoint — error handling
+
+How to run:
+```bash
+# Start test environment
+docker compose -f docker-compose.test.yml up -d
+
+# Run live tests only
+TVHEADEND_LIVE_TESTS=true dotnet test --filter "Category=LiveIntegration"
+
+# Tear down
+docker compose -f docker-compose.test.yml down -v
+```
+
 ## What Must Be Unit Tested
 
 | Area | Coverage Expectation |

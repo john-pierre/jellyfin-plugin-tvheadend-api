@@ -27,21 +27,25 @@ internal sealed class ApiClient : IApiClient
     internal const string HttpClientUnsafeName = "TvHeadendUnsafe";
 
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly PluginConfigurationProvider _configProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ApiClient"/> class.
     /// </summary>
     /// <param name="httpClientFactory">The HTTP client factory for creating managed client instances.</param>
-    public ApiClient(IHttpClientFactory httpClientFactory)
+    /// <param name="configProvider">Provider for the current plugin configuration.</param>
+    public ApiClient(IHttpClientFactory httpClientFactory, PluginConfigurationProvider configProvider)
     {
         ArgumentNullException.ThrowIfNull(httpClientFactory);
+        ArgumentNullException.ThrowIfNull(configProvider);
         _httpClientFactory = httpClientFactory;
+        _configProvider = configProvider;
     }
 
     /// <inheritdoc />
     public PluginConfiguration? GetCurrentConfiguration()
     {
-        return Plugin.Instance?.Configuration;
+        return _configProvider.Configuration;
     }
 
     /// <inheritdoc />

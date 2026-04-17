@@ -20,7 +20,7 @@ public class TokenServiceTests
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, new PluginConfigurationSaver(_ => { }));
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -39,7 +39,7 @@ public class TokenServiceTests
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://127.0.0.1:9981/api/passwd/entry/grid", It.IsAny<CancellationToken>()))
             .ReturnsAsync("{\"entries\":[]}");
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, new PluginConfigurationSaver(_ => { }));
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -83,7 +83,7 @@ public class TokenServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => new HttpResponseMessage(System.Net.HttpStatusCode.OK));
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, new PluginConfigurationSaver(_ => { }));
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -129,7 +129,7 @@ public class TokenServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => new HttpResponseMessage(System.Net.HttpStatusCode.OK));
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, new PluginConfigurationSaver(_ => { }));
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -147,7 +147,7 @@ public class TokenServiceTests
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, new PluginConfigurationSaver(_ => { }));
         var result = await sut.GenerateAndStoreTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -155,7 +155,7 @@ public class TokenServiceTests
     }
 
     [Fact]
-    public async Task GenerateAndStoreTokenAsync_WhenPluginInstanceMissing_ReturnsFailure()
+    public async Task GenerateAndStoreTokenAsync_WhenSuccessful_CallsConfigSaver()
     {
         var config = new PluginConfiguration { Username = "user", Password = "0000" };
         var api = new Mock<IApiClient>();
@@ -185,11 +185,20 @@ public class TokenServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => new HttpResponseMessage(System.Net.HttpStatusCode.OK));
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object);
+        string? savedToken = null;
+        var saver = new PluginConfigurationSaver(mutate =>
+        {
+            var cfg = new PluginConfiguration();
+            mutate(cfg);
+            savedToken = cfg.AuthToken;
+        });
+
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, saver);
         var result = await sut.GenerateAndStoreTokenAsync(CancellationToken.None);
 
-        Assert.False(result.Success);
-        Assert.Contains("Plugin instance", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.Success);
+        Assert.NotNull(savedToken);
+        Assert.Equal(result.AuthToken, savedToken);
     }
 
     [Fact]
@@ -232,7 +241,7 @@ public class TokenServiceTests
             .Callback<HttpClient, string, IEnumerable<KeyValuePair<string, string>>, CancellationToken>((_, _, values, _) => postedValues = values)
             .ReturnsAsync(() => new HttpResponseMessage(System.Net.HttpStatusCode.OK));
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, new PluginConfigurationSaver(_ => { }));
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.True(result.Success);

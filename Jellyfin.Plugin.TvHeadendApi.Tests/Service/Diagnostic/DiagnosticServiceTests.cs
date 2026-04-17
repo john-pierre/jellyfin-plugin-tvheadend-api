@@ -28,7 +28,8 @@ public class DiagnosticServiceTests
             Mock.Of<IServerConfigurationManager>(),
             Mock.Of<IEncodingOptionsReader>(),
             Mock.Of<IProfileResolver>(),
-            Mock.Of<IApiClient>()));
+            Mock.Of<IApiClient>(),
+            new CachePathProvider(() => null)));
 
         Assert.Throws<ArgumentNullException>(sutFactory);
     }
@@ -604,7 +605,8 @@ public class DiagnosticServiceTests
             serverConfigManager.Object,
             encodingReader.Object,
             streamResolver.Object,
-            apiClient.Object);
+            apiClient.Object,
+            new CachePathProvider(() => null));
     }
 
     private static DiagnosticService CreateSut(out Mock<IApiClient> apiClient)

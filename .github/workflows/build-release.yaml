@@ -86,6 +86,7 @@ jobs:
           --collect:"XPlat Code Coverage"
           --logger "trx;LogFileName=test-results.trx"
           --results-directory TestResults
+          --filter "Category!=LiveIntegration"
 
       - name: Upload Test Results
         if: always()

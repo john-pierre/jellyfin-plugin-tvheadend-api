@@ -47,9 +47,27 @@ Quick reference for what each module owns and its boundaries.
 - **Boundary:** Listens to Jellyfin `ISessionManager` playback events.
 - **Does not:** Interact with TVHeadend.
 
-### Service/Helper (`ApiClient`, `UrlBuilder`, `GridFetcher`, `IdNodeValueHelper`, `ResiliencePolicies`)
+### Service/Status (`StatusService`)
 
-- **Owns:** HTTP client creation, URL building (base URL, auth variants), paginated grid fetching, idnode value extraction, retry and circuit breaker policies.
+- **Owns:** TVHeadend server activity status, active connection listing.
+- **Boundary:** Reads `/api/status/activity` and `/api/status/connections`.
+- **Does not:** Monitor inputs or subscriptions (separate services).
+
+### Service/Input (`InputMonitorService`)
+
+- **Owns:** TV input/tuner status monitoring (signal, BER, SNR, bitrate).
+- **Boundary:** Reads `/api/status/inputs`.
+- **Does not:** Manage subscriptions or connections.
+
+### Service/Subscription (`SubscriptionService`)
+
+- **Owns:** Active streaming subscription listing.
+- **Boundary:** Reads `/api/status/subscriptions`.
+- **Does not:** Manage connections or input status.
+
+### Service/Helper (`ApiClient`, `UrlBuilder`, `GridFetcher`, `IdNodeValueHelper`, `ResiliencePolicies`, `PluginMetrics`)
+
+- **Owns:** HTTP client creation, URL building (base URL, auth variants), paginated grid fetching, idnode value extraction, retry and circuit breaker policies, metrics instrumentation.
 - **Boundary:** Generic TVHeadend HTTP infrastructure — no domain logic.
 - **Does not:** Contain business rules, mapping logic, or domain-specific decisions.
 

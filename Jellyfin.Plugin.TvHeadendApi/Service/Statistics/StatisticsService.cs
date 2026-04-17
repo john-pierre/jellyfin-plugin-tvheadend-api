@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Session;
@@ -30,6 +31,8 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
 
     private readonly ILogger<StatisticsService> _logger;
     private readonly ISessionManager _sessionManager;
+    private readonly PluginConfigurationProvider _configProvider;
+    private readonly DataFolderPathProvider _dataFolderPathProvider;
     private readonly List<ViewingSession> _sessions = new();
     private readonly ConcurrentDictionary<string, ViewingSession> _activeSessions = new();
     private readonly object _lock = new();
@@ -37,10 +40,14 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
 
     public StatisticsService(
         ILogger<StatisticsService> logger,
-        ISessionManager sessionManager)
+        ISessionManager sessionManager,
+        PluginConfigurationProvider configProvider,
+        DataFolderPathProvider dataFolderPathProvider)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
+        _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
+        _dataFolderPathProvider = dataFolderPathProvider ?? throw new ArgumentNullException(nameof(dataFolderPathProvider));
     }
 
     /// <inheritdoc />
@@ -96,8 +103,8 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         _sessionManager.PlaybackStopped += OnPlaybackStopped;
 
         // Periodic save — interval from config
-        var saveMinutes = Plugin.Instance?.Configuration is Configuration.PluginConfiguration c
-            ? (c.StatisticsSaveIntervalMinutes > 0 ? c.StatisticsSaveIntervalMinutes : 5)
+        var saveMinutes = _configProvider.Configuration is { StatisticsSaveIntervalMinutes: > 0 } c
+            ? c.StatisticsSaveIntervalMinutes
             : 5;
         _saveTimer = new Timer(_ => SaveToDisk(), null, TimeSpan.FromMinutes(saveMinutes), TimeSpan.FromMinutes(saveMinutes));
 
@@ -208,7 +215,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
 
     private void PruneOldSessions()
     {
-        var retentionDays = Plugin.Instance?.Configuration is Configuration.PluginConfiguration cfg
+        var retentionDays = _configProvider.Configuration is { StatisticsRetentionDays: > 0 } cfg
             ? cfg.StatisticsRetentionDays
             : 30;
 
@@ -219,7 +226,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
 
     private string? GetFilePath()
     {
-        var dataPath = Plugin.Instance?.DataFolderPath;
+        var dataPath = _dataFolderPathProvider.Path;
         return string.IsNullOrWhiteSpace(dataPath) ? null : Path.Combine(dataPath, FileName);
     }
 

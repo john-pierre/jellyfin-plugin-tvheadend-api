@@ -11,6 +11,7 @@ Use this file together with `AGENTS.md`.
 | Naming/structure questions | `docs/NAMING_CONVENTIONS.md` |
 | Testing questions | `docs/test-strategy.md` |
 | Technical debt / assessment | `docs/assessment.md` |
+| Logging / metrics / tracing | `docs/observability.md` |
 | Agent workflow | `AGENTS.md`, `docs/ai/INSTRUCTIONS.md` |
 
 ## Focus Areas

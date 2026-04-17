@@ -77,7 +77,8 @@ public class IdNodeApiCallTests
             new Mock<MediaBrowser.Controller.Configuration.IServerConfigurationManager>().Object,
             new Mock<IEncodingOptionsReader>().Object,
             new Mock<Jellyfin.Plugin.TvHeadendApi.Service.Profile.IProfileResolver>().Object,
-            api.Object);
+            api.Object,
+            new CachePathProvider(() => null));
 
         // Should not throw; connection fail is expected, DVR block still runs
         await diagService.DiagnoseAsync(CancellationToken.None);

@@ -1,0 +1,56 @@
+# Live integration test environment: Jellyfin + TVHeadend + IPTV simulator.
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d
+#   # Wait ~15s for services to start, then run live integration tests:
+#   TVHEADEND_LIVE_TESTS=true dotnet test ... --filter "Category=LiveIntegration"
+#   docker compose -f docker-compose.test.yml down
+#
+# TVHeadend is pre-configured with no password (-C flag) for test simplicity.
+# This stack is NOT for production — it runs with relaxed security settings.
+
+services:
+  tvheadend:
+    image: linuxserver/tvheadend:latest
+    container_name: tvh-integration-test
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Berlin
+    ports:
+      - "19981:9981"    # TVHeadend HTTP API (offset to avoid conflicts with dev stack)
+      - "19982:9982"    # TVHeadend HTSP (not used by plugin, but useful for debugging)
+    volumes:
+      - tvh-test-config:/config
+      - tvh-test-recordings:/recordings
+    restart: "no"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9981/api/serverinfo || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+  jellyfin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jf-integration-test
+    environment:
+      - TZ=Europe/Berlin
+    ports:
+      - "18096:8096"    # Jellyfin HTTP (offset to avoid conflicts with dev stack)
+    volumes:
+      - jf-test-config:/config
+      - jf-test-cache:/cache
+    depends_on:
+      tvheadend:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  tvh-test-config:
+  tvh-test-recordings:
+  jf-test-config:
+  jf-test-cache:
+

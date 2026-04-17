@@ -5,12 +5,18 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
+using Jellyfin.Plugin.TvHeadendApi.Model.Input;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Model.Status;
+using Jellyfin.Plugin.TvHeadendApi.Model.Subscription;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Status;
+using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -29,6 +35,9 @@ public class PluginController : ControllerBase
     private readonly IDefaultProfileService _defaultProfileService;
     private readonly ITokenService _tokenService;
     private readonly IStatisticsService _statisticsService;
+    private readonly IStatusService _statusService;
+    private readonly IInputMonitorService _inputMonitorService;
+    private readonly ISubscriptionService _subscriptionService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginController"/> class.
@@ -37,16 +46,25 @@ public class PluginController : ControllerBase
     /// <param name="defaultProfileService">Service that provisions recommended TVHeadend default profiles.</param>
     /// <param name="tokenService">Service that manages TVHeadend auth tokens.</param>
     /// <param name="statisticsService">Service that tracks live TV viewing statistics.</param>
+    /// <param name="statusService">Service for TVHeadend server status and connections.</param>
+    /// <param name="inputMonitorService">Service for TVHeadend input/tuner monitoring.</param>
+    /// <param name="subscriptionService">Service for TVHeadend subscription monitoring.</param>
     public PluginController(
         IDiagnosticService diagnoseService,
         IDefaultProfileService defaultProfileService,
         ITokenService tokenService,
-        IStatisticsService statisticsService)
+        IStatisticsService statisticsService,
+        IStatusService statusService,
+        IInputMonitorService inputMonitorService,
+        ISubscriptionService subscriptionService)
     {
         _diagnoseService = diagnoseService ?? throw new ArgumentNullException(nameof(diagnoseService));
         _defaultProfileService = defaultProfileService ?? throw new ArgumentNullException(nameof(defaultProfileService));
         _tokenService = tokenService ?? throw new ArgumentNullException(nameof(tokenService));
         _statisticsService = statisticsService ?? throw new ArgumentNullException(nameof(statisticsService));
+        _statusService = statusService ?? throw new ArgumentNullException(nameof(statusService));
+        _inputMonitorService = inputMonitorService ?? throw new ArgumentNullException(nameof(inputMonitorService));
+        _subscriptionService = subscriptionService ?? throw new ArgumentNullException(nameof(subscriptionService));
     }
 
     /// <summary>
@@ -71,6 +89,8 @@ public class PluginController : ControllerBase
     [HttpPost("ResetToDefaults")]
     public ActionResult<ProfileDetectionResult> ResetToDefaults()
     {
+        // Framework constraint: Plugin.Instance is required here for SaveConfiguration/UpdateConfiguration
+        // which are instance methods on the Jellyfin BasePlugin class and cannot be injected.
         var plugin = Plugin.Instance;
         if (plugin == null)
         {
@@ -173,5 +193,50 @@ public class PluginController : ControllerBase
     {
         _statisticsService.ClearStatistics();
         return Ok(new { Success = true, Message = "Viewing statistics cleared." });
+    }
+
+    /// <summary>
+    /// Returns the TVHeadend server activity status (connection/subscription counts, next activity).
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Server activity status.</returns>
+    [HttpGet("Status")]
+    public async Task<ActionResult<ActivityStatus>> GetStatus(CancellationToken cancellationToken)
+    {
+        var result = await _statusService.GetActivityStatusAsync(cancellationToken).ConfigureAwait(false);
+        return result != null ? Ok(result) : BadRequest(new { Message = "Plugin configuration is not available." });
+    }
+
+    /// <summary>
+    /// Returns the list of active client connections to TVHeadend.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Active connections.</returns>
+    [HttpGet("Connections")]
+    public async Task<ActionResult<IReadOnlyList<ConnectionEntry>>> GetConnections(CancellationToken cancellationToken)
+    {
+        return Ok(await _statusService.GetConnectionsAsync(cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Returns the status of all TV inputs (tuners/adapters) in TVHeadend.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Input status entries.</returns>
+    [HttpGet("Inputs")]
+    public async Task<ActionResult<IReadOnlyList<InputStatusEntry>>> GetInputs(CancellationToken cancellationToken)
+    {
+        return Ok(await _inputMonitorService.GetInputStatusAsync(cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Returns the list of active streaming subscriptions in TVHeadend.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Active subscription entries.</returns>
+    [HttpGet("Subscriptions")]
+    public async Task<ActionResult<IReadOnlyList<SubscriptionEntry>>> GetSubscriptions(CancellationToken cancellationToken)
+    {
+        return Ok(await _subscriptionService.GetActiveSubscriptionsAsync(cancellationToken).ConfigureAwait(false));
     }
 }

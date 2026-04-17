@@ -1,13 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
+using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.LiveTv;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service;
 
@@ -20,6 +23,7 @@ public sealed class OrchestratorService : ILiveTvService, ISupportsNewTimerIds, 
     private readonly IDvrService _dvrService;
     private readonly IMediaSourceService _streamMediaSourceService;
     private readonly ILifecycleService _streamLifecycleService;
+    private readonly ILogger<OrchestratorService> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OrchestratorService"/> class.
@@ -28,16 +32,19 @@ public sealed class OrchestratorService : ILiveTvService, ISupportsNewTimerIds, 
     /// <param name="dvrService">DVR/timer service.</param>
     /// <param name="streamMediaSourceService">Stream media source service.</param>
     /// <param name="streamLifecycleService">Stream lifecycle service.</param>
+    /// <param name="logger">Logger instance.</param>
     public OrchestratorService(
         IGuideService guideService,
         IDvrService dvrService,
         IMediaSourceService streamMediaSourceService,
-        ILifecycleService streamLifecycleService)
+        ILifecycleService streamLifecycleService,
+        ILogger<OrchestratorService> logger)
     {
         _guideService = guideService ?? throw new ArgumentNullException(nameof(guideService));
         _dvrService = dvrService ?? throw new ArgumentNullException(nameof(dvrService));
         _streamMediaSourceService = streamMediaSourceService ?? throw new ArgumentNullException(nameof(streamMediaSourceService));
         _streamLifecycleService = streamLifecycleService ?? throw new ArgumentNullException(nameof(streamLifecycleService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <inheritdoc />
@@ -52,8 +59,17 @@ public sealed class OrchestratorService : ILiveTvService, ISupportsNewTimerIds, 
     }
 
     /// <inheritdoc />
-    public Task<IEnumerable<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken)
-        => _guideService.GetChannelsAsync(cancellationToken);
+    public async Task<IEnumerable<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogDebug("GetChannelsAsync started.");
+        PluginMetrics.ChannelFetchCount.Add(1);
+        var sw = Stopwatch.StartNew();
+        var result = await _guideService.GetChannelsAsync(cancellationToken).ConfigureAwait(false);
+        sw.Stop();
+        PluginMetrics.ApiCallDuration.Record(sw.Elapsed.TotalMilliseconds, new KeyValuePair<string, object?>("operation", "GetChannels"));
+        _logger.LogDebug("GetChannelsAsync completed in {ElapsedMs}ms.", sw.ElapsedMilliseconds);
+        return result;
+    }
 
     /// <inheritdoc />
     public Task CancelTimerAsync(string timerId, CancellationToken cancellationToken)
@@ -92,16 +108,40 @@ public sealed class OrchestratorService : ILiveTvService, ISupportsNewTimerIds, 
         => _dvrService.GetSeriesTimersAsync(cancellationToken);
 
     /// <inheritdoc />
-    public Task<IEnumerable<ProgramInfo>> GetProgramsAsync(string channelId, DateTime startDateUtc, DateTime endDateUtc, CancellationToken cancellationToken)
-        => _guideService.GetProgramsAsync(channelId, startDateUtc, endDateUtc, cancellationToken);
+    public async Task<IEnumerable<ProgramInfo>> GetProgramsAsync(string channelId, DateTime startDateUtc, DateTime endDateUtc, CancellationToken cancellationToken)
+    {
+        _logger.LogDebug("GetProgramsAsync started for channel {ChannelId}.", channelId);
+        var sw = Stopwatch.StartNew();
+        var result = await _guideService.GetProgramsAsync(channelId, startDateUtc, endDateUtc, cancellationToken).ConfigureAwait(false);
+        sw.Stop();
+        PluginMetrics.EpgFetchDuration.Record(sw.Elapsed.TotalMilliseconds, new KeyValuePair<string, object?>("channel", channelId));
+        _logger.LogDebug("GetProgramsAsync for channel {ChannelId} completed in {ElapsedMs}ms.", channelId, sw.ElapsedMilliseconds);
+        return result;
+    }
 
     /// <inheritdoc />
-    public Task<MediaSourceInfo> GetChannelStream(string channelId, string streamId, CancellationToken cancellationToken)
-        => _streamMediaSourceService.GetChannelStreamAsync(channelId, cancellationToken);
+    public async Task<MediaSourceInfo> GetChannelStream(string channelId, string streamId, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("GetChannelStream started for channel {ChannelId}.", channelId);
+        PluginMetrics.StreamSetupCount.Add(1);
+        var sw = Stopwatch.StartNew();
+        var result = await _streamMediaSourceService.GetChannelStreamAsync(channelId, cancellationToken).ConfigureAwait(false);
+        sw.Stop();
+        PluginMetrics.StreamSetupDuration.Record(sw.Elapsed.TotalMilliseconds, new KeyValuePair<string, object?>("channel", channelId));
+        _logger.LogInformation("GetChannelStream for channel {ChannelId} completed in {ElapsedMs}ms.", channelId, sw.ElapsedMilliseconds);
+        return result;
+    }
 
     /// <inheritdoc />
-    public Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
-        => _streamMediaSourceService.GetChannelStreamMediaSourcesAsync(channelId, cancellationToken);
+    public async Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
+    {
+        _logger.LogDebug("GetChannelStreamMediaSources started for channel {ChannelId}.", channelId);
+        var sw = Stopwatch.StartNew();
+        var result = await _streamMediaSourceService.GetChannelStreamMediaSourcesAsync(channelId, cancellationToken).ConfigureAwait(false);
+        sw.Stop();
+        _logger.LogDebug("GetChannelStreamMediaSources for channel {ChannelId} completed in {ElapsedMs}ms.", channelId, sw.ElapsedMilliseconds);
+        return result;
+    }
 
     /// <inheritdoc />
     public Task CloseLiveStream(string id, CancellationToken cancellationToken)

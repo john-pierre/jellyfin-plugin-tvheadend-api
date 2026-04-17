@@ -29,6 +29,7 @@ internal sealed class DiagnosticService : IDiagnosticService
     private readonly IEncodingOptionsReader _encodingOptionsReader;
     private readonly IProfileResolver _streamProfileResolver;
     private readonly IApiClient _tvheadendApiClient;
+    private readonly CachePathProvider _cachePathProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DiagnosticService"/> class.
@@ -38,18 +39,21 @@ internal sealed class DiagnosticService : IDiagnosticService
     /// <param name="encodingOptionsReader">Reader for Jellyfin FFmpeg encoding options.</param>
     /// <param name="streamProfileResolver">Service for TVHeadend stream profile inspection.</param>
     /// <param name="tvheadendApiClient">TVHeadend API client.</param>
+    /// <param name="cachePathProvider">Provider for the plugin cache path.</param>
     public DiagnosticService(
         ILogger<DiagnosticService> logger,
         IServerConfigurationManager serverConfigManager,
         IEncodingOptionsReader encodingOptionsReader,
         IProfileResolver streamProfileResolver,
-        IApiClient tvheadendApiClient)
+        IApiClient tvheadendApiClient,
+        CachePathProvider cachePathProvider)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _serverConfigManager = serverConfigManager ?? throw new ArgumentNullException(nameof(serverConfigManager));
         _encodingOptionsReader = encodingOptionsReader ?? throw new ArgumentNullException(nameof(encodingOptionsReader));
         _streamProfileResolver = streamProfileResolver ?? throw new ArgumentNullException(nameof(streamProfileResolver));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
+        _cachePathProvider = cachePathProvider ?? throw new ArgumentNullException(nameof(cachePathProvider));
     }
 
     /// <inheritdoc />
@@ -479,7 +483,7 @@ internal sealed class DiagnosticService : IDiagnosticService
 
         try
         {
-            var cachePath = Plugin.Instance?.CachePath;
+            var cachePath = _cachePathProvider.Path;
             var mediaInfoDir = !string.IsNullOrWhiteSpace(cachePath)
                 ? Path.Combine(cachePath, "mediainfo")
                 : null;

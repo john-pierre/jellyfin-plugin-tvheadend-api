@@ -9,6 +9,8 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.LiveTv;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -23,7 +25,7 @@ public class OrchestratorServiceTests
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
 
-        Assert.Throws<ArgumentNullException>(() => new OrchestratorService(null!, dvr.Object, source.Object, lifecycle.Object));
+        Assert.Throws<ArgumentNullException>(() => new OrchestratorService(null!, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance));
     }
 
     [Fact]
@@ -33,7 +35,7 @@ public class OrchestratorServiceTests
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
 
-        Assert.Throws<ArgumentNullException>(() => new OrchestratorService(guide.Object, null!, source.Object, lifecycle.Object));
+        Assert.Throws<ArgumentNullException>(() => new OrchestratorService(guide.Object, null!, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance));
     }
 
     [Fact]
@@ -46,7 +48,7 @@ public class OrchestratorServiceTests
         var lifecycle = new Mock<ILifecycleService>();
         guide.Setup(x => x.GetChannelsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(expected);
 
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
         var result = await sut.GetChannelsAsync(CancellationToken.None);
 
         Assert.Same(expected, result);
@@ -64,7 +66,7 @@ public class OrchestratorServiceTests
         guide.Setup(x => x.GetProgramsAsync("ch-1", It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(expected);
 
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
         var result = await sut.GetProgramsAsync("ch-1", DateTime.UtcNow, DateTime.UtcNow.AddHours(1), CancellationToken.None);
 
         Assert.Same(expected, result);
@@ -81,7 +83,7 @@ public class OrchestratorServiceTests
         var lifecycle = new Mock<ILifecycleService>();
         source.Setup(x => x.GetChannelStreamAsync("ch-1", It.IsAny<CancellationToken>())).ReturnsAsync(expected);
 
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
         var result = await sut.GetChannelStream("ch-1", "ignored-stream-id", CancellationToken.None);
 
         Assert.Same(expected, result);
@@ -96,7 +98,7 @@ public class OrchestratorServiceTests
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
 
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
         await sut.CancelTimerAsync("timer-1", CancellationToken.None);
 
         dvr.Verify(x => x.CancelTimerAsync("timer-1", It.IsAny<CancellationToken>()), Times.Once);
@@ -110,7 +112,7 @@ public class OrchestratorServiceTests
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
 
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
         await sut.CloseLiveStream("live-1", CancellationToken.None);
 
         lifecycle.Verify(x => x.CloseLiveStreamAsync("live-1", It.IsAny<CancellationToken>()), Times.Once);
@@ -123,7 +125,8 @@ public class OrchestratorServiceTests
             new Mock<IGuideService>().Object,
             new Mock<IDvrService>().Object,
             new Mock<IMediaSourceService>().Object,
-            new Mock<ILifecycleService>().Object);
+            new Mock<ILifecycleService>().Object,
+            NullLogger<OrchestratorService>.Instance);
 
         Assert.Equal("TvHeadendApi", sut.Name);
     }
@@ -135,7 +138,8 @@ public class OrchestratorServiceTests
             new Mock<IGuideService>().Object,
             new Mock<IDvrService>().Object,
             new Mock<IMediaSourceService>().Object,
-            new Mock<ILifecycleService>().Object);
+            new Mock<ILifecycleService>().Object,
+            NullLogger<OrchestratorService>.Instance);
 
         Assert.Equal("https://tvheadend.org", sut.HomePageUrl);
     }
@@ -147,7 +151,8 @@ public class OrchestratorServiceTests
             new Mock<IGuideService>().Object,
             new Mock<IDvrService>().Object,
             new Mock<IMediaSourceService>().Object,
-            new Mock<ILifecycleService>().Object);
+            new Mock<ILifecycleService>().Object,
+            NullLogger<OrchestratorService>.Instance);
 
         sut.Dispose();
     }
@@ -160,7 +165,7 @@ public class OrchestratorServiceTests
         var dvr = new Mock<IDvrService>();
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         await sut.CreateTimerAsync(info, CancellationToken.None);
 
@@ -176,7 +181,7 @@ public class OrchestratorServiceTests
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
         dvr.Setup(x => x.GetTimersAsync(It.IsAny<CancellationToken>())).ReturnsAsync(expected);
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         var result = await sut.GetTimersAsync(CancellationToken.None);
 
@@ -192,7 +197,7 @@ public class OrchestratorServiceTests
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
         dvr.Setup(x => x.GetSeriesTimersAsync(It.IsAny<CancellationToken>())).ReturnsAsync(expected);
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         var result = await sut.GetSeriesTimersAsync(CancellationToken.None);
 
@@ -208,7 +213,7 @@ public class OrchestratorServiceTests
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
         source.Setup(x => x.GetChannelStreamMediaSourcesAsync("ch-2", It.IsAny<CancellationToken>())).ReturnsAsync(expected);
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         var result = await sut.GetChannelStreamMediaSources("ch-2", CancellationToken.None);
 
@@ -222,7 +227,7 @@ public class OrchestratorServiceTests
         var dvr = new Mock<IDvrService>();
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         await sut.ResetTuner("tuner-1", CancellationToken.None);
 
@@ -236,7 +241,7 @@ public class OrchestratorServiceTests
         var dvr = new Mock<IDvrService>();
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         await sut.CancelSeriesTimerAsync("series-1", CancellationToken.None);
 
@@ -251,7 +256,7 @@ public class OrchestratorServiceTests
         var dvr = new Mock<IDvrService>();
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         await sut.CreateSeriesTimerAsync(info, CancellationToken.None);
 
@@ -266,7 +271,7 @@ public class OrchestratorServiceTests
         var dvr = new Mock<IDvrService>();
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         await sut.UpdateTimerAsync(info, CancellationToken.None);
 
@@ -281,7 +286,7 @@ public class OrchestratorServiceTests
         var dvr = new Mock<IDvrService>();
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         await sut.UpdateSeriesTimerAsync(info, CancellationToken.None);
 
@@ -298,7 +303,7 @@ public class OrchestratorServiceTests
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
         dvr.Setup(x => x.GetNewTimerDefaultsAsync(program, It.IsAny<CancellationToken>())).ReturnsAsync(expected);
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         var result = await sut.GetNewTimerDefaultsAsync(CancellationToken.None, program);
 
@@ -314,7 +319,7 @@ public class OrchestratorServiceTests
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
         guide.Setup(x => x.GetContentTypesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(expected);
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         var result = await sut.GetContentTypesAsync(CancellationToken.None);
 
@@ -330,7 +335,7 @@ public class OrchestratorServiceTests
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
         guide.Setup(x => x.GetChannelTagsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(expected);
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         var result = await sut.GetChannelTagsAsync(CancellationToken.None);
 
@@ -345,7 +350,7 @@ public class OrchestratorServiceTests
         var source = new Mock<IMediaSourceService>();
         var lifecycle = new Mock<ILifecycleService>();
         dvr.Setup(x => x.GetRecordingProfileUuidAsync("default", It.IsAny<CancellationToken>())).ReturnsAsync("uuid-123");
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object);
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
 
         var result = await sut.GetRecordingProfileUuidAsync("default", CancellationToken.None);
 

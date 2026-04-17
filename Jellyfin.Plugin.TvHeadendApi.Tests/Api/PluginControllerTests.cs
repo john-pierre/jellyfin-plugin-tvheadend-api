@@ -8,9 +8,13 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Status;
+using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using Microsoft.AspNetCore.Mvc;
+using Moq;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests;
@@ -25,7 +29,10 @@ public class PluginControllerTests
             new FakeDiagnosticService(expected),
             new FakeDefaultProfileService(),
             new FakeTokenService(),
-            new FakeStatisticsService());
+            new FakeStatisticsService(),
+            new Mock<IStatusService>().Object,
+            new Mock<IInputMonitorService>().Object,
+            new Mock<ISubscriptionService>().Object);
 
         var result = await sut.Diagnose(CancellationToken.None);
 
@@ -41,7 +48,10 @@ public class PluginControllerTests
             new FakeDiagnosticService(new DiagnoseResult()),
             new FakeDefaultProfileService(),
             new FakeTokenService(),
-            new FakeStatisticsService());
+            new FakeStatisticsService(),
+            new Mock<IStatusService>().Object,
+            new Mock<IInputMonitorService>().Object,
+            new Mock<ISubscriptionService>().Object);
 
         var result = await sut.CreateProfile(CancellationToken.None);
 
@@ -62,7 +72,10 @@ public class PluginControllerTests
             new FakeDiagnosticService(diagnose),
             new FakeDefaultProfileService(),
             new FakeTokenService(),
-            new FakeStatisticsService());
+            new FakeStatisticsService(),
+            new Mock<IStatusService>().Object,
+            new Mock<IInputMonitorService>().Object,
+            new Mock<ISubscriptionService>().Object);
 
         var result = await sut.GetProfileOptions(CancellationToken.None);
 
@@ -80,7 +93,10 @@ public class PluginControllerTests
             new FakeDiagnosticService(new DiagnoseResult()),
             new FakeDefaultProfileService(),
             new FakeTokenService(),
-            new FakeStatisticsService());
+            new FakeStatisticsService(),
+            new Mock<IStatusService>().Object,
+            new Mock<IInputMonitorService>().Object,
+            new Mock<ISubscriptionService>().Object);
 
         var result = sut.ResetToDefaults();
 

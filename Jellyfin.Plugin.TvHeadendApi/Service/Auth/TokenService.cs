@@ -17,18 +17,22 @@ internal sealed class TokenService : ITokenService
 {
     private readonly ILogger<TokenService> _logger;
     private readonly IApiClient _apiClient;
+    private readonly PluginConfigurationSaver _configSaver;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TokenService"/> class.
     /// </summary>
     /// <param name="logger">Logger instance.</param>
     /// <param name="apiClient">TVHeadend API client.</param>
+    /// <param name="configSaver">Saves configuration changes to the plugin.</param>
     public TokenService(
         ILogger<TokenService> logger,
-        IApiClient apiClient)
+        IApiClient apiClient,
+        PluginConfigurationSaver configSaver)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        _configSaver = configSaver ?? throw new ArgumentNullException(nameof(configSaver));
     }
 
     /// <inheritdoc />
@@ -150,22 +154,9 @@ internal sealed class TokenService : ITokenService
                 return tokenResult;
             }
 
-            var plugin = Plugin.Instance;
-            if (plugin == null)
-            {
-                return new AuthTokenGenerationResult
-                {
-                    Success = false,
-                    Message = "Plugin instance is not available."
-                };
-            }
-
-            if (plugin.Configuration is Configuration.PluginConfiguration pluginConfig)
-            {
-                pluginConfig.AuthToken = tokenResult.AuthToken;
-                plugin.SaveConfiguration();
-                _logger.LogInformation("Auth token saved to plugin configuration.");
-            }
+            var token = tokenResult.AuthToken;
+            _configSaver.Save(cfg => cfg.AuthToken = token);
+            _logger.LogInformation("Auth token saved to plugin configuration.");
 
             return new AuthTokenGenerationResult
             {

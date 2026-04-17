@@ -45,8 +45,9 @@ internal sealed class MediaSourceService : IMediaSourceService
         ILibraryManager libraryManager,
         IProfileContainerResolver streamProfileContainerResolver,
         IApiClient tvheadendApiClient,
-        IUrlBuilder tvheadendUrlBuilder)
-        : this(logger, libraryManager, streamProfileContainerResolver, tvheadendApiClient, tvheadendUrlBuilder, () => Plugin.Instance?.CachePath)
+        IUrlBuilder tvheadendUrlBuilder,
+        CachePathProvider cachePathProvider)
+        : this(logger, libraryManager, streamProfileContainerResolver, tvheadendApiClient, tvheadendUrlBuilder, () => cachePathProvider.Path)
     {
     }
 
@@ -145,6 +146,7 @@ internal sealed class MediaSourceService : IMediaSourceService
             var cacheSnapshot = await TryGetMediainfoCacheSnapshotAsync(channelId, cancellationToken).ConfigureAwait(false);
             if (cacheSnapshot == null)
             {
+                PluginMetrics.CacheMissCount.Add(1);
                 if (proactiveCacheEnabled)
                 {
                     await TryWriteMediaInfoCacheAsync(channelId, streamUrl, profileSnapshot, cancellationToken).ConfigureAwait(false);
@@ -152,6 +154,8 @@ internal sealed class MediaSourceService : IMediaSourceService
 
                 return;
             }
+
+            PluginMetrics.CacheHitCount.Add(1);
 
             if (!validationEnabled)
             {
@@ -183,6 +187,7 @@ internal sealed class MediaSourceService : IMediaSourceService
                 if (!string.IsNullOrWhiteSpace(cacheSnapshot.CacheFilePath) && File.Exists(cacheSnapshot.CacheFilePath))
                 {
                     File.Delete(cacheSnapshot.CacheFilePath);
+                    PluginMetrics.CacheInvalidationCount.Add(1);
                     _logger.LogInformation("Deleted mismatching mediainfo cache file for channel {ChannelId}: {CacheFile}", channelId, cacheSnapshot.CacheFilePath);
                 }
 
@@ -482,6 +487,24 @@ internal sealed class MediaSourceService : IMediaSourceService
         {
             _logger.LogWarning(ex, "Failed to delete unreadable mediainfo cache file for channel {ChannelId}: {CacheFile}", channelId, cacheFilePath);
         }
+    }
+
+    /// <inheritdoc />
+    public string? GetRecordingStreamUrl(string recordingId)
+    {
+        var config = _tvheadendApiClient.GetCurrentConfiguration();
+        if (config == null)
+        {
+            _logger.LogWarning("Plugin configuration is not available — cannot build recording URL.");
+            return null;
+        }
+
+        var baseUrl = _tvheadendApiClient.GetBaseUrl(config);
+        var webRoot = _tvheadendApiClient.GetWebRoot(config);
+        var authSuffix = string.IsNullOrWhiteSpace(config.AuthToken)
+            ? string.Empty
+            : $"?auth={config.AuthToken}";
+        return $"{baseUrl}{webRoot}dvrfile/{recordingId}{authSuffix}";
     }
 
     private PluginConfiguration GetConfig()

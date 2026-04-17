@@ -407,6 +407,82 @@ public class MediaSourceServiceTests
         Assert.Null(snapshot);
     }
 
+    // ── GetRecordingStreamUrl ──────────────────────────────────────────
+
+    [Fact]
+    public void GetRecordingStreamUrl_WhenConfigMissing_ReturnsNull()
+    {
+        var api = new Mock<IApiClient>();
+        api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
+        var sut = new MediaSourceService(
+            NullLogger<MediaSourceService>.Instance,
+            new Mock<ILibraryManager>().Object,
+            new Mock<IProfileContainerResolver>().Object,
+            api.Object,
+            new UrlBuilder(),
+            () => null);
+
+        var result = sut.GetRecordingStreamUrl("recording-uuid");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void GetRecordingStreamUrl_WithAuthToken_ReturnsUrlWithAuth()
+    {
+        var config = new PluginConfiguration
+        {
+            Host = "tvh.local",
+            Port = 9981,
+            UseSSL = false,
+            Webroot = "/",
+            AuthToken = "mytoken123"
+        };
+        var api = new Mock<IApiClient>();
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh.local:9981");
+        api.Setup(x => x.GetWebRoot(config)).Returns("/");
+        var sut = new MediaSourceService(
+            NullLogger<MediaSourceService>.Instance,
+            new Mock<ILibraryManager>().Object,
+            new Mock<IProfileContainerResolver>().Object,
+            api.Object,
+            new UrlBuilder(),
+            () => null);
+
+        var result = sut.GetRecordingStreamUrl("rec-abc");
+
+        Assert.Equal("http://tvh.local:9981/dvrfile/rec-abc?auth=mytoken123", result);
+    }
+
+    [Fact]
+    public void GetRecordingStreamUrl_WithoutAuthToken_ReturnsUrlWithoutAuth()
+    {
+        var config = new PluginConfiguration
+        {
+            Host = "tvh.local",
+            Port = 9981,
+            UseSSL = false,
+            Webroot = "/",
+            AuthToken = ""
+        };
+        var api = new Mock<IApiClient>();
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh.local:9981");
+        api.Setup(x => x.GetWebRoot(config)).Returns("/");
+        var sut = new MediaSourceService(
+            NullLogger<MediaSourceService>.Instance,
+            new Mock<ILibraryManager>().Object,
+            new Mock<IProfileContainerResolver>().Object,
+            api.Object,
+            new UrlBuilder(),
+            () => null);
+
+        var result = sut.GetRecordingStreamUrl("rec-def");
+
+        Assert.Equal("http://tvh.local:9981/dvrfile/rec-def", result);
+    }
+
     private static MediaSourceService CreateSut(PluginConfiguration config, ProfileSnapshot snapshot, string cachePath)
     {
         var library = new Mock<ILibraryManager>();

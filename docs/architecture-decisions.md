@@ -135,3 +135,28 @@ This document records significant architecture decisions for the plugin using li
 **Consequences:**
 - Users may need additional setup for recording playback.
 
+---
+
+## ADR-008: Plugin.Instance Singleton Mitigation via Injected Providers
+
+**Status:** Accepted
+
+**Context:**
+`Plugin.Instance` is a static singleton provided by the Jellyfin `BasePlugin<T>` framework. Direct access couples services to the plugin lifecycle and makes unit testing harder because the singleton is `null` outside a running Jellyfin host.
+
+**Decision:**
+Introduce four lightweight provider/wrapper types registered in DI:
+
+| Type | Purpose |
+|---|---|
+| `PluginConfigurationProvider` | Resolves current `PluginConfiguration` |
+| `CachePathProvider` | Resolves plugin cache path |
+| `DataFolderPathProvider` | Resolves plugin data folder path |
+| `PluginConfigurationSaver` | Mutates and persists configuration |
+
+Services receive these via constructor injection instead of accessing `Plugin.Instance` directly. `PluginController.ResetToDefaults` retains direct `Plugin.Instance` access because `SaveConfiguration()` and `UpdateConfiguration()` are instance methods on `BasePlugin` that cannot be abstracted further.
+
+**Consequences:**
+- Services are fully testable without a live plugin instance.
+- The singleton bridge is isolated to `ServiceRegistrator` registrations.
+- `PluginController` remains the only direct `Plugin.Instance` consumer (documented as framework constraint).

@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Session;
@@ -17,7 +18,9 @@ public class StatisticsServiceTests
         var sm = sessionManager ?? new Mock<ISessionManager>();
         return new StatisticsService(
             NullLogger<StatisticsService>.Instance,
-            sm.Object);
+            sm.Object,
+            new PluginConfigurationProvider(() => null),
+            new DataFolderPathProvider(() => null));
     }
 
     // ── Constructor ───────────────────────────────────────────────────
@@ -26,14 +29,14 @@ public class StatisticsServiceTests
     public void Constructor_WithNullLogger_Throws()
     {
         var sm = new Mock<ISessionManager>();
-        Assert.Throws<ArgumentNullException>(() => new StatisticsService(null!, sm.Object));
+        Assert.Throws<ArgumentNullException>(() => new StatisticsService(null!, sm.Object, new PluginConfigurationProvider(() => null), new DataFolderPathProvider(() => null)));
     }
 
     [Fact]
     public void Constructor_WithNullSessionManager_Throws()
     {
         Assert.Throws<ArgumentNullException>(
-            () => new StatisticsService(NullLogger<StatisticsService>.Instance, null!));
+            () => new StatisticsService(NullLogger<StatisticsService>.Instance, null!, new PluginConfigurationProvider(() => null), new DataFolderPathProvider(() => null)));
     }
 
     // ── GetStatistics ────────────────────────────────────────────────

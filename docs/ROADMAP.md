@@ -96,8 +96,8 @@ This document tracks the structured refactor and quality improvement of the Jell
 |---|---|---|
 | Q2 | ~~Low~~ | ~~`HttpClient` created per-call via `IApiClient.BuildHttpClient()` — should migrate to `IHttpClientFactory`~~ ✅ Resolved in Milestone 8 |
 | Q4 | ~~Low~~ | ~~No retry/resilience for TVHeadend API calls~~ ✅ Resolved in Milestone 9 |
-| A3 | Info | `Plugin.Instance` static singleton — standard Jellyfin pattern but creates test friction (already mitigated with constructor injection in `MediaSourceService` and `StatisticsService`) |
-| T3 | Info | No live integration tests against real TVHeadend (contract tests cover JSON shape, but not HTTP behavior) |
+| A3 | ~~Info~~ | ~~`Plugin.Instance` static singleton — standard Jellyfin pattern but creates test friction~~ ✅ Resolved in Milestone 14 (injected providers; only `PluginController` retains direct access as framework constraint) |
+| T3 | ~~Info~~ | ~~No live integration tests against real TVHeadend~~ ✅ Resolved in Milestone 13 (opt-in via `TVHEADEND_LIVE_TESTS=true`) |
 | P2 | ~~Info~~ | ~~Coverage thresholds are advisory (50/75) — not enforced as quality gate~~ ✅ Resolved in Milestone 10 |
 
 ---
@@ -136,30 +136,47 @@ This document tracks the structured refactor and quality improvement of the Jell
 
 ### Milestone 11 — Observability and Performance (Medium-Term)
 
-- [ ] Add structured logging with semantic message templates across services
-- [ ] Add optional metrics hooks (stream setup latency, API call duration)
-- [ ] Profile and optimize mediainfo cache warm-up path
-- [ ] Document observability configuration in README or dedicated doc
+- [x] Add structured logging to `OrchestratorService` — channel fetch, EPG fetch, stream setup with timing
+- [x] Add `PluginMetrics.cs` with .NET `System.Diagnostics.Metrics` instruments (9 metrics: API calls, durations, stream setup, cache hit/miss/invalidation, EPG/channel fetch)
+- [x] Instrument `OrchestratorService` with stream setup and EPG fetch timing via `Stopwatch` + histogram recording
+- [x] Instrument `MediaSourceService` with cache hit/miss/invalidation counters
+- [x] Create `docs/observability.md` — log categories, metrics reference, dotnet-counters/OTEL usage, troubleshooting
+- [x] Verify build: 0 warnings, 0 errors
+- [x] Verify tests: 280 passing
 
 ### Milestone 12 — Admin UX and Developer Experience (Medium-Term)
 
-- [ ] ConfigPage.html: add profile selector dropdown
-- [ ] ConfigPage.html: surface diagnostic results inline
-- [ ] Broader client compatibility testing documentation
-- [ ] Developer onboarding guide with annotated architecture walkthrough
+- [x] ConfigPage.html: profile selector dropdowns — already implemented (streaming + recording profiles fetched from TVHeadend API)
+- [x] ConfigPage.html: surface diagnostic results inline — already implemented (auto-runs on page load, shows checks/recommendations/score)
+- [x] Create `docs/client-compatibility.md` — test matrix template, test procedure, common issues, network topology considerations
+- [x] Create `docs/developer-onboarding.md` — annotated architecture walkthrough, data flow example, feature addition guide, conventions cheat sheet
+- [x] Verify build: 0 warnings, 0 errors
+- [x] Verify tests: 280 passing
 
 ### Milestone 13 — Live Integration Testing (Medium-Term, addresses T3)
 
-- [ ] Create `docker-compose.test.yml` with TVHeadend + Jellyfin stack
-- [ ] Add live HTTP integration tests (channel list, stream start, EPG fetch)
-- [ ] Gate live tests behind environment flag (opt-in, not default CI)
-- [ ] Document test environment setup in `docs/test-strategy.md`
+- [x] Create `docker-compose.test.yml` with TVHeadend + Jellyfin stack (offset ports 19981/18096)
+- [x] Add 6 live HTTP integration tests: serverinfo, channel grid, EPG grid, profile list, DVR grid, invalid endpoint
+- [x] Gate live tests via `[Trait("Category", "LiveIntegration")]` — excluded from default runs and CI via `--filter "Category!=LiveIntegration"`
+- [x] Document test environment setup and run commands in `docs/test-strategy.md`
+- [x] Verify build: 0 warnings, 0 errors
+- [x] Verify tests: 280 passing, 0 skipped (6 live tests excluded by filter)
 
 ### Milestone 14 — Plugin Singleton Mitigation (Medium-Term, addresses A3)
 
-- [ ] Audit remaining `Plugin.Instance` usages outside already-injected services
-- [ ] Replace direct singleton access with constructor injection where feasible
-- [ ] Document any remaining usages that cannot be removed (Jellyfin framework constraint)
+- [x] Audit remaining `Plugin.Instance` usages — found 6 across ApiClient, StatisticsService, DiagnosticService, TokenService, MediaSourceService, PluginController
+- [x] Create provider wrapper types: `PluginConfigurationProvider`, `CachePathProvider`, `DataFolderPathProvider`, `PluginConfigurationSaver` in `Service/Helper/PluginPathProviders.cs`
+- [x] Replace `Plugin.Instance` in `ApiClient` with injected `PluginConfigurationProvider`
+- [x] Replace `Plugin.Instance` in `StatisticsService` with injected `PluginConfigurationProvider` and `DataFolderPathProvider`
+- [x] Replace `Plugin.Instance` in `DiagnosticService` with injected `CachePathProvider`
+- [x] Replace `Plugin.Instance` in `TokenService` with injected `PluginConfigurationSaver`
+- [x] Replace `Plugin.Instance` in `MediaSourceService` public constructor with injected `CachePathProvider`
+- [x] Document `PluginController` as framework constraint (only remaining direct `Plugin.Instance` consumer)
+- [x] Register all providers in `ServiceRegistrator`
+- [x] Update all affected unit tests to use injected providers
+- [x] Add ADR-008 to `docs/architecture-decisions.md`
+- [x] Verify build: 0 warnings, 0 errors
+- [x] Verify tests: 280 passing
 
 ### Milestone 15 — Feature Flags and Settings Migration (Longer-Term)
 
@@ -170,11 +187,17 @@ This document tracks the structured refactor and quality improvement of the Jell
 
 ### Milestone 16 — Extended TVHeadend API Coverage (Longer-Term)
 
-- [ ] Add status API integration (server status, connection info)
-- [ ] Add input monitoring API (tuner/adapter status)
-- [ ] Add subscription management API (active streams, mux subscriptions)
-- [ ] Add recording file playback support via HTTP streaming
-- [ ] Add corresponding contract + unit tests for each new API area
+- [x] Add status API integration — `IStatusService`/`StatusService` with `GetActivityStatusAsync` (`/api/status/activity`) and `GetConnectionsAsync` (`/api/status/connections`)
+- [x] Add input monitoring API — `IInputMonitorService`/`InputMonitorService` with `GetInputStatusAsync` (`/api/status/inputs`) covering signal, BER, SNR, bitrate
+- [x] Add subscription management API — `ISubscriptionService`/`SubscriptionService` with `GetActiveSubscriptionsAsync` (`/api/status/subscriptions`)
+- [x] Add recording file playback support — `GetRecordingStreamUrl` in `MediaSourceService` builds `/dvrfile/{uuid}` URLs with auth token
+- [x] Add 3 model namespaces: `Model/Status/` (ActivityStatus, ConnectionEntry, ConnectionGridResponse), `Model/Input/` (InputStatusEntry, InputGridResponse), `Model/Subscription/` (SubscriptionEntry, SubscriptionGridResponse)
+- [x] Add controller endpoints: `GET Status`, `GET Connections`, `GET Inputs`, `GET Subscriptions` in `PluginController`
+- [x] Register all new services in `ServiceRegistrator`
+- [x] Add 28 new tests: 6 StatusService, 5 InputMonitorService, 5 SubscriptionService, 10 model contract tests, 3 recording URL tests (covering all new API areas)
+- [x] Update `docs/module-responsibilities.md` with Status, Input, Subscription modules
+- [x] Verify build: 0 warnings, 0 errors
+- [x] Verify tests: 308 passing (280 existing + 28 new)
 
 ### Milestone 17 — Plugin API Versioning (Longer-Term)
 

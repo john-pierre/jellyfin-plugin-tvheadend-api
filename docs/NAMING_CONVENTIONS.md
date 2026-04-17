@@ -82,7 +82,7 @@ Services are organized by **domain responsibility**, not by implementation detai
 | **Service.Profile** | TVHeadend profile configuration and provisioning | `ProfileResolver`, `ProvisioningService`, `ProfileDetails` |
 | **Service.Stream** | Stream URL construction and stream lifecycle | `MediaSourceService`, stream URL building |
 | **Service.Diagnostic** | Plugin diagnostics and health checks | `DiagnosticService` |
-| **Service.Helper** | Low-level HTTP and URL helpers | `ApiClient`, `UrlBuilder`, `ResiliencePolicies` |
+| **Service.Helper** | Low-level HTTP and URL helpers | `ApiClient`, `UrlBuilder`, `ResiliencePolicies`, `PluginMetrics` |
 
 ### Service Type Suffixes
 - **Service**: Full lifecycle service (e.g., `DiagnosticService`, `ProvisioningService`)
