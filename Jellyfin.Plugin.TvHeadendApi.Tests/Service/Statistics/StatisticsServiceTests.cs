@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
@@ -324,6 +325,173 @@ public class StatisticsServiceTests
     {
         var sut = CreateSut();
         await sut.StartAsync(CancellationToken.None);
+        sut.Dispose();
+    }
+
+    // ── LoadFromDisk / SaveToDisk ─────────────────────────────────────
+
+    [Fact]
+    public async Task StartAsync_WhenFileExists_LoadsSessionsFromDisk()
+    {
+        var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.IO.Path.GetRandomFileName());
+        System.IO.Directory.CreateDirectory(tempDir);
+        try
+        {
+            var sessions = new[]
+            {
+                new Jellyfin.Plugin.TvHeadendApi.Model.Statistics.ViewingSession
+                {
+                    UserName = "TestUser",
+                    ChannelName = "TestChannel",
+                    StartTimeUtc = DateTime.UtcNow.AddMinutes(-10),
+                    EndTimeUtc = DateTime.UtcNow.AddMinutes(-5),
+                    PlaySessionId = "persisted-1",
+                    DeviceName = "Dev",
+                    ClientName = "Client",
+                    PlayMethod = "DirectPlay",
+                    ChannelId = "ch-1"
+                }
+            };
+            var json = System.Text.Json.JsonSerializer.Serialize(sessions, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            await System.IO.File.WriteAllTextAsync(System.IO.Path.Combine(tempDir, "viewing-statistics.json"), json);
+
+            var sm = new Mock<ISessionManager>();
+            var sut = new StatisticsService(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<StatisticsService>.Instance,
+                sm.Object,
+                new PluginConfigurationProvider(() => null),
+                new DataFolderPathProvider(() => tempDir));
+
+            await sut.StartAsync(CancellationToken.None);
+
+            Assert.Single(sut.AllSessions);
+            Assert.Equal("TestUser", sut.AllSessions[0].UserName);
+
+            sut.Dispose();
+        }
+        finally
+        {
+            System.IO.Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ClearStatistics_WhenPathProvided_WritesJsonFile()
+    {
+        var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.IO.Path.GetRandomFileName());
+        System.IO.Directory.CreateDirectory(tempDir);
+        try
+        {
+            var sm = new Mock<ISessionManager>();
+            var sut = new StatisticsService(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<StatisticsService>.Instance,
+                sm.Object,
+                new PluginConfigurationProvider(() => null),
+                new DataFolderPathProvider(() => tempDir));
+
+            await sut.StartAsync(CancellationToken.None);
+            sut.ClearStatistics();
+
+            var filePath = System.IO.Path.Combine(tempDir, "viewing-statistics.json");
+            Assert.True(System.IO.File.Exists(filePath));
+
+            sut.Dispose();
+        }
+        finally
+        {
+            System.IO.Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task GetStatistics_WithDaysFilter_ExcludesOldSessions()
+    {
+        var sm = new Mock<ISessionManager>();
+        var sut = CreateSut(sm);
+        await sut.StartAsync(CancellationToken.None);
+
+        var channel = new LiveTvChannel { Name = "TestChannel" };
+
+        // Start a session
+        var startArgs = new MediaBrowser.Controller.Library.PlaybackProgressEventArgs
+        {
+            Item = channel,
+            PlaySessionId = "filter-session",
+            DeviceName = "Dev",
+            ClientName = "Client",
+        };
+        sm.Raise(m => m.PlaybackStart += null, startArgs);
+        var stopArgs = new MediaBrowser.Controller.Library.PlaybackStopEventArgs
+        {
+            Item = channel,
+            PlaySessionId = "filter-session",
+        };
+        sm.Raise(m => m.PlaybackStopped += null, stopArgs);
+
+        // days=0 returns all, days=30 should include recent session
+        var all = sut.GetStatistics(0);
+        var recent = sut.GetStatistics(30);
+
+        Assert.Equal(1, all.TotalCount);
+        Assert.Equal(1, recent.TotalCount);
+
+        sut.Dispose();
+    }
+
+    [Fact]
+    public async Task PlaybackStopped_WhenStopEventHasPlayMethod_UpdatesSessionPlayMethod()
+    {
+        var sm = new Mock<ISessionManager>();
+        var sut = CreateSut(sm);
+        await sut.StartAsync(CancellationToken.None);
+
+        var channel = new LiveTvChannel { Name = "TestChannel" };
+        var startArgs = new MediaBrowser.Controller.Library.PlaybackProgressEventArgs
+        {
+            Item = channel,
+            PlaySessionId = "pm-session",
+            DeviceName = "Dev",
+            ClientName = "Client",
+        };
+        sm.Raise(m => m.PlaybackStart += null, startArgs);
+
+        var stopArgs = new MediaBrowser.Controller.Library.PlaybackStopEventArgs
+        {
+            Item = channel,
+            PlaySessionId = "pm-session",
+            Session = new MediaBrowser.Controller.Session.SessionInfo(Mock.Of<ISessionManager>(), Microsoft.Extensions.Logging.Abstractions.NullLogger<MediaBrowser.Controller.Session.SessionInfo>.Instance)
+            {
+                PlayState = new MediaBrowser.Model.Session.PlayerStateInfo { PlayMethod = MediaBrowser.Model.Session.PlayMethod.Transcode }
+            }
+        };
+        sm.Raise(m => m.PlaybackStopped += null, stopArgs);
+
+        var session = sut.AllSessions.Single();
+        Assert.Equal("Transcode", session.PlayMethod);
+
+        sut.Dispose();
+    }
+
+    [Fact]
+    public async Task PlaybackStart_WithNullPlaySessionId_AssignsGeneratedSessionId()
+    {
+        var sm = new Mock<ISessionManager>();
+        var sut = CreateSut(sm);
+        await sut.StartAsync(CancellationToken.None);
+
+        var channel = new LiveTvChannel { Name = "TestChannel" };
+        var startArgs = new MediaBrowser.Controller.Library.PlaybackProgressEventArgs
+        {
+            Item = channel,
+            PlaySessionId = null,
+            DeviceName = "Dev",
+            ClientName = "Client",
+        };
+        sm.Raise(m => m.PlaybackStart += null, startArgs);
+
+        var stats = sut.GetStatistics(0);
+        Assert.Equal(1, stats.ActiveCount);
+
         sut.Dispose();
     }
 }

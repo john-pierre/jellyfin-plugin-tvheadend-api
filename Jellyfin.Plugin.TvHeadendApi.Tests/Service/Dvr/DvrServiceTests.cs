@@ -728,6 +728,181 @@ public class DvrServiceTests
         Assert.Equal(7, defaults.Days.Count);
     }
 
+    [Theory]
+    [InlineData("recording", "InProgress")]
+    [InlineData("completed", "Completed")]
+    [InlineData("completedWarning", "Completed")]
+    [InlineData("completedError", "Error")]
+    [InlineData("missed", "Error")]
+    [InlineData("invalid", "Error")]
+    [InlineData("scheduled", "New")]
+    [InlineData(null, "New")]
+    [InlineData("", "New")]
+    public async Task GetTimersAsync_MapsRecordingStatus(string? schedStatus, string expectedStatus)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var schedField = schedStatus == null ? "null" : $"\"{schedStatus}\"";
+        var responseJson = $$"""
+                             {
+                               "entries": [
+                                 {
+                                   "uuid": "t1",
+                                   "channel": "ch-1",
+                                   "start": {{now}},
+                                   "stop": {{now + 3600}},
+                                   "enabled": true,
+                                   "fileremoved": 0,
+                                   "sched_status": {{schedField}}
+                                 }
+                               ]
+                             }
+                             """;
+
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, responseJson);
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        var result = (await sut.GetTimersAsync(CancellationToken.None)).ToList();
+
+        Assert.Single(result);
+        Assert.Equal(expectedStatus, result[0].Status.ToString());
+    }
+
+    [Fact]
+    public async Task UpdateTimerAsync_WithAllOptionalFields_IncludesStartStopPriorityChannelAndOverview()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, "{}");
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+        var start = new DateTime(2026, 5, 1, 20, 0, 0, DateTimeKind.Utc);
+        var stop = start.AddHours(1);
+
+        await sut.UpdateTimerAsync(new TimerInfo
+        {
+            Id = "timer-opts",
+            StartDate = start,
+            EndDate = stop,
+            Priority = 8,
+            ChannelId = "ch-opt",
+            Name = "Optional Name",
+            Overview = "Optional Overview",
+            PrePaddingSeconds = 0,
+            PostPaddingSeconds = 0
+        }, CancellationToken.None);
+
+        var body = handler.Requests[0].Body;
+        Assert.Contains("%22start%22%3A", body);
+        Assert.Contains("%22stop%22%3A", body);
+        Assert.Contains("%22pri%22%3A8", body);
+        Assert.Contains("%22channel%22%3A%22ch-opt%22", body);
+        Assert.Contains("%22disp_title%22%3A%22Optional+Name%22", body);
+        Assert.Contains("%22disp_extratext%22%3A%22Optional+Overview%22", body);
+    }
+
+    [Fact]
+    public async Task UpdateTimerAsync_WhenHttpNonSuccess_ThrowsInvalidOperationException()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.InternalServerError, "server error");
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.UpdateTimerAsync(new TimerInfo { Id = "timer-fail", PrePaddingSeconds = 0, PostPaddingSeconds = 0 }, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CreateTimerAsync_WhenResponseHasUuid_SetsInfoId()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, """{ "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }""");
+        handler.Enqueue(HttpStatusCode.OK, """{ "uuid": "created-timer-abc" }""");
+
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+        var info = new TimerInfo
+        {
+            ChannelId = "ch-1",
+            Name = "My Show",
+            StartDate = DateTime.UtcNow.AddMinutes(10),
+            EndDate = DateTime.UtcNow.AddMinutes(40)
+        };
+
+        await sut.CreateTimerAsync(info, CancellationToken.None);
+
+        Assert.Equal("created-timer-abc", info.Id);
+    }
+
+    [Fact]
+    public async Task CreateSeriesTimerAsync_WithRecordAnyChannel_SendsNullChannelInPayload()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, """{ "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }""");
+        handler.Enqueue(HttpStatusCode.OK, """{ "uuid": "any-ch-series" }""");
+
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+        var info = new SeriesTimerInfo
+        {
+            Name = "Any Channel Show",
+            RecordAnyChannel = true
+        };
+
+        await sut.CreateSeriesTimerAsync(info, CancellationToken.None);
+
+        Assert.Equal("any-ch-series", info.Id);
+        // channel=null is serialized as "channel":null in the JSON payload
+        Assert.Contains("%22channel%22%3Anull", handler.Requests[1].Body);
+    }
+
+    [Fact]
+    public async Task UpdateSeriesTimerAsync_WhenHttpNonSuccess_ThrowsInvalidOperationException()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.BadGateway, "gateway error");
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.UpdateSeriesTimerAsync(new SeriesTimerInfo { Id = "series-fail" }, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CreateTimerAsync_WhenResponseHasEntryProperty_SetsInfoId()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, """{ "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }""");
+        handler.Enqueue(HttpStatusCode.OK, """{ "entry": { "uuid": "nested-entry-id" } }""");
+
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+        var info = new TimerInfo
+        {
+            ChannelId = "ch-1",
+            Name = "Nested",
+            StartDate = DateTime.UtcNow.AddMinutes(10),
+            EndDate = DateTime.UtcNow.AddMinutes(40)
+        };
+
+        await sut.CreateTimerAsync(info, CancellationToken.None);
+
+        Assert.Equal("nested-entry-id", info.Id);
+    }
+
+    [Fact]
+    public async Task CreateSeriesTimerAsync_WhenResponseBodyIsInvalidJson_AssignsFallbackId()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, """{ "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }""");
+        handler.Enqueue(HttpStatusCode.OK, "not-json");
+
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+        var info = new SeriesTimerInfo
+        {
+            Name = "BadJson Series",
+            ChannelId = "ch-1"
+        };
+
+        await sut.CreateSeriesTimerAsync(info, CancellationToken.None);
+
+        Assert.False(string.IsNullOrWhiteSpace(info.Id));
+    }
+
     private static DvrService CreateSut(
         QueueHttpMessageHandler handler,
         out Mock<IUrlBuilder> urlBuilder,

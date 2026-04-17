@@ -506,6 +506,253 @@ public class DiagnosticServiceTests
             check.Status == "ERROR");
     }
 
+    [Fact]
+    public async Task DiagnoseAsync_WithEmptyAuthToken_AddsAuthTokenError()
+    {
+        var sut = CreateSut(out var apiClient, out _, out _);
+        var config = CreateConfig();
+        config.AuthToken = string.Empty;
+
+        apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
+        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
+
+        var result = await sut.DiagnoseAsync(CancellationToken.None);
+
+        Assert.Contains(result.Checks, check =>
+            check.Category == "Authentication" &&
+            check.Name == "Auth Token Format" &&
+            check.Status == "ERROR" &&
+            check.Message!.Contains("empty", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_WithOldApiVersion_AddsApiVersionWarning()
+    {
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
+        var config = CreateConfig();
+
+        apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
+        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
+            {
+                if (url.Contains("api/serverinfo", StringComparison.Ordinal))
+                    return Task.FromResult("""{ "sw_version": "4.2", "api_version": 10, "name": "tvh" }""");
+                return Task.FromResult(GetJsonForUrl(url));
+            });
+        streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ProfileReference>());
+
+        var result = await sut.DiagnoseAsync(CancellationToken.None);
+
+        Assert.Contains(result.Checks, check =>
+            check.Category == "Connection" &&
+            check.Name == "API Version" &&
+            check.Status == "WARNING");
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_WhenJellyfinAnalyzeDurationSet_AddsFFmpegInfoCheck()
+    {
+        var sut = CreateSut(out var apiClient, out var streamResolver, out var encodingReader);
+        var config = CreateConfig();
+
+        apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
+        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
+        streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ProfileReference>());
+        encodingReader
+            .Setup(x => x.ReadFfmpegSettings(It.IsAny<IServerConfigurationManager>(), It.IsAny<Microsoft.Extensions.Logging.ILogger>()))
+            .Returns((null, "5000000"));
+
+        var result = await sut.DiagnoseAsync(CancellationToken.None);
+
+        Assert.Contains(result.Checks, check =>
+            check.Category == "FFmpeg" &&
+            check.Name == "AnalyzeDuration (global)" &&
+            check.Status == "INFO");
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_WithVeryLowAnalyzeDuration_AddsLowDurationWarning()
+    {
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
+        var config = CreateConfig();
+        config.AnalyzeDurationMs = 20;
+
+        apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
+        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
+        streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ProfileReference>());
+
+        var result = await sut.DiagnoseAsync(CancellationToken.None);
+
+        Assert.Contains(result.Checks, check =>
+            check.Category == "Playback" &&
+            check.Name == "AnalyzeDuration" &&
+            check.Status == "WARNING" &&
+            check.Message!.Contains("very low", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_TranscodeProfile_WithBothCodecProfilesLinked_AddsOkCheck()
+    {
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
+        var config = CreateConfig();
+
+        apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
+        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
+        streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ProfileReference> { new("profile-1", "pass") });
+        streamResolver.Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "profile-1", "pass", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProfileDetails("profile-1", "pass", "profile-mpegts-transcode", "mpegts", "mpegts", "h264-codec", "aac-codec", new List<string>(), new List<string>(), true));
+
+        var result = await sut.DiagnoseAsync(CancellationToken.None);
+
+        Assert.Contains(result.Checks, check =>
+            check.Category == "Streaming" &&
+            check.Name == "Codec Profiles" &&
+            check.Status == "OK");
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_TranscodeProfile_WithMissingVideoCodec_AddsVideoCodecWarning()
+    {
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
+        var config = CreateConfig();
+
+        apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
+        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
+        streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ProfileReference> { new("profile-1", "pass") });
+        streamResolver.Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "profile-1", "pass", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProfileDetails("profile-1", "pass", "profile-mpegts-transcode", "mpegts", "mpegts", string.Empty, "aac-codec", new List<string>(), new List<string>(), true));
+
+        var result = await sut.DiagnoseAsync(CancellationToken.None);
+
+        Assert.Contains(result.Checks, check =>
+            check.Category == "Streaming" &&
+            check.Name == "Video Codec Link" &&
+            check.Status == "WARNING");
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_TranscodeProfile_WithEmptySrcCodecFilters_AddsInfoChecks()
+    {
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
+        var config = CreateConfig();
+
+        apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
+        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
+        streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ProfileReference> { new("profile-1", "pass") });
+        streamResolver.Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), "http://tvh", "/", "profile-1", "pass", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProfileDetails("profile-1", "pass", "profile-mpegts-transcode", "mpegts", "mpegts", "h264", "aac", new List<string>(), new List<string>(), true));
+
+        var result = await sut.DiagnoseAsync(CancellationToken.None);
+
+        Assert.Contains(result.Checks, check =>
+            check.Category == "Streaming" &&
+            check.Name == "Source Video Codecs" &&
+            check.Status == "INFO");
+        Assert.Contains(result.Checks, check =>
+            check.Category == "Streaming" &&
+            check.Name == "Source Audio Codecs" &&
+            check.Status == "INFO");
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_DvrProfile_WhenConfiguredAndExists_AddsOkCheck()
+    {
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
+        var config = CreateConfig();
+        config.RecordingProfile = "myprofile";
+
+        apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
+        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
+        streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ProfileReference>());
+        apiClient.Setup(x => x.PostFormAsync(
+                It.IsAny<HttpClient>(),
+                It.Is<string>(u => u.Contains("idnode/load", StringComparison.Ordinal)),
+                It.IsAny<IEnumerable<KeyValuePair<string, string>>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("{ \"entries\": [ { \"name\": \"myprofile\" } ] }"),
+            });
+
+        var result = await sut.DiagnoseAsync(CancellationToken.None);
+
+        Assert.Contains(result.Checks, check =>
+            check.Category == "Recording" &&
+            check.Name == "DVR Profile" &&
+            check.Status == "OK");
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_DvrProfile_WhenConfiguredButMissing_AddsWarning()
+    {
+        var sut = CreateSut(out var apiClient, out var streamResolver, out _);
+        var config = CreateConfig();
+        config.RecordingProfile = "missing-dvr-profile";
+
+        apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
+        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
+        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
+        streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ProfileReference>());
+        apiClient.Setup(x => x.PostFormAsync(
+                It.IsAny<HttpClient>(),
+                It.Is<string>(u => u.Contains("idnode/load", StringComparison.Ordinal)),
+                It.IsAny<IEnumerable<KeyValuePair<string, string>>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("{ \"entries\": [ { \"name\": \"other-profile\" } ] }"),
+            });
+
+        var result = await sut.DiagnoseAsync(CancellationToken.None);
+
+        Assert.Contains(result.Checks, check =>
+            check.Category == "Recording" &&
+            check.Name == "DVR Profile" &&
+            check.Status == "WARNING");
+    }
+
     private static string GetJsonForUrl(string url)
     {
         if (url.Contains("api/serverinfo", StringComparison.Ordinal))

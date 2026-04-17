@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -801,6 +802,386 @@ public class GuideServiceCoreTests
 
         Assert.Equal("tt7654321", program.ProviderIds["Imdb"]);
         Assert.Equal("12345", program.SeriesProviderIds["Tmdb"]);
+    }
+
+    [Fact]
+    public async Task GetChannelsAsync_WithBouquet_UsesBouquetAsChannelGroup()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+
+        var json = """
+                   {
+                     "entries": [
+                       { "uuid": "ch-1", "name": "BBC One", "number": 1000000, "enabled": true, "bouquet": "Freeview", "tags": ["tag-1"] }
+                     ],
+                     "total": 1
+                   }
+                   """;
+
+        // channel tag lookup uses a separate HTTP call; use a multi-response handler
+        var responses = new Queue<HttpResponseMessage>();
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[{"key":"tag-1","val":"Entertainment"}]}""") });
+
+        var handler = new QueueResponseHandler(responses);
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
+
+        Assert.Single(result);
+        Assert.Equal("Freeview", result[0].ChannelGroup);
+    }
+
+    [Fact]
+    public async Task GetChannelsAsync_WithTagsAndTagNames_ResolvesTagNamesFromDictionary()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+
+        var channelJson = """
+                          {
+                            "entries": [
+                              { "uuid": "ch-1", "name": "BBC Two", "number": 2000000, "enabled": true, "tags": ["tag-abc"] }
+                            ],
+                            "total": 1
+                          }
+                          """;
+        var tagJson = """{"entries":[{"key":"tag-abc","val":"Sports"}]}""";
+
+        var responses = new Queue<HttpResponseMessage>();
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(channelJson) });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(tagJson) });
+
+        var handler = new QueueResponseHandler(responses);
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
+
+        Assert.Single(result);
+        Assert.Contains("Sports", result[0].Tags!);
+        Assert.Equal("Sports", result[0].ChannelGroup);
+    }
+
+    [Fact]
+    public async Task GetChannelsAsync_WithUnknownTagId_KeepsRawTagId()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+
+        var channelJson = """
+                          {
+                            "entries": [
+                              { "uuid": "ch-1", "name": "ITV", "number": 3000000, "enabled": true, "tags": ["unknown-tag-99"] }
+                            ],
+                            "total": 1
+                          }
+                          """;
+        // No matching tag in tag response
+        var tagJson = """{"entries":[{"key":"tag-1","val":"News"}]}""";
+
+        var responses = new Queue<HttpResponseMessage>();
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(channelJson) });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(tagJson) });
+
+        var handler = new QueueResponseHandler(responses);
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
+
+        Assert.Single(result);
+        Assert.Contains("unknown-tag-99", result[0].Tags!);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithFirstAired_SetsOriginalAirDate()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+        var firstAiredTs = new DateTimeOffset(new DateTime(2020, 1, 15, 0, 0, 0, DateTimeKind.Utc)).ToUnixTimeSeconds();
+        var evStart = new DateTimeOffset(startUtc).ToUnixTimeSeconds();
+        var evStop = new DateTimeOffset(endUtc).ToUnixTimeSeconds();
+
+        var payload = $$"""
+                        {"entries":[{"eventId":42,"channelUuid":"ch-1","title":"Old Show","start":{{evStart}},"stop":{{evStop}},"first_aired":{{firstAiredTs}}}],"totalCount":1}
+                        """;
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.NotNull(program.OriginalAirDate);
+        Assert.Equal(2020, program.OriginalAirDate!.Value.Year);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithIsNewZero_SetsIsRepeat()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+        var evStart = new DateTimeOffset(startUtc).ToUnixTimeSeconds();
+        var evStop = new DateTimeOffset(endUtc).ToUnixTimeSeconds();
+
+        var payload = $$"""
+                        {"entries":[{"eventId":43,"channelUuid":"ch-1","title":"Repeat Show","start":{{evStart}},"stop":{{evStop}},"new":0}],"totalCount":1}
+                        """;
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.True(program.IsRepeat);
+    }
+
+    [Theory]
+    [InlineData(1, "Mono")]
+    [InlineData(2, "Stereo")]
+    [InlineData(3, "Stereo")]
+    [InlineData(4, "DolbyDigital")]
+    [InlineData(0, null)]
+    public async Task GetProgramsAsync_MapsProgramAudio(int stereoMode, string? expectedAudio)
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            Entries = new object[]
+            {
+                new
+                {
+                    EventId = 50 + stereoMode,
+                    ChannelUuid = "ch-1",
+                    Title = "Audio Test",
+                    Start = new DateTimeOffset(startUtc).ToUnixTimeSeconds(),
+                    Stop = new DateTimeOffset(endUtc).ToUnixTimeSeconds(),
+                    Stereo = stereoMode
+                }
+            },
+            TotalCount = 1
+        });
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.Equal(expectedAudio, program.Audio?.ToString());
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithCopyrightYear_SetsProductionYear()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+        var evStart = new DateTimeOffset(startUtc).ToUnixTimeSeconds();
+        var evStop = new DateTimeOffset(endUtc).ToUnixTimeSeconds();
+
+        var payload = $$"""
+                        {"entries":[{"eventId":99,"channelUuid":"ch-1","title":"Classic Film","start":{{evStart}},"stop":{{evStop}},"copyright_year":1984}],"totalCount":1}
+                        """;
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.Equal(1984, program.ProductionYear);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithAbsoluteEpisodeUri_SetsHomePageUrl()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            Entries = new object[]
+            {
+                new
+                {
+                    EventId = 77,
+                    ChannelUuid = "ch-1",
+                    Title = "Web Show",
+                    Start = new DateTimeOffset(startUtc).ToUnixTimeSeconds(),
+                    Stop = new DateTimeOffset(endUtc).ToUnixTimeSeconds(),
+                    EpisodeUri = "https://example.com/show/123"
+                }
+            },
+            TotalCount = 1
+        });
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.Equal("https://example.com/show/123", program.HomePageUrl);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_MetadataEnrichment_TvdbAndTmdbMovieProviderIds()
+    {
+        var config = new PluginConfiguration { EnableJellyfinMetadataEnrichment = true };
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            Entries = new object[]
+            {
+                new
+                {
+                    EventId = 88,
+                    ChannelUuid = "ch-1",
+                    Title = "TVDb Movie",
+                    Start = new DateTimeOffset(startUtc).ToUnixTimeSeconds(),
+                    Stop = new DateTimeOffset(endUtc).ToUnixTimeSeconds(),
+                    EpisodeUri = "tvdb://series/456",
+                    SerieslinkUri = "tmdb://movie/789"
+                }
+            },
+            TotalCount = 1
+        });
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.Equal("456", program.ProviderIds["Tvdb"]);
+        Assert.Equal("789", program.SeriesProviderIds["Tmdb"]);
+    }
+
+    [Fact]
+    public async Task GetChannelTagsAsync_WithNonSuccessResponse_ReturnsEmpty()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+
+        // channel grid succeeds but tag lookup fails
+        var responses = new Queue<HttpResponseMessage>();
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[{"uuid":"ch-1","name":"BBC","number":1000000,"enabled":true}],"total":1}""") });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("unavailable") });
+
+        var handler = new QueueResponseHandler(responses);
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
+
+        // Channel should still be returned, tags will be empty
+        Assert.Single(result);
+        Assert.Empty(result[0].Tags!);
+    }
+
+    [Fact]
+    public async Task GetContentTypesAsync_WithBrokenJson_ReturnsEmpty()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("not-json-at-all") });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/content_type");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
+        var result = await sut.GetContentTypesAsync(CancellationToken.None);
+
+        Assert.Empty(result);
+    }
+
+    private sealed class QueueResponseHandler : HttpMessageHandler
+    {
+        private readonly Queue<HttpResponseMessage> _queue;
+
+        public QueueResponseHandler(Queue<HttpResponseMessage> queue)
+        {
+            _queue = queue;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(_queue.Count > 0 ? _queue.Dequeue() : new HttpResponseMessage(HttpStatusCode.InternalServerError));
     }
 
     private sealed class FixedResponseHandler : HttpMessageHandler
