@@ -222,11 +222,23 @@ This document tracks the structured refactor and quality improvement of the Jell
 
 ### Milestone 19 — Test Coverage 99% (Medium-Term)
 
-- [ ] Generate coverage report and identify uncovered lines
-- [ ] Add tests for all uncovered branches in OrchestratorService
-- [ ] Add tests for error/edge-case paths in MediaSourceService
-- [ ] Add tests for ApiClient edge cases
-- [ ] Add tests for all remaining model/configuration paths
+- [x] Add `InternalsVisibleTo` attribute to main project for test access to internal types
+- [x] Generate coverage report and identify uncovered lines — baseline 78.4% line / 58.6% branch (308 tests)
+- [x] Add IdNodeValueHelper tests — 28 tests covering all ReadXxxOrParam methods, type coercions, param fallback, ToJsonArray
+- [x] Add extended model tests — 18 tests for DvrConfigGridEntry, DvrConfigListEntry, UserListEntry, IdNodeEntry, ProfileSnapshot, ResolvedProfile
+- [x] Add OrchestratorService CreateTimer/CreateSeriesTimer tests — 9 tests covering ISupportsNewTimerIds methods, constructor null guards
+- [x] Add PluginController coverage tests — 15 tests for GetPluginInfo, GetStatistics, ClearStatistics, GetStatus, GetConnections, GetInputs, GetSubscriptions, constructor null guards
+- [x] Add GridFetcher tests — 5 tests covering probe-only, full-fetch, URL separator, HTTP error
+- [x] Add DefaultProfileService extended tests — 14 tests covering codec creation, streaming profile retry, linking, error paths
+- [x] Add TokenService extended tests — 16 tests covering GenerateValidTokenAsync, GenerateAndStoreTokenAsync, user resolution, error paths
+- [x] Verify build: 0 warnings, 0 errors
+- [x] Verify tests: 417 passing (308 existing + 109 new) — 88.3% line / 67.3% branch coverage
+- [ ] Add tests for remaining ProfileResolver/ProfileContainerResolver branches
+- [ ] Add tests for DvrService.SingleTimer and SeriesTimer uncovered paths
+- [ ] Add tests for DiagnosticService.DiagnoseAsync remaining branches
+- [ ] Add tests for MediaSourceService cache and stream paths
+- [ ] Add tests for StatisticsService remaining branches
+- [ ] Add tests for GuideService remaining branches
 - [ ] Raise CI coverage threshold to 99%
 - [ ] Verify tests passing with ≥99% line coverage
 

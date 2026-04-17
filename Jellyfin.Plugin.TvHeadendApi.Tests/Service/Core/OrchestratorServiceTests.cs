@@ -356,4 +356,105 @@ public class OrchestratorServiceTests
 
         Assert.Equal("uuid-123", result);
     }
+
+    [Fact]
+    public async Task CreateTimer_WithExistingId_ReturnsThatId()
+    {
+        var info = new TimerInfo { Id = "existing-id" };
+        var guide = new Mock<IGuideService>();
+        var dvr = new Mock<IDvrService>();
+        var source = new Mock<IMediaSourceService>();
+        var lifecycle = new Mock<ILifecycleService>();
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
+
+        var result = await sut.CreateTimer(info, CancellationToken.None);
+
+        Assert.Equal("existing-id", result);
+        dvr.Verify(x => x.CreateTimerAsync(info, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTimer_WithNullId_ReturnsGeneratedGuid()
+    {
+        var info = new TimerInfo();
+        var guide = new Mock<IGuideService>();
+        var dvr = new Mock<IDvrService>();
+        var source = new Mock<IMediaSourceService>();
+        var lifecycle = new Mock<ILifecycleService>();
+        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
+
+        var result = await sut.CreateTimer(info, CancellationToken.None);
+
+        Assert.NotEmpty(result);
+        Assert.Equal(32, result.Length); // Guid.ToString("N") is 32 chars
+    }
+
+    [Fact]
+    public async Task CreateTimer_WithWhitespaceId_ReturnsGeneratedGuid()
+    {
+        var info = new TimerInfo { Id = "   " };
+        var sut = new OrchestratorService(
+            new Mock<IGuideService>().Object, new Mock<IDvrService>().Object,
+            new Mock<IMediaSourceService>().Object, new Mock<ILifecycleService>().Object,
+            NullLogger<OrchestratorService>.Instance);
+
+        var result = await sut.CreateTimer(info, CancellationToken.None);
+
+        Assert.Equal(32, result.Length);
+    }
+
+    [Fact]
+    public async Task CreateSeriesTimer_WithExistingId_ReturnsThatId()
+    {
+        var info = new SeriesTimerInfo { Id = "series-id" };
+        var dvr = new Mock<IDvrService>();
+        var sut = new OrchestratorService(
+            new Mock<IGuideService>().Object, dvr.Object,
+            new Mock<IMediaSourceService>().Object, new Mock<ILifecycleService>().Object,
+            NullLogger<OrchestratorService>.Instance);
+
+        var result = await sut.CreateSeriesTimer(info, CancellationToken.None);
+
+        Assert.Equal("series-id", result);
+        dvr.Verify(x => x.CreateSeriesTimerAsync(info, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateSeriesTimer_WithNullId_ReturnsGeneratedGuid()
+    {
+        var info = new SeriesTimerInfo();
+        var sut = new OrchestratorService(
+            new Mock<IGuideService>().Object, new Mock<IDvrService>().Object,
+            new Mock<IMediaSourceService>().Object, new Mock<ILifecycleService>().Object,
+            NullLogger<OrchestratorService>.Instance);
+
+        var result = await sut.CreateSeriesTimer(info, CancellationToken.None);
+
+        Assert.NotEmpty(result);
+        Assert.Equal(32, result.Length);
+    }
+
+    [Fact]
+    public void Constructor_WithNullMediaSourceService_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new OrchestratorService(
+            new Mock<IGuideService>().Object, new Mock<IDvrService>().Object,
+            null!, new Mock<ILifecycleService>().Object, NullLogger<OrchestratorService>.Instance));
+    }
+
+    [Fact]
+    public void Constructor_WithNullLifecycleService_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new OrchestratorService(
+            new Mock<IGuideService>().Object, new Mock<IDvrService>().Object,
+            new Mock<IMediaSourceService>().Object, null!, NullLogger<OrchestratorService>.Instance));
+    }
+
+    [Fact]
+    public void Constructor_WithNullLogger_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new OrchestratorService(
+            new Mock<IGuideService>().Object, new Mock<IDvrService>().Object,
+            new Mock<IMediaSourceService>().Object, new Mock<ILifecycleService>().Object, null!));
+    }
 }
