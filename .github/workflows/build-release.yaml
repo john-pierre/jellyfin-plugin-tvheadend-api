@@ -218,3 +218,71 @@ jobs:
           branch: main
           commit_message: "build(release): update manifest for ${{ steps.release-please.outputs.tag_name }} [skip ci]"
           file_pattern: manifest.json
+
+  integration-tests:
+    runs-on: ubuntu-24.04
+    needs: build-and-release
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Start TVHeadend & Jellyfin
+        run: docker compose -f docker-compose.test.yml up -d --build --wait
+
+      - name: Wait for TVHeadend Healthy
+        run: |
+          echo "Waiting for TVHeadend to become healthy..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:19981/api/serverinfo > /dev/null 2>&1; then
+              echo "TVHeadend is ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "TVHeadend did not become healthy in time."
+          docker compose -f docker-compose.test.yml logs
+          exit 1
+
+      - name: Restore Dependencies
+        run: dotnet restore Jellyfin.Plugin.TvHeadendApi.sln
+
+      - name: Build
+        run: dotnet build Jellyfin.Plugin.TvHeadendApi.sln --configuration Release --no-restore
+
+      - name: Run Integration Tests
+        env:
+          TVHEADEND_URL: http://localhost:19981
+        run: >
+          dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=integration-results.trx"
+          --results-directory TestResults
+          --filter "Category=LiveIntegration"
+
+      - name: Upload Integration Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: 'TestResults/'
+          if-no-files-found: ignore
+
+      - name: Publish Integration Test Summary
+        if: always() && github.event_name == 'pull_request'
+        uses: dorny/test-reporter@v1
+        with:
+          name: Integration Tests
+          path: 'TestResults/integration-results.trx'
+          reporter: dotnet-trx
+          fail-on-error: true
+
+      - name: Tear Down Services
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+

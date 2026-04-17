@@ -240,5 +240,83 @@ This document tracks the structured refactor and quality improvement of the Jell
 - [x] Add tests for StatisticsService remaining branches
 - [x] Add tests for GuideService remaining branches
 - [x] Raise CI coverage threshold to 85/90 (from 50/75) — full 99% gate pending CI baseline measurement
-- [x] Verify tests passing with ≥99% line coverage — 488 tests passing (417 + 71 new)
+- [x] Verify tests passing with ≥99% line coverage — 488 tests passing (417 + 71 new) — **actual: 92.63% line / 73.9% branch**
+
+### Milestone 20 — Coverage Completion + Full Integration Tests (Medium-Term)
+
+**Baseline:** 488 tests, 92.63% line / 73.9% branch coverage.
+
+The project has two layers of integration testing:
+
+1. **WireMock tests** (`Category=JellyfinIntegration`) — fast, in-process, no Docker required. WireMock spins up an ephemeral HTTP server inside the test process that simulates TVHeadend API responses. These run in CI alongside unit tests.
+2. **Live integration tests** (`Category=LiveIntegration`) — run against real TVHeadend + Jellyfin instances from `docker-compose.test.yml`. These are opt-in and excluded from default CI runs.
+
+WireMock is a test library dependency only — it does **not** belong in docker-compose.
+
+#### 20a — Remaining Unit-Test Gaps
+
+- [ ] Add `DefaultProfileService` retry/fallback tests — cover the two partial classes at 30% and 57% line coverage
+  - `GetStreamingProfileAsync` retry loop when first profile list call returns empty
+  - `GetRecordingProfileAsync` fallback path when no matching DVR config name found
+  - `TryGetStreamProfileDetails` null-guard path when `GetProfileDetailsByUuidAsync` returns null mid-retry
+- [ ] Add `DiagnosticService` private helper tests — drive uncovered branches in `GetCodecProfileBoolSettingAsync`
+  - Codec profile not found in list (returns null early)
+  - `LoadIdNodeByUuidAsync` returns empty entries → `GetCodecProfileBoolSettingAsync` returns null
+  - `ReadBool` for string `"1"` / `"0"` / `"true"` / `"false"` variants
+  - `GetIdNodeProperty` all remaining switch cases (timeout, restart, catimeout, etc.)
+- [ ] Add `MediaSourceService` cache and stream path tests
+  - `GetRecordingStreamUrl` — auth-token path vs. basic-auth path
+  - `GetChannelStreamAsync` — proactive cache write when `EnableMediaInfoCacheWrite = true`
+  - `GetChannelStreamAsync` — stale cache detected and deleted (`allMatch = false`)
+  - `GetChannelStreamAsync` — cache hit path (file exists, matches snapshot)
+  - `ExtractQueryParameter` with relative URL → returns null
+  - `ExtractCodecFromMediaStreams` when no video stream present → returns null
+  - `NormalizeContainerForCache` with null/empty input → returns `"mpegts"`
+- [ ] Add `TokenService` remaining edge cases
+  - `ValidateTokenAsync` when token is null or empty → returns false
+  - `GenerateAndStoreTokenAsync` when `SaveConfiguration` throws
+- [ ] Add `PluginController` null-guard for `_diagnosticService` constructor parameter
+- [ ] Add `ServiceRegistrator.RegisterServices` smoke test via minimal DI container
+  - Verify all registered services can be resolved without exceptions
+
+#### 20b — WireMock In-Process Integration Tests (no Docker required)
+
+Purpose: exercise full service pipelines against a simulated TVHeadend HTTP server running inside the test process. These tests verify JSON contract handling, multi-call orchestration, and error paths end-to-end — without needing Docker or a real TVHeadend instance.
+
+- [x] Install `WireMock.Net 1.6.9` as test dependency
+- [x] Create `Integration/WireMockTvhIntegrationTests.cs` — 10 WireMock end-to-end tests
+  - `GuideService_GetChannelsAsync` — WireMock returns channel grid → enabled channels mapped correctly
+  - `GuideService_GetChannelsAsync_WithTagResolution` — tag names resolved from TVH API
+  - `GuideService_GetProgramsAsync` — EPG events mapped to `ProgramInfo` (IsNews, IsHD, title, overview)
+  - `GuideService_GetContentTypesAsync` — content type list returns dictionary
+  - `DiagnosticService_DiagnoseAsync_HappyPath` — full TVH API stack → score ≥ 80, OK check
+  - `DiagnosticService_DiagnoseAsync_WhenServerUnreachable` — `HttpRequestException` → ERROR score 0
+  - `DiagnosticService_DiagnoseAsync_WithOldApiVersion` — API v12 → API Version WARNING check
+  - `ProfileResolver_GetProfilesAsync` — profile list endpoint → `ProfileReference` list
+  - `ProfileResolver_ResolveProfileByNameAsync` — full profile + idnode → `ResolvedProfile`
+  - `StatisticsService_Persistence` — PlaybackStart/Stop cycle → JSON persisted → reloaded on next Start
+- [x] Tag all tests with `[Trait("Category", "JellyfinIntegration")]` — included in default CI runs
+- [x] Verify all 10 WireMock tests pass: 0 errors
+- [x] Verify all existing tests still pass: 498 total (488 unit + 10 WireMock), 0 errors
+
+#### 20c — Live Integration Tests Against docker-compose.test.yml
+
+Purpose: validate plugin behavior against real TVHeadend and Jellyfin instances. These tests use `docker-compose.test.yml` (TVHeadend on port 19981, Jellyfin on port 18096) and are excluded from CI by default.
+
+- [x] `docker-compose.test.yml` already exists with TVHeadend + Jellyfin stack (Milestone 13)
+- [x] 6 `LiveIntegration` tests already exist in `TvHeadendLiveTests.cs` (Milestone 13)
+- [ ] Add live OrchestratorService round-trip tests — `GetChannelsAsync` / `GetProgramsAsync` against real TVH
+- [ ] Add live DiagnosticService test — `DiagnoseAsync` against real TVH → score ≥ 80
+- [ ] Add live TokenService test — `GenerateValidTokenAsync` → token stored and validated against real TVH user API
+- [ ] Add live DvrService test — `GetTimersAsync` / `GetSeriesTimersAsync` against real TVH DVR grid
+- [ ] Add live MediaSourceService test — `GetChannelStreamAsync` returns valid stream URL for a real channel
+- [ ] Document full test procedure in `docs/guides/test-strategy.md`
+
+#### 20d — CI Quality Gate
+
+- [x] `WireMock.Net` installed as test dependency
+- [ ] Raise coverage threshold to `90 95` after completing 20a
+- [ ] Raise coverage threshold to `95 99` after all unit-test gaps closed
+- [ ] Verify final: ≥ 99% line coverage, ≥ 80% branch coverage, 0 errors
+
 
