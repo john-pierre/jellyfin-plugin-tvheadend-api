@@ -28,7 +28,11 @@ internal sealed class StatusService : IStatusService
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Gets the current server activity status including connection and subscription counts.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The activity status summary, or <c>null</c> if the configuration is unavailable.</returns>
     public async Task<ActivityStatus?> GetActivityStatusAsync(CancellationToken cancellationToken)
     {
         var config = _apiClient.GetCurrentConfiguration();
@@ -44,7 +48,11 @@ internal sealed class StatusService : IStatusService
         return JsonSerializer.Deserialize<ActivityStatus>(json, JsonDefaults.Api);
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Gets the list of active client connections from TVHeadend.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Active connections.</returns>
     public async Task<IReadOnlyList<ConnectionEntry>> GetConnectionsAsync(CancellationToken cancellationToken)
     {
         var config = _apiClient.GetCurrentConfiguration();

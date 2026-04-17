@@ -489,7 +489,11 @@ internal sealed class MediaSourceService : IMediaSourceService
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Builds a streaming URL for a DVR recording file using the configured auth token.
+    /// </summary>
+    /// <param name="recordingId">TVHeadend DVR entry UUID.</param>
+    /// <returns>The absolute HTTP URL for the recording file, or <c>null</c> if the configuration is unavailable.</returns>
     public string? GetRecordingStreamUrl(string recordingId)
     {
         var config = _tvheadendApiClient.GetCurrentConfiguration();

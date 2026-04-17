@@ -19,7 +19,9 @@ internal sealed class CachePathProvider
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
     }
 
-    /// <summary>Gets the current plugin cache path, or <c>null</c> if unavailable.</summary>
+    /// <summary>
+    /// Gets the current plugin cache path, or <c>null</c> if unavailable.
+    /// </summary>
     public string? Path => _resolver();
 }
 
@@ -39,7 +41,9 @@ internal sealed class DataFolderPathProvider
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
     }
 
-    /// <summary>Gets the current plugin data folder path, or <c>null</c> if unavailable.</summary>
+    /// <summary>
+    /// Gets the current plugin data folder path, or <c>null</c> if unavailable.
+    /// </summary>
     public string? Path => _resolver();
 }
 
@@ -59,7 +63,9 @@ internal sealed class PluginConfigurationProvider
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
     }
 
-    /// <summary>Gets the current plugin configuration, or <c>null</c> if unavailable.</summary>
+    /// <summary>
+    /// Gets the current plugin configuration, or <c>null</c> if unavailable.
+    /// </summary>
     public PluginConfiguration? Configuration => _resolver();
 }
 

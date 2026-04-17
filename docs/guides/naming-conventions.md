@@ -13,6 +13,15 @@ This document defines the naming standards for the Jellyfin TVHeadend API Plugin
   - ✓ `Property/` (not `Properties/`)
 - **Rationale**: Singular names are the standard convention for directory structure. They represent the category/domain (everything in `Model/` is model-related), not a collection of items.
 
+### Markdown File Names
+- **The root `README.md` is the only README in UPPERCASE.**
+- All other markdown documentation files use **lowercase with hyphens** (e.g., `readme.md`, `architecture-overview.md`).
+- **Use `-` (hyphen) instead of `_` (underscore)** in all file names where a separator is needed.
+  - ✓ `architecture-overview.md` (not `architecture_overview.md`)
+  - ✓ `test-strategy.md` (not `test_strategy.md`)
+  - ✓ `docker-compose.yaml` (not `docker_compose.yaml`)
+- **Rationale**: Hyphens are URL-friendly, easier to read, and the de-facto standard in open-source documentation.
+
 ## File and Class Naming
 
 ### Core Rule
@@ -163,7 +172,7 @@ When adding or moving files and folders:
 ## Related Documentation
 
 - See `AGENTS.md` for agent workflow and repository context
-- See `docs/architecture-overview.md` for architectural layers
-- See `docs/module-responsibilities.md` for module boundaries
+- See `docs/architecture/architecture-overview.md` for architectural layers
+- See `docs/architecture/module-responsibilities.md` for module boundaries
 - See `README.md` for project overview
 

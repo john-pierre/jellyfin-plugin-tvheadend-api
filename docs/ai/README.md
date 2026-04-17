@@ -25,7 +25,7 @@ Use this index when onboarding a new agent session.
 
 ## Naming Rules (Required)
 
-Before creating or renaming files, follow `docs/NAMING_CONVENTIONS.md`.
+Before creating or renaming files, follow `docs/guides/naming-conventions.md`.
 
 Short version:
 

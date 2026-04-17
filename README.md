@@ -369,11 +369,21 @@ Primary architecture files:
 
 Architecture documentation:
 
-- `docs/architecture-overview.md` — layers, dependency direction, module map
-- `docs/architecture-decisions.md` — ADR-style records
-- `docs/module-responsibilities.md` — per-module ownership and boundaries
-- `docs/test-strategy.md` — test types, naming, coverage expectations
+- `docs/architecture/architecture-overview.md` — layers, dependency direction, module map
+- `docs/architecture/architecture-decisions.md` — ADR-style records
+- `docs/architecture/module-responsibilities.md` — per-module ownership and boundaries
+- `docs/guides/test-strategy.md` — test types, naming, coverage expectations
 - `docs/ROADMAP.md` — milestones and progress tracking
+
+## 💖 Support This Plugin
+
+If this plugin is useful to you, consider supporting its development:
+
+- [GitHub Sponsors](https://github.com/sponsors/john-pierre)
+- [Ko-fi](https://ko-fi.com/johnpierre)
+- [PayPal](https://www.paypal.com/donate/?hosted_button_id=YOUR_BUTTON_ID)
+
+Every contribution helps keep this project maintained and improved. Thank you!
 
 ## Developer Notes
 

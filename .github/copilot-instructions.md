@@ -6,12 +6,12 @@ Use this file together with `AGENTS.md`.
 
 | Task type | Start here |
 |---|---|
-| Architecture questions | `docs/architecture-overview.md`, `docs/architecture-decisions.md` |
-| Module boundary questions | `docs/module-responsibilities.md` |
-| Naming/structure questions | `docs/NAMING_CONVENTIONS.md` |
-| Testing questions | `docs/test-strategy.md` |
-| Technical debt / assessment | `docs/assessment.md` |
-| Logging / metrics / tracing | `docs/observability.md` |
+| Architecture questions | `docs/architecture/architecture-overview.md`, `docs/architecture/architecture-decisions.md` |
+| Module boundary questions | `docs/architecture/module-responsibilities.md` |
+| Naming/structure questions | `docs/guides/naming-conventions.md` |
+| Testing questions | `docs/guides/test-strategy.md` |
+| Technical debt / assessment | `docs/ROADMAP.md` |
+| Logging / metrics / tracing | `docs/guides/observability.md` |
 | Agent workflow | `AGENTS.md`, `docs/ai/INSTRUCTIONS.md` |
 
 ## Focus Areas
@@ -37,14 +37,14 @@ Use this file together with `AGENTS.md`.
 - Keep changes small and scoped.
 - Add comments only where logic is non-obvious.
 - Update docs if user-facing behavior, script output, or workflow changes.
-- Every meaningful change must include tests (see `docs/test-strategy.md`).
-- Architecture changes require updating `docs/architecture-overview.md` or `docs/architecture-decisions.md`.
+- Every meaningful change must include tests (see `docs/guides/test-strategy.md`).
+- Architecture changes require updating `docs/architecture/architecture-overview.md` or `docs/architecture/architecture-decisions.md`.
 
 ## When To Add a New Service vs Extend an Existing One
 
 - Add a new service when the concern is a distinct domain (e.g., a new TVHeadend API area).
 - Extend an existing service when adding a method within the same domain boundary.
-- Check `docs/module-responsibilities.md` before deciding.
+- Check `docs/architecture/module-responsibilities.md` before deciding.
 
 ## Validation Expectations
 

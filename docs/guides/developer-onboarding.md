@@ -159,15 +159,14 @@ A single-file HTML page embedded as a resource. Contains:
 
 | Document | Purpose |
 |---|---|
-| `docs/architecture-overview.md` | Layers, dependency direction, module map |
-| `docs/architecture-decisions.md` | ADR-style design decision records |
-| `docs/module-responsibilities.md` | Per-module ownership and boundary rules |
-| `docs/test-strategy.md` | Test types, naming, coverage policy |
-| `docs/NAMING_CONVENTIONS.md` | File/folder/type naming rules |
-| `docs/observability.md` | Logging categories, metrics, troubleshooting |
-| `docs/client-compatibility.md` | Client testing guidance and matrix |
+| `docs/architecture/architecture-overview.md` | Layers, dependency direction, module map |
+| `docs/architecture/architecture-decisions.md` | ADR-style design decision records |
+| `docs/architecture/module-responsibilities.md` | Per-module ownership and boundary rules |
+| `docs/guides/test-strategy.md` | Test types, naming, coverage policy |
+| `docs/guides/naming-conventions.md` | File/folder/type naming rules |
+| `docs/guides/observability.md` | Logging categories, metrics, troubleshooting |
+| `docs/guides/client-compatibility.md` | Client testing guidance and matrix |
 | `docs/ROADMAP.md` | Milestone tracking and future plans |
-| `docs/assessment.md` | Initial repository assessment and tech debt |
 | `AGENTS.md` | AI agent context and ground rules |
 
 ## Common Tasks Cheat Sheet

@@ -50,7 +50,9 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         _dataFolderPathProvider = dataFolderPathProvider ?? throw new ArgumentNullException(nameof(dataFolderPathProvider));
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Gets all recorded viewing sessions without any date filter applied.
+    /// </summary>
     public IReadOnlyList<ViewingSession> AllSessions
     {
         get
@@ -62,7 +64,11 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Returns viewing sessions filtered by the specified number of days, with aggregated statistics.
+    /// </summary>
+    /// <param name="days">Number of days to look back. 0 returns all sessions.</param>
+    /// <returns>Aggregated statistics result containing filtered sessions.</returns>
     public ViewingStatisticsResult GetStatistics(int days)
     {
         lock (_lock)
@@ -82,7 +88,9 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Clears all recorded viewing statistics and persists the empty state to disk.
+    /// </summary>
     public void ClearStatistics()
     {
         lock (_lock)
@@ -95,7 +103,11 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         _logger.LogInformation("Viewing statistics cleared.");
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Starts the statistics service by loading persisted sessions and subscribing to playback events.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A completed task once startup is finished.</returns>
     public Task StartAsync(CancellationToken cancellationToken)
     {
         LoadFromDisk();
@@ -112,7 +124,11 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Stops the statistics service by unsubscribing from playback events and persisting active sessions.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A completed task once shutdown is finished.</returns>
     public Task StopAsync(CancellationToken cancellationToken)
     {
         _sessionManager.PlaybackStart -= OnPlaybackStart;
@@ -136,7 +152,9 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Disposes the periodic save timer used for background persistence.
+    /// </summary>
     public void Dispose()
     {
         _saveTimer?.Dispose();

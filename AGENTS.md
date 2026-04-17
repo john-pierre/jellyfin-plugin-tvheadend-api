@@ -36,15 +36,15 @@ Maintain and improve the Jellyfin TVHeadend API plugin while preserving:
 
 ## Architecture Documentation
 
-- `docs/architecture-overview.md` — layers, dependency direction, module map.
-- `docs/architecture-decisions.md` — ADR-style records for significant design decisions.
-- `docs/module-responsibilities.md` — per-module ownership and boundary rules.
-- `docs/test-strategy.md` — test types, naming, coverage expectations.
-- `docs/assessment.md` — repository assessment and technical debt inventory.
+- `docs/architecture/architecture-overview.md` — layers, dependency direction, module map.
+- `docs/architecture/architecture-decisions.md` — ADR-style records for significant design decisions.
+- `docs/architecture/module-responsibilities.md` — per-module ownership and boundary rules.
+- `docs/guides/test-strategy.md` — test types, naming, coverage expectations.
+- `docs/ROADMAP.md` — milestones, progress tracking, and technical debt inventory.
 
 ## Naming And Layout Rules
 
-- Follow `docs/NAMING_CONVENTIONS.md` as the **authoritative** source of truth for all naming and structure conventions.
+- Follow `docs/guides/naming-conventions.md` as the **authoritative** source of truth for all naming and structure conventions.
 - Keep TVHeadend helper adapters in `Jellyfin.Plugin.TvHeadendApi/Service/Helper/`.
 - Do not add new files back into a generic `Utility/` folder.
 - Keep C# file name == primary type name (e.g., `TokenValidator.cs` contains `TokenValidator` class).
@@ -70,4 +70,3 @@ Maintain and improve the Jellyfin TVHeadend API plugin while preserving:
 - Any changed behavior is documented in `README.md` or `CHANGELOG.md`.
 - Script behavior and output expectations are still coherent.
 - No secrets or local machine data added.
-

@@ -15,7 +15,7 @@ This document tracks the structured refactor and quality improvement of the Jell
 - [x] Documentation inventory
 - [x] Pipeline inventory
 - [x] Risk list and quick wins identified
-- [x] `docs/assessment.md` created
+- [x] `docs/assessment.md` created (consolidated into ROADMAP.md in Milestone 18)
 
 ## Milestone 1 — Standards and Governance
 
@@ -204,4 +204,28 @@ This document tracks the structured refactor and quality improvement of the Jell
 - [ ] Define plugin API versioning strategy (semver alignment with Jellyfin SDK)
 - [ ] Add version compatibility matrix documentation
 - [ ] Implement version negotiation or graceful degradation where applicable
+
+### Milestone 18 — Naming Conventions and Docs Restructure (Short-Term)
+
+- [x] Update `NAMING_CONVENTIONS.md` — readmes lowercase except root, hyphens over underscores in filenames
+- [x] Consolidate `assessment.md` into `ROADMAP.md` — removed redundant file
+- [x] Update all cross-references (AGENTS.md, copilot-instructions.md) to remove assessment.md links
+- [x] Replace all `/// <inheritdoc />` with explicit XML doc summaries (10 replacements across 4 files)
+- [x] Convert all single-line `<summary>` tags to multi-line format with `</summary>` on its own line (13 files)
+- [x] Add `<param>` and `<returns>` documentation to all methods that replaced `<inheritdoc />`
+- [x] Add donation/support links to ConfigPage.html and README.md (GitHub Sponsors, Ko-fi, PayPal)
+- [ ] Rename docs files to use hyphens over underscores where applicable
+- [ ] Group docs under subfolders (architecture/, guides/)
+- [x] Verify build: 0 warnings, 0 errors
+- [ ] Verify tests: 308 passing
+
+### Milestone 19 — Test Coverage 99% (Medium-Term)
+
+- [ ] Generate coverage report and identify uncovered lines
+- [ ] Add tests for all uncovered branches in OrchestratorService
+- [ ] Add tests for error/edge-case paths in MediaSourceService
+- [ ] Add tests for ApiClient edge cases
+- [ ] Add tests for all remaining model/configuration paths
+- [ ] Raise CI coverage threshold to 99%
+- [ ] Verify tests passing with ≥99% line coverage
 

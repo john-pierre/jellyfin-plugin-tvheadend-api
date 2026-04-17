@@ -28,7 +28,11 @@ internal sealed class SubscriptionService : ISubscriptionService
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Gets the list of active streaming subscriptions from TVHeadend.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Active subscription entries.</returns>
     public async Task<IReadOnlyList<SubscriptionEntry>> GetActiveSubscriptionsAsync(CancellationToken cancellationToken)
     {
         var config = _apiClient.GetCurrentConfiguration();

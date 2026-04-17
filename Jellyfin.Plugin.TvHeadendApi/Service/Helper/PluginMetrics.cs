@@ -9,7 +9,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 /// </summary>
 /// <remarks>
 /// Metrics can be consumed by any .NET metrics listener (e.g., dotnet-counters, OpenTelemetry, Prometheus).
-/// See <c>docs/observability.md</c> for usage instructions.
+/// See <c>docs/guides/observability.md</c> for usage instructions.
 /// </remarks>
 internal static class PluginMetrics
 {
