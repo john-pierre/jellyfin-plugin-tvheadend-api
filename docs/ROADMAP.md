@@ -214,10 +214,11 @@ This document tracks the structured refactor and quality improvement of the Jell
 - [x] Convert all single-line `<summary>` tags to multi-line format with `</summary>` on its own line (13 files)
 - [x] Add `<param>` and `<returns>` documentation to all methods that replaced `<inheritdoc />`
 - [x] Add donation/support links to ConfigPage.html and README.md (GitHub Sponsors, Ko-fi, PayPal)
-- [ ] Rename docs files to use hyphens over underscores where applicable
-- [ ] Group docs under subfolders (architecture/, guides/)
+- [x] Rename docs files to use hyphens over underscores where applicable (`NAMING_CONVENTIONS.md` → `naming-conventions.md`)
+- [x] Group docs under subfolders (`docs/architecture/`, `docs/guides/`)
+- [x] Update all cross-references in AGENTS.md, copilot-instructions.md, README.md, developer-onboarding.md, naming-conventions.md, ai/README.md, PluginMetrics.cs
 - [x] Verify build: 0 warnings, 0 errors
-- [ ] Verify tests: 308 passing
+- [x] Verify tests: 308 passing
 
 ### Milestone 19 — Test Coverage 99% (Medium-Term)
 
