@@ -28,12 +28,14 @@ services:
       - tvh-test-recordings:/recordings
     restart: "no"
     healthcheck:
-      # Use --spider to check connectivity; accept any HTTP response (TVH may return 200 or 302).
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:9981/api/serverinfo 2>/dev/null || wget -qO /dev/null http://localhost:9981/ 2>/dev/null || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
+      # linuxserver/tvheadend is Alpine-based with busybox wget.
+      # With -C flag, /api/serverinfo returns JSON without auth.
+      # Use -q -O /dev/null so any 2xx/3xx counts as success.
+      test: ["CMD-SHELL", "wget -q -O /dev/null --timeout=3 http://localhost:9981/ || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 40s
 
   jellyfin:
     build:
