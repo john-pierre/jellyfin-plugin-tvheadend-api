@@ -34,3 +34,17 @@ Short version:
 - Match C# file names and primary type names exactly.
 - Prefer descriptive service/helper names without source-system prefixes when the folder namespace already provides context; reserve `TvhApi*` for API DTO models.
 
+## Commit Messages and Changelog (Required)
+
+- **Do NOT edit `CHANGELOG.md` manually.** The changelog is generated exclusively by Release Please in the CI pipeline.
+- All commit messages **must** follow [Conventional Commits](https://www.conventionalcommits.org/) format:
+  - `feat: <message>` — new feature (appears under **Features**)
+  - `fix: <message>` — bug fix (appears under **Fixes**)
+  - `docs: <message>` — documentation change (appears under **Documentation**)
+  - `refactor: <message>` — code refactoring (appears under **Refactoring**)
+  - `test: <message>` — test additions or changes (appears under **Tests**)
+  - `ci: <message>` — CI/CD pipeline changes (appears under **CI/CD**)
+  - `build: <message>` — build system changes (appears under **Build System**)
+  - `perf: <message>` — performance improvement (appears under **Performance Improvements**)
+- Use a scope when helpful: `feat(guide): add EPG grid pagination`
+- Breaking changes: add `!` after type or include `BREAKING CHANGE:` in the footer.

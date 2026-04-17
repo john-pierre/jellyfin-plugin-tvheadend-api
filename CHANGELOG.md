@@ -1,5 +1,6 @@
 # Changelog
 
+
 ## [1.0.4](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/compare/v1.0.3...v1.0.4) (2025-01-22)
 
 
