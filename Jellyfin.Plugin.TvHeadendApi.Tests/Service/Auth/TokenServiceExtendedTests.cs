@@ -394,6 +394,43 @@ public class TokenServiceExtendedTests
         Assert.Throws<ArgumentNullException>(() =>
             new TokenService(NullLogger<TokenService>.Instance, new Mock<IApiClient>().Object, null!));
     }
+
+    [Fact]
+    public async Task GenerateAndStoreTokenAsync_WhenSaveThrows_ReturnsFailure()
+    {
+        var config = ConfigWithUser();
+        var api = SetupApi(config,
+            url =>
+            {
+                if (url.Contains("passwd/entry/grid")) return UserGrid("u1", "admin");
+                return "{}";
+            },
+            url =>
+            {
+                if (url.Contains("idnode/load"))
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(UserLoad("goodtoken")) };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+            });
+
+        var saver = new PluginConfigurationSaver(_ => throw new InvalidOperationException("save failed"));
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, saver);
+        var result = await sut.GenerateAndStoreTokenAsync(CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("Unexpected error", result.Message);
+    }
+
+    [Fact]
+    public async Task GenerateValidTokenAsync_WhitespaceUsername_ReturnsFailure()
+    {
+        var config = new PluginConfiguration { Username = "   " };
+        var api = new Mock<IApiClient>();
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+
+        var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("username is required", result.Message);
+    }
 }
-
-

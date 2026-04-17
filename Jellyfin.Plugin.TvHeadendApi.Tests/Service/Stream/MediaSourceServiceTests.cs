@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
@@ -387,6 +388,31 @@ public class MediaSourceServiceTests
     }
 
     [Fact]
+    public void ExtractQueryParameter_WithRelativeUrl_ReturnsNull()
+    {
+        var result = MediaSourceService.ExtractQueryParameter("/stream/channel/ch-1?profile=Pass", "profile");
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ExtractQueryParameter_WithNullUrl_ReturnsNull()
+    {
+        Assert.Null(MediaSourceService.ExtractQueryParameter(null, "profile"));
+    }
+
+    [Fact]
+    public void ExtractQueryParameter_WithEmptyParameterName_ReturnsNull()
+    {
+        Assert.Null(MediaSourceService.ExtractQueryParameter("http://tvh:9981/stream?profile=pass", ""));
+    }
+
+    [Fact]
+    public void ExtractQueryParameter_WithNoQueryString_ReturnsNull()
+    {
+        Assert.Null(MediaSourceService.ExtractQueryParameter("http://tvh:9981/stream/channel/ch-1", "profile"));
+    }
+
+    [Fact]
     public void ExtractCodecFromMediaStreams_WithVideoAndAudioEntries_ReturnsExpectedCodec()
     {
         using var doc = JsonDocument.Parse("{\"MediaStreams\":[{\"Type\":\"Video\",\"Codec\":\"h264\"},{\"Type\":\"Audio\",\"Codec\":\"aac\"}]}");
@@ -400,6 +426,41 @@ public class MediaSourceServiceTests
     }
 
     [Fact]
+    public void ExtractCodecFromMediaStreams_WithNoVideoStream_ReturnsNull()
+    {
+        using var doc = JsonDocument.Parse("{\"MediaStreams\":[{\"Type\":\"Audio\",\"Codec\":\"aac\"}]}");
+        var result = MediaSourceService.ExtractCodecFromMediaStreams(doc.RootElement, "Video");
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ExtractCodecFromMediaStreams_WithNoMediaStreamsProperty_ReturnsNull()
+    {
+        using var doc = JsonDocument.Parse("{}");
+        var result = MediaSourceService.ExtractCodecFromMediaStreams(doc.RootElement, "Video");
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ExtractCodecFromMediaStreams_WithNonArrayMediaStreams_ReturnsNull()
+    {
+        using var doc = JsonDocument.Parse("{\"MediaStreams\":\"not-an-array\"}");
+        var result = MediaSourceService.ExtractCodecFromMediaStreams(doc.RootElement, "Video");
+        Assert.Null(result);
+    }
+
+    [Theory]
+    [InlineData(null, "mpegts")]
+    [InlineData("", "mpegts")]
+    [InlineData("  ", "mpegts")]
+    [InlineData("mp4", "mp4")]
+    [InlineData("matroska", "matroska")]
+    public void NormalizeContainerForCache_ReturnsExpected(string? input, string expected)
+    {
+        Assert.Equal(expected, MediaSourceService.NormalizeContainerForCache(input));
+    }
+
+    [Fact]
     public void TryParseCacheSnapshot_WithMalformedJson_ReturnsFalse()
     {
         var result = MediaSourceService.TryParseCacheSnapshot("{bad-json", "cache.json", out var snapshot);
@@ -407,80 +468,101 @@ public class MediaSourceServiceTests
         Assert.Null(snapshot);
     }
 
-    // ── GetRecordingStreamUrl ──────────────────────────────────────────
-
     [Fact]
-    public void GetRecordingStreamUrl_WhenConfigMissing_ReturnsNull()
+    public void TryParseCacheSnapshot_WithEmptyString_ReturnsFalse()
     {
-        var api = new Mock<IApiClient>();
-        api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
-        var sut = new MediaSourceService(
-            NullLogger<MediaSourceService>.Instance,
-            new Mock<ILibraryManager>().Object,
-            new Mock<IProfileContainerResolver>().Object,
-            api.Object,
-            new UrlBuilder(),
-            () => null);
-
-        var result = sut.GetRecordingStreamUrl("recording-uuid");
-
-        Assert.Null(result);
+        Assert.False(MediaSourceService.TryParseCacheSnapshot("", "cache.json", out _));
     }
 
     [Fact]
-    public void GetRecordingStreamUrl_WithAuthToken_ReturnsUrlWithAuth()
+    public void TryParseCacheSnapshot_WithWhitespace_ReturnsFalse()
     {
+        Assert.False(MediaSourceService.TryParseCacheSnapshot("   ", null, out _));
+    }
+
+    [Fact]
+    public async Task GetChannelStreamAsync_WithMatchingCacheAndValidation_DoesNotRewrite()
+    {
+        // Cache hit path: cache exists, matches profile snapshot, validation enabled → no rewrite
         var config = new PluginConfiguration
         {
             Host = "tvh.local",
             Port = 9981,
-            UseSSL = false,
-            Webroot = "/",
-            AuthToken = "mytoken123"
+            StreamingProfile = "pass",
+            EnableMediaInfoCacheWrite = true,
+            EnableMediaInfoCacheValidation = true,
+            AllowAnonymousAccess = true,
         };
-        var api = new Mock<IApiClient>();
-        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh.local:9981");
-        api.Setup(x => x.GetWebRoot(config)).Returns("/");
-        var sut = new MediaSourceService(
-            NullLogger<MediaSourceService>.Instance,
-            new Mock<ILibraryManager>().Object,
-            new Mock<IProfileContainerResolver>().Object,
-            api.Object,
-            new UrlBuilder(),
-            () => null);
 
-        var result = sut.GetRecordingStreamUrl("rec-abc");
+        var snapshot = new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null);
+        using var cacheDir = new TempDirectory();
 
-        Assert.Equal("http://tvh.local:9981/dvrfile/rec-abc?auth=mytoken123", result);
+        // Write initial cache
+        var initialSut = CreateSut(config, snapshot, cacheDir.Path);
+        await initialSut.GetChannelStreamAsync("ch-match", CancellationToken.None);
+
+        var initialJson = await ReadSingleCacheFileAsync(cacheDir.Path);
+
+        // Read again with same snapshot — should not rewrite
+        var secondSut = CreateSut(config, snapshot, cacheDir.Path);
+        await secondSut.GetChannelStreamAsync("ch-match", CancellationToken.None);
+
+        var secondJson = await ReadSingleCacheFileAsync(cacheDir.Path);
+        Assert.Equal(initialJson, secondJson);
     }
 
     [Fact]
-    public void GetRecordingStreamUrl_WithoutAuthToken_ReturnsUrlWithoutAuth()
+    public async Task GetChannelStreamAsync_MismatchedCacheWithProactiveCacheDisabled_DeletesCacheFile()
     {
-        var config = new PluginConfiguration
+        // Stale cache + validation enabled + proactive cache disabled → delete
+        var initialConfig = new PluginConfiguration
         {
             Host = "tvh.local",
             Port = 9981,
-            UseSSL = false,
-            Webroot = "/",
-            AuthToken = ""
+            StreamingProfile = "pass",
+            EnableMediaInfoCacheWrite = true,
+            EnableMediaInfoCacheValidation = true,
+            AllowAnonymousAccess = true,
         };
-        var api = new Mock<IApiClient>();
-        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh.local:9981");
-        api.Setup(x => x.GetWebRoot(config)).Returns("/");
-        var sut = new MediaSourceService(
-            NullLogger<MediaSourceService>.Instance,
-            new Mock<ILibraryManager>().Object,
-            new Mock<IProfileContainerResolver>().Object,
-            api.Object,
-            new UrlBuilder(),
-            () => null);
 
-        var result = sut.GetRecordingStreamUrl("rec-def");
+        using var cacheDir = new TempDirectory();
+        var initialSnapshot = new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "mpeg2video", "mp2", null);
+        var initialSut = CreateSut(initialConfig, initialSnapshot, cacheDir.Path);
+        await initialSut.GetChannelStreamAsync("ch-del", CancellationToken.None);
 
-        Assert.Equal("http://tvh.local:9981/dvrfile/rec-def", result);
+        // Confirm cache file written
+        var cacheFiles = Directory.GetFiles(Path.Combine(cacheDir.Path, "mediainfo"), "*.json");
+        Assert.Single(cacheFiles);
+
+        // Now use mismatched snapshot with proactive cache DISABLED, validation enabled → should delete
+        var deleteConfig = new PluginConfiguration
+        {
+            Host = "tvh.local",
+            Port = 9981,
+            StreamingProfile = "jellyfin",
+            EnableMediaInfoCacheWrite = false,
+            EnableMediaInfoCacheValidation = true,
+            AllowAnonymousAccess = true,
+        };
+
+        var deleteSnapshot = new ProfileSnapshot("jellyfin", "uuid2", "profile-mp4", "mp4", string.Empty, string.Empty, "h264", "aac", null);
+        var deleteSut = CreateSut(deleteConfig, deleteSnapshot, cacheDir.Path);
+        await deleteSut.GetChannelStreamAsync("ch-del", CancellationToken.None);
+
+        var remainingFiles = Directory.GetFiles(Path.Combine(cacheDir.Path, "mediainfo"), "*.json");
+        Assert.Empty(remainingFiles);
+    }
+
+    [Fact]
+    public void BuildMediaInfoCacheContent_WithNullVideoAndAudioCodec_DefaultsToH264AndAac()
+    {
+        var snapshot = new ProfileSnapshot("pass", "uuid", "profile-mpegts", null, string.Empty, string.Empty, null, null, null);
+        var content = MediaSourceService.BuildMediaInfoCacheContent("http://tvh:9981/stream", snapshot);
+
+        Assert.Equal("mpegts", content["Container"]);
+        var streams = (Dictionary<string, object?>[])content["MediaStreams"]!;
+        Assert.Equal("h264", streams[0]["Codec"]);
+        Assert.Equal("aac", streams[1]["Codec"]);
     }
 
     private static MediaSourceService CreateSut(PluginConfiguration config, ProfileSnapshot snapshot, string cachePath)

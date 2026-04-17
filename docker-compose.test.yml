@@ -17,6 +17,9 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Europe/Berlin
+      # Skip first-run wizard so the API is available immediately without auth.
+      # linuxserver/tvheadend passes RUN_OPTS to the tvheadend binary.
+      - RUN_OPTS=-C
     ports:
       - "19981:9981"    # TVHeadend HTTP API (offset to avoid conflicts with dev stack)
       - "19982:9982"    # TVHeadend HTSP (not used by plugin, but useful for debugging)
@@ -25,11 +28,12 @@ services:
       - tvh-test-recordings:/recordings
     restart: "no"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9981/api/serverinfo || exit 1"]
+      # Use --spider to check connectivity; accept any HTTP response (TVH may return 200 or 302).
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:9981/api/serverinfo 2>/dev/null || wget -qO /dev/null http://localhost:9981/ 2>/dev/null || exit 1"]
       interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   jellyfin:
     build:

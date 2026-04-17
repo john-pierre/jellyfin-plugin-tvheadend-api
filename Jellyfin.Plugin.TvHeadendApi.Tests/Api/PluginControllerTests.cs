@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,6 +22,97 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests;
 
 public class PluginControllerTests
 {
+    [Fact]
+    public void Constructor_NullDiagnosticService_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new PluginController(
+            null!,
+            new FakeDefaultProfileService(),
+            new FakeTokenService(),
+            new FakeStatisticsService(),
+            new Mock<IStatusService>().Object,
+            new Mock<IInputMonitorService>().Object,
+            new Mock<ISubscriptionService>().Object));
+    }
+
+    [Fact]
+    public void Constructor_NullDefaultProfileService_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new PluginController(
+            new FakeDiagnosticService(new DiagnoseResult()),
+            null!,
+            new FakeTokenService(),
+            new FakeStatisticsService(),
+            new Mock<IStatusService>().Object,
+            new Mock<IInputMonitorService>().Object,
+            new Mock<ISubscriptionService>().Object));
+    }
+
+    [Fact]
+    public void Constructor_NullTokenService_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new PluginController(
+            new FakeDiagnosticService(new DiagnoseResult()),
+            new FakeDefaultProfileService(),
+            null!,
+            new FakeStatisticsService(),
+            new Mock<IStatusService>().Object,
+            new Mock<IInputMonitorService>().Object,
+            new Mock<ISubscriptionService>().Object));
+    }
+
+    [Fact]
+    public void Constructor_NullStatisticsService_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new PluginController(
+            new FakeDiagnosticService(new DiagnoseResult()),
+            new FakeDefaultProfileService(),
+            new FakeTokenService(),
+            null!,
+            new Mock<IStatusService>().Object,
+            new Mock<IInputMonitorService>().Object,
+            new Mock<ISubscriptionService>().Object));
+    }
+
+    [Fact]
+    public void Constructor_NullStatusService_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new PluginController(
+            new FakeDiagnosticService(new DiagnoseResult()),
+            new FakeDefaultProfileService(),
+            new FakeTokenService(),
+            new FakeStatisticsService(),
+            null!,
+            new Mock<IInputMonitorService>().Object,
+            new Mock<ISubscriptionService>().Object));
+    }
+
+    [Fact]
+    public void Constructor_NullInputMonitorService_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new PluginController(
+            new FakeDiagnosticService(new DiagnoseResult()),
+            new FakeDefaultProfileService(),
+            new FakeTokenService(),
+            new FakeStatisticsService(),
+            new Mock<IStatusService>().Object,
+            null!,
+            new Mock<ISubscriptionService>().Object));
+    }
+
+    [Fact]
+    public void Constructor_NullSubscriptionService_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new PluginController(
+            new FakeDiagnosticService(new DiagnoseResult()),
+            new FakeDefaultProfileService(),
+            new FakeTokenService(),
+            new FakeStatisticsService(),
+            new Mock<IStatusService>().Object,
+            new Mock<IInputMonitorService>().Object,
+            null!));
+    }
+
     [Fact]
     public async Task Diagnose_ReturnsOkWithPayload()
     {
