@@ -46,7 +46,7 @@ COPY --from=build /plugin/ /opt/tvheadend-plugin/tvheadend_api_${VERSION}/
 RUN mkdir -p /config /cache /media
 
 # Startup script copies plugin into /config/plugins when needed, then starts Jellyfin.
-COPY docker/start-jellyfin.sh /usr/local/bin/start-jellyfin.sh
+COPY start-jellyfin.sh /usr/local/bin/start-jellyfin.sh
 RUN chmod +x /usr/local/bin/start-jellyfin.sh
 
 EXPOSE 8096 8920

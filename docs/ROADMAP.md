@@ -427,3 +427,51 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 - [ ] Document IPTV simulator in `docs/guides/test-strategy.md` — how to add channels, modify EPG, extend streams
 - [ ] Update `AGENTS.md` testing workflow section with E2E instructions
 
+### Milestone 22 — Post-Refactor Codebase Cleanup (Short-Term)
+
+**Baseline (2026-04-18):** Full codebase analysis after major refactoring. 530 tests, build 0 warnings / 0 errors.
+
+#### 22a — Bug Fixes
+
+- [ ] **`FormUrlEncodedContent` not disposed** — `DvrService.SingleTimer.cs` and `DvrService.SeriesTimer.cs` create `FormUrlEncodedContent` without `using`. Wrap in `using var content = new FormUrlEncodedContent(...)`.
+- [ ] **Unused field `_applicationHost` in `Plugin.cs`** — stored and null-checked but never read. Remove the field (keep constructor parameter if DI requires it).
+- [ ] **`ResilienceHandler` swallows `OperationCanceledException`** — `ResiliencePolicies.cs` only catches `HttpRequestException`; cancellation via `TaskCanceledException` records a failure and retries instead of propagating immediately. Add explicit `OperationCanceledException` catch that rethrows without `RecordFailure`.
+
+#### 22b — Code Duplication
+
+- [ ] **Extract `NormalizeCodecProfileTitle`** — duplicated in `ProfileResolver.cs`, `DefaultProfileService.cs`, `DiagnosticService.cs`. Extract to shared `ProfileMappingHelper.NormalizeCodecProfileTitle()`.
+- [ ] **Extract `FindCodecProfileEntryByReferenceAsync`** — duplicated in `DefaultProfileService.cs` and `DiagnosticService.cs`. Extract to shared helper or have `DiagnosticService` use `IProfileResolver`.
+- [ ] **Remove duplicated `ReadBool`/`ReadBoolOrParam`/`GetParamValue` from `DiagnosticService`** — these replicate `IdNodeValueHelper` methods. Use `IdNodeValueHelper` directly.
+
+#### 22c — Code Quality
+
+- [ ] **Split `DiagnosticService.DiagnoseAsync`** — 500+ line method. Extract private methods per diagnostic area (connection, streaming, DVR, cache).
+- [ ] **`ProfileContainerResolver` double-checked locking** — `_profileCache` read outside lock without `volatile`. Add `volatile` keyword or use `Volatile.Read`.
+- [ ] **`StatisticsService.SaveToDisk` uses synchronous `File.WriteAllText`** on a Timer callback. Consider `File.WriteAllTextAsync`.
+- [ ] **`TokenValidator.IsAlphanumeric` naming** — method also accepts `-` and `.`. Rename to `IsValidTokenFormat` or `IsTvhTokenSafe`.
+- [ ] **Remove duplicate `InternalsVisibleTo`** — declared in both `.csproj` and `AssemblyInfo.cs`. Keep one source of truth.
+
+#### 22d — Inconsistencies
+
+- [ ] **`DvrService` direct `httpClient.PostAsync` calls** — `SingleTimer.cs` and `SeriesTimer.cs` bypass `IApiClient.PostFormAsync` and call `httpClient.PostAsync` directly. Migrate to `_tvheadendApiClient.PostFormAsync` for consistency with the rest of the codebase.
+- [ ] **`DvrService.GetNewTimerDefaultsAsync` ignores `cancellationToken`** — add `cancellationToken.ThrowIfCancellationRequested()` at method start.
+
+#### 22e — Security Hardening
+
+- [ ] **`UrlBuilder.MaskSensitiveData` gap** — does not mask URL-encoded credentials (e.g., `%40`). Also mask `Uri.EscapeDataString(username):Uri.EscapeDataString(password)`.
+- [ ] **`GetRecordingStreamUrl` doesn't URL-encode auth token** — use `Uri.EscapeDataString(config.AuthToken)` defensively.
+- [ ] **`docker-compose.yaml` runs as root** — add comment clarifying dev-only usage, or switch to non-root user.
+
+#### 22f — Documentation
+
+- [ ] **Update `docs/architecture/overview.md`** — line 131 states "No retry/resilience patterns" but `ResilienceHandler` exists since Milestone 9. Update to reflect current state.
+
+#### 22g — Test Gaps
+
+- [ ] **Add `StatisticsService` event-handling tests** — `OnPlaybackStart`/`OnPlaybackStopped` branching logic (live TV check, session tracking) needs targeted tests.
+- [ ] **Add `ResilienceHandler` circuit breaker half-open tests** — `ThrowIfCircuitOpen` half-open logic is untested.
+
+#### 22h — Build Warnings
+
+- [ ] **Fix CS8625 nullable warnings in `MediaSourceServiceTests.cs:559`** — `ProfileSnapshot` constructor receives `null` for non-nullable `string` params. Use `string.Empty` or `null!` with justification comment.
+
