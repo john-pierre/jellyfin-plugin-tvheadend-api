@@ -11,7 +11,8 @@
 
 services:
   tvheadend:
-    image: linuxserver/tvheadend:latest
+    # Pinned to a specific build for reproducible CI. Update periodically.
+    image: linuxserver/tvheadend:37453bc3-ls279
     container_name: tvh-integration-test
     environment:
       - PUID=1000
@@ -28,18 +29,18 @@ services:
       - tvh-test-recordings:/recordings
     restart: "no"
     healthcheck:
-      # linuxserver/tvheadend is Alpine-based with busybox wget.
-      # With -C flag, /api/serverinfo returns JSON without auth.
-      # Use -q -O /dev/null so any 2xx/3xx counts as success.
-      test: ["CMD-SHELL", "wget -q -O /dev/null --timeout=3 http://localhost:9981/ || exit 1"]
+      # linuxserver/tvheadend is Alpine-based (busybox wget, no curl).
+      # Healthcheck runs INSIDE the container, so localhost is correct.
+      # /api/status/inputs returns JSON without auth when -C flag is set.
+      test: ["CMD-SHELL", "wget --spider -q --timeout=5 http://tvh-integration-test:9981/api/status/inputs || exit 1"]
       interval: 10s
       timeout: 10s
-      retries: 15
-      start_period: 40s
+      retries: 20
+      start_period: 90s
 
   jellyfin:
     build:
-      context: ..
+      context: ../
       dockerfile: docker/Dockerfile
     container_name: jf-integration-test
     environment:

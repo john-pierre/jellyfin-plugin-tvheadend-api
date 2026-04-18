@@ -61,9 +61,6 @@ internal sealed class DiagnosticService : IDiagnosticService
     {
         var report = new DiagnoseResult();
         var config = _tvheadendApiClient.GetCurrentConfiguration();
-        var configuredStreamProfileExists = false;
-        var configuredDvrProfileExists = false;
-        var dvrProfileNames = new List<string>();
         var scoreDeductions = 0;
 
         if (config == null)
@@ -74,61 +71,8 @@ internal sealed class DiagnosticService : IDiagnosticService
             return report;
         }
 
-        report.PluginSettings.Add($"Streaming Profile: {(string.IsNullOrWhiteSpace(config.StreamingProfile) ? "(not set)" : config.StreamingProfile)}");
-        report.PluginSettings.Add($"Direct Play: {config.SupportsDirectPlay}, Direct Stream: {config.SupportsDirectStream}, Transcoding: {config.SupportsTranscoding}");
-        report.PluginSettings.Add($"Probing: {config.SupportsProbing}, Infinite Stream: {config.IsInfiniteStream}, Ignore DTS: {config.IgnoreDts}");
-
-        var effectiveAnalyzeDurationMs = config.AnalyzeDurationMs > 0 ? config.AnalyzeDurationMs : 200;
-        var ffmpegMicroseconds = effectiveAnalyzeDurationMs * 1000;
-        report.PluginSettings.Add(
-            config.AnalyzeDurationMs > 0
-                ? $"AnalyzeDuration: {config.AnalyzeDurationMs} ms (explicit) -> ffmpeg receives -analyzeduration {ffmpegMicroseconds} us"
-                : "AnalyzeDuration: 0 (legacy auto mode) -> plugin falls back to 200 ms when stream details are available -> ffmpeg receives -analyzeduration 200000 us. When probing, Jellyfin's global FFmpeg analyzeduration is used.");
-        report.PluginSettings.Add($"BufferMs: {(config.BufferMs > 0 ? $"{config.BufferMs} ms" : "0 (Jellyfin default)")}");
-
-        var (jellyfinProbeSize, jellyfinAnalyzeDuration) = _encodingOptionsReader.ReadFfmpegSettings(_serverConfigManager, _logger);
-        var probeSizeDisplay = !string.IsNullOrWhiteSpace(jellyfinProbeSize)
-            ? $"{jellyfinProbeSize} (from config or environment)"
-            : "(not set / using Jellyfin default)";
-        report.PluginSettings.Add($"Jellyfin FFmpeg ProbeSize: {probeSizeDisplay}");
-        report.PluginSettings.Add($"Jellyfin FFmpeg AnalyzeDuration: {jellyfinAnalyzeDuration ?? "(not set / default)"}");
-
-        report.PluginSettings.Add($"Recording Profile: {config.RecordingProfile}");
-
-        if (string.IsNullOrWhiteSpace(config.AuthToken))
-        {
-            report.Checks.Add(new DiagnoseCheck
-            {
-                Category = "Authentication",
-                Name = "Auth Token Format",
-                Status = "ERROR",
-                Message = "Auth token is empty.",
-                Recommendation = "Generate a token and use only letters and numbers (A-Z, a-z, 0-9)."
-            });
-            scoreDeductions += 20;
-        }
-        else if (!TokenValidator.IsValidTokenFormat(config.AuthToken))
-        {
-            report.Checks.Add(new DiagnoseCheck
-            {
-                Category = "Authentication",
-                Name = "Auth Token Format",
-                Status = "ERROR",
-                Message = "Auth token contains unsupported characters.",
-                Recommendation = "Use only letters and numbers (A-Z, a-z, 0-9)."
-            });
-            scoreDeductions += 20;
-        }
-        else
-        {
-            report.Checks.Add(new DiagnoseCheck
-            {
-                Category = "Authentication",
-                Name = "Auth Token Format",
-                Status = "OK",
-                Message = "Auth token format is alphanumeric."
-            });
-        }
+        AddPluginSettingsToReport(report, config);
+        scoreDeductions += CheckAuthToken(report, config);
 
         HttpClient httpClient;
         string baseUrl;
@@ -152,265 +96,393 @@ internal sealed class DiagnosticService : IDiagnosticService
 
         using (httpClient)
         {
-            try
+            scoreDeductions += await CheckServerConnectivityAsync(report, config, httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
+            if (report.OverallStatus == "ERROR")
             {
-                var infoUrl = $"{baseUrl}{webRoot}api/serverinfo";
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                var infoResponse = await _tvheadendApiClient.GetStringAsync(httpClient, infoUrl, cancellationToken).ConfigureAwait(false);
-                sw.Stop();
-                report.LatencyMs = (int)sw.ElapsedMilliseconds;
+                return report;
+            }
 
-                var serverInfo = JsonSerializer.Deserialize<ServerInfoResponse>(infoResponse, JsonDefaults.Api) ?? new ServerInfoResponse();
+            await FetchChannelGridAsync(report, httpClient, baseUrl, webRoot, allChannelUuids, cancellationToken).ConfigureAwait(false);
+            scoreDeductions += await CheckStreamingProfilesAsync(report, config, httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
+            scoreDeductions += await CheckDvrProfilesAsync(report, config, httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
+        }
 
-                var swVersion = string.IsNullOrWhiteSpace(serverInfo.SwVersion) ? "unknown" : serverInfo.SwVersion;
-                var apiVersion = serverInfo.ApiVersion?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?";
-                var serverName = serverInfo.Name;
+        scoreDeductions += CheckPlaybackSettings(report, config);
+        CheckFfmpegSettings(report, config);
+        CheckProbeCacheStatus(report, allChannelUuids, cancellationToken);
 
-                report.Connection = $"? Connected to {(string.IsNullOrEmpty(serverName) ? config.Host : serverName)}";
-                report.ServerVersion = $"TVHeadend {swVersion} (API v{apiVersion})";
+        report.CompatibilityScore = Math.Max(0, 100 - scoreDeductions);
+        report.OverallStatus = report.CompatibilityScore >= 80 ? "OK" : report.CompatibilityScore >= 50 ? "WARNING" : "ERROR";
 
+        if (report.Warnings.Count == 0 && report.Recommendations.Count == 0 && report.CompatibilityScore >= 80)
+        {
+            report.Recommendations.Add("? Everything looks good!");
+        }
+
+        return report;
+    }
+
+    private void AddPluginSettingsToReport(DiagnoseResult report, Configuration.PluginConfiguration config)
+    {
+        report.PluginSettings.Add($"Streaming Profile: {(string.IsNullOrWhiteSpace(config.StreamingProfile) ? "(not set)" : config.StreamingProfile)}");
+        report.PluginSettings.Add($"Direct Play: {config.SupportsDirectPlay}, Direct Stream: {config.SupportsDirectStream}, Transcoding: {config.SupportsTranscoding}");
+        report.PluginSettings.Add($"Probing: {config.SupportsProbing}, Infinite Stream: {config.IsInfiniteStream}, Ignore DTS: {config.IgnoreDts}");
+
+        var effectiveAnalyzeDurationMs = config.AnalyzeDurationMs > 0 ? config.AnalyzeDurationMs : 200;
+        var ffmpegMicroseconds = effectiveAnalyzeDurationMs * 1000;
+        report.PluginSettings.Add(
+            config.AnalyzeDurationMs > 0
+                ? $"AnalyzeDuration: {config.AnalyzeDurationMs} ms (explicit) -> ffmpeg receives -analyzeduration {ffmpegMicroseconds} us"
+                : "AnalyzeDuration: 0 (legacy auto mode) -> plugin falls back to 200 ms when stream details are available -> ffmpeg receives -analyzeduration 200000 us. When probing, Jellyfin's global FFmpeg analyzeduration is used.");
+        report.PluginSettings.Add($"BufferMs: {(config.BufferMs > 0 ? $"{config.BufferMs} ms" : "0 (Jellyfin default)")}");
+
+        var (jellyfinProbeSize, jellyfinAnalyzeDuration) = _encodingOptionsReader.ReadFfmpegSettings(_serverConfigManager, _logger);
+        var probeSizeDisplay = !string.IsNullOrWhiteSpace(jellyfinProbeSize)
+            ? $"{jellyfinProbeSize} (from config or environment)"
+            : "(not set / using Jellyfin default)";
+        report.PluginSettings.Add($"Jellyfin FFmpeg ProbeSize: {probeSizeDisplay}");
+        report.PluginSettings.Add($"Jellyfin FFmpeg AnalyzeDuration: {jellyfinAnalyzeDuration ?? "(not set / default)"}");
+
+        report.PluginSettings.Add($"Recording Profile: {config.RecordingProfile}");
+    }
+
+    private static int CheckAuthToken(DiagnoseResult report, Configuration.PluginConfiguration config)
+    {
+        if (string.IsNullOrWhiteSpace(config.AuthToken))
+        {
+            report.Checks.Add(new DiagnoseCheck
+            {
+                Category = "Authentication",
+                Name = "Auth Token Format",
+                Status = "ERROR",
+                Message = "Auth token is empty.",
+                Recommendation = "Generate a token and use only letters and numbers (A-Z, a-z, 0-9)."
+            });
+            return 20;
+        }
+
+        if (!TokenValidator.IsValidTokenFormat(config.AuthToken))
+        {
+            report.Checks.Add(new DiagnoseCheck
+            {
+                Category = "Authentication",
+                Name = "Auth Token Format",
+                Status = "ERROR",
+                Message = "Auth token contains unsupported characters.",
+                Recommendation = "Use only letters and numbers (A-Z, a-z, 0-9)."
+            });
+            return 20;
+        }
+
+        report.Checks.Add(new DiagnoseCheck
+        {
+            Category = "Authentication",
+            Name = "Auth Token Format",
+            Status = "OK",
+            Message = "Auth token format is alphanumeric."
+        });
+        return 0;
+    }
+
+    private async Task<int> CheckServerConnectivityAsync(DiagnoseResult report, Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
+    {
+        var scoreDeductions = 0;
+        try
+        {
+            var infoUrl = $"{baseUrl}{webRoot}api/serverinfo";
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var infoResponse = await _tvheadendApiClient.GetStringAsync(httpClient, infoUrl, cancellationToken).ConfigureAwait(false);
+            sw.Stop();
+            report.LatencyMs = (int)sw.ElapsedMilliseconds;
+
+            var serverInfo = JsonSerializer.Deserialize<ServerInfoResponse>(infoResponse, JsonDefaults.Api) ?? new ServerInfoResponse();
+
+            var swVersion = string.IsNullOrWhiteSpace(serverInfo.SwVersion) ? "unknown" : serverInfo.SwVersion;
+            var apiVersion = serverInfo.ApiVersion?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?";
+            var serverName = serverInfo.Name;
+
+            report.Connection = $"? Connected to {(string.IsNullOrEmpty(serverName) ? config.Host : serverName)}";
+            report.ServerVersion = $"TVHeadend {swVersion} (API v{apiVersion})";
+
+            report.Checks.Add(new DiagnoseCheck
+            {
+                Category = "Connection",
+                Name = "TVHeadend Connectivity",
+                Status = "OK",
+                Message = $"Connected in {report.LatencyMs}ms to {config.Host}:{config.Port}"
+            });
+
+            var apiVer = serverInfo.ApiVersion ?? 0;
+            if (apiVer >= 19)
+            {
+                report.Checks.Add(new DiagnoseCheck { Category = "Connection", Name = "API Version", Status = "OK", Message = $"API v{apiVer} is supported." });
+            }
+            else
+            {
+                report.Checks.Add(new DiagnoseCheck { Category = "Connection", Name = "API Version", Status = "WARNING", Message = $"API v{apiVer} is old. v19+ recommended.", Recommendation = "Consider updating TVHeadend." });
+                scoreDeductions += 5;
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            report.Connection = $"Cannot reach TVHeadend at {config.Host}:{config.Port} - {ex.Message}";
+            report.Checks.Add(new DiagnoseCheck { Category = "Connection", Name = "TVHeadend Connectivity", Status = "ERROR", Message = ex.Message, Recommendation = "Check host, port, and network connectivity." });
+            report.OverallStatus = "ERROR";
+            report.CompatibilityScore = 0;
+        }
+        catch (Exception ex)
+        {
+            report.Connection = $"?? Connected but serverinfo failed: {ex.Message}";
+            report.Checks.Add(new DiagnoseCheck { Category = "Connection", Name = "Server Info", Status = "WARNING", Message = ex.Message });
+            scoreDeductions += 10;
+        }
+
+        return scoreDeductions;
+    }
+
+    private async Task FetchChannelGridAsync(DiagnoseResult report, HttpClient httpClient, string baseUrl, string webRoot, HashSet<string> allChannelUuids, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var chUrl = $"{baseUrl}{webRoot}api/channel/grid?limit=500&sort=number";
+            var chResponse = await _tvheadendApiClient.GetStringAsync(httpClient, chUrl, cancellationToken).ConfigureAwait(false);
+            var channelGrid = JsonSerializer.Deserialize<ChannelGridResponse>(chResponse, JsonDefaults.Api);
+            if (channelGrid != null)
+            {
+                report.ChannelCount = channelGrid.Total;
+                foreach (var chEntry in channelGrid.Entries)
+                {
+                    var uuid = chEntry.Uuid;
+                    if (!string.IsNullOrWhiteSpace(uuid))
+                    {
+                        allChannelUuids.Add(uuid);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            report.Warnings.Add($"Could not fetch channel count: {ex.Message}");
+        }
+    }
+
+    private async Task<int> CheckStreamingProfilesAsync(DiagnoseResult report, Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
+    {
+        var scoreDeductions = 0;
+        try
+        {
+            var profileReferences = await _streamProfileResolver.GetProfilesAsync(httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
+            var profiles = profileReferences.Select(e => e.Name).ToList();
+            foreach (var p in profiles)
+            {
+                report.AvailableStreamingProfiles.Add(p);
+            }
+
+            var matchingStreamProfile = profileReferences.FirstOrDefault(e =>
+                string.Equals(e.Name, config.StreamingProfile, StringComparison.OrdinalIgnoreCase));
+
+            var configuredStreamProfileExists = matchingStreamProfile != null;
+
+            if (configuredStreamProfileExists)
+            {
+                report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Profile Exists", Status = "OK", Message = $"Streaming profile '{config.StreamingProfile}' found in TVHeadend." });
+            }
+            else if (!string.IsNullOrWhiteSpace(config.StreamingProfile))
+            {
                 report.Checks.Add(new DiagnoseCheck
                 {
-                    Category = "Connection",
-                    Name = "TVHeadend Connectivity",
-                    Status = "OK",
-                    Message = $"Connected in {report.LatencyMs}ms to {config.Host}:{config.Port}"
+                    Category = "Streaming",
+                    Name = "Profile Exists",
+                    Status = "ERROR",
+                    Message = $"Streaming profile '{config.StreamingProfile}' not found in TVHeadend.",
+                    Recommendation = $"Available profiles: {string.Join(", ", profiles)}. Set one of these in the Streaming Profile field."
                 });
+                scoreDeductions += 30;
+            }
 
-                var apiVer = serverInfo.ApiVersion ?? 0;
-                if (apiVer >= 19)
+            if (matchingStreamProfile != null)
+            {
+                scoreDeductions += await InspectStreamProfileDetailsAsync(report, config, httpClient, baseUrl, webRoot, matchingStreamProfile, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            report.Warnings.Add($"Could not fetch profile list: {ex.Message}");
+        }
+
+        return scoreDeductions;
+    }
+
+    private async Task<int> InspectStreamProfileDetailsAsync(DiagnoseResult report, Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, ProfileReference matchingStreamProfile, CancellationToken cancellationToken)
+    {
+        var scoreDeductions = 0;
+        try
+        {
+            var profileDetails = await _streamProfileResolver
+                .GetProfileDetailsByUuidAsync(httpClient, baseUrl, webRoot, matchingStreamProfile.Key, matchingStreamProfile.Name, cancellationToken)
+                .ConfigureAwait(false);
+            if (profileDetails != null)
+            {
+                var profileClass = string.IsNullOrWhiteSpace(profileDetails.ProfileClass) ? "unknown" : profileDetails.ProfileClass;
+                var container = profileDetails.Container;
+                var proVideoCodec = profileDetails.ProVideoCodec;
+                var proAudioCodec = profileDetails.ProAudioCodec;
+                var srcVideoCodecs = profileDetails.SrcVideoCodecs;
+                var srcAudioCodecs = profileDetails.SrcAudioCodecs;
+                var deinterlace = profileDetails.Deinterlace;
+                if (deinterlace != true && !string.IsNullOrWhiteSpace(proVideoCodec))
                 {
-                    report.Checks.Add(new DiagnoseCheck { Category = "Connection", Name = "API Version", Status = "OK", Message = $"API v{apiVer} is supported." });
+                    deinterlace = await GetCodecProfileBoolSettingAsync(httpClient, baseUrl, webRoot, proVideoCodec, "deinterlace", cancellationToken).ConfigureAwait(false) ?? deinterlace;
+                }
+
+                report.PluginSettings.Add($"TVH stream profile: class={profileClass}, container={(string.IsNullOrWhiteSpace(container) ? "(unknown)" : container)}");
+                report.PluginSettings.Add($"TVH codec links: video={(string.IsNullOrWhiteSpace(proVideoCodec) ? "(not linked)" : proVideoCodec)}, audio={(string.IsNullOrWhiteSpace(proAudioCodec) ? "(not linked)" : proAudioCodec)}");
+
+                if (profileClass.Contains("transcode", StringComparison.OrdinalIgnoreCase))
+                {
+                    scoreDeductions += CheckTranscodeProfile(report, proVideoCodec, proAudioCodec, srcVideoCodecs, srcAudioCodecs, deinterlace);
                 }
                 else
                 {
-                    report.Checks.Add(new DiagnoseCheck { Category = "Connection", Name = "API Version", Status = "WARNING", Message = $"API v{apiVer} is old. v19+ recommended.", Recommendation = "Consider updating TVHeadend." });
-                    scoreDeductions += 5;
+                    report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Profile Type", Status = "INFO", Message = $"Pass-through profile ({profileClass}). Output format varies per channel. Plugin queries TVHeadend for stream details at runtime." });
                 }
             }
-            catch (HttpRequestException ex)
+        }
+        catch (Exception ex)
+        {
+            report.Warnings.Add($"Could not inspect stream profile '{config.StreamingProfile}': {ex.Message}");
+        }
+
+        return scoreDeductions;
+    }
+
+    private static int CheckTranscodeProfile(DiagnoseResult report, string? proVideoCodec, string? proAudioCodec, IReadOnlyList<string> srcVideoCodecs, IReadOnlyList<string> srcAudioCodecs, bool? deinterlace)
+    {
+        var scoreDeductions = 0;
+        report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Profile Type", Status = "OK", Message = "Transcode profile detected. Output format is fixed per channel." });
+
+        if (!string.IsNullOrWhiteSpace(proVideoCodec) && !string.IsNullOrWhiteSpace(proAudioCodec))
+        {
+            report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Codec Profiles", Status = "OK", Message = $"Video: {proVideoCodec}, Audio: {proAudioCodec}" });
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(proVideoCodec))
             {
-                report.Connection = $"Cannot reach TVHeadend at {config.Host}:{config.Port} - {ex.Message}";
-                report.Checks.Add(new DiagnoseCheck { Category = "Connection", Name = "TVHeadend Connectivity", Status = "ERROR", Message = ex.Message, Recommendation = "Check host, port, and network connectivity." });
-                report.OverallStatus = "ERROR";
-                report.CompatibilityScore = 0;
-                return report;
-            }
-            catch (Exception ex)
-            {
-                report.Connection = $"?? Connected but serverinfo failed: {ex.Message}";
-                report.Checks.Add(new DiagnoseCheck { Category = "Connection", Name = "Server Info", Status = "WARNING", Message = ex.Message });
-                scoreDeductions += 10;
+                report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Video Codec Link", Status = "WARNING", Message = "No linked video codec profile (pro_vcodec / vcodec).", Recommendation = "Link a video codec profile in TVHeadend for consistent output." });
+                scoreDeductions += 5;
             }
 
-            try
+            if (string.IsNullOrWhiteSpace(proAudioCodec))
             {
-                var chUrl = $"{baseUrl}{webRoot}api/channel/grid?limit=500&sort=number";
-                var chResponse = await _tvheadendApiClient.GetStringAsync(httpClient, chUrl, cancellationToken).ConfigureAwait(false);
-                var channelGrid = JsonSerializer.Deserialize<ChannelGridResponse>(chResponse, JsonDefaults.Api);
-                if (channelGrid != null)
+                report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Audio Codec Link", Status = "WARNING", Message = "No linked audio codec profile (pro_acodec / acodec).", Recommendation = "Link an audio codec profile in TVHeadend for consistent output." });
+                scoreDeductions += 5;
+            }
+        }
+
+        if (deinterlace == true)
+        {
+            report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Deinterlacing", Status = "OK", Message = "Deinterlacing is enabled." });
+        }
+        else
+        {
+            report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Deinterlacing", Status = "WARNING", Message = "Deinterlacing is not enabled.", Recommendation = "Enable deinterlacing in the TVHeadend video codec profile so clients can more often direct play." });
+            scoreDeductions += 5;
+        }
+
+        if (srcVideoCodecs.Count == 0)
+        {
+            report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Source Video Codecs", Status = "INFO", Message = "No source video codec filter set (all codecs accepted)." });
+        }
+
+        if (srcAudioCodecs.Count == 0)
+        {
+            report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Source Audio Codecs", Status = "INFO", Message = "No source audio codec filter set (all codecs accepted)." });
+        }
+
+        return scoreDeductions;
+    }
+
+    private async Task<int> CheckDvrProfilesAsync(DiagnoseResult report, Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
+    {
+        var scoreDeductions = 0;
+
+        try
+        {
+            var dvrUrl = $"{baseUrl}{webRoot}api/dvr/entry/grid?limit=1";
+            var dvrResponse = await _tvheadendApiClient.GetStringAsync(httpClient, dvrUrl, cancellationToken).ConfigureAwait(false);
+            var dvrEntries = JsonSerializer.Deserialize<DvrEntryGridResponse>(dvrResponse, JsonDefaults.Api);
+            report.DvrEntryCount = dvrEntries?.Total ?? 0;
+        }
+        catch (Exception ex)
+        {
+            report.Warnings.Add($"Could not fetch DVR entries: {ex.Message}");
+        }
+
+        try
+        {
+            var dvrLoadUrl = $"{baseUrl}{webRoot}api/idnode/load";
+            using var dvrHttpResponse = await _tvheadendApiClient.PostFormAsync(
+                httpClient,
+                dvrLoadUrl,
+                new[]
                 {
-                    report.ChannelCount = channelGrid.Total;
-                    foreach (var chEntry in channelGrid.Entries)
+                    new KeyValuePair<string, string>("enum", "1"),
+                    new KeyValuePair<string, string>("class", "dvrconfig"),
+                },
+                cancellationToken).ConfigureAwait(false);
+            dvrHttpResponse.EnsureSuccessStatusCode();
+            var dvrBody = await dvrHttpResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var dvrConfigList = JsonSerializer.Deserialize<DvrConfigListResponse>(dvrBody, JsonDefaults.Api);
+            if (dvrConfigList != null && dvrConfigList.Entries.Length > 0)
+            {
+                var dvrProfileNames = new List<string>();
+                foreach (var entry in dvrConfigList.Entries)
+                {
+                    var name = entry.EffectiveName;
+                    if (!string.IsNullOrWhiteSpace(name))
                     {
-                        var uuid = chEntry.Uuid;
-                        if (!string.IsNullOrWhiteSpace(uuid))
-                        {
-                            allChannelUuids.Add(uuid);
-                        }
+                        dvrProfileNames.Add(name);
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                report.Warnings.Add($"Could not fetch channel count: {ex.Message}");
-            }
 
-            string? profileClass = null;
-            try
-            {
-                var profileReferences = await _streamProfileResolver.GetProfilesAsync(httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
-                var profiles = profileReferences.Select(e => e.Name).ToList();
-                foreach (var p in profiles)
+                var configuredDvrProfileExists = dvrProfileNames.Any(name => string.Equals(name, config.RecordingProfile, StringComparison.OrdinalIgnoreCase));
+                report.PluginSettings.Add($"TVH DVR profiles: {(dvrProfileNames.Count == 0 ? "(none found)" : string.Join(", ", dvrProfileNames))}");
+
+                foreach (var profile in dvrProfileNames)
                 {
-                    report.AvailableStreamingProfiles.Add(p);
+                    report.AvailableRecordingProfiles.Add(profile);
                 }
 
-                var matchingStreamProfile = profileReferences.FirstOrDefault(e =>
-                    string.Equals(e.Name, config.StreamingProfile, StringComparison.OrdinalIgnoreCase));
-
-                configuredStreamProfileExists = matchingStreamProfile != null;
-
-                if (configuredStreamProfileExists)
+                if (!string.IsNullOrWhiteSpace(config.RecordingProfile) && configuredDvrProfileExists)
                 {
-                    report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Profile Exists", Status = "OK", Message = $"Streaming profile '{config.StreamingProfile}' found in TVHeadend." });
+                    report.Checks.Add(new DiagnoseCheck { Category = "Recording", Name = "DVR Profile", Status = "OK", Message = $"Recording profile '{config.RecordingProfile}' exists in TVHeadend." });
                 }
-                else if (!string.IsNullOrWhiteSpace(config.StreamingProfile))
+                else if (!string.IsNullOrWhiteSpace(config.RecordingProfile) && !configuredDvrProfileExists)
                 {
                     report.Checks.Add(new DiagnoseCheck
                     {
-                        Category = "Streaming",
-                        Name = "Profile Exists",
-                        Status = "ERROR",
-                        Message = $"Streaming profile '{config.StreamingProfile}' not found in TVHeadend.",
-                        Recommendation = $"Available profiles: {string.Join(", ", profiles)}. Set one of these in the Streaming Profile field."
+                        Category = "Recording",
+                        Name = "DVR Profile",
+                        Status = "WARNING",
+                        Message = $"Recording profile '{config.RecordingProfile}' not found in TVHeadend.",
+                        Recommendation = $"Available DVR profiles: {string.Join(", ", dvrProfileNames)}."
                     });
-                    scoreDeductions += 30;
+                    scoreDeductions += 10;
                 }
-
-                if (matchingStreamProfile != null)
-                {
-                    try
-                    {
-                        var profileDetails = await _streamProfileResolver
-                            .GetProfileDetailsByUuidAsync(httpClient, baseUrl, webRoot, matchingStreamProfile.Key, matchingStreamProfile.Name, cancellationToken)
-                            .ConfigureAwait(false);
-                        if (profileDetails != null)
-                        {
-                            profileClass = string.IsNullOrWhiteSpace(profileDetails.ProfileClass) ? "unknown" : profileDetails.ProfileClass;
-                            var container = profileDetails.Container;
-                            var proVideoCodec = profileDetails.ProVideoCodec;
-                            var proAudioCodec = profileDetails.ProAudioCodec;
-                            var srcVideoCodecs = profileDetails.SrcVideoCodecs;
-                            var srcAudioCodecs = profileDetails.SrcAudioCodecs;
-                            var deinterlace = profileDetails.Deinterlace;
-                            if (deinterlace != true && !string.IsNullOrWhiteSpace(proVideoCodec))
-                            {
-                                deinterlace = await GetCodecProfileBoolSettingAsync(httpClient, baseUrl, webRoot, proVideoCodec, "deinterlace", cancellationToken).ConfigureAwait(false) ?? deinterlace;
-                            }
-
-                            report.PluginSettings.Add($"TVH stream profile: class={profileClass}, container={(string.IsNullOrWhiteSpace(container) ? "(unknown)" : container)}");
-                            report.PluginSettings.Add($"TVH codec links: video={(string.IsNullOrWhiteSpace(proVideoCodec) ? "(not linked)" : proVideoCodec)}, audio={(string.IsNullOrWhiteSpace(proAudioCodec) ? "(not linked)" : proAudioCodec)}");
-
-                            if (profileClass.Contains("transcode", StringComparison.OrdinalIgnoreCase))
-                            {
-                                report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Profile Type", Status = "OK", Message = "Transcode profile detected. Output format is fixed per channel." });
-
-                                if (!string.IsNullOrWhiteSpace(proVideoCodec) && !string.IsNullOrWhiteSpace(proAudioCodec))
-                                {
-                                    report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Codec Profiles", Status = "OK", Message = $"Video: {proVideoCodec}, Audio: {proAudioCodec}" });
-                                }
-                                else
-                                {
-                                    if (string.IsNullOrWhiteSpace(proVideoCodec))
-                                    {
-                                        report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Video Codec Link", Status = "WARNING", Message = "No linked video codec profile (pro_vcodec / vcodec).", Recommendation = "Link a video codec profile in TVHeadend for consistent output." });
-                                        scoreDeductions += 5;
-                                    }
-
-                                    if (string.IsNullOrWhiteSpace(proAudioCodec))
-                                    {
-                                        report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Audio Codec Link", Status = "WARNING", Message = "No linked audio codec profile (pro_acodec / acodec).", Recommendation = "Link an audio codec profile in TVHeadend for consistent output." });
-                                        scoreDeductions += 5;
-                                    }
-                                }
-
-                                if (deinterlace == true)
-                                {
-                                    report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Deinterlacing", Status = "OK", Message = "Deinterlacing is enabled." });
-                                }
-                                else
-                                {
-                                    report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Deinterlacing", Status = "WARNING", Message = "Deinterlacing is not enabled.", Recommendation = "Enable deinterlacing in the TVHeadend video codec profile so clients can more often direct play." });
-                                    scoreDeductions += 5;
-                                }
-
-                                if (srcVideoCodecs.Count == 0)
-                                {
-                                    report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Source Video Codecs", Status = "INFO", Message = "No source video codec filter set (all codecs accepted)." });
-                                }
-
-                                if (srcAudioCodecs.Count == 0)
-                                {
-                                    report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Source Audio Codecs", Status = "INFO", Message = "No source audio codec filter set (all codecs accepted)." });
-                                }
-                            }
-                            else
-                            {
-                                report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Profile Type", Status = "INFO", Message = $"Pass-through profile ({profileClass}). Output format varies per channel. Plugin queries TVHeadend for stream details at runtime." });
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        report.Warnings.Add($"Could not inspect stream profile '{config.StreamingProfile}': {ex.Message}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                report.Warnings.Add($"Could not fetch profile list: {ex.Message}");
-            }
-
-            try
-            {
-                var dvrUrl = $"{baseUrl}{webRoot}api/dvr/entry/grid?limit=1";
-                var dvrResponse = await _tvheadendApiClient.GetStringAsync(httpClient, dvrUrl, cancellationToken).ConfigureAwait(false);
-                var dvrEntries = JsonSerializer.Deserialize<DvrEntryGridResponse>(dvrResponse, JsonDefaults.Api);
-                report.DvrEntryCount = dvrEntries?.Total ?? 0;
-            }
-            catch (Exception ex)
-            {
-                report.Warnings.Add($"Could not fetch DVR entries: {ex.Message}");
-            }
-
-            try
-            {
-                var dvrLoadUrl = $"{baseUrl}{webRoot}api/idnode/load";
-                using var dvrHttpResponse = await _tvheadendApiClient.PostFormAsync(
-                    httpClient,
-                    dvrLoadUrl,
-                    new[]
-                    {
-                        new KeyValuePair<string, string>("enum", "1"),
-                        new KeyValuePair<string, string>("class", "dvrconfig"),
-                    },
-                    cancellationToken).ConfigureAwait(false);
-                dvrHttpResponse.EnsureSuccessStatusCode();
-                var dvrBody = await dvrHttpResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                var dvrConfigList = JsonSerializer.Deserialize<DvrConfigListResponse>(dvrBody, JsonDefaults.Api);
-                if (dvrConfigList != null && dvrConfigList.Entries.Length > 0)
-                {
-                    foreach (var entry in dvrConfigList.Entries)
-                    {
-                        var name = entry.EffectiveName;
-                        if (!string.IsNullOrWhiteSpace(name))
-                        {
-                            dvrProfileNames.Add(name);
-                        }
-                    }
-
-                    configuredDvrProfileExists = dvrProfileNames.Any(name => string.Equals(name, config.RecordingProfile, StringComparison.OrdinalIgnoreCase));
-                    report.PluginSettings.Add($"TVH DVR profiles: {(dvrProfileNames.Count == 0 ? "(none found)" : string.Join(", ", dvrProfileNames))}");
-
-                    foreach (var profile in dvrProfileNames)
-                    {
-                        report.AvailableRecordingProfiles.Add(profile);
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(config.RecordingProfile) && configuredDvrProfileExists)
-                    {
-                        report.Checks.Add(new DiagnoseCheck { Category = "Recording", Name = "DVR Profile", Status = "OK", Message = $"Recording profile '{config.RecordingProfile}' exists in TVHeadend." });
-                    }
-                    else if (!string.IsNullOrWhiteSpace(config.RecordingProfile) && !configuredDvrProfileExists)
-                    {
-                        report.Checks.Add(new DiagnoseCheck
-                        {
-                            Category = "Recording",
-                            Name = "DVR Profile",
-                            Status = "WARNING",
-                            Message = $"Recording profile '{config.RecordingProfile}' not found in TVHeadend.",
-                            Recommendation = $"Available DVR profiles: {string.Join(", ", dvrProfileNames)}."
-                        });
-                        scoreDeductions += 10;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                report.Warnings.Add($"Could not inspect DVR profiles: {ex.Message}");
             }
         }
+        catch (Exception ex)
+        {
+            report.Warnings.Add($"Could not inspect DVR profiles: {ex.Message}");
+        }
+
+        return scoreDeductions;
+    }
+
+    private static int CheckPlaybackSettings(DiagnoseResult report, Configuration.PluginConfiguration config)
+    {
+        var scoreDeductions = 0;
 
         report.Checks.Add(new DiagnoseCheck { Category = "Playback", Name = "Playback Mode", Status = "OK", Message = $"DirectPlay={config.SupportsDirectPlay}, DirectStream={config.SupportsDirectStream}, Transcoding={config.SupportsTranscoding}" });
 
@@ -466,6 +538,13 @@ internal sealed class DiagnosticService : IDiagnosticService
             report.Checks.Add(new DiagnoseCheck { Category = "Playback", Name = "Buffer Size", Status = "OK", Message = $"Buffer: {(config.BufferMs > 0 ? $"{config.BufferMs}ms" : "Jellyfin default")}" });
         }
 
+        return scoreDeductions;
+    }
+
+    private void CheckFfmpegSettings(DiagnoseResult report, Configuration.PluginConfiguration config)
+    {
+        var (_, jellyfinAnalyzeDuration) = _encodingOptionsReader.ReadFfmpegSettings(_serverConfigManager, _logger);
+
         if (!string.IsNullOrWhiteSpace(jellyfinAnalyzeDuration))
         {
             report.Checks.Add(new DiagnoseCheck { Category = "FFmpeg", Name = "AnalyzeDuration (global)", Status = "INFO", Message = $"Jellyfin FFmpeg AnalyzeDuration: {jellyfinAnalyzeDuration}" });
@@ -480,7 +559,10 @@ internal sealed class DiagnosticService : IDiagnosticService
         {
             report.Recommendations.Add("No channels found. Make sure TVHeadend has scanned and mapped channels.");
         }
+    }
 
+    private void CheckProbeCacheStatus(DiagnoseResult report, HashSet<string> allChannelUuids, CancellationToken cancellationToken)
+    {
         try
         {
             var cachePath = _cachePathProvider.Path;
@@ -500,7 +582,7 @@ internal sealed class DiagnosticService : IDiagnosticService
                 {
                     try
                     {
-                        var fileJson = await File.ReadAllTextAsync(file, cancellationToken).ConfigureAwait(false);
+                        var fileJson = File.ReadAllText(file);
                         using var fileDoc = JsonDocument.Parse(fileJson);
                         if (!fileDoc.RootElement.TryGetProperty("Path", out var pathEl))
                         {
@@ -556,16 +638,6 @@ internal sealed class DiagnosticService : IDiagnosticService
             report.CacheStatus = $"Could not check probe cache: {ex.Message}";
             report.Checks.Add(new DiagnoseCheck { Category = "Cache", Name = "Probe Cache Coverage", Status = "WARNING", Message = report.CacheStatus });
         }
-
-        report.CompatibilityScore = Math.Max(0, 100 - scoreDeductions);
-        report.OverallStatus = report.CompatibilityScore >= 80 ? "OK" : report.CompatibilityScore >= 50 ? "WARNING" : "ERROR";
-
-        if (report.Warnings.Count == 0 && report.Recommendations.Count == 0 && report.CompatibilityScore >= 80)
-        {
-            report.Recommendations.Add("? Everything looks good!");
-        }
-
-        return report;
     }
 
     private async Task<bool?> GetCodecProfileBoolSettingAsync(HttpClient httpClient, string baseUrl, string webRoot, string codecProfileRef, string settingName, CancellationToken cancellationToken)

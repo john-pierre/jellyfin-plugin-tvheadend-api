@@ -448,7 +448,7 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 - [x] **`ProfileContainerResolver` double-checked locking** — added `volatile` keyword to `_profileCache`.
 - [x] **`TokenValidator.IsAlphanumeric` naming** — renamed to `IsValidTokenFormat` across all call sites.
 - [x] **Remove duplicate `InternalsVisibleTo`** — removed from `.csproj` (kept in `AssemblyInfo.cs`).
-- [ ] **Split `DiagnosticService.DiagnoseAsync`** — 500+ line method (deferred: high risk, needs careful extraction).
+- [x] **Split `DiagnosticService.DiagnoseAsync`** — extracted into 9 focused private methods (AddPluginSettingsToReport, CheckAuthToken, CheckServerConnectivityAsync, FetchChannelGridAsync, CheckStreamingProfilesAsync, InspectStreamProfileDetailsAsync, CheckTranscodeProfile, CheckDvrProfilesAsync, CheckPlaybackSettings, CheckFfmpegSettings, CheckProbeCacheStatus). DiagnoseAsync is now ~40 lines of orchestration.
 - [ ] **`StatisticsService.SaveToDisk` uses synchronous `File.WriteAllText`** — acceptable for small JSON; async would require `async void` Timer callback (deferred).
 
 #### 22d — Inconsistencies
