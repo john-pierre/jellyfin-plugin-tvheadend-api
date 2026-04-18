@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Polly;
 using Polly.CircuitBreaker;
 using Xunit;
 
@@ -18,19 +19,19 @@ public class ResiliencePoliciesTests
     public async Task RetryPolicy_RetriesOnTransientError_ThenSucceeds()
     {
         // Arrange
-        var policy = ResiliencePolicies.GetRetryPolicy();
+        var pipeline = ResiliencePolicies.GetRetryPolicy();
         var callCount = 0;
 
         // Act — fail twice with 500, succeed on third attempt
-        var result = await policy.ExecuteAsync(() =>
+        var result = await pipeline.ExecuteAsync(async _ =>
         {
             callCount++;
             if (callCount <= 2)
             {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError));
+                return new HttpResponseMessage(HttpStatusCode.InternalServerError);
             }
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            return new HttpResponseMessage(HttpStatusCode.OK);
         });
 
         // Assert
@@ -42,19 +43,19 @@ public class ResiliencePoliciesTests
     public async Task RetryPolicy_RetriesOnRequestTimeout()
     {
         // Arrange
-        var policy = ResiliencePolicies.GetRetryPolicy();
+        var pipeline = ResiliencePolicies.GetRetryPolicy();
         var callCount = 0;
 
         // Act — fail once with 408 (Request Timeout), then succeed
-        var result = await policy.ExecuteAsync(() =>
+        var result = await pipeline.ExecuteAsync(async _ =>
         {
             callCount++;
             if (callCount <= 1)
             {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.RequestTimeout));
+                return new HttpResponseMessage(HttpStatusCode.RequestTimeout);
             }
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            return new HttpResponseMessage(HttpStatusCode.OK);
         });
 
         // Assert
@@ -66,19 +67,19 @@ public class ResiliencePoliciesTests
     public async Task RetryPolicy_RetriesOn429TooManyRequests()
     {
         // Arrange
-        var policy = ResiliencePolicies.GetRetryPolicy();
+        var pipeline = ResiliencePolicies.GetRetryPolicy();
         var callCount = 0;
 
         // Act
-        var result = await policy.ExecuteAsync(() =>
+        var result = await pipeline.ExecuteAsync(async _ =>
         {
             callCount++;
             if (callCount <= 1)
             {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+                return new HttpResponseMessage(HttpStatusCode.TooManyRequests);
             }
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            return new HttpResponseMessage(HttpStatusCode.OK);
         });
 
         // Assert
@@ -90,14 +91,14 @@ public class ResiliencePoliciesTests
     public async Task RetryPolicy_ReturnsLastFailure_AfterMaxRetries()
     {
         // Arrange
-        var policy = ResiliencePolicies.GetRetryPolicy();
+        var pipeline = ResiliencePolicies.GetRetryPolicy();
         var callCount = 0;
 
         // Act — always fail
-        var result = await policy.ExecuteAsync(() =>
+        var result = await pipeline.ExecuteAsync(async _ =>
         {
             callCount++;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
         });
 
         // Assert — 1 initial + 3 retries = 4 total calls
@@ -109,14 +110,14 @@ public class ResiliencePoliciesTests
     public async Task RetryPolicy_DoesNotRetryOnNonTransientError()
     {
         // Arrange
-        var policy = ResiliencePolicies.GetRetryPolicy();
+        var pipeline = ResiliencePolicies.GetRetryPolicy();
         var callCount = 0;
 
         // Act — 404 is not transient
-        var result = await policy.ExecuteAsync(() =>
+        var result = await pipeline.ExecuteAsync(async _ =>
         {
             callCount++;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
 
         // Assert
@@ -128,11 +129,11 @@ public class ResiliencePoliciesTests
     public async Task RetryPolicy_RetriesOnHttpRequestException()
     {
         // Arrange
-        var policy = ResiliencePolicies.GetRetryPolicy();
+        var pipeline = ResiliencePolicies.GetRetryPolicy();
         var callCount = 0;
 
         // Act — throw HttpRequestException twice, then succeed
-        var result = await policy.ExecuteAsync(() =>
+        var result = await pipeline.ExecuteAsync(async _ =>
         {
             callCount++;
             if (callCount <= 2)
@@ -140,7 +141,7 @@ public class ResiliencePoliciesTests
                 throw new HttpRequestException("Connection refused");
             }
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            return new HttpResponseMessage(HttpStatusCode.OK);
         });
 
         // Assert
@@ -152,30 +153,30 @@ public class ResiliencePoliciesTests
     public async Task CircuitBreakerPolicy_OpensAfterConsecutiveFailures()
     {
         // Arrange
-        var policy = ResiliencePolicies.GetCircuitBreakerPolicy();
+        var pipeline = ResiliencePolicies.GetCircuitBreakerPolicy();
 
         // Act — trigger enough failures to open the circuit
         for (int i = 0; i < ResiliencePolicies.CircuitBreakerThreshold; i++)
         {
-            await policy.ExecuteAsync(() =>
-                Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
+            await pipeline.ExecuteAsync(async _ =>
+                new HttpResponseMessage(HttpStatusCode.InternalServerError));
         }
 
         // Assert — next call should throw BrokenCircuitException
-        await Assert.ThrowsAsync<BrokenCircuitException<HttpResponseMessage>>(async () =>
-            await policy.ExecuteAsync(() =>
-                Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))));
+        await Assert.ThrowsAsync<BrokenCircuitException>(async () =>
+            await pipeline.ExecuteAsync(async _ =>
+                new HttpResponseMessage(HttpStatusCode.OK)));
     }
 
     [Fact]
     public async Task CircuitBreakerPolicy_AllowsRequests_WhenNotTripped()
     {
         // Arrange
-        var policy = ResiliencePolicies.GetCircuitBreakerPolicy();
+        var pipeline = ResiliencePolicies.GetCircuitBreakerPolicy();
 
         // Act — successful call should pass through
-        var result = await policy.ExecuteAsync(() =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var result = await pipeline.ExecuteAsync(async _ =>
+            new HttpResponseMessage(HttpStatusCode.OK));
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, result.StatusCode);

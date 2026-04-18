@@ -22,10 +22,10 @@
     <PackageReference Include="Jellyfin.Controller" Version="[10.10.7,)" />
     <PackageReference Include="Jellyfin.Model" Version="[10.10.7,)" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
-    <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="8.0.26" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="9.0.0" />
   </ItemGroup>
 
-  <!-- Force Polly assemblies into build output — Jellyfin host does not ship these. -->
+  <!-- Force resilience assemblies into build output — Jellyfin host may not ship these. -->
   <PropertyGroup>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>

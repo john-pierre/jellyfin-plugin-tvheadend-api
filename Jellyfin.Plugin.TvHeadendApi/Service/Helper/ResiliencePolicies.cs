@@ -1,9 +1,9 @@
 using System;
 using System.Net;
 using System.Net.Http;
+using System.Threading.Tasks;
 using Polly;
 using Polly.CircuitBreaker;
-using Polly.Extensions.Http;
 using Polly.Retry;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Helper;
@@ -34,31 +34,88 @@ internal static class ResiliencePolicies
     internal const int CircuitBreakerDurationSeconds = 30;
 
     /// <summary>
-    /// Creates the retry policy: retries up to <see cref="RetryCount"/> times on transient HTTP errors
-    /// (5xx, 408, <see cref="HttpRequestException"/>) with exponential back-off.
+    /// Determines whether an HTTP outcome represents a transient error that should be retried.
     /// </summary>
-    /// <returns>An async retry policy for <see cref="HttpResponseMessage"/>.</returns>
-    public static AsyncRetryPolicy<HttpResponseMessage> GetRetryPolicy()
+    private static bool IsTransientError(Outcome<HttpResponseMessage> outcome)
     {
-        return HttpPolicyExtensions
-            .HandleTransientHttpError()
-            .OrResult(msg => msg.StatusCode == HttpStatusCode.TooManyRequests)
-            .WaitAndRetryAsync(
-                RetryCount,
-                retryAttempt => TimeSpan.FromSeconds(Math.Pow(RetryBaseDelaySeconds * 2, retryAttempt)));
+        if (outcome.Exception is HttpRequestException)
+        {
+            return true;
+        }
+
+        if (outcome.Result is null)
+        {
+            return false;
+        }
+
+        var status = (int)outcome.Result.StatusCode;
+        return status >= 500 || outcome.Result.StatusCode == HttpStatusCode.RequestTimeout;
     }
 
     /// <summary>
-    /// Creates the circuit breaker policy: breaks after <see cref="CircuitBreakerThreshold"/> consecutive
-    /// transient failures and stays open for <see cref="CircuitBreakerDurationSeconds"/> seconds.
+    /// Gets retry strategy options for use with <c>AddResilienceHandler</c>.
     /// </summary>
-    /// <returns>An async circuit breaker policy for <see cref="HttpResponseMessage"/>.</returns>
-    public static AsyncCircuitBreakerPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
+    /// <returns>Retry strategy options for <see cref="HttpResponseMessage"/>.</returns>
+    public static RetryStrategyOptions<HttpResponseMessage> GetRetryOptions()
     {
-        return HttpPolicyExtensions
-            .HandleTransientHttpError()
-            .CircuitBreakerAsync(
-                CircuitBreakerThreshold,
-                TimeSpan.FromSeconds(CircuitBreakerDurationSeconds));
+        return new RetryStrategyOptions<HttpResponseMessage>
+        {
+            MaxRetryAttempts = RetryCount,
+            BackoffType = DelayBackoffType.Exponential,
+            Delay = TimeSpan.FromSeconds(RetryBaseDelaySeconds * 2),
+            ShouldHandle = args =>
+            {
+                var outcome = args.Outcome;
+                if (IsTransientError(outcome))
+                {
+                    return ValueTask.FromResult(true);
+                }
+
+                if (outcome.Result?.StatusCode == HttpStatusCode.TooManyRequests)
+                {
+                    return ValueTask.FromResult(true);
+                }
+
+                return ValueTask.FromResult(false);
+            },
+        };
+    }
+
+    /// <summary>
+    /// Gets circuit breaker strategy options for use with <c>AddResilienceHandler</c>.
+    /// </summary>
+    /// <returns>Circuit breaker strategy options for <see cref="HttpResponseMessage"/>.</returns>
+    public static CircuitBreakerStrategyOptions<HttpResponseMessage> GetCircuitBreakerOptions()
+    {
+        return new CircuitBreakerStrategyOptions<HttpResponseMessage>
+        {
+            FailureRatio = 1.0,
+            MinimumThroughput = CircuitBreakerThreshold,
+            SamplingDuration = TimeSpan.FromSeconds(CircuitBreakerDurationSeconds),
+            BreakDuration = TimeSpan.FromSeconds(CircuitBreakerDurationSeconds),
+            ShouldHandle = args => ValueTask.FromResult(IsTransientError(args.Outcome)),
+        };
+    }
+
+    /// <summary>
+    /// Creates a retry pipeline for direct use in tests.
+    /// </summary>
+    /// <returns>A resilience pipeline for <see cref="HttpResponseMessage"/>.</returns>
+    public static ResiliencePipeline<HttpResponseMessage> GetRetryPolicy()
+    {
+        return new ResiliencePipelineBuilder<HttpResponseMessage>()
+            .AddRetry(GetRetryOptions())
+            .Build();
+    }
+
+    /// <summary>
+    /// Creates a circuit breaker pipeline for direct use in tests.
+    /// </summary>
+    /// <returns>A resilience pipeline for <see cref="HttpResponseMessage"/>.</returns>
+    public static ResiliencePipeline<HttpResponseMessage> GetCircuitBreakerPolicy()
+    {
+        return new ResiliencePipelineBuilder<HttpResponseMessage>()
+            .AddCircuitBreaker(GetCircuitBreakerOptions())
+            .Build();
     }
 }

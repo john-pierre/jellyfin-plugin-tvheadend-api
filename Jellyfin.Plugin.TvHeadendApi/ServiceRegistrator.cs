@@ -16,6 +16,8 @@ using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Http.Resilience;
+using Polly;
 
 namespace Jellyfin.Plugin.TvHeadendApi;
 
@@ -48,8 +50,12 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             {
                 CheckCertificateRevocationList = true,
             })
-            .AddPolicyHandler(ResiliencePolicies.GetRetryPolicy())
-            .AddPolicyHandler(ResiliencePolicies.GetCircuitBreakerPolicy());
+            .AddResilienceHandler("TvHeadendResilience", builder =>
+            {
+                builder
+                    .AddRetry(ResiliencePolicies.GetRetryOptions())
+                    .AddCircuitBreaker(ResiliencePolicies.GetCircuitBreakerOptions());
+            });
 
         serviceCollection.AddHttpClient(ApiClient.HttpClientUnsafeName)
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -57,8 +63,12 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 CheckCertificateRevocationList = false,
                 ServerCertificateCustomValidationCallback = static (_, _, _, _) => true,
             })
-            .AddPolicyHandler(ResiliencePolicies.GetRetryPolicy())
-            .AddPolicyHandler(ResiliencePolicies.GetCircuitBreakerPolicy());
+            .AddResilienceHandler("TvHeadendUnsafeResilience", builder =>
+            {
+                builder
+                    .AddRetry(ResiliencePolicies.GetRetryOptions())
+                    .AddCircuitBreaker(ResiliencePolicies.GetCircuitBreakerOptions());
+            });
 
         // Plugin path/config providers — decouple services from Plugin.Instance singleton.
         serviceCollection.AddSingleton(new PluginConfigurationProvider(() => Plugin.Instance?.Configuration as Configuration.PluginConfiguration));
