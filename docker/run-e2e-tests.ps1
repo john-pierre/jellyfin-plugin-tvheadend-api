@@ -58,7 +58,7 @@ try {
 
     Log "Running live integration tests..."
     $env:TVHEADEND_LIVE_TESTS = "true"
-    $TestProject = Join-Path $ProjectRoot "Jellyfin.Plugin.TvHeadendApi.Tests" "Jellyfin.Plugin.TvHeadendApi.Tests.csproj"
+    $TestProject = Join-Path (Join-Path $ProjectRoot "Jellyfin.Plugin.TvHeadendApi.Tests") "Jellyfin.Plugin.TvHeadendApi.Tests.csproj"
     dotnet test $TestProject `
         -c Release `
         --filter "Category=LiveIntegration" `
