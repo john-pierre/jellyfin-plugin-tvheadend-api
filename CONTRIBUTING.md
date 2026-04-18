@@ -27,10 +27,15 @@ The build must succeed with **zero warnings and zero errors** before submitting 
 
 ### 4. Run Locally (Optional)
 
-Use the Docker development environment to load the plugin into a local Jellyfin instance:
+Use the Docker development environment to load the plugin into a local Jellyfin instance.
+The build script runs unit tests, increments the dev version, builds the Docker image, and recreates the container:
 
-```bash
-docker compose up -d --build
+```powershell
+# PowerShell (recommended)
+.\docker\build.ps1
+
+# Dry-run to see what would happen without executing anything
+.\docker\build.ps1 -DryRun
 ```
 
 Jellyfin will be available at `http://localhost:8096`. Note that this does **not** include a TVHeadend backend.
