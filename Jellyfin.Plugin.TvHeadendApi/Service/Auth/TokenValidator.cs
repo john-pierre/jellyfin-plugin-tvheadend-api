@@ -14,7 +14,7 @@ internal static class TokenValidator
     /// </summary>
     /// <param name="token">Token value to validate.</param>
     /// <returns><c>true</c> when the token is non-empty and contains only valid TVH token characters; otherwise <c>false</c>.</returns>
-    public static bool IsAlphanumeric(string? token)
+    public static bool IsValidTokenFormat(string? token)
     {
         if (string.IsNullOrWhiteSpace(token))
         {

@@ -216,16 +216,7 @@ internal sealed class ProfileResolver : IProfileResolver
         return new CodecProfileDetails(codecProfileUuid, codecProfileName ?? string.Empty, codecProfileClass, codecName, deinterlace);
     }
 
-    private static string NormalizeCodecProfileTitle(string title)
-    {
-        if (string.IsNullOrWhiteSpace(title))
-        {
-            return string.Empty;
-        }
-
-        var separatorIndex = title.IndexOf(" (", StringComparison.Ordinal);
-        return separatorIndex > 0 ? title[..separatorIndex] : title;
-    }
+    private static string NormalizeCodecProfileTitle(string title) => ProfileMappingHelper.NormalizeCodecProfileTitle(title);
 
     private static string DeriveCodecName(string? codec, string? codecProfileClass, string? codecProfileName, string? fallbackReference)
     {

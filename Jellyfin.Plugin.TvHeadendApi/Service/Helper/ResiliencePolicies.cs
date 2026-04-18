@@ -92,6 +92,11 @@ internal sealed class ResilienceHandler : DelegatingHandler
                 using var clone = await CloneRequestAsync(request, cancellationToken).ConfigureAwait(false);
                 response = await base.SendAsync(clone, cancellationToken).ConfigureAwait(false);
             }
+            catch (OperationCanceledException)
+            {
+                // Cancellation is not a transient failure — propagate immediately without recording failure.
+                throw;
+            }
             catch (HttpRequestException) when (attempt < ResiliencePolicies.RetryCount)
             {
                 RecordFailure();
@@ -163,6 +168,30 @@ internal sealed class ResilienceHandler : DelegatingHandler
         lock (_lock)
         {
             _consecutiveFailures = 0;
+        }
+    }
+
+    /// <summary>
+    /// Gets the current consecutive failure count. Exposed for testing.
+    /// </summary>
+    /// <returns>The number of consecutive failures.</returns>
+    internal int GetConsecutiveFailures()
+    {
+        lock (_lock)
+        {
+            return _consecutiveFailures;
+        }
+    }
+
+    /// <summary>
+    /// Sets the open-until time. Exposed for testing to simulate time advancement.
+    /// </summary>
+    /// <param name="openUntil">The new open-until timestamp.</param>
+    internal void SetOpenUntil(DateTimeOffset openUntil)
+    {
+        lock (_lock)
+        {
+            _openUntil = openUntil;
         }
     }
 

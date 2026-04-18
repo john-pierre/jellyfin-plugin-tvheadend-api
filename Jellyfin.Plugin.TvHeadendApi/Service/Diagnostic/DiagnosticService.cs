@@ -107,7 +107,7 @@ internal sealed class DiagnosticService : IDiagnosticService
             });
             scoreDeductions += 20;
         }
-        else if (!TokenValidator.IsAlphanumeric(config.AuthToken))
+        else if (!TokenValidator.IsValidTokenFormat(config.AuthToken))
         {
             report.Checks.Add(new DiagnoseCheck
             {
@@ -570,7 +570,7 @@ internal sealed class DiagnosticService : IDiagnosticService
 
     private async Task<bool?> GetCodecProfileBoolSettingAsync(HttpClient httpClient, string baseUrl, string webRoot, string codecProfileRef, string settingName, CancellationToken cancellationToken)
     {
-        var codecProfile = await FindCodecProfileEntryByReferenceAsync(httpClient, baseUrl, webRoot, codecProfileRef, cancellationToken).ConfigureAwait(false);
+        var codecProfile = await Profile.ProfileMappingHelper.FindCodecProfileEntryByReferenceAsync(_tvheadendApiClient, httpClient, baseUrl, webRoot, codecProfileRef, cancellationToken).ConfigureAwait(false);
         if (codecProfile == null || string.IsNullOrWhiteSpace(codecProfile.Key))
         {
             return null;
@@ -585,53 +585,6 @@ internal sealed class DiagnosticService : IDiagnosticService
         var codecEntry = codecResponse.Entries[0];
         var directValue = GetIdNodeProperty(codecEntry, settingName);
         return ReadBoolOrParam(directValue, codecEntry.Params, settingName);
-    }
-
-    private async Task<CodecProfileListEntry?> FindCodecProfileEntryByReferenceAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileReference, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(profileReference))
-        {
-            return null;
-        }
-
-        var listUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
-        var response = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
-        var list = JsonSerializer.Deserialize<CodecProfileListResponse>(response, JsonDefaults.Api);
-        if (list?.Entries == null || list.Entries.Length == 0)
-        {
-            return null;
-        }
-
-        foreach (var entry in list.Entries)
-        {
-            var uuid = entry.EffectiveUuid;
-            var title = entry.EffectiveTitle;
-            var normalizedTitle = NormalizeCodecProfileTitle(title);
-
-            if (string.Equals(profileReference, uuid, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(profileReference, title, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(profileReference, normalizedTitle, StringComparison.OrdinalIgnoreCase))
-            {
-                return new CodecProfileListEntry
-                {
-                    Key = uuid,
-                    Val = string.IsNullOrWhiteSpace(normalizedTitle) ? title : normalizedTitle,
-                };
-            }
-        }
-
-        return null;
-    }
-
-    private static string NormalizeCodecProfileTitle(string title)
-    {
-        if (string.IsNullOrWhiteSpace(title))
-        {
-            return string.Empty;
-        }
-
-        var separatorIndex = title.IndexOf(" (", StringComparison.Ordinal);
-        return separatorIndex > 0 ? title[..separatorIndex] : title;
     }
 
     private async Task<IdNodeLoadResponse?> LoadIdNodeByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string uuid, CancellationToken cancellationToken)
@@ -675,60 +628,6 @@ internal sealed class DiagnosticService : IDiagnosticService
 
     private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
-        return ReadBool(directValue) ?? ReadBool(GetParamValue(parameters, parameterName));
-    }
-
-    private static JsonElement GetParamValue(IReadOnlyList<IdNodeParam> parameters, string parameterName)
-    {
-        foreach (var parameter in parameters)
-        {
-            if (string.Equals(parameter.Id, parameterName, StringComparison.OrdinalIgnoreCase))
-            {
-                return parameter.Value;
-            }
-        }
-
-        return default;
-    }
-
-    private static bool? ReadBool(JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.True)
-        {
-            return true;
-        }
-
-        if (value.ValueKind == JsonValueKind.False)
-        {
-            return false;
-        }
-
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
-        {
-            return intValue != 0;
-        }
-
-        if (value.ValueKind == JsonValueKind.String)
-        {
-            var rawValue = value.GetString();
-            if (bool.TryParse(rawValue, out var boolValue))
-            {
-                return boolValue;
-            }
-
-            if (int.TryParse(rawValue, out var parsedInt))
-            {
-                return parsedInt != 0;
-            }
-        }
-
-        return null;
-    }
-
-    private sealed class CodecProfileListEntry
-    {
-        public string Key { get; init; } = string.Empty;
-
-        public string Val { get; init; } = string.Empty;
+        return IdNodeValueHelper.ReadBoolOrParam(directValue, parameters, parameterName);
     }
 }

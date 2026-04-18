@@ -933,7 +933,12 @@ public class DvrServiceTests
                 It.IsAny<string>(),
                 It.IsAny<IEnumerable<KeyValuePair<string, string>>>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK));
+            .Returns<HttpClient, string, IEnumerable<KeyValuePair<string, string>>, CancellationToken>(
+                (client, url, formValues, ct) =>
+                {
+                    var content = new FormUrlEncodedContent(formValues);
+                    return client.PostAsync(url, content, ct);
+                });
 
         return new DvrService(NullLogger<DvrService>.Instance, apiClient.Object, urlBuilder.Object);
     }

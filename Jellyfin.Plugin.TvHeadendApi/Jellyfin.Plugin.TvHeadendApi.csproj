@@ -14,9 +14,6 @@
     <InformationalVersion>$(AssemblyVersion)</InformationalVersion>
   </PropertyGroup>
 
-  <ItemGroup>
-    <InternalsVisibleTo Include="Jellyfin.Plugin.TvHeadendApi.Tests" />
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Jellyfin.Controller" Version="[10.10.7,)" />

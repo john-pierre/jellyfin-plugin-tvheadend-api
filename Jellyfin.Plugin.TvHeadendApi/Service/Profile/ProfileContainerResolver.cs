@@ -19,7 +19,7 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
     private readonly IApiClient _tvheadendApiClient;
     private readonly IProfileResolver _streamProfileResolver;
 
-    private ProfileCacheEntry? _profileCache;
+    private volatile ProfileCacheEntry? _profileCache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ProfileContainerResolver"/> class.

@@ -6,6 +6,7 @@
 .vs/
 .vscode/
 docker/
+!docker/start-jellyfin.sh
 
 **/bin/
 **/obj/

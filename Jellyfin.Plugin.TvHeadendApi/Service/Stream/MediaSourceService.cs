@@ -507,7 +507,7 @@ internal sealed class MediaSourceService : IMediaSourceService
         var webRoot = _tvheadendApiClient.GetWebRoot(config);
         var authSuffix = string.IsNullOrWhiteSpace(config.AuthToken)
             ? string.Empty
-            : $"?auth={config.AuthToken}";
+            : $"?auth={Uri.EscapeDataString(config.AuthToken)}";
         return $"{baseUrl}{webRoot}dvrfile/{recordingId}{authSuffix}";
     }
 

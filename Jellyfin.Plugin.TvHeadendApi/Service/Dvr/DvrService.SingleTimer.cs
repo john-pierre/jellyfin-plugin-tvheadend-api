@@ -59,7 +59,7 @@ internal sealed partial class DvrService
         var configUuid = await GetRecordingProfileUuidAsync(config.RecordingProfile, cancellationToken).ConfigureAwait(false);
         string path;
         string requestBodyJson;
-        FormUrlEncodedContent content;
+        IEnumerable<KeyValuePair<string, string>> formValues;
 
         if (!string.IsNullOrWhiteSpace(info.ProgramId))
         {
@@ -70,7 +70,7 @@ internal sealed partial class DvrService
                 new KeyValuePair<string, string>("event_id", info.ProgramId),
             };
             requestBodyJson = JsonSerializer.Serialize(pairs);
-            content = new FormUrlEncodedContent(pairs);
+            formValues = pairs;
         }
         else
         {
@@ -89,10 +89,7 @@ internal sealed partial class DvrService
             };
 
             requestBodyJson = JsonSerializer.Serialize(timerJson, JsonDefaults.Api);
-            content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("conf", requestBodyJson),
-            });
+            formValues = new[] { new KeyValuePair<string, string>("conf", requestBodyJson) };
         }
 
         var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, path);
@@ -101,7 +98,11 @@ internal sealed partial class DvrService
             url,
             requestBodyJson);
         using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
-        using var response = await httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
+        using var response = await _tvheadendApiClient.PostFormAsync(
+            httpClient,
+            url,
+            formValues,
+            cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -172,13 +173,17 @@ internal sealed partial class DvrService
         }
 
         var nodeJson = JsonSerializer.Serialize(new[] { updates });
-        var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("node", nodeJson) });
+        var formValues = new[] { new KeyValuePair<string, string>("node", nodeJson) };
         _logger.LogDebug(
             "TVHeadend timer update request. URL={Url}, RequestBody={RequestBody}",
             url,
             nodeJson);
         using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
-        using var response = await httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
+        using var response = await _tvheadendApiClient.PostFormAsync(
+            httpClient,
+            url,
+            formValues,
+            cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);

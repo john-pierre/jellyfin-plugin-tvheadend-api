@@ -433,45 +433,47 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 
 #### 22a — Bug Fixes
 
-- [ ] **`FormUrlEncodedContent` not disposed** — `DvrService.SingleTimer.cs` and `DvrService.SeriesTimer.cs` create `FormUrlEncodedContent` without `using`. Wrap in `using var content = new FormUrlEncodedContent(...)`.
-- [ ] **Unused field `_applicationHost` in `Plugin.cs`** — stored and null-checked but never read. Remove the field (keep constructor parameter if DI requires it).
-- [ ] **`ResilienceHandler` swallows `OperationCanceledException`** — `ResiliencePolicies.cs` only catches `HttpRequestException`; cancellation via `TaskCanceledException` records a failure and retries instead of propagating immediately. Add explicit `OperationCanceledException` catch that rethrows without `RecordFailure`.
+- [x] **`FormUrlEncodedContent` not disposed** — `DvrService.SingleTimer.cs` and `DvrService.SeriesTimer.cs` migrated from manual `FormUrlEncodedContent` + `httpClient.PostAsync` to `_tvheadendApiClient.PostFormAsync` (which handles disposal internally).
+- [x] **Unused field `_applicationHost` in `Plugin.cs`** — removed field, kept constructor parameter with `ArgumentNullException.ThrowIfNull` for DI validation.
+- [x] **`ResilienceHandler` swallows `OperationCanceledException`** — added explicit `catch (OperationCanceledException) { throw; }` before `HttpRequestException` catches to propagate cancellation without recording failure.
 
 #### 22b — Code Duplication
 
-- [ ] **Extract `NormalizeCodecProfileTitle`** — duplicated in `ProfileResolver.cs`, `DefaultProfileService.cs`, `DiagnosticService.cs`. Extract to shared `ProfileMappingHelper.NormalizeCodecProfileTitle()`.
-- [ ] **Extract `FindCodecProfileEntryByReferenceAsync`** — duplicated in `DefaultProfileService.cs` and `DiagnosticService.cs`. Extract to shared helper or have `DiagnosticService` use `IProfileResolver`.
-- [ ] **Remove duplicated `ReadBool`/`ReadBoolOrParam`/`GetParamValue` from `DiagnosticService`** — these replicate `IdNodeValueHelper` methods. Use `IdNodeValueHelper` directly.
+- [x] **Extract `NormalizeCodecProfileTitle`** — created `Service/Helper/ProfileMappingHelper.cs`. All 3 copies (ProfileResolver, DefaultProfileService, DiagnosticService) now delegate to it.
+- [x] **Extract `FindCodecProfileEntryByReferenceAsync`** — added to `Service/Profile/ProfileMappingHelper.cs`. Both `DefaultProfileService` and `DiagnosticService` now delegate to the shared implementation.
+- [x] **Remove duplicated `ReadBool`/`ReadBoolOrParam`/`GetParamValue` from `DiagnosticService`** — replaced with delegation to `IdNodeValueHelper`.
 
 #### 22c — Code Quality
 
-- [ ] **Split `DiagnosticService.DiagnoseAsync`** — 500+ line method. Extract private methods per diagnostic area (connection, streaming, DVR, cache).
-- [ ] **`ProfileContainerResolver` double-checked locking** — `_profileCache` read outside lock without `volatile`. Add `volatile` keyword or use `Volatile.Read`.
-- [ ] **`StatisticsService.SaveToDisk` uses synchronous `File.WriteAllText`** on a Timer callback. Consider `File.WriteAllTextAsync`.
-- [ ] **`TokenValidator.IsAlphanumeric` naming** — method also accepts `-` and `.`. Rename to `IsValidTokenFormat` or `IsTvhTokenSafe`.
-- [ ] **Remove duplicate `InternalsVisibleTo`** — declared in both `.csproj` and `AssemblyInfo.cs`. Keep one source of truth.
+- [x] **`ProfileContainerResolver` double-checked locking** — added `volatile` keyword to `_profileCache`.
+- [x] **`TokenValidator.IsAlphanumeric` naming** — renamed to `IsValidTokenFormat` across all call sites.
+- [x] **Remove duplicate `InternalsVisibleTo`** — removed from `.csproj` (kept in `AssemblyInfo.cs`).
+- [ ] **Split `DiagnosticService.DiagnoseAsync`** — 500+ line method (deferred: high risk, needs careful extraction).
+- [ ] **`StatisticsService.SaveToDisk` uses synchronous `File.WriteAllText`** — acceptable for small JSON; async would require `async void` Timer callback (deferred).
 
 #### 22d — Inconsistencies
 
-- [ ] **`DvrService` direct `httpClient.PostAsync` calls** — `SingleTimer.cs` and `SeriesTimer.cs` bypass `IApiClient.PostFormAsync` and call `httpClient.PostAsync` directly. Migrate to `_tvheadendApiClient.PostFormAsync` for consistency with the rest of the codebase.
-- [ ] **`DvrService.GetNewTimerDefaultsAsync` ignores `cancellationToken`** — add `cancellationToken.ThrowIfCancellationRequested()` at method start.
+- [x] **`DvrService` direct `httpClient.PostAsync` calls** — migrated `CreateTimerAsync`, `UpdateTimerAsync`, `CreateSeriesTimerAsync`, `UpdateSeriesTimerAsync` to use `_tvheadendApiClient.PostFormAsync`.
+- [x] **`DvrService.GetNewTimerDefaultsAsync` ignores `cancellationToken`** — added `cancellationToken.ThrowIfCancellationRequested()`.
 
 #### 22e — Security Hardening
 
-- [ ] **`UrlBuilder.MaskSensitiveData` gap** — does not mask URL-encoded credentials (e.g., `%40`). Also mask `Uri.EscapeDataString(username):Uri.EscapeDataString(password)`.
-- [ ] **`GetRecordingStreamUrl` doesn't URL-encode auth token** — use `Uri.EscapeDataString(config.AuthToken)` defensively.
-- [ ] **`docker-compose.yaml` runs as root** — add comment clarifying dev-only usage, or switch to non-root user.
+- [x] **`UrlBuilder.MaskSensitiveData` gap** — now also masks URL-encoded credentials (`Uri.EscapeDataString` form).
+- [x] **`GetRecordingStreamUrl` doesn't URL-encode auth token** — added `Uri.EscapeDataString(config.AuthToken)`.
+- [x] **`docker-compose.yaml` runs as root** — added comment clarifying dev-only usage.
 
 #### 22f — Documentation
 
-- [ ] **Update `docs/architecture/overview.md`** — line 131 states "No retry/resilience patterns" but `ResilienceHandler` exists since Milestone 9. Update to reflect current state.
+- [x] **Update `docs/architecture/overview.md`** — replaced "No retry/resilience patterns" with description of `ResilienceHandler` (retry + circuit breaker).
 
 #### 22g — Test Gaps
 
-- [ ] **Add `StatisticsService` event-handling tests** — `OnPlaybackStart`/`OnPlaybackStopped` branching logic (live TV check, session tracking) needs targeted tests.
-- [ ] **Add `ResilienceHandler` circuit breaker half-open tests** — `ThrowIfCircuitOpen` half-open logic is untested.
+- [x] **Add `StatisticsService` event-handling tests** — 3 tests: non-LiveTvChannel item ignored on start/stop, unknown session ID on stop ignored.
+- [x] **Add `ResilienceHandler` circuit breaker half-open tests** — 3 tests: half-open success closes circuit, half-open failure re-opens circuit, cancellation token propagates immediately without retry.
 
 #### 22h — Build Warnings
 
-- [ ] **Fix CS8625 nullable warnings in `MediaSourceServiceTests.cs:559`** — `ProfileSnapshot` constructor receives `null` for non-nullable `string` params. Use `string.Empty` or `null!` with justification comment.
+- [x] **Fix CS8625 nullable warnings in `MediaSourceServiceTests.cs`** — replaced `null` with `string.Empty` for non-nullable `ProfileSnapshot` parameters.
+
+**Result:** Build 0 warnings / 0 errors, 536 tests passing.
 

@@ -180,6 +180,106 @@ public class ResiliencePoliciesTests
         Assert.Equal(30, ResiliencePolicies.CircuitBreakerDurationSeconds);
     }
 
+    [Fact]
+    public async Task CircuitBreaker_HalfOpen_SuccessClosesCircuit()
+    {
+        var callCount = 0;
+        var shouldFail = true;
+        var inner = new FakeHandler(() =>
+        {
+            callCount++;
+            return shouldFail
+                ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                : new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        var handler = new ResilienceHandler { InnerHandler = inner };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        // Trip the circuit: send enough failures to open it.
+        for (int i = 0; i < 3 && handler.GetConsecutiveFailures() < ResiliencePolicies.CircuitBreakerThreshold; i++)
+        {
+            try
+            {
+                await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
+            }
+            catch (InvalidOperationException)
+            {
+                break;
+            }
+        }
+
+        // Simulate the break duration elapsing.
+        handler.SetOpenUntil(DateTimeOffset.UtcNow.AddSeconds(-1));
+
+        // Switch to success responses — the half-open trial should succeed and close the circuit.
+        shouldFail = false;
+        var result = await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
+        Assert.Equal(HttpStatusCode.OK, result.StatusCode);
+
+        // Circuit should now be closed (consecutive failures reset to 0).
+        Assert.Equal(0, handler.GetConsecutiveFailures());
+    }
+
+    [Fact]
+    public async Task CircuitBreaker_HalfOpen_FailureReopensCircuit()
+    {
+        var inner = new FakeHandler(() => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+
+        var handler = new ResilienceHandler { InnerHandler = inner };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        // Trip the circuit.
+        for (int i = 0; i < 3; i++)
+        {
+            try
+            {
+                await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
+            }
+            catch (InvalidOperationException)
+            {
+                break;
+            }
+        }
+
+        // Simulate break duration elapsed — half-open state.
+        handler.SetOpenUntil(DateTimeOffset.UtcNow.AddSeconds(-1));
+
+        // Send a trial request — it will fail and re-open the circuit.
+        // The request may throw InvalidOperationException during retry if circuit re-opens mid-attempt,
+        // or return a failure response if all retries complete.
+        try
+        {
+            await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
+        }
+        catch (InvalidOperationException)
+        {
+            // Expected: circuit re-opened during retry
+        }
+
+        // The circuit should be open again — next request throws immediately.
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ResilienceHandler_CancellationToken_PropagatesImmediately()
+    {
+        var callCount = 0;
+        var inner = new FakeHandler(() =>
+        {
+            callCount++;
+            throw new TaskCanceledException("Operation cancelled", null, new CancellationToken(true));
+        });
+        using var invoker = CreateInvoker(inner);
+
+        await Assert.ThrowsAsync<TaskCanceledException>(
+            () => invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None));
+
+        // Should not retry on cancellation — only 1 call.
+        Assert.Equal(1, callCount);
+    }
+
     /// <summary>
     /// A fake <see cref="HttpMessageHandler"/> that delegates to a factory function.
     /// </summary>

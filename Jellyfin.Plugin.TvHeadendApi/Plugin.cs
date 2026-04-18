@@ -24,11 +24,6 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     private readonly ILogger<Plugin> _logger;
 
     /// <summary>
-    /// The server application host instance for resolving dependencies and interacting with the server.
-    /// </summary>
-    private readonly IServerApplicationHost _applicationHost;
-
-    /// <summary>
     /// Initializes a new instance of the <see cref="Plugin"/> class.
     /// This constructor sets up essential services like logging, configuration management, and dependency resolution.
     /// </summary>
@@ -43,7 +38,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         ILogger<Plugin> logger)
         : base(applicationPaths, xmlSerializer)
     {
-        _applicationHost = applicationHost ?? throw new ArgumentNullException(nameof(applicationHost));
+        ArgumentNullException.ThrowIfNull(applicationHost);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Instance = this;
     }

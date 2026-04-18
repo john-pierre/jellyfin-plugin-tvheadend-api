@@ -556,7 +556,7 @@ public class MediaSourceServiceTests
     [Fact]
     public void BuildMediaInfoCacheContent_WithNullVideoAndAudioCodec_DefaultsToH264AndAac()
     {
-        var snapshot = new ProfileSnapshot("pass", "uuid", "profile-mpegts", null, string.Empty, string.Empty, null, null, null);
+        var snapshot = new ProfileSnapshot("pass", "uuid", "profile-mpegts", string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, null);
         var content = MediaSourceService.BuildMediaInfoCacheContent("http://tvh:9981/stream", snapshot);
 
         Assert.Equal("mpegts", content["Container"]);

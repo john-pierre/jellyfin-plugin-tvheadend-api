@@ -99,7 +99,7 @@ internal sealed class TokenService : ITokenService
                     continue;
                 }
 
-                if (TokenValidator.IsAlphanumeric(token))
+                if (TokenValidator.IsValidTokenFormat(token))
                 {
                     return new AuthTokenGenerationResult
                     {

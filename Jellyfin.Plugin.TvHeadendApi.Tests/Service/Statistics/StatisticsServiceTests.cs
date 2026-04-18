@@ -494,5 +494,69 @@ public class StatisticsServiceTests
 
         sut.Dispose();
     }
+
+    [Fact]
+    public async Task PlaybackStart_WithNonLiveTvItem_IsIgnored()
+    {
+        var sm = new Mock<ISessionManager>();
+        var sut = CreateSut(sm);
+        await sut.StartAsync(CancellationToken.None);
+
+        // Use a non-LiveTvChannel item (e.g., a Movie)
+        var nonLiveItem = new MediaBrowser.Controller.Entities.Movies.Movie { Name = "SomeMovie" };
+        var startArgs = new MediaBrowser.Controller.Library.PlaybackProgressEventArgs
+        {
+            Item = nonLiveItem,
+            PlaySessionId = "non-live-session",
+            DeviceName = "Dev",
+            ClientName = "Client",
+        };
+        sm.Raise(m => m.PlaybackStart += null, startArgs);
+
+        var stats = sut.GetStatistics(0);
+        Assert.Equal(0, stats.ActiveCount);
+
+        sut.Dispose();
+    }
+
+    [Fact]
+    public async Task PlaybackStopped_WithNonLiveTvItem_IsIgnored()
+    {
+        var sm = new Mock<ISessionManager>();
+        var sut = CreateSut(sm);
+        await sut.StartAsync(CancellationToken.None);
+
+        var nonLiveItem = new MediaBrowser.Controller.Entities.Movies.Movie { Name = "SomeMovie" };
+        var stopArgs = new MediaBrowser.Controller.Library.PlaybackStopEventArgs
+        {
+            Item = nonLiveItem,
+            PlaySessionId = "non-live-session",
+        };
+        sm.Raise(m => m.PlaybackStopped += null, stopArgs);
+
+        Assert.Empty(sut.AllSessions);
+
+        sut.Dispose();
+    }
+
+    [Fact]
+    public async Task PlaybackStopped_WithUnknownSessionId_IsIgnored()
+    {
+        var sm = new Mock<ISessionManager>();
+        var sut = CreateSut(sm);
+        await sut.StartAsync(CancellationToken.None);
+
+        var channel = new LiveTvChannel { Name = "TestChannel" };
+        var stopArgs = new MediaBrowser.Controller.Library.PlaybackStopEventArgs
+        {
+            Item = channel,
+            PlaySessionId = "session-that-never-started",
+        };
+        sm.Raise(m => m.PlaybackStopped += null, stopArgs);
+
+        Assert.Empty(sut.AllSessions);
+
+        sut.Dispose();
+    }
 }
 

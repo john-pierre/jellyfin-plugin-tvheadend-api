@@ -433,38 +433,14 @@ internal sealed class DefaultProfileService : IDefaultProfileService
 
     private async Task<CodecProfileListEntry?> FindCodecProfileEntryByReferenceAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileReference, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(profileReference))
+        var match = await ProfileMappingHelper.FindCodecProfileEntryByReferenceAsync(
+            _tvheadendApiClient, httpClient, baseUrl, webRoot, profileReference, cancellationToken).ConfigureAwait(false);
+        if (match == null)
         {
             return null;
         }
 
-        var listUrl = $"{baseUrl}{webRoot}api/codec_profile/list";
-        var response = await _tvheadendApiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
-        var list = JsonSerializer.Deserialize<CodecProfileListResponse>(response, JsonDefaults.Api);
-        if (list?.Entries == null || list.Entries.Length == 0)
-        {
-            return null;
-        }
-
-        foreach (var entry in list.Entries)
-        {
-            var uuid = entry.EffectiveUuid;
-            var title = entry.EffectiveTitle;
-            var normalizedTitle = NormalizeCodecProfileTitle(title);
-
-            if (string.Equals(profileReference, uuid, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(profileReference, title, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(profileReference, normalizedTitle, StringComparison.OrdinalIgnoreCase))
-            {
-                return new CodecProfileListEntry
-                {
-                    Key = uuid,
-                    Val = string.IsNullOrWhiteSpace(normalizedTitle) ? title : normalizedTitle,
-                };
-            }
-        }
-
-        return null;
+        return new CodecProfileListEntry { Key = match.Key, Val = match.Val };
     }
 
     private async Task<ProfileListEntry?> GetStreamingProfileByNameAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
@@ -551,14 +527,5 @@ internal sealed class DefaultProfileService : IDefaultProfileService
         }
     }
 
-    private static string NormalizeCodecProfileTitle(string title)
-    {
-        if (string.IsNullOrWhiteSpace(title))
-        {
-            return string.Empty;
-        }
-
-        var separatorIndex = title.IndexOf(" (", StringComparison.Ordinal);
-        return separatorIndex > 0 ? title[..separatorIndex] : title;
-    }
+    private static string NormalizeCodecProfileTitle(string title) => ProfileMappingHelper.NormalizeCodecProfileTitle(title);
 }

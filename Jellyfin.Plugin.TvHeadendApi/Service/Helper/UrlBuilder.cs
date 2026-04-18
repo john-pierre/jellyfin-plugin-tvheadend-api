@@ -68,8 +68,10 @@ internal sealed class UrlBuilder : IUrlBuilder
         {
             var credentials = $"{config.Username}:{config.Password}";
             var encodedCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
+            var urlEncodedCredentials = $"{Uri.EscapeDataString(config.Username)}:{Uri.EscapeDataString(config.Password)}";
             output = output.Replace(credentials, "***", StringComparison.Ordinal);
             output = output.Replace(encodedCredentials, "***", StringComparison.Ordinal);
+            output = output.Replace(urlEncodedCredentials, "***", StringComparison.Ordinal);
         }
 
         return output;

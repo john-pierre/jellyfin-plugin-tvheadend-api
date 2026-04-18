@@ -128,5 +128,5 @@ All endpoints require Jellyfin admin elevation.
 - Services use try/catch with `ILogger.LogWarning` for non-fatal failures.
 - Argument validation via `ArgumentNullException.ThrowIfNull` and `ArgumentException.ThrowIfNullOrWhiteSpace`.
 - No global error handling middleware (standard for Jellyfin plugins).
-- No retry/resilience patterns currently implemented.
+- Transient HTTP failures are handled by `ResilienceHandler` (custom `DelegatingHandler`) with exponential back-off retry (3 attempts) and circuit breaker (5 failures → 30s open).
 
