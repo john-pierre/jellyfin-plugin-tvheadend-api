@@ -48,7 +48,7 @@ function Increment-Version {
 $repoRoot = (Split-Path -Parent $PSScriptRoot)
 Push-Location $repoRoot
 try {
-    $dockerfilePath = Join-Path $repoRoot "docker" "Dockerfile"
+    $dockerfilePath = Join-Path (Join-Path $repoRoot "docker") "Dockerfile"
     $composeFilePath = Join-Path $repoRoot $ComposeFile
     $versionFilePath = Join-Path $repoRoot $VersionFile
 
