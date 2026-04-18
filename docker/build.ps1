@@ -1,5 +1,6 @@
 param(
     [string]$ComposeService = "jellyfin",
+    [string]$ComposeFile = "docker\docker-compose.yaml",
     [string]$VersionFile = ".\.docker\dev-version.txt",
     [switch]$DryRun,
     [switch]$NoLogs
@@ -44,10 +45,11 @@ function Increment-Version {
     return "$major.$minor.$patch.$rev"
 }
 
-$repoRoot = $PSScriptRoot
+$repoRoot = (Split-Path -Parent $PSScriptRoot)
 Push-Location $repoRoot
 try {
-    $dockerfilePath = Join-Path $repoRoot "Dockerfile"
+    $dockerfilePath = Join-Path $repoRoot "docker" "Dockerfile"
+    $composeFilePath = Join-Path $repoRoot $ComposeFile
     $versionFilePath = Join-Path $repoRoot $VersionFile
 
     $currentVersion = $null
@@ -70,10 +72,10 @@ try {
 
     if ($DryRun) {
         Write-Host "[DRY-RUN] Would run: dotnet test $testProjectPath -c Release --filter `"Category!=LiveIntegration`""
-        Write-Host "[DRY-RUN] Would run: docker compose build --build-arg VERSION=$nextVersion $ComposeService"
-        Write-Host "[DRY-RUN] Would run: docker compose up -d --force-recreate $ComposeService"
+        Write-Host "[DRY-RUN] Would run: docker compose -f $ComposeFile build --build-arg VERSION=$nextVersion $ComposeService"
+        Write-Host "[DRY-RUN] Would run: docker compose -f $ComposeFile up -d --force-recreate $ComposeService"
         if (-not $NoLogs) {
-            Write-Host "[DRY-RUN] Would run: docker compose logs --no-color --tail=120 $ComposeService"
+            Write-Host "[DRY-RUN] Would run: docker compose -f $ComposeFile logs --no-color --tail=120 $ComposeService"
         }
         Write-Host "[DRY-RUN] Would write version file: $VersionFile -> $nextVersion"
         exit 0
@@ -90,20 +92,20 @@ try {
     }
 
     Write-Step "Building image with VERSION=$nextVersion"
-    docker compose build --build-arg "VERSION=$nextVersion" $ComposeService
+    docker compose -f $ComposeFile build --build-arg "VERSION=$nextVersion" $ComposeService
     if ($LASTEXITCODE -ne 0) {
         throw "docker compose build failed with exit code $LASTEXITCODE"
     }
 
     Write-Step "Recreating service '$ComposeService'"
-    docker compose up -d --force-recreate $ComposeService
+    docker compose -f $ComposeFile up -d --force-recreate $ComposeService
     if ($LASTEXITCODE -ne 0) {
         throw "docker compose up failed with exit code $LASTEXITCODE"
     }
 
     if (-not $NoLogs) {
         Write-Step "Recent logs"
-        docker compose logs --no-color --tail=120 $ComposeService
+        docker compose -f $ComposeFile logs --no-color --tail=120 $ComposeService
     }
 
     New-Item -ItemType Directory -Path (Split-Path -Parent $versionFilePath) -Force | Out-Null

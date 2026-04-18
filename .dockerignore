@@ -5,6 +5,7 @@
 .idea/
 .vs/
 .vscode/
+docker/
 
 **/bin/
 **/obj/
@@ -15,4 +16,4 @@
 *.suo
 LICENSE
 test.sh
-
+agent-results/

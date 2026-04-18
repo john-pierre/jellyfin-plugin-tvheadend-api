@@ -369,8 +369,8 @@ Primary architecture files:
 
 Architecture documentation:
 
-- `docs/architecture/architecture-overview.md` — layers, dependency direction, module map
-- `docs/architecture/architecture-decisions.md` — ADR-style records
+- `docs/architecture/overview.md` — layers, dependency direction, module map
+- `docs/architecture/decisions.md` — ADR-style records
 - `docs/architecture/module-responsibilities.md` — per-module ownership and boundaries
 - `docs/guides/test-strategy.md` — test types, naming, coverage expectations
 - `docs/ROADMAP.md` — milestones and progress tracking

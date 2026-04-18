@@ -118,6 +118,7 @@ To keep release changelog entries aligned with PR titles, maintainers should use
 | `Jellyfin.Plugin.TvHeadendApi/Model/` | TVHeadend API response DTOs |
 | `Jellyfin.Plugin.TvHeadendApi.Tests/` | Unit and integration tests |
 | `docs/` | Architecture, naming, test strategy, roadmap documentation |
+| `docker/` | Docker files (Dockerfile, compose files, build script) |
 | `.github/workflows/build-release.yaml` | CI/CD pipeline |
 | `manifest.json` | Jellyfin plugin repository manifest |
 

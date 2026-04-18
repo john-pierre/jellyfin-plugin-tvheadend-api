@@ -90,14 +90,14 @@ Covered services (15 tests):
 How to run:
 ```bash
 # Start test environment
-docker compose -f docker-compose.test.yml up -d
+docker compose -f docker/docker-compose.test.yml up -d
 
 # Wait for TVHeadend to become healthy (~30s)
 # Run live tests only
 dotnet test --filter "Category=LiveIntegration"
 
 # Tear down
-docker compose -f docker-compose.test.yml down -v
+docker compose -f docker/docker-compose.test.yml down -v
 ```
 
 ## What Must Be Unit Tested

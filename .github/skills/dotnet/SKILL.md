@@ -57,7 +57,7 @@ All code must comply with the following convention documents. Read and internali
 
 1. **Dev Team .NET Conventions**: [dev-team-dotnet.instructions.md](/.github/instructions/code-conventions/dev-team-dotnet.instructions.md)
 2. **Naming Conventions**: `docs/guides/naming-conventions.md`
-3. **Architecture Overview**: `docs/architecture/architecture-overview.md`
+3. **Architecture Overview**: `docs/architecture/overview.md`
 4. **Module Responsibilities**: `docs/architecture/module-responsibilities.md`
 
 ---

@@ -15,9 +15,12 @@ This document defines the naming standards for the Jellyfin TVHeadend API Plugin
 
 ### Markdown File Names
 - **The root `README.md` is the only README in UPPERCASE.**
-- All other markdown documentation files use **lowercase with hyphens** (e.g., `readme.md`, `architecture-overview.md`).
+- All other markdown documentation files use **lowercase with hyphens** (e.g., `readme.md`, `overview.md`).
+- **No redundant parent-folder prefix** — if the file is in `architecture/`, do NOT prefix the file with `architecture-`. The folder provides context.
+  - ✓ `docs/architecture/decisions.md` (not `architecture-decisions.md`)
+  - ✓ `docs/architecture/overview.md` (not `architecture-overview.md`)
 - **Use `-` (hyphen) instead of `_` (underscore)** in all file names where a separator is needed.
-  - ✓ `architecture-overview.md` (not `architecture_overview.md`)
+  - ✓ `overview.md` (not `overview_decisions.md`)
   - ✓ `test-strategy.md` (not `test_strategy.md`)
   - ✓ `docker-compose.yaml` (not `docker_compose.yaml`)
 - **Rationale**: Hyphens are URL-friendly, easier to read, and the de-facto standard in open-source documentation.

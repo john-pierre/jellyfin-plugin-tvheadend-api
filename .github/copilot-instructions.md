@@ -43,8 +43,8 @@ dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Test
 
 ## Architecture References
 
-- `docs/architecture/architecture-overview.md` — layers, dependency direction
-- `docs/architecture/architecture-decisions.md` — ADRs
+- `docs/architecture/overview.md` — layers, dependency direction
+- `docs/architecture/decisions.md` — ADRs
 - `docs/architecture/module-responsibilities.md` — per-module ownership
 - `docs/guides/naming-conventions.md` — naming rules
 - `docs/guides/test-strategy.md` — test types, coverage

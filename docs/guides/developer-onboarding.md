@@ -159,15 +159,15 @@ A single-file HTML page embedded as a resource. Contains:
 
 | Document | Purpose |
 |---|---|
-| `docs/architecture/architecture-overview.md` | Layers, dependency direction, module map |
-| `docs/architecture/architecture-decisions.md` | ADR-style design decision records |
+| `docs/architecture/overview.md` | Layers, dependency direction, module map |
+| `docs/architecture/decisions.md` | ADR-style design decision records |
 | `docs/architecture/module-responsibilities.md` | Per-module ownership and boundary rules |
 | `docs/guides/test-strategy.md` | Test types, naming, coverage policy |
 | `docs/guides/naming-conventions.md` | File/folder/type naming rules |
 | `docs/guides/observability.md` | Logging categories, metrics, troubleshooting |
 | `docs/guides/client-compatibility.md` | Client testing guidance and matrix |
 | `docs/ROADMAP.md` | Milestone tracking and future plans |
-| `AGENTS.md` | AI agent context and ground rules |
+| `.github/AGENTS.md` | AI agent context and ground rules |
 
 ## Common Tasks Cheat Sheet
 
@@ -175,7 +175,7 @@ A single-file HTML page embedded as a resource. Contains:
 |---|---|
 | Build | `dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release` |
 | Test | `dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj -c Release --no-build` |
-| Run dev Jellyfin | `docker compose up -d --build` → `http://localhost:8096` |
+| Run dev Jellyfin | `docker compose -f docker/docker-compose.yaml up -d --build` → `http://localhost:8096` |
 | Add a service | Create in `Service/{Domain}/`, register in `ServiceRegistrator.cs` |
 | Add a test | Create in `Tests/Service/{Domain}/`, follow `{Method}_{Scenario}_{Expected}` naming |
 | Check coverage | `dotnet test ... --collect:"XPlat Code Coverage"` → check `TestResults/` |

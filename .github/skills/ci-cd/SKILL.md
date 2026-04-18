@@ -44,19 +44,10 @@ Additional workflow: `.github/workflows/pr-title-check.yaml` — validates PR ti
 
 ## 4 — Docker Test Environment
 
-```yaml
-# docker-compose.test.yml
-services:
-  tvheadend:
-    image: linuxserver/tvheadend
-    command: -C  # no-auth first-run
-    ports: ["19981:9981"]
-    healthcheck: curl http://localhost:9981/api/serverinfo
+The test stack is defined in `docker/docker-compose.test.yml`:
 
-  jellyfin:
-    build: .
-    ports: ["18096:8096"]
-```
+- **TVHeadend:** `linuxserver/tvheadend` with `-C` (no-auth), port `19981:9981`, healthcheck on `/api/serverinfo`
+- **Jellyfin:** Built from `docker/Dockerfile` (context: repo root), port `18096:8096`
 
 Live integration tests use `TVHEADEND_URL=http://localhost:19981` and trait `[Trait("Category", "LiveIntegration")]`.
 

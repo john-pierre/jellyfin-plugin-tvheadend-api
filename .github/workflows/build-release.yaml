@@ -320,5 +320,5 @@ jobs:
 
       - name: Tear Down Services
         if: always()
-        run: docker compose -f docker-compose.test.yml down -v
+        run: docker compose -f docker/docker-compose.test.yml down -v
 
