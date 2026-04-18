@@ -80,6 +80,8 @@ internal sealed partial class DvrService
             {
                 // Empty channel = match any channel; UUID = specific channel
                 channel = info.RecordAnyChannel ? null : info.ChannelId,
+                // "name" = human-visible rule name; "title" = regex pattern to match programmes
+                name = info.Name,
                 title = info.Name,
                 // TVH autorec has no "description" idnode; "comment" is the user-note field
                 comment = info.Overview,

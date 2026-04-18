@@ -37,10 +37,10 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-# 1. Create IPTV automatic network
+# 1. Create IPTV automatic network (bouquet=true auto-creates channels from M3U)
 log "Creating IPTV automatic network..."
 tvh_post "/api/mpegts/network/create" \
-  "class=iptv_auto_network&conf={\"networkname\":\"Test IPTV\",\"url\":\"${IPTV_SIM_URL}/playlist.m3u\",\"bouquet\":false,\"max_streams\":5,\"channel_number\":1,\"refetch_period\":60,\"service_sid\":0,\"priority\":1}"
+  "class=iptv_auto_network&conf={\"enabled\":true,\"networkname\":\"Test IPTV\",\"url\":\"${IPTV_SIM_URL}/playlist.m3u\",\"bouquet\":true,\"max_streams\":5,\"channel_number\":1,\"refetch_period\":60,\"service_sid\":0,\"priority\":1}"
 
 # 2. Wait for mux scan to complete
 log "Waiting for mux scan (max ${MAX_WAIT}s)..."
@@ -62,53 +62,64 @@ while [ "$elapsed" -lt "$MAX_WAIT" ]; do
   elapsed=$((elapsed + 3))
 done
 
-# 3. Map all services to channels
-log "Mapping services to channels..."
-# List available services
-SERVICES=$(tvh_get "/api/mpegts/service/grid?limit=50")
-SVC_TOTAL=$(echo "$SERVICES" | grep -o '"total":[0-9]*' | head -1 | cut -d: -f2)
-log "  Found ${SVC_TOTAL:-0} services to map."
-
-# Use the service/mapper/start with empty services array = map ALL discovered services
-# TVHeadend interprets empty array differently per version, so we also try the save endpoint
-tvh_post "/api/service/mapper/start" \
-  "conf={\"services\":[],\"encrypted\":false,\"merge_same_name\":false,\"check_availability\":false,\"type_tags\":false,\"provider_tags\":false,\"network_tags\":false}"
-
-# Wait and check — if still 0 channels, try alternative approach
-sleep 5
+# 3. Verify channels were auto-created by bouquet mode (or map manually as fallback)
+log "Checking channels (waiting for bouquet auto-mapping)..."
+sleep 10
 CHANNELS_CHECK=$(tvh_get "/api/channel/grid?limit=50")
 CH_TOTAL=$(echo "$CHANNELS_CHECK" | grep -o '"total":[0-9]*' | head -1 | cut -d: -f2)
 
 if [ "${CH_TOTAL:-0}" -eq 0 ]; then
-  log "  First mapping attempt returned 0 channels. Trying with explicit service UUIDs..."
-  # Extract ONLY the top-level "uuid" field from entries (first occurrence per entry)
-  # The grid response has entries like: {"uuid":"xxx","multiplex_uuid":"yyy",...}
-  # We split on }, then grab the first uuid from each segment
+  log "  No channels from bouquet. Trying manual service mapper..."
+  SERVICES=$(tvh_get "/api/mpegts/service/grid?limit=50")
+  SVC_TOTAL=$(echo "$SERVICES" | grep -o '"total":[0-9]*' | head -1 | cut -d: -f2)
+  log "  Found ${SVC_TOTAL:-0} services to map."
+
+  # Extract service UUIDs (first "uuid" per entry, split on })
   SVC_UUIDS=$(echo "$SERVICES" | tr '}' '\n' | grep -o '"uuid":"[^"]*"' | head -"${SVC_TOTAL:-5}" | cut -d'"' -f4 | awk 'BEGIN{printf "["} NR>1{printf ","} {printf "\"%s\"",$0} END{printf "]"}')
   log "  Service UUIDs: ${SVC_UUIDS}"
-  tvh_post "/api/service/mapper/start" \
-    "conf={\"services\":${SVC_UUIDS},\"encrypted\":false,\"merge_same_name\":false,\"check_availability\":false,\"type_tags\":false,\"provider_tags\":false,\"network_tags\":false}"
+
+  tvh_post "/api/service/mapper/save" \
+    "node={\"services\":${SVC_UUIDS},\"encrypted\":false,\"merge_same_name\":false,\"check_availability\":false,\"type_tags\":false,\"provider_tags\":false,\"network_tags\":false}"
   sleep 5
   CHANNELS_CHECK=$(tvh_get "/api/channel/grid?limit=50")
   CH_TOTAL=$(echo "$CHANNELS_CHECK" | grep -o '"total":[0-9]*' | head -1 | cut -d: -f2)
 fi
 
-log "  Channels after mapping: ${CH_TOTAL:-0}"
+log "  Channels available: ${CH_TOTAL:-0}"
 
-# 4. Configure internal XMLTV grabber
+# 4. Configure XMLTV URL grabber to load EPG from iptv-sim
 log "Configuring EPG grabber..."
 tvh_post "/api/epggrab/config/save" \
   "node={\"channel_rename\":false,\"channel_renumber\":false,\"channel_reicon\":false,\"epgdb_periodicsave\":3600,\"int_initial\":true,\"ota_initial\":false,\"ota_cron\":\"0 */12 * * *\"}"
 
-# Create internal XMLTV grabber module pointing at iptv-sim
-tvh_post "/api/epggrab/module/list" ""
+# Enable the "XMLTV URL grabber" module with the iptv-sim EPG URL
+MODULES=$(tvh_get "/api/epggrab/module/list")
+URL_GRABBER_UUID=$(echo "$MODULES" | tr ',' '\n' | grep -B2 '"XMLTV URL grabber"' | grep '"uuid"' | grep -o '"uuid":"[^"]*"' | cut -d'"' -f4)
+if [ -n "$URL_GRABBER_UUID" ]; then
+  log "  Enabling XMLTV URL grabber (${URL_GRABBER_UUID})..."
+  tvh_post "/api/idnode/save" \
+    "node={\"uuid\":\"${URL_GRABBER_UUID}\",\"enabled\":true,\"dn_chnum\":0,\"path\":\"${IPTV_SIM_URL}/epg.xml\"}"
+else
+  log "  WARNING: XMLTV URL grabber module not found."
+fi
 
-# 5. Trigger EPG grab
+# 5. Trigger EPG grab and wait for data
 log "Triggering EPG internal re-run..."
 tvh_post "/api/epggrab/internal/rerun" "rerun=1"
 
-# Wait for EPG to populate
-sleep 5
+# Wait for EPG to populate — poll until events appear
+log "Waiting for EPG data..."
+epg_wait=0
+while [ "$epg_wait" -lt 30 ]; do
+  EPG_RESULT=$(tvh_get "/api/epg/events/grid?limit=1")
+  EPG_TOTAL=$(echo "$EPG_RESULT" | grep -o '"totalCount":[0-9]*' | head -1 | cut -d: -f2)
+  if [ -n "$EPG_TOTAL" ] && [ "$EPG_TOTAL" -ge 1 ]; then
+    log "  EPG loaded: ${EPG_TOTAL} events."
+    break
+  fi
+  sleep 3
+  epg_wait=$((epg_wait + 3))
+done
 
 # 6. Create test user with credentials
 log "Creating test user (testuser/testpass)..."

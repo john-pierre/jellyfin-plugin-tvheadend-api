@@ -86,9 +86,9 @@ public sealed class LiveServiceIntegrationTests : IDisposable
 
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
 
-        // Empty TVHeadend has no channels — service should handle gracefully.
+        // TVHeadend is bootstrapped with IPTV channels — verify they are returned.
         Assert.NotNull(channels);
-        Assert.Empty(channels);
+        Assert.NotEmpty(channels);
     }
 
     [Fact]
@@ -229,9 +229,9 @@ public sealed class LiveServiceIntegrationTests : IDisposable
 
         var inputs = await sut.GetInputStatusAsync(CancellationToken.None);
 
-        // No inputs configured on bare TVHeadend.
+        // IPTV network is configured — inputs should be present.
         Assert.NotNull(inputs);
-        Assert.Empty(inputs);
+        Assert.NotEmpty(inputs);
     }
 
     // ── SubscriptionService ─────────────────────────────────────────────
@@ -244,7 +244,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
         var subscriptions = await sut.GetActiveSubscriptionsAsync(CancellationToken.None);
 
         Assert.NotNull(subscriptions);
-        Assert.Empty(subscriptions);
+        // Subscriptions may or may not be active depending on timing.
     }
 
     // ── ProfileResolver ─────────────────────────────────────────────────

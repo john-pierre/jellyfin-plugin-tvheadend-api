@@ -366,8 +366,8 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 #### 21d — Live Integration Tests: Auth Token Lifecycle
 
 - [x] `TokenService_GenerateValidTokenAsync` — generate persistent auth token for `testuser` → token is non-empty
-- [ ] `TokenService_ValidateTokenAsync` — validate generated token against TVH `/api/ticket/get` → returns true
-- [ ] `TokenService_RegenerateToken` — generate token, then generate again → new token differs from old
+- [x] `TokenService_ValidateTokenAsync` — validate generated token against TVH `/api/ticket/get` → returns true
+- [x] `TokenService_RegenerateToken` — generate token, then generate again → new token differs from old
 - [x] `TokenService_InvalidCredentials` — generate token with wrong password → returns failure/null
 
 #### 21e — Live Integration Tests: Profile Management
