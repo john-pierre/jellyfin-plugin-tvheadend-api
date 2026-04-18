@@ -39,8 +39,8 @@ services:
 
   jellyfin:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: jf-integration-test
     environment:
       - TZ=Europe/Berlin
