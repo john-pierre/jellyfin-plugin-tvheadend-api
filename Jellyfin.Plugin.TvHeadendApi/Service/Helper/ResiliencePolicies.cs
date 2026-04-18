@@ -1,15 +1,14 @@
 using System;
 using System.Net;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
-using Polly;
-using Polly.CircuitBreaker;
-using Polly.Retry;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 
 /// <summary>
 /// Defines resilience policies (retry + circuit breaker) for TVHeadend API HTTP calls.
+/// Implemented without external dependencies to avoid assembly-loading issues in Jellyfin's plugin host.
 /// </summary>
 internal static class ResiliencePolicies
 {
@@ -34,88 +33,166 @@ internal static class ResiliencePolicies
     internal const int CircuitBreakerDurationSeconds = 30;
 
     /// <summary>
-    /// Determines whether an HTTP outcome represents a transient error that should be retried.
+    /// Returns <c>true</c> when the status code represents a transient HTTP error (5xx or 408).
     /// </summary>
-    private static bool IsTransientError(Outcome<HttpResponseMessage> outcome)
+    /// <param name="statusCode">The HTTP status code to evaluate.</param>
+    /// <returns><c>true</c> if the status code is transient; otherwise <c>false</c>.</returns>
+    internal static bool IsTransientStatusCode(HttpStatusCode statusCode)
     {
-        if (outcome.Exception is HttpRequestException)
+        var code = (int)statusCode;
+        return code >= 500 || statusCode == HttpStatusCode.RequestTimeout;
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when the response should trigger a retry (transient error or 429).
+    /// </summary>
+    /// <param name="response">The HTTP response to evaluate, or <c>null</c> if no response was received.</param>
+    /// <returns><c>true</c> if the request should be retried; otherwise <c>false</c>.</returns>
+    internal static bool ShouldRetry(HttpResponseMessage? response)
+    {
+        if (response is null)
         {
             return true;
         }
 
-        if (outcome.Result is null)
+        return IsTransientStatusCode(response.StatusCode)
+               || response.StatusCode == HttpStatusCode.TooManyRequests;
+    }
+}
+
+/// <summary>
+/// A <see cref="DelegatingHandler"/> that retries requests on transient failures with exponential back-off
+/// and breaks the circuit after consecutive failures.
+/// </summary>
+internal sealed class ResilienceHandler : DelegatingHandler
+{
+    private readonly object _lock = new();
+    private int _consecutiveFailures;
+    private DateTimeOffset _openUntil = DateTimeOffset.MinValue;
+
+    /// <inheritdoc/>
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        HttpResponseMessage? response = null;
+
+        for (int attempt = 0; attempt <= ResiliencePolicies.RetryCount; attempt++)
         {
-            return false;
+            ThrowIfCircuitOpen();
+
+            if (attempt > 0)
+            {
+                var delay = TimeSpan.FromSeconds(
+                    Math.Pow(ResiliencePolicies.RetryBaseDelaySeconds * 2, attempt));
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                // Clone the request for retries — the original content stream may already be consumed.
+                using var clone = await CloneRequestAsync(request, cancellationToken).ConfigureAwait(false);
+                response = await base.SendAsync(clone, cancellationToken).ConfigureAwait(false);
+            }
+            catch (HttpRequestException) when (attempt < ResiliencePolicies.RetryCount)
+            {
+                RecordFailure();
+                continue;
+            }
+            catch (HttpRequestException)
+            {
+                RecordFailure();
+                throw;
+            }
+
+            if (ResiliencePolicies.ShouldRetry(response) && attempt < ResiliencePolicies.RetryCount)
+            {
+                RecordFailure();
+                response.Dispose();
+                continue;
+            }
+
+            if (ResiliencePolicies.ShouldRetry(response))
+            {
+                RecordFailure();
+            }
+            else
+            {
+                RecordSuccess();
+            }
+
+            return response;
         }
 
-        var status = (int)outcome.Result.StatusCode;
-        return status >= 500 || outcome.Result.StatusCode == HttpStatusCode.RequestTimeout;
+        // Should not be reached, but satisfy the compiler.
+        return response!;
     }
 
-    /// <summary>
-    /// Gets retry strategy options for use with <c>AddResilienceHandler</c>.
-    /// </summary>
-    /// <returns>Retry strategy options for <see cref="HttpResponseMessage"/>.</returns>
-    public static RetryStrategyOptions<HttpResponseMessage> GetRetryOptions()
+    private void ThrowIfCircuitOpen()
     {
-        return new RetryStrategyOptions<HttpResponseMessage>
+        lock (_lock)
         {
-            MaxRetryAttempts = RetryCount,
-            BackoffType = DelayBackoffType.Exponential,
-            Delay = TimeSpan.FromSeconds(RetryBaseDelaySeconds * 2),
-            ShouldHandle = args =>
+            if (_consecutiveFailures >= ResiliencePolicies.CircuitBreakerThreshold
+                && DateTimeOffset.UtcNow < _openUntil)
             {
-                var outcome = args.Outcome;
-                if (IsTransientError(outcome))
-                {
-                    return ValueTask.FromResult(true);
-                }
+                throw new InvalidOperationException(
+                    $"Circuit breaker is open until {_openUntil:O}. Requests to TVHeadend are temporarily blocked.");
+            }
 
-                if (outcome.Result?.StatusCode == HttpStatusCode.TooManyRequests)
-                {
-                    return ValueTask.FromResult(true);
-                }
-
-                return ValueTask.FromResult(false);
-            },
-        };
+            // If the break duration has elapsed, allow a trial request (half-open).
+            if (_consecutiveFailures >= ResiliencePolicies.CircuitBreakerThreshold)
+            {
+                // Reset so that a single success closes the circuit, or a failure re-opens it.
+                _consecutiveFailures = ResiliencePolicies.CircuitBreakerThreshold - 1;
+            }
+        }
     }
 
-    /// <summary>
-    /// Gets circuit breaker strategy options for use with <c>AddResilienceHandler</c>.
-    /// </summary>
-    /// <returns>Circuit breaker strategy options for <see cref="HttpResponseMessage"/>.</returns>
-    public static CircuitBreakerStrategyOptions<HttpResponseMessage> GetCircuitBreakerOptions()
+    private void RecordFailure()
     {
-        return new CircuitBreakerStrategyOptions<HttpResponseMessage>
+        lock (_lock)
         {
-            FailureRatio = 1.0,
-            MinimumThroughput = CircuitBreakerThreshold,
-            SamplingDuration = TimeSpan.FromSeconds(CircuitBreakerDurationSeconds),
-            BreakDuration = TimeSpan.FromSeconds(CircuitBreakerDurationSeconds),
-            ShouldHandle = args => ValueTask.FromResult(IsTransientError(args.Outcome)),
+            _consecutiveFailures++;
+            if (_consecutiveFailures >= ResiliencePolicies.CircuitBreakerThreshold)
+            {
+                _openUntil = DateTimeOffset.UtcNow.AddSeconds(ResiliencePolicies.CircuitBreakerDurationSeconds);
+            }
+        }
+    }
+
+    private void RecordSuccess()
+    {
+        lock (_lock)
+        {
+            _consecutiveFailures = 0;
+        }
+    }
+
+    private static async Task<HttpRequestMessage> CloneRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var clone = new HttpRequestMessage(request.Method, request.RequestUri)
+        {
+            Version = request.Version,
         };
-    }
 
-    /// <summary>
-    /// Creates a retry pipeline for direct use in tests.
-    /// </summary>
-    /// <returns>A resilience pipeline for <see cref="HttpResponseMessage"/>.</returns>
-    public static ResiliencePipeline<HttpResponseMessage> GetRetryPolicy()
-    {
-        return new ResiliencePipelineBuilder<HttpResponseMessage>()
-            .AddRetry(GetRetryOptions())
-            .Build();
-    }
+        if (request.Content is not null)
+        {
+            var contentBytes = await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            clone.Content = new ByteArrayContent(contentBytes);
+            foreach (var header in request.Content.Headers)
+            {
+                clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+        }
 
-    /// <summary>
-    /// Creates a circuit breaker pipeline for direct use in tests.
-    /// </summary>
-    /// <returns>A resilience pipeline for <see cref="HttpResponseMessage"/>.</returns>
-    public static ResiliencePipeline<HttpResponseMessage> GetCircuitBreakerPolicy()
-    {
-        return new ResiliencePipelineBuilder<HttpResponseMessage>()
-            .AddCircuitBreaker(GetCircuitBreakerOptions())
-            .Build();
+        foreach (var header in request.Headers)
+        {
+            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        foreach (var option in request.Options)
+        {
+            ((System.Collections.Generic.IDictionary<string, object?>)clone.Options).Add(option);
+        }
+
+        return clone;
     }
 }

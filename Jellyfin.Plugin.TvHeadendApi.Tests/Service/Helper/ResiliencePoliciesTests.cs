@@ -4,37 +4,38 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
-using Polly;
-using Polly.CircuitBreaker;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Helper;
 
 /// <summary>
-/// Tests for <see cref="ResiliencePolicies"/> retry and circuit breaker behavior.
+/// Tests for <see cref="ResiliencePolicies"/> and <see cref="ResilienceHandler"/> retry and circuit breaker behavior.
 /// </summary>
 public class ResiliencePoliciesTests
 {
+    /// <summary>
+    /// Creates a <see cref="ResilienceHandler"/> backed by a programmable inner handler.
+    /// </summary>
+    private static HttpMessageInvoker CreateInvoker(FakeHandler inner)
+    {
+        var handler = new ResilienceHandler { InnerHandler = inner };
+        return new HttpMessageInvoker(handler);
+    }
+
     [Fact]
     public async Task RetryPolicy_RetriesOnTransientError_ThenSucceeds()
     {
-        // Arrange
-        var pipeline = ResiliencePolicies.GetRetryPolicy();
         var callCount = 0;
-
-        // Act — fail twice with 500, succeed on third attempt
-        var result = await pipeline.ExecuteAsync(async _ =>
+        using var invoker = CreateInvoker(new FakeHandler(() =>
         {
             callCount++;
-            if (callCount <= 2)
-            {
-                return new HttpResponseMessage(HttpStatusCode.InternalServerError);
-            }
+            return callCount <= 2
+                ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                : new HttpResponseMessage(HttpStatusCode.OK);
+        }));
 
-            return new HttpResponseMessage(HttpStatusCode.OK);
-        });
+        var result = await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
 
-        // Assert
         Assert.Equal(HttpStatusCode.OK, result.StatusCode);
         Assert.Equal(3, callCount);
     }
@@ -42,23 +43,17 @@ public class ResiliencePoliciesTests
     [Fact]
     public async Task RetryPolicy_RetriesOnRequestTimeout()
     {
-        // Arrange
-        var pipeline = ResiliencePolicies.GetRetryPolicy();
         var callCount = 0;
-
-        // Act — fail once with 408 (Request Timeout), then succeed
-        var result = await pipeline.ExecuteAsync(async _ =>
+        using var invoker = CreateInvoker(new FakeHandler(() =>
         {
             callCount++;
-            if (callCount <= 1)
-            {
-                return new HttpResponseMessage(HttpStatusCode.RequestTimeout);
-            }
+            return callCount <= 1
+                ? new HttpResponseMessage(HttpStatusCode.RequestTimeout)
+                : new HttpResponseMessage(HttpStatusCode.OK);
+        }));
 
-            return new HttpResponseMessage(HttpStatusCode.OK);
-        });
+        var result = await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
 
-        // Assert
         Assert.Equal(HttpStatusCode.OK, result.StatusCode);
         Assert.Equal(2, callCount);
     }
@@ -66,23 +61,17 @@ public class ResiliencePoliciesTests
     [Fact]
     public async Task RetryPolicy_RetriesOn429TooManyRequests()
     {
-        // Arrange
-        var pipeline = ResiliencePolicies.GetRetryPolicy();
         var callCount = 0;
-
-        // Act
-        var result = await pipeline.ExecuteAsync(async _ =>
+        using var invoker = CreateInvoker(new FakeHandler(() =>
         {
             callCount++;
-            if (callCount <= 1)
-            {
-                return new HttpResponseMessage(HttpStatusCode.TooManyRequests);
-            }
+            return callCount <= 1
+                ? new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+                : new HttpResponseMessage(HttpStatusCode.OK);
+        }));
 
-            return new HttpResponseMessage(HttpStatusCode.OK);
-        });
+        var result = await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
 
-        // Assert
         Assert.Equal(HttpStatusCode.OK, result.StatusCode);
         Assert.Equal(2, callCount);
     }
@@ -90,18 +79,15 @@ public class ResiliencePoliciesTests
     [Fact]
     public async Task RetryPolicy_ReturnsLastFailure_AfterMaxRetries()
     {
-        // Arrange
-        var pipeline = ResiliencePolicies.GetRetryPolicy();
         var callCount = 0;
-
-        // Act — always fail
-        var result = await pipeline.ExecuteAsync(async _ =>
+        using var invoker = CreateInvoker(new FakeHandler(() =>
         {
             callCount++;
             return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
-        });
+        }));
 
-        // Assert — 1 initial + 3 retries = 4 total calls
+        var result = await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
+
         Assert.Equal(HttpStatusCode.ServiceUnavailable, result.StatusCode);
         Assert.Equal(1 + ResiliencePolicies.RetryCount, callCount);
     }
@@ -109,18 +95,15 @@ public class ResiliencePoliciesTests
     [Fact]
     public async Task RetryPolicy_DoesNotRetryOnNonTransientError()
     {
-        // Arrange
-        var pipeline = ResiliencePolicies.GetRetryPolicy();
         var callCount = 0;
-
-        // Act — 404 is not transient
-        var result = await pipeline.ExecuteAsync(async _ =>
+        using var invoker = CreateInvoker(new FakeHandler(() =>
         {
             callCount++;
             return new HttpResponseMessage(HttpStatusCode.NotFound);
-        });
+        }));
 
-        // Assert
+        var result = await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
+
         Assert.Equal(HttpStatusCode.NotFound, result.StatusCode);
         Assert.Equal(1, callCount);
     }
@@ -128,12 +111,8 @@ public class ResiliencePoliciesTests
     [Fact]
     public async Task RetryPolicy_RetriesOnHttpRequestException()
     {
-        // Arrange
-        var pipeline = ResiliencePolicies.GetRetryPolicy();
         var callCount = 0;
-
-        // Act — throw HttpRequestException twice, then succeed
-        var result = await pipeline.ExecuteAsync(async _ =>
+        using var invoker = CreateInvoker(new FakeHandler(() =>
         {
             callCount++;
             if (callCount <= 2)
@@ -142,9 +121,10 @@ public class ResiliencePoliciesTests
             }
 
             return new HttpResponseMessage(HttpStatusCode.OK);
-        });
+        }));
 
-        // Assert
+        var result = await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
+
         Assert.Equal(HttpStatusCode.OK, result.StatusCode);
         Assert.Equal(3, callCount);
     }
@@ -152,33 +132,37 @@ public class ResiliencePoliciesTests
     [Fact]
     public async Task CircuitBreakerPolicy_OpensAfterConsecutiveFailures()
     {
-        // Arrange
-        var pipeline = ResiliencePolicies.GetCircuitBreakerPolicy();
+        // Use a single handler instance so the circuit breaker state accumulates.
+        var inner = new FakeHandler(() => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var handler = new ResilienceHandler { InnerHandler = inner };
+        using var invoker = new HttpMessageInvoker(handler);
 
-        // Act — trigger enough failures to open the circuit
-        for (int i = 0; i < ResiliencePolicies.CircuitBreakerThreshold; i++)
+        // Keep sending requests until the circuit opens. Each request records multiple failures
+        // (1 initial + RetryCount retries). We catch the InvalidOperationException that signals
+        // the circuit is open.
+        bool circuitOpened = false;
+        for (int i = 0; i < 10 && !circuitOpened; i++)
         {
-            await pipeline.ExecuteAsync(async _ =>
-                new HttpResponseMessage(HttpStatusCode.InternalServerError));
+            try
+            {
+                await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("Circuit breaker"))
+            {
+                circuitOpened = true;
+            }
         }
 
-        // Assert — next call should throw BrokenCircuitException
-        await Assert.ThrowsAsync<BrokenCircuitException>(async () =>
-            await pipeline.ExecuteAsync(async _ =>
-                new HttpResponseMessage(HttpStatusCode.OK)));
+        Assert.True(circuitOpened, "Circuit breaker should have opened after consecutive failures.");
     }
 
     [Fact]
     public async Task CircuitBreakerPolicy_AllowsRequests_WhenNotTripped()
     {
-        // Arrange
-        var pipeline = ResiliencePolicies.GetCircuitBreakerPolicy();
+        using var invoker = CreateInvoker(new FakeHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
 
-        // Act — successful call should pass through
-        var result = await pipeline.ExecuteAsync(async _ =>
-            new HttpResponseMessage(HttpStatusCode.OK));
+        var result = await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
 
-        // Assert
         Assert.Equal(HttpStatusCode.OK, result.StatusCode);
     }
 
@@ -195,5 +179,17 @@ public class ResiliencePoliciesTests
         Assert.Equal(5, ResiliencePolicies.CircuitBreakerThreshold);
         Assert.Equal(30, ResiliencePolicies.CircuitBreakerDurationSeconds);
     }
-}
 
+    /// <summary>
+    /// A fake <see cref="HttpMessageHandler"/> that delegates to a factory function.
+    /// </summary>
+    private sealed class FakeHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpResponseMessage> _factory;
+
+        public FakeHandler(Func<HttpResponseMessage> factory) => _factory = factory;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(_factory());
+    }
+}
