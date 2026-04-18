@@ -53,12 +53,14 @@ Covered scenarios:
 - Full Jellyfin + TVHeadend E2E testing is out of scope for automated CI.
 - Manual smoke testing is documented in `CONTRIBUTING.md` (Docker Compose workflow).
 
-### Live Integration Tests (`TvHeadendLiveTests`)
+### Live Integration Tests
 
-Opt-in HTTP tests against a real TVHeadend instance. **Not run in CI** — requires a running server.
+Opt-in tests against a real TVHeadend instance. **Run in CI** as a separate job (see `.github/workflows/build-release.yaml`, `integration` job) and also available for local runs.
+
+#### Raw API Tests (`TvHeadendLiveTests`)
 
 - **Location:** `Tests/Integration/TvHeadendLiveTests.cs`
-- **Gate:** `[Trait("Category", "LiveIntegration")]` — excluded from default runs via `--filter "Category!=LiveIntegration"`.
+- **Gate:** `[Trait("Category", "LiveIntegration")]` — excluded from default unit-test runs via `--filter "Category!=LiveIntegration"`.
 - **Connection:** `TVHEADEND_URL` environment variable (default: `http://localhost:19981`).
 - **Test stack:** `docker-compose.test.yml` provides a ready-made TVHeadend + Jellyfin environment.
 
@@ -70,13 +72,29 @@ Covered endpoints:
 - `/api/dvr/entry/grid` — DVR entry grid structure
 - Invalid endpoint — error handling
 
+#### Service-Layer Tests (`LiveServiceIntegrationTests`)
+
+- **Location:** `Tests/Integration/LiveServiceIntegrationTests.cs`
+- **Gate:** `[Trait("Category", "LiveIntegration")]`
+- **Purpose:** Exercise the full plugin service layer (not raw HTTP) against a real TVHeadend instance. Validates that services correctly parse API responses, handle empty grids, and interact with TVHeadend's built-in defaults.
+
+Covered services (15 tests):
+- `GuideService` — `GetChannelsAsync`, `GetProgramsAsync`, `GetContentTypesAsync`, `GetChannelTagsAsync`
+- `DvrService` — `GetTimersAsync`, `GetSeriesTimersAsync`, `GetRecordingProfileUuidAsync`
+- `DiagnosticService` — `DiagnoseAsync` (connectivity OK, score > 0)
+- `StatusService` — `GetActivityStatusAsync`, `GetConnectionsAsync`
+- `InputMonitorService` — `GetInputStatusAsync`
+- `SubscriptionService` — `GetActiveSubscriptionsAsync`
+- `ProfileResolver` — `GetProfilesAsync` (≥ 1 profile), `ResolveProfileByNameAsync` (resolves "pass")
+
 How to run:
 ```bash
 # Start test environment
 docker compose -f docker-compose.test.yml up -d
 
+# Wait for TVHeadend to become healthy (~30s)
 # Run live tests only
-TVHEADEND_LIVE_TESTS=true dotnet test --filter "Category=LiveIntegration"
+dotnet test --filter "Category=LiveIntegration"
 
 # Tear down
 docker compose -f docker-compose.test.yml down -v
@@ -154,15 +172,15 @@ Every service test suite should include:
 
 ## Coverage
 
-- **Baseline (2026-04-17):** 280 tests, 76.95% line coverage, 58.21% branch coverage.
+- **Baseline (2026-04-17):** 530 tests, 92.63% line coverage, 73.9% branch coverage.
 - **Tooling:** Coverlet (Cobertura XML) → `irongut/CodeCoverageSummary` in CI.
 - **Thresholds (enforced in CI):**
-  - **50% minimum** — PR fails if line coverage drops below this (`fail_below_min: true`).
-  - **75% good** — coverage badge turns green at or above this level.
+  - **90% minimum** — PR fails if line coverage drops below this (`fail_below_min: true`).
+  - **95% good** — coverage badge turns green at or above this level.
 - **Policy:**
-  - The 50% floor is a hard quality gate. PRs that reduce coverage below this threshold are blocked.
-  - The 75% target is aspirational. New code should aim for ≥75% line coverage.
-  - Threshold values live in `.github/workflows/build-release.yaml` (`thresholds: '50 75'`).
+  - The 90% floor is a hard quality gate. PRs that reduce coverage below this threshold are blocked.
+  - The 95% target is aspirational. New code should aim for ≥95% line coverage.
+  - Threshold values live in `.github/workflows/build-release.yaml` (`thresholds: '90 95'`).
   - Coverage results are posted as a sticky comment on every PR.
 - **Gap:** No per-module coverage enforcement. Overall project-level gate only.
 

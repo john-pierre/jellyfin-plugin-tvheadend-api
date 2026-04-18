@@ -69,7 +69,7 @@ try {
     $testProjectPath = Join-Path $repoRoot "Jellyfin.Plugin.TvHeadendApi.Tests\Jellyfin.Plugin.TvHeadendApi.Tests.csproj"
 
     if ($DryRun) {
-        Write-Host "[DRY-RUN] Would run: dotnet test $testProjectPath -c Release"
+        Write-Host "[DRY-RUN] Would run: dotnet test $testProjectPath -c Release --filter `"Category!=LiveIntegration`""
         Write-Host "[DRY-RUN] Would run: docker compose build --build-arg VERSION=$nextVersion $ComposeService"
         Write-Host "[DRY-RUN] Would run: docker compose up -d --force-recreate $ComposeService"
         if (-not $NoLogs) {
@@ -84,7 +84,7 @@ try {
     }
 
     Write-Step "Running unit tests"
-    dotnet test $testProjectPath -c Release
+    dotnet test $testProjectPath -c Release --filter "Category!=LiveIntegration"
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet test failed with exit code $LASTEXITCODE"
     }
