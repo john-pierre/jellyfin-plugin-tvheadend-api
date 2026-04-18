@@ -64,24 +64,35 @@ done
 
 # 3. Map all services to channels
 log "Mapping services to channels..."
-# List available services and extract UUIDs
+# List available services
 SERVICES=$(tvh_get "/api/mpegts/service/grid?limit=50")
 SVC_TOTAL=$(echo "$SERVICES" | grep -o '"total":[0-9]*' | head -1 | cut -d: -f2)
 log "  Found ${SVC_TOTAL:-0} services to map."
 
-# Extract all service UUIDs into a JSON array
-SVC_UUIDS=$(echo "$SERVICES" | grep -o '"uuid":"[^"]*"' | cut -d'"' -f4 | awk 'BEGIN{printf "["} NR>1{printf ","} {printf "\"%s\"",$0} END{printf "]"}')
-log "  Service UUIDs: ${SVC_UUIDS}"
-
+# Use the service/mapper/start with empty services array = map ALL discovered services
+# TVHeadend interprets empty array differently per version, so we also try the save endpoint
 tvh_post "/api/service/mapper/start" \
-  "conf={\"services\":${SVC_UUIDS},\"encrypted\":false,\"merge_same_name\":false,\"check_availability\":false,\"type_tags\":false,\"provider_tags\":false,\"network_tags\":false}"
+  "conf={\"services\":[],\"encrypted\":false,\"merge_same_name\":false,\"check_availability\":false,\"type_tags\":false,\"provider_tags\":false,\"network_tags\":false}"
 
-# Give TVH a moment to process the channel mapping
+# Wait and check — if still 0 channels, try alternative approach
 sleep 5
-
-# Verify channels were created
 CHANNELS_CHECK=$(tvh_get "/api/channel/grid?limit=50")
 CH_TOTAL=$(echo "$CHANNELS_CHECK" | grep -o '"total":[0-9]*' | head -1 | cut -d: -f2)
+
+if [ "${CH_TOTAL:-0}" -eq 0 ]; then
+  log "  First mapping attempt returned 0 channels. Trying with explicit service UUIDs..."
+  # Extract ONLY the top-level "uuid" field from entries (first occurrence per entry)
+  # The grid response has entries like: {"uuid":"xxx","multiplex_uuid":"yyy",...}
+  # We split on }, then grab the first uuid from each segment
+  SVC_UUIDS=$(echo "$SERVICES" | tr '}' '\n' | grep -o '"uuid":"[^"]*"' | head -"${SVC_TOTAL:-5}" | cut -d'"' -f4 | awk 'BEGIN{printf "["} NR>1{printf ","} {printf "\"%s\"",$0} END{printf "]"}')
+  log "  Service UUIDs: ${SVC_UUIDS}"
+  tvh_post "/api/service/mapper/start" \
+    "conf={\"services\":${SVC_UUIDS},\"encrypted\":false,\"merge_same_name\":false,\"check_availability\":false,\"type_tags\":false,\"provider_tags\":false,\"network_tags\":false}"
+  sleep 5
+  CHANNELS_CHECK=$(tvh_get "/api/channel/grid?limit=50")
+  CH_TOTAL=$(echo "$CHANNELS_CHECK" | grep -o '"total":[0-9]*' | head -1 | cut -d: -f2)
+fi
+
 log "  Channels after mapping: ${CH_TOTAL:-0}"
 
 # 4. Configure internal XMLTV grabber

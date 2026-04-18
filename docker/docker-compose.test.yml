@@ -33,9 +33,9 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Europe/Berlin
-      # Skip first-run wizard so the API is available immediately without auth.
+      # Skip first-run wizard and disable access control for test simplicity.
       # linuxserver/tvheadend passes RUN_OPTS to the tvheadend binary.
-      - RUN_OPTS=-C
+      - RUN_OPTS=-C --noacl
     ports:
       - "19981:9981"    # TVHeadend HTTP API (offset to avoid conflicts with dev stack)
       - "19982:9982"    # TVHeadend HTSP (not used by plugin, but useful for debugging)
