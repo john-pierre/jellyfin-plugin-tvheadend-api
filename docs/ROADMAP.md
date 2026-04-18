@@ -117,7 +117,7 @@ This document tracks the structured refactor and quality improvement of the Jell
 
 ### Milestone 9 — Resilience Layer (Short-Term, addresses Q4)
 
-- [x] Add `Microsoft.Extensions.Http.Polly` 8.0.26 dependency
+- [x] Implement custom `ResilienceHandler` (DelegatingHandler) — no external Polly dependency to avoid plugin host assembly-loading issues
 - [x] Define retry policy (3 retries, exponential back-off, transient errors + 429) in `ResiliencePolicies.cs`
 - [x] Define circuit breaker policy (5 failures, 30s open duration) in `ResiliencePolicies.cs`
 - [x] Apply both policies via `IHttpClientFactory` named client pipeline in `ServiceRegistrator`

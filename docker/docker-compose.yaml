@@ -1,8 +1,8 @@
 services:
   jellyfin:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: jellyfin-tvheadend-dev
     user: "0:0"
     privileged: true

@@ -83,14 +83,13 @@ builder.Services.AddOpenTelemetry()
 
 ## Resilience Observability
 
-The retry and circuit breaker policies (see `ResiliencePolicies.cs`) are applied at the `HttpClient` pipeline level.
-Polly logs retries and circuit state changes automatically when a logger is available.
+The custom retry and circuit breaker logic (see `ResilienceHandler` in `ResiliencePolicies.cs`) is applied as a `DelegatingHandler` in the `HttpClient` pipeline. No external resilience library (e.g., Polly) is used — the implementation is self-contained to avoid assembly-loading issues in Jellyfin's plugin host.
 
 | Event | How to observe |
 |---|---|
-| Retry attempt | Polly logs at Warning level |
-| Circuit open | Polly logs at Error level; `BrokenCircuitException` is thrown |
-| Circuit half-open/closed | Polly logs at Information level |
+| Retry attempt | `ResilienceHandler` retries silently; monitor `tvh.api.calls` counter for repeated calls |
+| Circuit open | `ResilienceHandler` throws `InvalidOperationException` with "Circuit breaker is open" message |
+| Circuit half-open | After the break duration elapses, one trial request is allowed through |
 
 ## Troubleshooting
 

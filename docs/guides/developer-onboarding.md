@@ -72,7 +72,7 @@ The Jellyfin plugin bootstrap. Defines plugin GUID, name, version. Registers the
 
 Registers all services into Jellyfin's DI container. This is where you see the full dependency graph. Key registrations:
 
-- Named `HttpClient` instances (`TvHeadend`, `TvHeadendUnsafe`) with Polly resilience policies
+- Named `HttpClient` instances (`TvHeadend`, `TvHeadendUnsafe`) with custom resilience policies (retry + circuit breaker via `ResilienceHandler`)
 - All domain services (Guide, DVR, Stream, Profile, Auth, Diagnostic, Statistics)
 - `OrchestratorService` as `ILiveTvService` — the contract Jellyfin uses for Live TV
 
