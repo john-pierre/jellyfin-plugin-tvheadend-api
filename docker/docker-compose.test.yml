@@ -10,6 +10,21 @@
 # This stack is NOT for production — it runs with relaxed security settings.
 
 services:
+  iptv-sim:
+    build:
+      context: ./iptv-sim
+      dockerfile: Dockerfile
+    container_name: iptv-sim
+    ports:
+      - "18888:80"
+    restart: "no"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://iptv-sim:80/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
   tvheadend:
     # Pinned to a specific build for reproducible CI. Update periodically.
     image: linuxserver/tvheadend:37453bc3-ls279
@@ -27,6 +42,9 @@ services:
     volumes:
       - tvh-test-config:/config
       - tvh-test-recordings:/recordings
+    depends_on:
+      iptv-sim:
+        condition: service_healthy
     restart: "no"
     healthcheck:
       # linuxserver/tvheadend is Alpine-based (busybox wget, no curl).
@@ -50,6 +68,21 @@ services:
     volumes:
       - jf-test-config:/config
       - jf-test-cache:/cache
+    depends_on:
+      tvh-bootstrap:
+        condition: service_completed_successfully
+    restart: "no"
+
+  tvh-bootstrap:
+    image: alpine:3.20
+    container_name: tvh-bootstrap
+    volumes:
+      - ./tvh-bootstrap.sh:/bootstrap.sh:ro
+    entrypoint: ["/bin/sh", "/bootstrap.sh"]
+    environment:
+      - TVH_URL=http://tvheadend:9981
+      - IPTV_SIM_URL=http://iptv-sim
+      - MAX_WAIT=60
     depends_on:
       tvheadend:
         condition: service_healthy

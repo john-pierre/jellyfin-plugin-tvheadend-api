@@ -267,22 +267,30 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Start TVHeadend & Jellyfin
-        run: docker compose -f docker/docker-compose.test.yml up -d --build --wait
+      - name: Start TVHeadend & IPTV Simulator
+        run: docker compose -f docker/docker-compose.test.yml up -d --build iptv-sim tvheadend
 
-      - name: Wait for TVHeadend
+      - name: Wait for TVHeadend Healthy
         run: |
           echo "Waiting for TVHeadend to become healthy..."
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             if curl -sf http://localhost:19981/api/serverinfo > /dev/null 2>&1; then
               echo "TVHeadend is ready."
               exit 0
             fi
-            sleep 2
+            sleep 3
           done
           echo "TVHeadend did not become healthy in time."
-          docker compose -f docker/docker-compose.test.yml logs
+          docker compose -f docker/docker-compose.test.yml logs tvheadend
           exit 1
+
+      - name: Run Bootstrap
+        run: |
+          docker compose -f docker/docker-compose.test.yml up tvh-bootstrap --exit-code-from tvh-bootstrap
+          echo "Bootstrap complete."
+
+      - name: Wait for Recording
+        run: sleep 20
 
       - name: Restore Dependencies
         run: dotnet restore Jellyfin.Plugin.TvHeadendApi.sln
@@ -317,6 +325,10 @@ jobs:
           path: 'TestResults/integration-results.trx'
           reporter: dotnet-trx
           fail-on-error: true
+
+      - name: Show Bootstrap Logs on Failure
+        if: failure()
+        run: docker compose -f docker/docker-compose.test.yml logs tvh-bootstrap iptv-sim tvheadend
 
       - name: Tear Down Services
         if: always()

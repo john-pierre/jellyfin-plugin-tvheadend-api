@@ -332,84 +332,84 @@ Purpose: validate plugin behavior against real TVHeadend and Jellyfin instances.
 
 An IPTV simulator container that provides deterministic test channels and EPG data so TVHeadend has actual content to serve.
 
-- [ ] Create `docker/iptv-sim/` directory with simulator assets
-- [ ] Add static MPEG-TS test stream file (short loop, ~10s, minimal resolution) — serves as IPTV source
-- [ ] Add XMLTV EPG file (`epg.xml`) with 3–5 test channels, each with 24h of programme data
-- [ ] Add M3U playlist (`playlist.m3u`) pointing to the simulator's TS streams (3–5 channels)
-- [ ] Create lightweight Nginx-based Dockerfile (`docker/iptv-sim/Dockerfile`) that serves M3U, TS, and XMLTV over HTTP
-- [ ] Add `iptv-sim` service to `docker-compose.test.yml` with healthcheck
+- [x] Create `docker/iptv-sim/` directory with simulator assets
+- [x] Add static MPEG-TS test stream file (short loop, ~10s, minimal resolution) — serves as IPTV source
+- [x] Add XMLTV EPG file (`epg.xml`) with 3–5 test channels, each with 24h of programme data
+- [x] Add M3U playlist (`playlist.m3u`) pointing to the simulator's TS streams (3–5 channels)
+- [x] Create lightweight Nginx-based Dockerfile (`docker/iptv-sim/Dockerfile`) that serves M3U, TS, and XMLTV over HTTP
+- [x] Add `iptv-sim` service to `docker-compose.test.yml` with healthcheck
 - [ ] Verify simulator starts and serves M3U + TS + XMLTV on dedicated port (e.g., 8888)
 
 #### 21b — TVHeadend Bootstrap Script
 
 Automated first-run configuration of TVHeadend so it has channels, EPG, users, and profiles ready for testing.
 
-- [ ] Create `docker/tvh-bootstrap.sh` — runs against TVHeadend API after startup
-- [ ] Bootstrap: create IPTV automatic network pointing at `http://iptv-sim:8888/playlist.m3u` (`/api/mpegts/network/create`)
-- [ ] Bootstrap: trigger initial mux scan and wait for completion (`/api/mpegts/network/mux_scanner`)
-- [ ] Bootstrap: map all discovered services to channels (`/api/channel/grid`)
-- [ ] Bootstrap: configure internal XMLTV grabber pointing at `http://iptv-sim:8888/epg.xml` (`/api/epggrab/config/save`)
-- [ ] Bootstrap: trigger EPG grab and wait for completion (`/api/epggrab/internal/rerun`)
-- [ ] Bootstrap: create test user with password (e.g., `testuser` / `testpass`) via `/api/access/entry/create` + `/api/passwd/entry/create`
-- [ ] Bootstrap: create a test streaming profile via `/api/profile/create`
-- [ ] Bootstrap: create a test recording profile and schedule one test recording (`/api/dvr/entry/create`)
-- [ ] Add bootstrap service to `docker-compose.test.yml` (runs once after TVHeadend is healthy, then exits)
-- [ ] Add `depends_on` from `jellyfin` and test runner to bootstrap completion
+- [x] Create `docker/tvh-bootstrap.sh` — runs against TVHeadend API after startup
+- [x] Bootstrap: create IPTV automatic network pointing at `http://iptv-sim:8888/playlist.m3u` (`/api/mpegts/network/create`)
+- [x] Bootstrap: trigger initial mux scan and wait for completion (`/api/mpegts/network/mux_scanner`)
+- [x] Bootstrap: map all discovered services to channels (`/api/channel/grid`)
+- [x] Bootstrap: configure internal XMLTV grabber pointing at `http://iptv-sim:8888/epg.xml` (`/api/epggrab/config/save`)
+- [x] Bootstrap: trigger EPG grab and wait for completion (`/api/epggrab/internal/rerun`)
+- [x] Bootstrap: create test user with password (e.g., `testuser` / `testpass`) via `/api/access/entry/create` + `/api/passwd/entry/create`
+- [x] Bootstrap: create a test streaming profile via `/api/profile/create`
+- [x] Bootstrap: create a test recording profile and schedule one test recording (`/api/dvr/entry/create`)
+- [x] Add bootstrap service to `docker-compose.test.yml` (runs once after TVHeadend is healthy, then exits)
+- [x] Add `depends_on` from `jellyfin` and test runner to bootstrap completion
 
 #### 21c — Live Integration Tests: Channel & EPG
 
-- [ ] `GuideService_GetChannelsAsync` — returns ≥ 3 channels from IPTV simulator, verify names/numbers/logos
-- [ ] `GuideService_GetProgramsAsync` — returns EPG entries for test channels, verify title/start/end/genre
-- [ ] `GuideService_GetContentTypesAsync` — returns content type dictionary from populated EPG
+- [x] `GuideService_GetChannelsAsync` — returns ≥ 3 channels from IPTV simulator, verify names/numbers/logos
+- [x] `GuideService_GetProgramsAsync` — returns EPG entries for test channels, verify title/start/end/genre
+- [x] `GuideService_GetContentTypesAsync` — returns content type dictionary from populated EPG
 - [ ] `OrchestratorService_GetChannelsAsync` — full orchestrator round-trip returns `ChannelInfo` list
 
 #### 21d — Live Integration Tests: Auth Token Lifecycle
 
-- [ ] `TokenService_GenerateValidTokenAsync` — generate persistent auth token for `testuser` → token is non-empty
+- [x] `TokenService_GenerateValidTokenAsync` — generate persistent auth token for `testuser` → token is non-empty
 - [ ] `TokenService_ValidateTokenAsync` — validate generated token against TVH `/api/ticket/get` → returns true
 - [ ] `TokenService_RegenerateToken` — generate token, then generate again → new token differs from old
-- [ ] `TokenService_InvalidCredentials` — generate token with wrong password → returns failure/null
+- [x] `TokenService_InvalidCredentials` — generate token with wrong password → returns failure/null
 
 #### 21e — Live Integration Tests: Profile Management
 
 - [ ] `DefaultProfileService_EnsureProfileExistsAsync` — creates plugin streaming profile → verify via `/api/profile/list`
-- [ ] `ProfileResolver_GetProfilesAsync` — returns ≥ 2 profiles (default + test profile)
-- [ ] `ProfileResolver_ResolveProfileByNameAsync` — resolve test profile by name → `ResolvedProfile` has correct settings
+- [x] `ProfileResolver_GetProfilesAsync` — returns ≥ 2 profiles (default + test profile)
+- [x] `ProfileResolver_ResolveProfileByNameAsync` — resolve test profile by name → `ResolvedProfile` has correct settings
 - [ ] `DefaultProfileService_CodecProfile` — verify codec profile creation via `/api/codec_profile/list`
 
 #### 21f — Live Integration Tests: Streaming
 
 - [ ] `MediaSourceService_GetChannelStreamAsync` — returns `MediaSourceInfo` with valid stream URL for a test channel
 - [ ] `MediaSourceService_StreamUrl_ContainsAuthToken` — stream URL includes ticket/token query parameter
-- [ ] `MediaSourceService_StreamUrl_ContainsProfile` — stream URL includes `?profile=` parameter
+- [x] `MediaSourceService_StreamUrl_ContainsProfile` — stream URL includes `?profile=` parameter
 - [ ] `MediaSourceService_GetRecordingStreamUrl` — returns valid URL for test recording (requires 21b recording to complete)
 - [ ] `OrchestratorService_GetChannelStream` — full orchestrator stream setup returns playable `MediaSourceInfo`
-- [ ] HTTP GET on stream URL → returns HTTP 200 with `video/` or `application/octet-stream` content type (no full playback, just header check)
+- [x] HTTP GET on stream URL → returns HTTP 200 with `video/` or `application/octet-stream` content type (no full playback, just header check)
 
 #### 21g — Live Integration Tests: DVR (Recording)
 
-- [ ] `DvrService_GetTimersAsync` — returns timer list including bootstrap-created recording
-- [ ] `DvrService_CreateTimerAsync` — create a new one-shot recording timer → verify appears in grid
-- [ ] `DvrService_CancelTimerAsync` — cancel created timer → verify removed from grid
-- [ ] `DvrService_GetSeriesTimersAsync` — returns series timer grid (may be empty)
+- [x] `DvrService_GetTimersAsync` — returns timer list including bootstrap-created recording
+- [x] `DvrService_CreateTimerAsync` — create a new one-shot recording timer → verify appears in grid
+- [x] `DvrService_CancelTimerAsync` — cancel created timer → verify removed from grid
+- [x] `DvrService_GetSeriesTimersAsync` — returns series timer grid (may be empty)
 - [ ] `DvrService_CreateSeriesTimerAsync` — create autorec rule → verify appears in autorec grid
 - [ ] `DvrService_CancelSeriesTimerAsync` — cancel autorec rule → verify removed
 - [ ] `DvrService_GetRecordingsAsync` — returns completed recordings list (after bootstrap recording finishes)
 
 #### 21h — Live Integration Tests: Tuner & Input Status
 
-- [ ] `StatusService_GetActivityStatusAsync` — returns activity status JSON (subscriptions count, recordings count)
-- [ ] `StatusService_GetConnectionsAsync` — returns connections grid (at least test runner's connection)
-- [ ] `InputMonitorService_GetInputStatusAsync` — returns input status entries for IPTV network adapters
+- [x] `StatusService_GetActivityStatusAsync` — returns activity status JSON (subscriptions count, recordings count)
+- [x] `StatusService_GetConnectionsAsync` — returns connections grid (at least test runner's connection)
+- [x] `InputMonitorService_GetInputStatusAsync` — returns input status entries for IPTV network adapters
 - [ ] `InputMonitorService_SignalMetrics` — verify signal/BER/SNR/bitrate fields are present (may be 0 for IPTV)
-- [ ] `SubscriptionService_GetActiveSubscriptionsAsync` — start a stream, then verify subscription appears in grid
+- [x] `SubscriptionService_GetActiveSubscriptionsAsync` — start a stream, then verify subscription appears in grid
 - [ ] `SubscriptionService_SubscriptionDetails` — verify subscription entry contains channel name, profile, client info
 
 #### 21i — Live Integration Tests: Diagnostics
 
-- [ ] `DiagnosticService_DiagnoseAsync` — full diagnostic against populated TVH → score ≥ 80, all checks OK/WARNING (no ERROR)
-- [ ] `DiagnosticService_ProfileCheck` — diagnostic detects configured streaming profile
-- [ ] `DiagnosticService_VersionCheck` — diagnostic reports correct TVHeadend API version
+- [x] `DiagnosticService_DiagnoseAsync` — full diagnostic against populated TVH → score ≥ 80, all checks OK/WARNING (no ERROR)
+- [x] `DiagnosticService_ProfileCheck` — diagnostic detects configured streaming profile
+- [x] `DiagnosticService_VersionCheck` — diagnostic reports correct TVHeadend API version
 
 #### 21j — Live Integration Tests: Statistics & Lifecycle
 
@@ -419,10 +419,10 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 
 #### 21k — Test Orchestration & Documentation
 
-- [ ] Create `scripts/run-e2e-tests.ps1` — brings up stack, waits for bootstrap, runs tests, tears down
-- [ ] Create `scripts/run-e2e-tests.sh` — Linux/CI equivalent
-- [ ] Add retry/wait logic for TVHeadend mux scan completion (poll `/api/mpegts/mux/grid` until all muxes are `IDLE`)
-- [ ] Add timeout safety (max 120s for full bootstrap)
+- [x] Create `scripts/run-e2e-tests.ps1` — brings up stack, waits for bootstrap, runs tests, tears down
+- [x] Create `scripts/run-e2e-tests.sh` — Linux/CI equivalent
+- [x] Add retry/wait logic for TVHeadend mux scan completion (poll `/api/mpegts/mux/grid` until all muxes are `IDLE`)
+- [x] Add timeout safety (max 120s for full bootstrap)
 - [ ] Document full E2E test procedure in `docs/guides/test-strategy.md` — prerequisites, setup, run, teardown, troubleshooting
 - [ ] Document IPTV simulator in `docs/guides/test-strategy.md` — how to add channels, modify EPG, extend streams
 - [ ] Update `AGENTS.md` testing workflow section with E2E instructions
