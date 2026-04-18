@@ -18,6 +18,9 @@ cleanup() {
 
 trap cleanup EXIT
 
+log "Tearing down any previous stack (clean volumes)..."
+docker compose -f "$COMPOSE_FILE" down --volumes --remove-orphans 2>/dev/null || true
+
 log "Starting test stack..."
 docker compose -f "$COMPOSE_FILE" up -d --build --wait
 

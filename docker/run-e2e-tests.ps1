@@ -24,6 +24,11 @@ function Cleanup {
 }
 
 try {
+    Log "Tearing down any previous stack (clean volumes)..."
+    try {
+        & docker compose -f $ComposeFile down --volumes --remove-orphans --timeout 10 2>&1 | Out-Null
+    } catch { }
+
     Log "Starting test stack..."
     docker compose -f $ComposeFile up -d --build --wait
 
