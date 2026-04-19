@@ -29,7 +29,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests.Integration;
 
 /// <summary>
 /// Full end-to-end integration tests against the bootstrapped TVHeadend + IPTV simulator stack.
-/// Requires <c>docker compose -f docker/docker-compose.test.yml up -d</c> with bootstrap complete.
+/// Requires <c>docker compose -f docker/docker-compose.test.yaml up -d</c> with bootstrap complete.
 /// <para>
 /// Unlike <see cref="LiveServiceIntegrationTests"/> which tests against an empty TVHeadend,
 /// these tests expect channels, EPG data, profiles, users, and recordings to be present

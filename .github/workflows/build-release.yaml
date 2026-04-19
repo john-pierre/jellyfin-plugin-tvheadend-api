@@ -268,10 +268,10 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Clean Previous Stack
-        run: docker compose -f docker/docker-compose.test.yml down --volumes --remove-orphans 2>/dev/null || true
+        run: docker compose -f docker/docker-compose.test.yaml down --volumes --remove-orphans 2>/dev/null || true
 
       - name: Start TVHeadend & IPTV Simulator
-        run: docker compose -f docker/docker-compose.test.yml up -d --build iptv-sim tvheadend
+        run: docker compose -f docker/docker-compose.test.yaml up -d --build iptv-sim tvheadend
 
       - name: Wait for TVHeadend Healthy
         run: |
@@ -284,12 +284,12 @@ jobs:
             sleep 3
           done
           echo "TVHeadend did not become healthy in time."
-          docker compose -f docker/docker-compose.test.yml logs tvheadend
+          docker compose -f docker/docker-compose.test.yaml logs tvheadend
           exit 1
 
       - name: Run Bootstrap
         run: |
-          docker compose -f docker/docker-compose.test.yml up tvh-bootstrap --exit-code-from tvh-bootstrap
+          docker compose -f docker/docker-compose.test.yaml up tvh-bootstrap --exit-code-from tvh-bootstrap
           echo "Bootstrap complete."
 
       - name: Wait for Recording
@@ -331,9 +331,9 @@ jobs:
 
       - name: Show Bootstrap Logs on Failure
         if: failure()
-        run: docker compose -f docker/docker-compose.test.yml logs tvh-bootstrap iptv-sim tvheadend
+        run: docker compose -f docker/docker-compose.test.yaml logs tvh-bootstrap iptv-sim tvheadend
 
       - name: Tear Down Services
         if: always()
-        run: docker compose -f docker/docker-compose.test.yml down -v
+        run: docker compose -f docker/docker-compose.test.yaml down -v
 

@@ -155,7 +155,7 @@ This document tracks the structured refactor and quality improvement of the Jell
 
 ### Milestone 13 — Live Integration Testing (Medium-Term, addresses T3)
 
-- [x] Create `docker-compose.test.yml` with TVHeadend + Jellyfin stack (offset ports 19981/18096)
+- [x] Create `docker-compose.test.yaml` with TVHeadend + Jellyfin stack (offset ports 19981/18096)
 - [x] Add 6 live HTTP integration tests: serverinfo, channel grid, EPG grid, profile list, DVR grid, invalid endpoint
 - [x] Gate live tests via `[Trait("Category", "LiveIntegration")]` — excluded from default runs and CI via `--filter "Category!=LiveIntegration"`
 - [x] Document test environment setup and run commands in `docs/test-strategy.md`
@@ -249,7 +249,7 @@ This document tracks the structured refactor and quality improvement of the Jell
 The project has two layers of integration testing:
 
 1. **WireMock tests** (`Category=JellyfinIntegration`) — fast, in-process, no Docker required. WireMock spins up an ephemeral HTTP server inside the test process that simulates TVHeadend API responses. These run in CI alongside unit tests.
-2. **Live integration tests** (`Category=LiveIntegration`) — run against real TVHeadend + Jellyfin instances from `docker-compose.test.yml`. These are opt-in and excluded from default CI runs.
+2. **Live integration tests** (`Category=LiveIntegration`) — run against real TVHeadend + Jellyfin instances from `docker-compose.test.yaml`. These are opt-in and excluded from default CI runs.
 
 WireMock is a test library dependency only — it does **not** belong in docker-compose.
 
@@ -302,11 +302,11 @@ Purpose: exercise full service pipelines against a simulated TVHeadend HTTP serv
 - [x] Verify all 10 WireMock tests pass: 0 errors
 - [x] Verify all existing tests still pass: 498 total (488 unit + 10 WireMock), 0 errors
 
-#### 20c — Live Integration Tests Against docker-compose.test.yml
+#### 20c — Live Integration Tests Against docker-compose.test.yaml
 
-Purpose: validate plugin behavior against real TVHeadend and Jellyfin instances. These tests use `docker-compose.test.yml` (TVHeadend on port 19981, Jellyfin on port 18096) and are excluded from CI by default.
+Purpose: validate plugin behavior against real TVHeadend and Jellyfin instances. These tests use `docker-compose.test.yaml` (TVHeadend on port 19981, Jellyfin on port 18096) and are excluded from CI by default.
 
-- [x] `docker-compose.test.yml` already exists with TVHeadend + Jellyfin stack (Milestone 13)
+- [x] `docker-compose.test.yaml` already exists with TVHeadend + Jellyfin stack (Milestone 13)
 - [x] 6 `LiveIntegration` tests already exist in `TvHeadendLiveTests.cs` (Milestone 13)
 - [x] Add live service integration tests — 15 tests in `LiveServiceIntegrationTests.cs` covering GuideService (channels, programs, content types, tags), DvrService (timers, series timers, recording profile UUID), DiagnosticService (full diagnose), StatusService (activity, connections), InputMonitorService (inputs), SubscriptionService (subscriptions), ProfileResolver (list, resolve by name)
 - [x] Document full test procedure in `docs/guides/test-strategy.md`
@@ -324,7 +324,7 @@ Purpose: validate plugin behavior against real TVHeadend and Jellyfin instances.
 
 ### Milestone 21 — Full End-to-End Plugin Testing (Medium-Term)
 
-**Goal:** Extend the `docker-compose.test.yml` environment so that **every** plugin capability can be tested against real TVHeadend and Jellyfin instances — including channels, EPG, streams, profiles, auth tokens, tuner/input status, subscriptions, connections, and DVR operations.
+**Goal:** Extend the `docker-compose.test.yaml` environment so that **every** plugin capability can be tested against real TVHeadend and Jellyfin instances — including channels, EPG, streams, profiles, auth tokens, tuner/input status, subscriptions, connections, and DVR operations.
 
 **Prerequisite:** Milestone 20c live tests provide the initial framework; Milestone 21 adds the infrastructure and test depth to cover the complete plugin surface.
 
@@ -337,7 +337,7 @@ An IPTV simulator container that provides deterministic test channels and EPG da
 - [x] Add XMLTV EPG file (`epg.xml`) with 3–5 test channels, each with 24h of programme data
 - [x] Add M3U playlist (`playlist.m3u`) pointing to the simulator's TS streams (3–5 channels)
 - [x] Create Python-based Dockerfile (`docker/iptv-simulator/Dockerfile`) that serves M3U, live MPEG-TS streams, XMLTV and channel logos/thumbnails over HTTP
-- [x] Add `iptv-simulator` service to `docker-compose.test.yml` with healthcheck
+- [x] Add `iptv-simulator` service to `docker-compose.test.yaml` with healthcheck
 - [ ] Verify simulator starts and serves M3U + TS + XMLTV on dedicated port (e.g., 8888)
 
 #### 21b — TVHeadend Bootstrap Script
@@ -353,7 +353,7 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 - [x] Bootstrap: create test user with password (e.g., `testuser` / `testpass`) via `/api/access/entry/create` + `/api/passwd/entry/create`
 - [x] Bootstrap: create a test streaming profile via `/api/profile/create`
 - [x] Bootstrap: create a test recording profile and schedule one test recording (`/api/dvr/entry/create`)
-- [x] Add bootstrap service to `docker-compose.test.yml` (runs once after TVHeadend is healthy, then exits)
+- [x] Add bootstrap service to `docker-compose.test.yaml` (runs once after TVHeadend is healthy, then exits)
 - [x] Add `depends_on` from `jellyfin` and test runner to bootstrap completion
 
 #### 21c — Live Integration Tests: Channel & EPG

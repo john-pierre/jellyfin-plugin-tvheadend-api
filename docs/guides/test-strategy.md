@@ -62,7 +62,7 @@ Opt-in tests against a real TVHeadend instance. **Run in CI** as a separate job 
 - **Location:** `Tests/Integration/TvHeadendLiveTests.cs`
 - **Gate:** `[Trait("Category", "LiveIntegration")]` — excluded from default unit-test runs via `--filter "Category!=LiveIntegration"`.
 - **Connection:** `TVHEADEND_URL` environment variable (default: `http://localhost:19981`).
-- **Test stack:** `docker-compose.test.yml` provides a ready-made TVHeadend + Jellyfin environment.
+- **Test stack:** `docker-compose.test.yaml` provides a ready-made TVHeadend + Jellyfin environment.
 
 Covered endpoints:
 - `/api/serverinfo` — connectivity and version check
@@ -90,14 +90,14 @@ Covered services (15 tests):
 How to run:
 ```bash
 # Start test environment
-docker compose -f docker/docker-compose.test.yml up -d
+docker compose -f docker/docker-compose.test.yaml up -d
 
 # Wait for TVHeadend to become healthy (~30s)
 # Run live tests only
 dotnet test --filter "Category=LiveIntegration"
 
 # Tear down
-docker compose -f docker/docker-compose.test.yml down -v
+docker compose -f docker/docker-compose.test.yaml down -v
 ```
 
 ## What Must Be Unit Tested

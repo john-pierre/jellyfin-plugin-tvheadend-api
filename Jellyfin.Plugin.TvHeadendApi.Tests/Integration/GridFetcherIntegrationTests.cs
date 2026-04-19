@@ -52,7 +52,7 @@ public class GridFetcherIntegrationTests
         const string json = """
         {
           "entries": [
-            { "uuid": "ch1", "name": "ARD", "number": 1000000, "enabled": true, "icon": "", "icon_public_url": "", "epgauto": true, "epglimit": 0, "services": [], "tags": [], "bouquet": "" }
+            { "uuid": "ch1", "name": "ARD", "number": 1, "enabled": true, "icon": "", "icon_public_url": "", "epgauto": true, "epglimit": 0, "services": [], "tags": [], "bouquet": "" }
           ],
           "total": 1
         }

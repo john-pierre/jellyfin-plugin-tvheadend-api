@@ -22,7 +22,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests.Integration;
 
 /// <summary>
 /// Live integration tests that exercise the plugin service layer against a real
-/// TVHeadend instance started via <c>docker-compose.test.yml</c>.
+/// TVHeadend instance started via <c>docker-compose.test.yaml</c>.
 /// <para>
 /// These tests validate that each service correctly communicates with the TVHeadend
 /// HTTP/JSON API. The TVHeadend instance starts empty (no IPTV network), so tests
@@ -32,7 +32,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests.Integration;
 /// </summary>
 /// <remarks>
 /// Run with: <c>TVHEADEND_LIVE_TESTS=true dotnet test --filter "Category=LiveIntegration"</c>.
-/// Requires <c>docker compose -f docker-compose.test.yml up -d</c> running.
+/// Requires <c>docker compose -f docker-compose.test.yaml up -d</c> running.
 /// </remarks>
 [Trait("Category", "LiveIntegration")]
 public sealed class LiveServiceIntegrationTests : IDisposable

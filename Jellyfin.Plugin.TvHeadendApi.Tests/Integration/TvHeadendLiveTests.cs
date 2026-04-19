@@ -19,7 +19,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests.Integration;
 /// <remarks>
 /// Run with: <c>dotnet test --filter "Category=LiveIntegration"</c>.
 /// Default runs exclude this category: <c>dotnet test --filter "Category!=LiveIntegration"</c>.
-/// See <c>docker-compose.test.yml</c> for a ready-made test environment.
+/// See <c>docker-compose.test.yaml</c> for a ready-made test environment.
 /// </remarks>
 [Trait("Category", "LiveIntegration")]
 public class TvHeadendLiveTests : IDisposable

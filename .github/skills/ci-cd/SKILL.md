@@ -16,7 +16,7 @@ Single workflow: `.github/workflows/build-release.yaml` with 4 jobs:
 | `build` | push, PR | Build, test, coverage report (90/95 thresholds), TRX test reporter, sticky PR comment |
 | `package` | push to main | Create plugin zip + SHA256 checksums |
 | `release` | push to main | Release Please → asset upload → manifest.json auto-update |
-| `integration` | push to main, PR | Live tests against `docker-compose.test.yml` (TVHeadend + Jellyfin) |
+| `integration` | push to main, PR | Live tests against `docker-compose.test.yaml` (TVHeadend + Jellyfin) |
 
 Additional workflow: `.github/workflows/pr-title-check.yaml` — validates PR titles against Conventional Commits.
 
@@ -44,7 +44,7 @@ Additional workflow: `.github/workflows/pr-title-check.yaml` — validates PR ti
 
 ## 4 — Docker Test Environment
 
-The test stack is defined in `docker/docker-compose.test.yml`:
+The test stack is defined in `docker/docker-compose.test.yaml`:
 
 - **TVHeadend:** `linuxserver/tvheadend` with `-C` (no-auth), port `19981:9981`, healthcheck on `/api/serverinfo`
 - **Jellyfin:** Built from `docker/Dockerfile` (context: repo root), port `18096:8096`

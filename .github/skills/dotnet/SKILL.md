@@ -36,7 +36,7 @@ dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release --no-restore
 # Test (unit only, excludes live integration)
 dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj -c Release --no-build --filter "Category!=LiveIntegration"
 
-# Test (live integration — requires docker-compose.test.yml running)
+# Test (live integration — requires docker-compose.test.yaml running)
 dotnet test --filter "Category=LiveIntegration"
 
 # Full CI-style
