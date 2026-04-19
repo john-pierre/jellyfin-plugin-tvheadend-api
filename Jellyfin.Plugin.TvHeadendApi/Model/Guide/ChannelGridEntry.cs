@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Model.Guide;
@@ -25,11 +26,17 @@ public sealed class ChannelGridEntry
     public string Name { get; init; } = string.Empty;
 
     /// <summary>
-    /// Gets the logical number of the channel.
-    /// TVHeadend encodes channel numbers as <c>major * 1000000 + minor</c> (int64).
-    /// For example, channel 7.1 is stored as 7001000, and channel 101 is stored as 101000000.
+    /// Gets the logical number of the channel as a raw JSON element.
+    /// <para>
+    /// TVHeadend serializes channel numbers differently depending on whether a minor number exists:
+    /// <list type="bullet">
+    ///   <item>Whole numbers (e.g. channel 10): sent as JSON integer <c>10</c></item>
+    ///   <item>Major.minor numbers (e.g. channel 7.1): sent as JSON string <c>"7.1"</c></item>
+    /// </list>
+    /// Use <see cref="JsonElement"/> to handle both cases without data loss.
+    /// </para>
     /// </summary>
-    public long Number { get; init; }
+    public JsonElement Number { get; init; }
 
     /// <summary>
     /// Gets the URL to the channel's icon image.

@@ -27,8 +27,8 @@ public class GuideServiceCoreTests
         var json = """
                    {
                      "entries": [
-                       { "uuid": "ch-1", "name": "One", "number": 7000000, "icon_public_url": "/imagecache/my icon.png", "enabled": true },
-                       { "uuid": "ch-2", "name": "Two", "number": 7000005, "icon_public_url": "", "enabled": true }
+                       { "uuid": "ch-1", "name": "One", "number": 7, "icon_public_url": "/imagecache/my icon.png", "enabled": true },
+                       { "uuid": "ch-2", "name": "Two", "number": "7.5", "icon_public_url": "", "enabled": true }
                      ],
                      "total": 2
                    }
@@ -136,7 +136,7 @@ public class GuideServiceCoreTests
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("""
-                                        { "entries": [ { "uuid": "ch-1", "name": "One", "number": 1000000, "icon_public_url": "   ", "enabled": true } ], "total": 1 }
+                                        { "entries": [ { "uuid": "ch-1", "name": "One", "number": 1, "icon_public_url": "   ", "enabled": true } ], "total": 1 }
                                         """)
         });
 
@@ -814,7 +814,7 @@ public class GuideServiceCoreTests
         var json = """
                    {
                      "entries": [
-                       { "uuid": "ch-1", "name": "BBC One", "number": 1000000, "enabled": true, "bouquet": "Freeview", "tags": ["tag-1"] }
+                       { "uuid": "ch-1", "name": "BBC One", "number": 1, "enabled": true, "bouquet": "Freeview", "tags": ["tag-1"] }
                      ],
                      "total": 1
                    }
@@ -850,7 +850,7 @@ public class GuideServiceCoreTests
         var channelJson = """
                           {
                             "entries": [
-                              { "uuid": "ch-1", "name": "BBC Two", "number": 2000000, "enabled": true, "tags": ["tag-abc"] }
+                              { "uuid": "ch-1", "name": "BBC Two", "number": 2, "enabled": true, "tags": ["tag-abc"] }
                             ],
                             "total": 1
                           }
@@ -887,7 +887,7 @@ public class GuideServiceCoreTests
         var channelJson = """
                           {
                             "entries": [
-                              { "uuid": "ch-1", "name": "ITV", "number": 3000000, "enabled": true, "tags": ["unknown-tag-99"] }
+                              { "uuid": "ch-1", "name": "ITV", "number": 3, "enabled": true, "tags": ["unknown-tag-99"] }
                             ],
                             "total": 1
                           }

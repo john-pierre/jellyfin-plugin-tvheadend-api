@@ -340,22 +340,32 @@ internal sealed class GuideService : IGuideService
     }
 
     /// <summary>
-    /// Converts a TVHeadend channel number (encoded as major * 1000000 + minor) to a display string.
-    /// Examples: 101000000 â†’ "101", 7001000 â†’ "7.1", 0 â†’ "0".
+    /// Formats the TVHeadend channel number for Jellyfin.
+    /// <para>
+    /// TVHeadend serializes channel numbers in two ways:
+    /// <list type="bullet">
+    ///   <item>Whole numbers → JSON integer (e.g. <c>10</c>)</item>
+    ///   <item>Major.minor → JSON string (e.g. <c>"7.1"</c>)</item>
+    /// </list>
+    /// Both are passed through as-is since TVHeadend already formats them correctly.
+    /// </para>
     /// </summary>
-    private static string FormatChannelNumber(long tvhNumber)
+    /// <param name="numberElement">The raw JSON element from the TVHeadend channel grid <c>number</c> field.</param>
+    /// <returns>The formatted channel number string (e.g. <c>"10"</c> or <c>"7.1"</c>), or <c>"0"</c> if unavailable.</returns>
+    internal static string FormatChannelNumber(JsonElement numberElement)
     {
-        const long channelSplit = 1000000;
-        if (tvhNumber <= 0)
+        if (numberElement.ValueKind == JsonValueKind.Number)
         {
-            return "0";
+            return numberElement.GetInt64().ToString(CultureInfo.InvariantCulture);
         }
 
-        var major = tvhNumber / channelSplit;
-        var minor = tvhNumber % channelSplit;
-        return minor > 0
-            ? string.Create(CultureInfo.InvariantCulture, $"{major}.{minor}")
-            : major.ToString(CultureInfo.InvariantCulture);
+        if (numberElement.ValueKind == JsonValueKind.String)
+        {
+            var str = numberElement.GetString();
+            return !string.IsNullOrWhiteSpace(str) ? str : "0";
+        }
+
+        return "0";
     }
 
     private string ResolveTvhImageUrl(PluginConfiguration config, string rawImagePath)

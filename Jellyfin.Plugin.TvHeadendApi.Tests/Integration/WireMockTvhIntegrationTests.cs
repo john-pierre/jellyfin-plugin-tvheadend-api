@@ -119,8 +119,8 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
                 .WithBody("""
                     {
                       "entries": [
-                        { "uuid": "ch-001", "name": "Das Erste HD", "number": 1000000, "enabled": true, "icon_public_url": "imagecache/14", "tags": [] },
-                        { "uuid": "ch-002", "name": "ZDF HD", "number": 2000000, "enabled": false, "icon_public_url": "", "tags": [] }
+                         { "uuid": "ch-001", "name": "Das Erste HD", "number": 1, "enabled": true, "icon_public_url": "imagecache/14", "tags": [] },
+                         { "uuid": "ch-002", "name": "ZDF HD", "number": 2, "enabled": false, "icon_public_url": "", "tags": [] }
                       ],
                       "total": 2
                     }
@@ -154,7 +154,7 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
                 .WithBody("""
                     {
                       "entries": [
-                        { "uuid": "ch-010", "name": "Sport 1", "number": 3000000, "enabled": true, "tags": ["tag-sports"] }
+                        { "uuid": "ch-010", "name": "Sport 1", "number": 3, "enabled": true, "tags": ["tag-sports"] }
                       ],
                       "total": 1
                     }

@@ -28,7 +28,7 @@ public class TvHeadendApiContractTests
               "uuid": "b33aaa0113626f7e8e08d4c04083ea4f",
               "enabled": true,
               "name": "Das Erste HD",
-              "number": 1000000,
+              "number": 1,
               "icon": "file:///picons/daserstehd.png",
               "icon_public_url": "imagecache/14",
               "epgauto": true,
@@ -41,7 +41,7 @@ public class TvHeadendApiContractTests
               "uuid": "c44bbb0224737f8f9f19e5d15194fb5f",
               "enabled": false,
               "name": "ZDF HD",
-              "number": 2000000,
+              "number": 2,
               "icon": "",
               "icon_public_url": "",
               "epgauto": true,
@@ -65,7 +65,7 @@ public class TvHeadendApiContractTests
         Assert.Equal("b33aaa0113626f7e8e08d4c04083ea4f", ch1.Uuid);
         Assert.True(ch1.Enabled);
         Assert.Equal("Das Erste HD", ch1.Name);
-        Assert.Equal(1_000_000L, ch1.Number);
+        Assert.Equal(1L, ch1.Number.GetInt64());
         Assert.Equal("imagecache/14", ch1.IconPublicUrl);
         Assert.Equal(2, ch1.Tags.Count);
         Assert.Single(ch1.Services);
@@ -465,7 +465,7 @@ public class TvHeadendApiContractTests
             {
               "uuid": "abc",
               "name": "Test",
-              "number": 1000000,
+              "number": 1,
               "enabled": true,
               "unknown_future_field": "should be ignored",
               "another_new_array": [1, 2, 3]
