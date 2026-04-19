@@ -58,10 +58,8 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
 
         var apiClientMock = new Mock<IApiClient>();
         apiClientMock.Setup(x => x.GetCurrentConfiguration()).Returns(_config);
-        apiClientMock.Setup(x => x.GetBaseUrl(_config)).Returns($"http://localhost:{_server.Port}");
-        apiClientMock.Setup(x => x.GetWebRoot(_config)).Returns("/");
         apiClientMock
-            .Setup(x => x.BuildHttpClient(It.IsAny<PluginConfiguration>()))
+            .Setup(x => x.CreateApiHttpClient(It.IsAny<PluginConfiguration>()))
             .Returns(() => new HttpClient { BaseAddress = new Uri($"http://localhost:{_server.Port}") });
         apiClientMock
             .Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -83,15 +81,21 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
 
         var urlBuilderMock = new Mock<IUrlBuilder>();
         urlBuilderMock
-            .Setup(x => x.BuildUrlWithHeaderAuth(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
+            .Setup(x => x.GetBaseUrl(It.IsAny<PluginConfiguration>()))
+            .Returns($"http://localhost:{_server.Port}");
+        urlBuilderMock
+            .Setup(x => x.GetWebRoot(It.IsAny<PluginConfiguration>()))
+            .Returns("/");
+        urlBuilderMock
+            .Setup(x => x.BuildApiUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((cfg, ep) =>
                 $"http://localhost:{_server.Port}/{ep.TrimStart('/')}");
         urlBuilderMock
-            .Setup(x => x.BuildUrlWithParameterAuth(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
+            .Setup(x => x.BuildResourceUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((cfg, ep) =>
                 $"http://localhost:{_server.Port}/{ep.TrimStart('/')}");
         urlBuilderMock
-            .Setup(x => x.BuildUrlWithUrlAuth(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
+            .Setup(x => x.BuildApiUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((cfg, ep) =>
                 $"http://localhost:{_server.Port}/{ep.TrimStart('/')}");
         urlBuilderMock
@@ -258,8 +262,7 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
             Mock.Of<IServerConfigurationManager>(),
             CreateEncodingReader(),
             streamResolver.Object,
-            _apiClient,
-            new CachePathProvider(() => null));
+            _apiClient, _urlBuilder, new CachePathProvider(() => null));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -286,9 +289,10 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
 
         var apiClientMock = new Mock<IApiClient>();
         apiClientMock.Setup(x => x.GetCurrentConfiguration()).Returns(badConfig);
-        apiClientMock.Setup(x => x.GetBaseUrl(badConfig)).Returns("http://localhost:19998");
-        apiClientMock.Setup(x => x.GetWebRoot(badConfig)).Returns("/");
-        apiClientMock.Setup(x => x.BuildHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
+        var urlBuilderMock2 = new Mock<IUrlBuilder>();
+        urlBuilderMock2.Setup(x => x.GetBaseUrl(It.IsAny<PluginConfiguration>())).Returns("http://localhost:19998");
+        urlBuilderMock2.Setup(x => x.GetWebRoot(It.IsAny<PluginConfiguration>())).Returns("/");
+        apiClientMock.Setup(x => x.CreateApiHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
         apiClientMock
             .Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("connection refused"));
@@ -298,8 +302,7 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
             Mock.Of<IServerConfigurationManager>(),
             CreateEncodingReader(),
             Mock.Of<IProfileResolver>(),
-            apiClientMock.Object,
-            new CachePathProvider(() => null));
+            apiClientMock.Object, urlBuilderMock2.Object, new CachePathProvider(() => null));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -346,8 +349,7 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
             Mock.Of<IServerConfigurationManager>(),
             CreateEncodingReader(),
             streamResolver.Object,
-            _apiClient,
-            new CachePathProvider(() => null));
+            _apiClient, _urlBuilder, new CachePathProvider(() => null));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -521,4 +523,5 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
         return mock.Object;
     }
 }
+
 

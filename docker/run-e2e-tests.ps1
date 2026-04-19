@@ -9,7 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = $PSScriptRoot
-$ComposeFile = Join-Path $ScriptDir "docker-compose.test.yml"
+$ComposeFile = Join-Path $ScriptDir "docker-compose.test.yaml"
 $ProjectRoot = Split-Path -Parent $ScriptDir
 
 function Log($msg) { Write-Host "[e2e] $msg" -ForegroundColor Cyan }
@@ -29,21 +29,21 @@ try {
         & docker compose -f $ComposeFile down --volumes --remove-orphans --timeout 10 2>&1 | Out-Null
     } catch { }
 
-    Log "Starting test stack..."
+    Log "Starting test stack (building + waiting for all services)..."
     docker compose -f $ComposeFile up -d --build --wait
 
     Log "Waiting for bootstrap to complete (max ${MaxBootstrapWait}s)..."
     $elapsed = 0
     while ($elapsed -lt $MaxBootstrapWait) {
-        $status = docker inspect --format='{{.State.Status}}' tvh-bootstrap 2>$null
+        $status = docker inspect --format='{{.State.Status}}' tvheadend-bootstrap-test 2>$null
         if ($status -eq "exited") {
-            $exitCode = docker inspect --format='{{.State.ExitCode}}' tvh-bootstrap 2>$null
+            $exitCode = docker inspect --format='{{.State.ExitCode}}' tvheadend-bootstrap-test 2>$null
             if ($exitCode -eq "0") {
                 Log "Bootstrap completed successfully."
                 break
             } else {
                 Log "ERROR: Bootstrap exited with code $exitCode"
-                docker logs tvh-bootstrap 2>&1 | Select-Object -Last 20
+                docker logs tvheadend-bootstrap-test 2>&1 | Select-Object -Last 30
                 exit 1
             }
         }
@@ -53,13 +53,9 @@ try {
 
     if ($elapsed -ge $MaxBootstrapWait) {
         Log "ERROR: Bootstrap did not complete within ${MaxBootstrapWait}s"
-        docker logs tvh-bootstrap 2>&1 | Select-Object -Last 20
+        docker logs tvheadend-bootstrap-test 2>&1 | Select-Object -Last 30
         exit 1
     }
-
-    # Wait for test recording to complete
-    Log "Waiting 20s for test recording to complete..."
-    Start-Sleep -Seconds 20
 
     Log "Running live integration tests..."
     $env:TVHEADEND_LIVE_TESTS = "true"
@@ -68,9 +64,9 @@ try {
         -c Release `
         --filter "Category=LiveIntegration" `
         --logger "trx;LogFileName=e2e-results.trx" `
-        --results-directory TestResults
+        --results-directory (Join-Path $ProjectRoot "TestResults")
 
     Log "E2E tests complete."
 } finally {
-    Cleanup
+    # Cleanup
 }

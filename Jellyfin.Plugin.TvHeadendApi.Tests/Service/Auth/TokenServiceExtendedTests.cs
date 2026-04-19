@@ -22,6 +22,14 @@ public class TokenServiceExtendedTests
     private static PluginConfiguration ConfigWithUser(string username = "admin", int maxAttempts = 2) =>
         new() { Username = username, AuthTokenMaxAttempts = maxAttempts };
 
+    private static Mock<IUrlBuilder> CreateUrlBuilder()
+    {
+        var ub = new Mock<IUrlBuilder>();
+        ub.Setup(x => x.BuildApiUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, path) => $"http://tvh:9981/{path}");
+        return ub;
+    }
+
     private static Mock<IApiClient> SetupApi(
         PluginConfiguration config,
         Func<string, string>? getStringHandler = null,
@@ -29,9 +37,7 @@ public class TokenServiceExtendedTests
     {
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
-        api.Setup(x => x.BuildUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
-            .Returns<PluginConfiguration, string>((_, path) => $"http://tvh:9981/{path}");
+        api.Setup(x => x.CreateApiHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
 
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
@@ -63,7 +69,7 @@ public class TokenServiceExtendedTests
     {
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
 
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
@@ -77,7 +83,7 @@ public class TokenServiceExtendedTests
         var config = new PluginConfiguration { Username = "" };
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
 
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
@@ -95,7 +101,7 @@ public class TokenServiceExtendedTests
             return "{}";
         });
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -119,7 +125,7 @@ public class TokenServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -140,16 +146,14 @@ public class TokenServiceExtendedTests
             {
                 if (url.Contains("idnode/load"))
                 {
-                    // Always return non-alphanumeric token ('+' is not allowed)
                     return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(UserLoad("abc+def")) };
                 }
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
-        // All attempts produced non-alphanumeric tokens
         Assert.False(result.Success);
         Assert.Contains("unsupported characters", result.Message);
     }
@@ -171,7 +175,7 @@ public class TokenServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -194,7 +198,7 @@ public class TokenServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -207,13 +211,11 @@ public class TokenServiceExtendedTests
         var config = ConfigWithUser();
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
-        api.Setup(x => x.BuildUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
-            .Returns("http://tvh:9981/api/passwd/entry/grid");
+        api.Setup(x => x.CreateApiHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("offline"));
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -226,13 +228,11 @@ public class TokenServiceExtendedTests
         var config = ConfigWithUser();
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
-        api.Setup(x => x.BuildUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
-            .Returns("http://tvh:9981/api/passwd/entry/grid");
+        api.Setup(x => x.CreateApiHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("boom"));
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -264,7 +264,7 @@ public class TokenServiceExtendedTests
             savedToken = cfg.AuthToken;
         });
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, saver);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, saver);
         var result = await sut.GenerateAndStoreTokenAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -278,7 +278,7 @@ public class TokenServiceExtendedTests
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
         var result = await sut.GenerateAndStoreTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -290,13 +290,11 @@ public class TokenServiceExtendedTests
         var config = ConfigWithUser();
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
-        api.Setup(x => x.BuildUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
-            .Returns("http://tvh:9981/api");
+        api.Setup(x => x.CreateApiHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("fail"));
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
         var result = await sut.GenerateAndStoreTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -320,7 +318,7 @@ public class TokenServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -344,7 +342,7 @@ public class TokenServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -368,7 +366,7 @@ public class TokenServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -378,21 +376,21 @@ public class TokenServiceExtendedTests
     public void Constructor_NullLogger_Throws()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new TokenService(null!, new Mock<IApiClient>().Object, NoopSaver()));
+            new TokenService(null!, new Mock<IApiClient>().Object, CreateUrlBuilder().Object, NoopSaver()));
     }
 
     [Fact]
     public void Constructor_NullApiClient_Throws()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new TokenService(NullLogger<TokenService>.Instance, null!, NoopSaver()));
+            new TokenService(NullLogger<TokenService>.Instance, null!, CreateUrlBuilder().Object, NoopSaver()));
     }
 
     [Fact]
     public void Constructor_NullConfigSaver_Throws()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new TokenService(NullLogger<TokenService>.Instance, new Mock<IApiClient>().Object, null!));
+            new TokenService(NullLogger<TokenService>.Instance, new Mock<IApiClient>().Object, CreateUrlBuilder().Object, null!));
     }
 
     [Fact]
@@ -413,7 +411,7 @@ public class TokenServiceExtendedTests
             });
 
         var saver = new PluginConfigurationSaver(_ => throw new InvalidOperationException("save failed"));
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, saver);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, saver);
         var result = await sut.GenerateAndStoreTokenAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -426,7 +424,7 @@ public class TokenServiceExtendedTests
         var config = new PluginConfiguration { Username = "   " };
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, NoopSaver());
+        var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, NoopSaver());
 
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 

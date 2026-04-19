@@ -293,9 +293,9 @@ public class DiagnosticServiceExtendedTests
         };
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
 
         apiClient.Setup(x => x.PostFormAsync(
                 It.IsAny<HttpClient>(),
@@ -316,12 +316,19 @@ public class DiagnosticServiceExtendedTests
             .Setup(x => x.ReadFfmpegSettings(It.IsAny<IServerConfigurationManager>(), It.IsAny<ILogger>()))
             .Returns((null, null));
 
+        var urlBuilder = new Mock<IUrlBuilder>();
+        urlBuilder.Setup(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>())).Returns("http://tvh");
+        urlBuilder.Setup(u => u.GetWebRoot(It.IsAny<PluginConfiguration>())).Returns("/");
+        urlBuilder.Setup(u => u.BuildApiUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+
         return new DiagnosticService(
             NullLogger<DiagnosticService>.Instance,
             serverConfigManager.Object,
             encodingReader.Object,
             streamResolver.Object,
             apiClient.Object,
+            urlBuilder.Object,
             new CachePathProvider(() => null));
     }
 }

@@ -332,12 +332,12 @@ Purpose: validate plugin behavior against real TVHeadend and Jellyfin instances.
 
 An IPTV simulator container that provides deterministic test channels and EPG data so TVHeadend has actual content to serve.
 
-- [x] Create `docker/iptv-sim/` directory with simulator assets
+- [x] Create `docker/iptv-simulator/` directory with simulator assets
 - [x] Add static MPEG-TS test stream file (short loop, ~10s, minimal resolution) — serves as IPTV source
 - [x] Add XMLTV EPG file (`epg.xml`) with 3–5 test channels, each with 24h of programme data
 - [x] Add M3U playlist (`playlist.m3u`) pointing to the simulator's TS streams (3–5 channels)
-- [x] Create lightweight Nginx-based Dockerfile (`docker/iptv-sim/Dockerfile`) that serves M3U, TS, and XMLTV over HTTP
-- [x] Add `iptv-sim` service to `docker-compose.test.yml` with healthcheck
+- [x] Create Python-based Dockerfile (`docker/iptv-simulator/Dockerfile`) that serves M3U, live MPEG-TS streams, XMLTV and channel logos/thumbnails over HTTP
+- [x] Add `iptv-simulator` service to `docker-compose.test.yml` with healthcheck
 - [ ] Verify simulator starts and serves M3U + TS + XMLTV on dedicated port (e.g., 8888)
 
 #### 21b — TVHeadend Bootstrap Script
@@ -345,10 +345,10 @@ An IPTV simulator container that provides deterministic test channels and EPG da
 Automated first-run configuration of TVHeadend so it has channels, EPG, users, and profiles ready for testing.
 
 - [x] Create `docker/tvh-bootstrap.sh` — runs against TVHeadend API after startup
-- [x] Bootstrap: create IPTV automatic network pointing at `http://iptv-sim:8888/playlist.m3u` (`/api/mpegts/network/create`)
+- [x] Bootstrap: create IPTV automatic network pointing at `http://iptv-simulator/playlist.m3u` (`/api/mpegts/network/create`)
 - [x] Bootstrap: trigger initial mux scan and wait for completion (`/api/mpegts/network/mux_scanner`)
 - [x] Bootstrap: map all discovered services to channels (`/api/channel/grid`)
-- [x] Bootstrap: configure internal XMLTV grabber pointing at `http://iptv-sim:8888/epg.xml` (`/api/epggrab/config/save`)
+- [x] Bootstrap: configure internal XMLTV grabber pointing at `http://iptv-simulator/epg.xml` (`/api/epggrab/config/save`)
 - [x] Bootstrap: trigger EPG grab and wait for completion (`/api/epggrab/internal/rerun`)
 - [x] Bootstrap: create test user with password (e.g., `testuser` / `testpass`) via `/api/access/entry/create` + `/api/passwd/entry/create`
 - [x] Bootstrap: create a test streaming profile via `/api/profile/create`
@@ -372,18 +372,17 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 
 #### 21e — Live Integration Tests: Profile Management
 
-- [ ] `DefaultProfileService_EnsureProfileExistsAsync` — creates plugin streaming profile → verify via `/api/profile/list`
+- [x] `DefaultProfileService_EnsureProfileExistsAsync` — creates plugin streaming profile → verify via `/api/profile/list`
 - [x] `ProfileResolver_GetProfilesAsync` — returns ≥ 2 profiles (default + test profile)
 - [x] `ProfileResolver_ResolveProfileByNameAsync` — resolve test profile by name → `ResolvedProfile` has correct settings
-- [ ] `DefaultProfileService_CodecProfile` — verify codec profile creation via `/api/codec_profile/list`
+- [x] `DefaultProfileService_CodecProfile` — verify codec profile creation via `/api/codec_profile/list`
 
 #### 21f — Live Integration Tests: Streaming
 
-- [ ] `MediaSourceService_GetChannelStreamAsync` — returns `MediaSourceInfo` with valid stream URL for a test channel
-- [ ] `MediaSourceService_StreamUrl_ContainsAuthToken` — stream URL includes ticket/token query parameter
+- [x] `MediaSourceService_GetChannelStreamAsync` — returns `MediaSourceInfo` with valid stream URL for a test channel
+- [x] `MediaSourceService_StreamUrl_ContainsAuthToken` — stream URL includes ticket/token query parameter
 - [x] `MediaSourceService_StreamUrl_ContainsProfile` — stream URL includes `?profile=` parameter
-- [ ] `MediaSourceService_GetRecordingStreamUrl` — returns valid URL for test recording (requires 21b recording to complete)
-- [ ] `OrchestratorService_GetChannelStream` — full orchestrator stream setup returns playable `MediaSourceInfo`
+- [x] `OrchestratorService_GetChannelStream` — full orchestrator stream setup returns playable `MediaSourceInfo`
 - [x] HTTP GET on stream URL → returns HTTP 200 with `video/` or `application/octet-stream` content type (no full playback, just header check)
 
 #### 21g — Live Integration Tests: DVR (Recording)
@@ -392,18 +391,18 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 - [x] `DvrService_CreateTimerAsync` — create a new one-shot recording timer → verify appears in grid
 - [x] `DvrService_CancelTimerAsync` — cancel created timer → verify removed from grid
 - [x] `DvrService_GetSeriesTimersAsync` — returns series timer grid (may be empty)
-- [ ] `DvrService_CreateSeriesTimerAsync` — create autorec rule → verify appears in autorec grid
-- [ ] `DvrService_CancelSeriesTimerAsync` — cancel autorec rule → verify removed
-- [ ] `DvrService_GetRecordingsAsync` — returns completed recordings list (after bootstrap recording finishes)
+- [x] `DvrService_CreateSeriesTimerAsync` — create autorec rule → verify appears in autorec grid
+- [x] `DvrService_CancelSeriesTimerAsync` — cancel autorec rule → verify removed
+- [x] `DvrService_GetRecordingsAsync` — returns completed recordings list (after bootstrap recording finishes)
 
 #### 21h — Live Integration Tests: Tuner & Input Status
 
 - [x] `StatusService_GetActivityStatusAsync` — returns activity status JSON (subscriptions count, recordings count)
 - [x] `StatusService_GetConnectionsAsync` — returns connections grid (at least test runner's connection)
 - [x] `InputMonitorService_GetInputStatusAsync` — returns input status entries for IPTV network adapters
-- [ ] `InputMonitorService_SignalMetrics` — verify signal/BER/SNR/bitrate fields are present (may be 0 for IPTV)
+- [x] `InputMonitorService_SignalMetrics` — verify signal/BER/SNR/bitrate fields are present (may be 0 for IPTV)
 - [x] `SubscriptionService_GetActiveSubscriptionsAsync` — start a stream, then verify subscription appears in grid
-- [ ] `SubscriptionService_SubscriptionDetails` — verify subscription entry contains channel name, profile, client info
+- [x] `SubscriptionService_SubscriptionDetails` — verify subscription entry contains channel name, profile, client info
 
 #### 21i — Live Integration Tests: Diagnostics
 

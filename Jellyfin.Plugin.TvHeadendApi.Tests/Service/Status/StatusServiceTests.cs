@@ -16,19 +16,19 @@ public class StatusServiceTests
     private static StatusService CreateSut(Mock<IApiClient>? apiClient = null)
     {
         var api = apiClient ?? new Mock<IApiClient>();
-        return new StatusService(NullLogger<StatusService>.Instance, api.Object);
+        return new StatusService(NullLogger<StatusService>.Instance, api.Object, new Mock<IUrlBuilder>().Object);
     }
 
     [Fact]
     public void Constructor_WithNullLogger_Throws()
     {
-        Assert.Throws<ArgumentNullException>(() => new StatusService(null!, new Mock<IApiClient>().Object));
+        Assert.Throws<ArgumentNullException>(() => new StatusService(null!, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object));
     }
 
     [Fact]
     public void Constructor_WithNullApiClient_Throws()
     {
-        Assert.Throws<ArgumentNullException>(() => new StatusService(NullLogger<StatusService>.Instance, null!));
+        Assert.Throws<ArgumentNullException>(() => new StatusService(NullLogger<StatusService>.Instance, null!, new Mock<IUrlBuilder>().Object));
     }
 
     [Fact]
@@ -48,13 +48,14 @@ public class StatusServiceTests
     {
         var config = new PluginConfiguration();
         var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.BuildUrl(config, "api/status/activity")).Returns("http://localhost:9981/api/status/activity");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+        urlBuilder.Setup(x => x.BuildApiUrl(config, "api/status/activity")).Returns("http://localhost:9981/api/status/activity");
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://localhost:9981/api/status/activity", It.IsAny<CancellationToken>()))
             .ReturnsAsync("{\"current_time\":1700000000,\"next_activity\":1700003600,\"subscription_count\":2,\"connection_count\":5}");
 
-        var sut = CreateSut(api);
+        var sut = new StatusService(NullLogger<StatusService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetActivityStatusAsync(CancellationToken.None);
 
         Assert.NotNull(result);
@@ -80,13 +81,14 @@ public class StatusServiceTests
     {
         var config = new PluginConfiguration();
         var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.BuildUrl(config, "api/status/connections")).Returns("http://localhost:9981/api/status/connections");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+        urlBuilder.Setup(x => x.BuildApiUrl(config, "api/status/connections")).Returns("http://localhost:9981/api/status/connections");
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://localhost:9981/api/status/connections", It.IsAny<CancellationToken>()))
             .ReturnsAsync("{\"entries\":[{\"id\":1,\"server\":\"192.168.1.1\",\"server_port\":9981,\"peer\":\"192.168.1.2\",\"peer_port\":54321,\"started\":1700000000,\"streaming\":1,\"type\":\"HTTP\",\"user\":\"admin\"}],\"totalCount\":1}");
 
-        var sut = CreateSut(api);
+        var sut = new StatusService(NullLogger<StatusService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetConnectionsAsync(CancellationToken.None);
 
         Assert.Single(result);
@@ -95,4 +97,3 @@ public class StatusServiceTests
         Assert.Equal(1, result[0].Streaming);
     }
 }
-

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
@@ -52,7 +53,7 @@ public class ApiClientTests
         var client = CreateApiClient();
 
         // Act
-        var result = client.BuildHttpClient(_testConfig);
+        var result = client.CreateApiHttpClient(_testConfig);
 
         // Assert
         Assert.NotNull(result);
@@ -69,7 +70,7 @@ public class ApiClientTests
         var client = CreateApiClient(factoryMock.Object);
 
         // Act
-        var result = client.BuildHttpClient(_testConfig);
+        var result = client.CreateApiHttpClient(_testConfig);
 
         // Assert
         Assert.Same(expectedClient, result);
@@ -86,14 +87,14 @@ public class ApiClientTests
         var config = new PluginConfiguration { UseSSL = true, IgnoreCertificateErrors = true, AllowAnonymousAccess = true };
 
         // Act
-        client.BuildHttpClient(config);
+        client.CreateApiHttpClient(config);
 
         // Assert
         factoryMock.Verify(f => f.CreateClient(ApiClient.HttpClientUnsafeName), Times.Once);
     }
 
     [Fact]
-    public void BuildHttpClient_WithCredentials_SetsAuthorizationHeader()
+    public void BuildHttpClient_WithCredentials_DoesNotSetProactiveAuthHeader()
     {
         // Arrange
         var client = CreateApiClient();
@@ -105,21 +106,88 @@ public class ApiClientTests
         };
 
         // Act
-        var httpClient = client.BuildHttpClient(config);
+        var httpClient = client.CreateApiHttpClient(config);
 
-        // Assert
-        Assert.NotNull(httpClient.DefaultRequestHeaders.Authorization);
-        Assert.Equal("Basic", httpClient.DefaultRequestHeaders.Authorization.Scheme);
+        // Assert — No proactive Authorization header is set because TVHeadend
+        // uses Digest auth by default. A proactive Basic header would prevent
+        // HttpClientHandler from responding to the Digest challenge.
+        Assert.Null(httpClient.DefaultRequestHeaders.Authorization);
+    }
+
+    [Fact]
+    public void BuildHttpClient_WithCredentials_ReturnsDistinctClientFromFactory()
+    {
+        // Arrange — verify authenticated path does NOT use factory
+        var factoryMock = new Mock<IHttpClientFactory>();
+        factoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(new HttpClient());
+        var client = CreateApiClient(factoryMock.Object);
+        var config = new PluginConfiguration
+        {
+            Host = "tvh.local",
+            Port = 9981,
+            AllowAnonymousAccess = false,
+            Username = "admin",
+            Password = "secret"
+        };
+
+        // Act
+        client.CreateApiHttpClient(config);
+
+        // Assert — factory was not called, a dedicated handler was created
+        factoryMock.Verify(f => f.CreateClient(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public void BuildHttpClient_WithCredentials_NoProactiveHeader()
+    {
+        // Arrange
+        var client = CreateApiClient();
+        var config = new PluginConfiguration
+        {
+            Host = "tvh.local",
+            Port = 9981,
+            AllowAnonymousAccess = false,
+            Username = "admin",
+            Password = "secret"
+        };
+
+        // Act
+        var httpClient = client.CreateApiHttpClient(config);
+
+        // Assert — CredentialCache handles auth via challenge-response, no default header
+        Assert.Null(httpClient.DefaultRequestHeaders.Authorization);
+    }
+
+    [Fact]
+    public void BuildHttpClient_WithEmptyUsername_UsesFactoryClient()
+    {
+        // Arrange — AllowAnonymousAccess=false but username is empty → should fall through to factory
+        var factoryMock = new Mock<IHttpClientFactory>();
+        factoryMock.Setup(f => f.CreateClient(ApiClient.HttpClientName)).Returns(new HttpClient());
+        var client = CreateApiClient(factoryMock.Object);
+        var config = new PluginConfiguration
+        {
+            AllowAnonymousAccess = false,
+            Username = "",
+            Password = "secret"
+        };
+
+        // Act
+        var httpClient = client.CreateApiHttpClient(config);
+
+        // Assert — no proactive auth header, factory was used
+        Assert.Null(httpClient.DefaultRequestHeaders.Authorization);
+        factoryMock.Verify(f => f.CreateClient(ApiClient.HttpClientName), Times.Once);
     }
 
     [Fact]
     public void GetBaseUrl_WithValidConfig_ReturnsUrl()
     {
         // Arrange
-        var client = CreateApiClient();
+        var urlBuilder = new UrlBuilder();
 
         // Act
-        var url = client.GetBaseUrl(_testConfig);
+        var url = urlBuilder.GetBaseUrl(_testConfig);
 
         // Assert
         Assert.NotNull(url);
@@ -131,10 +199,10 @@ public class ApiClientTests
     public void GetBaseUrl_IncludesHostAndPort()
     {
         // Arrange
-        var client = CreateApiClient();
+        var urlBuilder = new UrlBuilder();
 
         // Act
-        var url = client.GetBaseUrl(_testConfig);
+        var url = urlBuilder.GetBaseUrl(_testConfig);
 
         // Assert
         Assert.Contains("tvheadend.test.local", url);
@@ -145,10 +213,10 @@ public class ApiClientTests
     public void GetWebRoot_ReturnsNormalizedWebroot()
     {
         // Arrange
-        var client = CreateApiClient();
+        var urlBuilder = new UrlBuilder();
 
         // Act
-        var webroot = client.GetWebRoot(_testConfig);
+        var webroot = urlBuilder.GetWebRoot(_testConfig);
 
         // Assert
         Assert.NotNull(webroot);
@@ -159,10 +227,10 @@ public class ApiClientTests
     public void BuildUrl_WithEndpoint_ConstructsFullUrl()
     {
         // Arrange
-        var client = CreateApiClient();
+        var urlBuilder = new UrlBuilder();
 
         // Act
-        var url = client.BuildUrl(_testConfig, "/api/channel/grid");
+        var url = urlBuilder.BuildApiUrl(_testConfig, "/api/channel/grid");
 
         // Assert
         Assert.NotNull(url);
@@ -310,11 +378,11 @@ public class ApiClientTests
     public void BuildUrl_WithDifferentEndpoints_ReturnsDifferentUrls()
     {
         // Arrange
-        var client = CreateApiClient();
+        var urlBuilder = new UrlBuilder();
 
         // Act
-        var url1 = client.BuildUrl(_testConfig, "/api/channel/grid");
-        var url2 = client.BuildUrl(_testConfig, "/api/dvr/autorec/grid");
+        var url1 = urlBuilder.BuildApiUrl(_testConfig, "/api/channel/grid");
+        var url2 = urlBuilder.BuildApiUrl(_testConfig, "/api/dvr/autorec/grid");
 
         // Assert
         Assert.NotEqual(url1, url2);

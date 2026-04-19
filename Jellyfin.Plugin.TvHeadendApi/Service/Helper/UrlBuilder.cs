@@ -1,49 +1,54 @@
 using System;
-using System.Text;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 
 /// <summary>
-/// Default implementation for TVHeadend URL/auth handling.
+/// Default implementation of <see cref="IUrlBuilder"/>.
+/// Centralizes all TVHeadend URL construction and sensitive-data masking.
 /// </summary>
 internal sealed class UrlBuilder : IUrlBuilder
 {
+    private const string MaskReplacement = "***";
+
     /// <inheritdoc />
-    public string BuildUrlWithHeaderAuth(PluginConfiguration config, string endpoint)
+    public string GetBaseUrl(PluginConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
-
-        // Credentials are sent via HTTP header � no auth data embedded in the URL.
-        return UrlHelper.BuildEndpointUrl(config, endpoint);
+        return $"{(config.UseSSL ? "https" : "http")}://{config.Host}:{config.Port}";
     }
 
     /// <inheritdoc />
-    public string BuildUrlWithUrlAuth(PluginConfiguration config, string endpoint)
+    public string GetWebRoot(PluginConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
-
-        var baseUrl = UrlHelper.BuildEndpointUrl(config, endpoint);
-        if (config.AllowAnonymousAccess)
+        if (string.IsNullOrWhiteSpace(config.Webroot))
         {
-            return baseUrl;
+            return "/";
         }
 
-        var credentials = $"{Uri.EscapeDataString(config.Username)}:{Uri.EscapeDataString(config.Password)}";
-        return baseUrl
-            .Replace("http://", $"http://{credentials}@", StringComparison.Ordinal)
-            .Replace("https://", $"https://{credentials}@", StringComparison.Ordinal);
+        // Ensure the webroot always starts with / and ends with /
+        // e.g. "tvh" -> "/tvh/", "/tvh" -> "/tvh/", "tvh/" -> "/tvh/", "/" -> "/"
+        var trimmedWebroot = config.Webroot.Trim('/');
+        return string.IsNullOrEmpty(trimmedWebroot) ? "/" : "/" + trimmedWebroot + "/";
     }
 
     /// <inheritdoc />
-    public string BuildUrlWithParameterAuth(PluginConfiguration config, string endpoint)
+    public string BuildApiUrl(PluginConfiguration config, string endpoint)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
 
-        var baseUrl = UrlHelper.BuildEndpointUrl(config, endpoint);
+        return BuildEndpointUrl(config, endpoint);
+    }
+
+    /// <inheritdoc />
+    public string BuildResourceUrl(PluginConfiguration config, string endpoint)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
+
+        var baseUrl = BuildEndpointUrl(config, endpoint);
         if (config.AllowAnonymousAccess || string.IsNullOrWhiteSpace(config.AuthToken))
         {
             return baseUrl;
@@ -61,19 +66,28 @@ internal sealed class UrlBuilder : IUrlBuilder
         var output = input;
         if (!string.IsNullOrWhiteSpace(config.AuthToken))
         {
-            output = output.Replace(config.AuthToken, "***", StringComparison.Ordinal);
+            output = output.Replace(config.AuthToken, MaskReplacement, StringComparison.Ordinal);
         }
 
-        if (!string.IsNullOrWhiteSpace(config.Username) && !string.IsNullOrWhiteSpace(config.Password))
+        if (!string.IsNullOrWhiteSpace(config.Password))
         {
-            var credentials = $"{config.Username}:{config.Password}";
-            var encodedCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
-            var urlEncodedCredentials = $"{Uri.EscapeDataString(config.Username)}:{Uri.EscapeDataString(config.Password)}";
-            output = output.Replace(credentials, "***", StringComparison.Ordinal);
-            output = output.Replace(encodedCredentials, "***", StringComparison.Ordinal);
-            output = output.Replace(urlEncodedCredentials, "***", StringComparison.Ordinal);
+            output = output.Replace(config.Password, MaskReplacement, StringComparison.Ordinal);
+        }
+
+        if (!string.IsNullOrWhiteSpace(config.Username))
+        {
+            output = output.Replace(config.Username, MaskReplacement, StringComparison.Ordinal);
         }
 
         return output;
+    }
+
+    /// <summary>
+    /// Builds a full endpoint URL from base URL, web root, and relative endpoint.
+    /// </summary>
+    private string BuildEndpointUrl(PluginConfiguration config, string endpoint)
+    {
+        var webRoot = GetWebRoot(config);
+        return $"{GetBaseUrl(config)}{webRoot}{endpoint.TrimStart('/')}";
     }
 }

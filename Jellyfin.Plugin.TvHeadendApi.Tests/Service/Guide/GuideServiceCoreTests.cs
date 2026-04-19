@@ -40,16 +40,16 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((value, _) => value);
         urlBuilder
-            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildApiUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
         urlBuilder
-            .Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildResourceUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
         urlBuilder
-            .Setup(x => x.BuildUrlWithUrlAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildApiUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -77,9 +77,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/channels");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/channels");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/channels");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/channels");
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns("http://tvh/channels");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -101,9 +101,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/channels");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/channels");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/channels");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/channels");
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns("http://tvh/channels");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -141,9 +141,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((value, _) => value);
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -151,7 +151,7 @@ public class GuideServiceCoreTests
 
         Assert.False(result.HasImage);
         Assert.Null(result.ImageUrl);
-        urlBuilder.Verify(x => x.BuildUrlWithParameterAuth(config, It.Is<string>(endpoint => endpoint.StartsWith("imagecache/", StringComparison.Ordinal))), Times.Never);
+        urlBuilder.Verify(x => x.BuildResourceUrl(config, It.Is<string>(endpoint => endpoint.StartsWith("imagecache/", StringComparison.Ordinal))), Times.Never);
     }
 
     [Fact]
@@ -167,9 +167,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/channels");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/channels");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/channels");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/channels");
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns("http://tvh/channels");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -216,9 +216,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = (await sut.GetProgramsAsync("ch-1", startUtc, endUtc, CancellationToken.None)).ToList();
@@ -251,18 +251,18 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
         urlBuilder
-            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildApiUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/image");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/image");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = (await sut.GetProgramsAsync("ch/1", startUtc, endUtc, CancellationToken.None)).ToList();
 
         Assert.Single(result);
         urlBuilder.Verify(
-            x => x.BuildUrlWithHeaderAuth(
+            x => x.BuildApiUrl(
                 config,
                 It.Is<string>(endpoint => endpoint.Contains("channel=ch%2F1", StringComparison.Ordinal))),
             Times.Once);
@@ -291,12 +291,12 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
         urlBuilder
-            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildApiUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
         urlBuilder
-            .Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildResourceUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -329,12 +329,12 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
         urlBuilder
-            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildApiUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
         urlBuilder
-            .Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildResourceUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -367,9 +367,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
@@ -410,9 +410,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetProgramsAsync("ch-1", startUtc, endUtc, CancellationToken.None);
@@ -444,16 +444,16 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal(externalImage, program.ImageUrl);
         Assert.True(program.HasImage);
-        urlBuilder.Verify(x => x.BuildUrlWithParameterAuth(config, It.Is<string>(endpoint => endpoint.Contains("imagecache/", StringComparison.Ordinal))), Times.Never);
+        urlBuilder.Verify(x => x.BuildResourceUrl(config, It.Is<string>(endpoint => endpoint.Contains("imagecache/", StringComparison.Ordinal))), Times.Never);
     }
 
     [Fact]
@@ -469,9 +469,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, "api/epg/content_type/list")).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, "api/epg/content_type/list")).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, "api/epg/content_type/list")).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, "api/epg/content_type/list")).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetProgramsAsync("ch-1", DateTime.UtcNow.AddHours(-1), DateTime.UtcNow.AddHours(1), CancellationToken.None);
@@ -505,9 +505,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetContentTypesAsync(CancellationToken.None);
@@ -529,9 +529,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetContentTypesAsync(CancellationToken.None);
@@ -552,9 +552,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetChannelTagsAsync(CancellationToken.None);
@@ -576,9 +576,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetChannelTagsAsync(CancellationToken.None);
@@ -610,12 +610,12 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
         urlBuilder
-            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildApiUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
         urlBuilder
-            .Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildResourceUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -649,12 +649,12 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
         urlBuilder
-            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildApiUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
         urlBuilder
-            .Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildResourceUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -699,12 +699,12 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
         urlBuilder
-            .Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildApiUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
         urlBuilder
-            .Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>()))
+            .Setup(x => x.BuildResourceUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -748,9 +748,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
@@ -793,9 +793,9 @@ public class GuideServiceCoreTests
         });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
@@ -828,9 +828,9 @@ public class GuideServiceCoreTests
         var handler = new QueueResponseHandler(responses);
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -864,9 +864,9 @@ public class GuideServiceCoreTests
         var handler = new QueueResponseHandler(responses);
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -902,9 +902,9 @@ public class GuideServiceCoreTests
         var handler = new QueueResponseHandler(responses);
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -933,9 +933,9 @@ public class GuideServiceCoreTests
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
@@ -962,9 +962,9 @@ public class GuideServiceCoreTests
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
@@ -1006,9 +1006,9 @@ public class GuideServiceCoreTests
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
@@ -1034,9 +1034,9 @@ public class GuideServiceCoreTests
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
@@ -1073,9 +1073,9 @@ public class GuideServiceCoreTests
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
@@ -1113,9 +1113,9 @@ public class GuideServiceCoreTests
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
@@ -1139,9 +1139,9 @@ public class GuideServiceCoreTests
         var handler = new QueueResponseHandler(responses);
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
-        urlBuilder.Setup(x => x.BuildUrlWithParameterAuth(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
@@ -1162,8 +1162,8 @@ public class GuideServiceCoreTests
         var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("not-json-at-all") });
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient(handler));
-        urlBuilder.Setup(x => x.BuildUrlWithHeaderAuth(config, It.IsAny<string>())).Returns("http://tvh/content_type");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/content_type");
 
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetContentTypesAsync(CancellationToken.None);

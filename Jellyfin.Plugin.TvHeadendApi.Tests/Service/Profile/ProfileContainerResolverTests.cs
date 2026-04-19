@@ -21,10 +21,7 @@ public class ProfileContainerResolverTests
     {
         var apiClient = new FakeApiClient();
         var profileResolver = new FakeProfileResolver();
-        var sut = new ProfileContainerResolver(
-            NullLogger<ProfileContainerResolver>.Instance,
-            apiClient,
-            profileResolver);
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
 
         var config = new PluginConfiguration { StreamingProfile = "jellyfin" };
 
@@ -41,10 +38,7 @@ public class ProfileContainerResolverTests
     {
         var apiClient = new FakeApiClient();
         var profileResolver = new FakeProfileResolver();
-        var sut = new ProfileContainerResolver(
-            NullLogger<ProfileContainerResolver>.Instance,
-            apiClient,
-            profileResolver);
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
 
         var firstConfig = new PluginConfiguration { StreamingProfile = "jellyfin" };
         var secondConfig = new PluginConfiguration { StreamingProfile = "jellyfin-alt" };
@@ -62,10 +56,7 @@ public class ProfileContainerResolverTests
     {
         var apiClient = new FakeApiClient();
         var profileResolver = new FakeProfileResolver();
-        var sut = new ProfileContainerResolver(
-            NullLogger<ProfileContainerResolver>.Instance,
-            apiClient,
-            profileResolver);
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
 
         var config = new PluginConfiguration { StreamingProfile = "   " };
         var snapshot = await sut.ResolveProfileSnapshotAsync(config, CancellationToken.None);
@@ -79,10 +70,7 @@ public class ProfileContainerResolverTests
     {
         var apiClient = new FakeApiClient();
         var profileResolver = new NullProfileResolver();
-        var sut = new ProfileContainerResolver(
-            NullLogger<ProfileContainerResolver>.Instance,
-            apiClient,
-            profileResolver);
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
 
         var config = new PluginConfiguration { StreamingProfile = "missing" };
         var snapshot = await sut.ResolveProfileSnapshotAsync(config, CancellationToken.None);
@@ -95,10 +83,7 @@ public class ProfileContainerResolverTests
     {
         var apiClient = new FakeApiClient();
         var profileResolver = new TranscodeNoContainerProfileResolver();
-        var sut = new ProfileContainerResolver(
-            NullLogger<ProfileContainerResolver>.Instance,
-            apiClient,
-            profileResolver);
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
 
         var config = new PluginConfiguration { StreamingProfile = "transcode-nocontainer" };
         var snapshot = await sut.ResolveProfileSnapshotAsync(config, CancellationToken.None);
@@ -111,10 +96,7 @@ public class ProfileContainerResolverTests
     {
         var apiClient = new FakeApiClient();
         var profileResolver = new ThrowingProfileResolver();
-        var sut = new ProfileContainerResolver(
-            NullLogger<ProfileContainerResolver>.Instance,
-            apiClient,
-            profileResolver);
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
 
         var config = new PluginConfiguration { StreamingProfile = "throws" };
         var snapshot = await sut.ResolveProfileSnapshotAsync(config, CancellationToken.None);
@@ -127,10 +109,7 @@ public class ProfileContainerResolverTests
     {
         var apiClient = new FakeApiClient();
         var profileResolver = new FakeProfileResolver();
-        using var sut = new ProfileContainerResolver(
-            NullLogger<ProfileContainerResolver>.Instance,
-            apiClient,
-            profileResolver);
+        using var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
 
         var config = new PluginConfiguration { StreamingProfile = "jellyfin" };
         var container = await sut.ResolveContainerAsync(config, CancellationToken.None);
@@ -232,13 +211,7 @@ public class ProfileContainerResolverTests
 
         public PluginConfiguration? GetCurrentConfiguration() => new PluginConfiguration();
 
-        public HttpClient BuildHttpClient(PluginConfiguration config) => SharedClient;
-
-        public string GetBaseUrl(PluginConfiguration config) => "http://tvh:9981";
-
-        public string GetWebRoot(PluginConfiguration config) => "/";
-
-        public string BuildUrl(PluginConfiguration config, string endpoint) => $"http://tvh:9981/{endpoint.TrimStart('/')}";
+        public HttpClient CreateApiHttpClient(PluginConfiguration config) => SharedClient;
 
         public Task<string> GetStringAsync(HttpClient httpClient, string url, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Not used by this resolver test.");
@@ -250,3 +223,5 @@ public class ProfileContainerResolverTests
             => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
     }
 }
+
+

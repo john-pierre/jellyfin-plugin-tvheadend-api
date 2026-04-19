@@ -17,6 +17,7 @@ internal sealed class TokenService : ITokenService
 {
     private readonly ILogger<TokenService> _logger;
     private readonly IApiClient _apiClient;
+    private readonly IUrlBuilder _urlBuilder;
     private readonly PluginConfigurationSaver _configSaver;
 
     /// <summary>
@@ -24,14 +25,17 @@ internal sealed class TokenService : ITokenService
     /// </summary>
     /// <param name="logger">Logger instance.</param>
     /// <param name="apiClient">TVHeadend API client.</param>
+    /// <param name="urlBuilder">TVHeadend URL builder.</param>
     /// <param name="configSaver">Saves configuration changes to the plugin.</param>
     public TokenService(
         ILogger<TokenService> logger,
         IApiClient apiClient,
+        IUrlBuilder urlBuilder,
         PluginConfigurationSaver configSaver)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        _urlBuilder = urlBuilder ?? throw new ArgumentNullException(nameof(urlBuilder));
         _configSaver = configSaver ?? throw new ArgumentNullException(nameof(configSaver));
     }
 
@@ -55,7 +59,7 @@ internal sealed class TokenService : ITokenService
                 };
             }
 
-            using var httpClient = _apiClient.BuildHttpClient(config);
+            using var httpClient = _apiClient.CreateApiHttpClient(config);
             var userUuid = await ResolveUserUuidAsync(httpClient, config, config.Username, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(userUuid))
             {
@@ -191,7 +195,7 @@ internal sealed class TokenService : ITokenService
     {
         // passwd/entry/grid returns a proper idnode grid with "uuid" and "username" per entry.
         // access/entry/userlist only returns key=val=username pairs (no UUID) and cannot be used here.
-        var listUrl = _apiClient.BuildUrl(config, "api/passwd/entry/grid");
+        var listUrl = _urlBuilder.BuildApiUrl(config, "api/passwd/entry/grid");
         var response = await _apiClient.GetStringAsync(httpClient, listUrl, cancellationToken).ConfigureAwait(false);
         var userList = JsonSerializer.Deserialize<UserListResponse>(response, JsonDefaults.Api);
         if (userList == null || userList.Entries.Length == 0)
@@ -223,7 +227,7 @@ internal sealed class TokenService : ITokenService
         string userUuid,
         CancellationToken cancellationToken)
     {
-        var loadUrl = _apiClient.BuildUrl(config, "api/idnode/load");
+        var loadUrl = _urlBuilder.BuildApiUrl(config, "api/idnode/load");
         using var response = await _apiClient.PostFormAsync(
             httpClient,
             loadUrl,
@@ -262,7 +266,7 @@ internal sealed class TokenService : ITokenService
         bool resetToken,
         CancellationToken cancellationToken)
     {
-        var saveUrl = _apiClient.BuildUrl(config, "api/idnode/save");
+        var saveUrl = _urlBuilder.BuildApiUrl(config, "api/idnode/save");
         var authModes = new List<string> { "enable" };
         if (resetToken)
         {

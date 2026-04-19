@@ -1,37 +1,41 @@
 # Live integration test environment: Jellyfin + TVHeadend + IPTV simulator.
 #
 # Usage:
-#   docker compose -f docker-compose.test.yml up -d
+#   docker compose -f docker-compose.test.yaml -p tvh-test up -d
 #   # Wait ~15s for services to start, then run live integration tests:
 #   TVHEADEND_LIVE_TESTS=true dotnet test ... --filter "Category=LiveIntegration"
-#   docker compose -f docker-compose.test.yml down
+#   docker compose -f docker-compose.test.yaml -p tvh-test down
 #
 # TVHeadend is pre-configured with no password (-C flag) for test simplicity.
 # This stack is NOT for production — it runs with relaxed security settings.
 
+name: jellyfin-plugin-tvheadend-api-test
+
 services:
-  iptv-sim:
+  iptv-simulator:
     build:
-      context: ./iptv-sim
+      context: ./iptv-simulator
       dockerfile: Dockerfile
-    container_name: iptv-sim
+    container_name: iptv-simulator-test
+    environment:
+      - BASE_URL=http://iptv-simulator
     ports:
       - "18888:80"
     restart: "no"
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://iptv-sim:80/health || exit 1"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:80/health', timeout=2)"]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
 
   tvheadend:
     # Pinned to a specific build for reproducible CI. Update periodically.
     image: linuxserver/tvheadend:37453bc3-ls279
-    container_name: tvh-integration-test
+    container_name: tvheadend-test
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=0
+      - PGID=0
       - TZ=Europe/Berlin
       # Skip first-run wizard so the API is available immediately without auth.
       # -C creates a superuser with no password (anonymous access works).
@@ -41,48 +45,54 @@ services:
       - "19981:9981"    # TVHeadend HTTP API (offset to avoid conflicts with dev stack)
       - "19982:9982"    # TVHeadend HTSP (not used by plugin, but useful for debugging)
     volumes:
-      - tvh-test-config:/config
-      - tvh-test-recordings:/recordings
+      - tvheadend-test-config:/config
+      - tvheadend-test-recordings:/recordings
     depends_on:
-      iptv-sim:
+      iptv-simulator:
         condition: service_healthy
     restart: "no"
     healthcheck:
-      # linuxserver/tvheadend is Alpine-based (busybox wget, no curl).
-      # Healthcheck runs INSIDE the container, so localhost is correct.
-      # /api/status/inputs returns JSON without auth when -C flag is set.
-      test: ["CMD-SHELL", "wget --spider -q --timeout=5 http://tvh-integration-test:9981/api/status/inputs || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sS --max-time 2 http://localhost:9981/api/serverinfo >/dev/null || curl --anyauth -u \"testuser:testpass\" -sS --max-time 2 http://localhost:9981/api/serverinfo >/dev/null"
+        ]
       interval: 10s
-      timeout: 10s
-      retries: 20
-      start_period: 90s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
 
   jellyfin:
     build:
       context: ../
-      dockerfile: docker/Dockerfile
-    container_name: jf-integration-test
+      dockerfile: docker/jellyfin/Dockerfile
+    container_name: jellyfin-test
     environment:
       - TZ=Europe/Berlin
     ports:
       - "18096:8096"    # Jellyfin HTTP (offset to avoid conflicts with dev stack)
     volumes:
-      - jf-test-config:/config
-      - jf-test-cache:/cache
+      - jellyfin-test-config:/config
+      - jellyfin-test-cache:/cache
     depends_on:
-      tvh-bootstrap:
-        condition: service_completed_successfully
+      tvheadend:
+        condition: service_healthy
     restart: "no"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8096/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
-  tvh-bootstrap:
-    image: alpine:3.20
-    container_name: tvh-bootstrap
-    volumes:
-      - ./tvh-bootstrap.sh:/bootstrap.sh:ro
-    entrypoint: ["/bin/sh", "/bootstrap.sh"]
+  tvheadend-bootstrap:
+    build:
+      context: ./tvheadend-bootstrap
+      dockerfile: Dockerfile
+    container_name: tvheadend-bootstrap-test
     environment:
       - TVH_URL=http://tvheadend:9981
-      - IPTV_SIM_URL=http://iptv-sim
+      - IPTV_SIM_URL=http://iptv-simulator
       - MAX_WAIT=60
     depends_on:
       tvheadend:
@@ -90,8 +100,8 @@ services:
     restart: "no"
 
 volumes:
-  tvh-test-config:
-  tvh-test-recordings:
-  jf-test-config:
-  jf-test-cache:
+  tvheadend-test-config:
+  tvheadend-test-recordings:
+  jellyfin-test-config:
+  jellyfin-test-cache:
 

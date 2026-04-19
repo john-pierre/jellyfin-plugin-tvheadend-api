@@ -12,10 +12,10 @@ public class UrlBuilderEdgeCaseTests
     private readonly UrlBuilder _sut = new();
 
     [Fact]
-    public void BuildUrlWithHeaderAuth_IncludesHostnameAndPort()
+    public void BuildUrl_IncludesHostnameAndPort()
     {
         var config = new PluginConfiguration { Host = "tvheadend.local", Port = 9981 };
-        var url = _sut.BuildUrlWithHeaderAuth(config, "/api/test");
+        var url = _sut.BuildApiUrl(config, "/api/test");
 
         Assert.NotEmpty(url);
         Assert.Contains("tvheadend.local", url);
@@ -23,25 +23,25 @@ public class UrlBuilderEdgeCaseTests
     }
 
     [Fact]
-    public void BuildUrlWithHeaderAuth_WithLocalhost_WorksCorrectly()
+    public void BuildUrl_WithLocalhost_WorksCorrectly()
     {
         var config = new PluginConfiguration { Host = "localhost", Port = 9981 };
-        var url = _sut.BuildUrlWithHeaderAuth(config, "/api/test");
+        var url = _sut.BuildApiUrl(config, "/api/test");
 
         Assert.Contains("localhost", url);
     }
 
     [Fact]
-    public void BuildUrlWithHeaderAuth_WithIPAddress_WorksCorrectly()
+    public void BuildUrl_WithIPAddress_WorksCorrectly()
     {
         var config = new PluginConfiguration { Host = "192.168.1.100", Port = 9981 };
-        var url = _sut.BuildUrlWithHeaderAuth(config, "/api/test");
+        var url = _sut.BuildApiUrl(config, "/api/test");
 
         Assert.Contains("192.168.1.100", url);
     }
 
     [Fact]
-    public void BuildUrlWithHeaderAuth_WithHttps_UsesCorrectProtocol()
+    public void BuildUrl_WithHttps_UsesCorrectProtocol()
     {
         var config = new PluginConfiguration
         {
@@ -50,13 +50,13 @@ public class UrlBuilderEdgeCaseTests
             UseSSL = true
         };
 
-        var url = _sut.BuildUrlWithHeaderAuth(config, "/api/channel/grid");
+        var url = _sut.BuildApiUrl(config, "/api/channel/grid");
 
         Assert.StartsWith("https://", url);
     }
 
     [Fact]
-    public void BuildUrlWithHeaderAuth_WithHttp_UsesCorrectProtocol()
+    public void BuildUrl_WithHttp_UsesCorrectProtocol()
     {
         var config = new PluginConfiguration
         {
@@ -65,7 +65,7 @@ public class UrlBuilderEdgeCaseTests
             UseSSL = false
         };
 
-        var url = _sut.BuildUrlWithHeaderAuth(config, "/api/channel/grid");
+        var url = _sut.BuildApiUrl(config, "/api/channel/grid");
 
         Assert.StartsWith("http://", url);
     }
@@ -81,39 +81,38 @@ public class UrlBuilderEdgeCaseTests
             AllowAnonymousAccess = false,
         };
 
-        var url = _sut.BuildUrlWithParameterAuth(config, "/api/channel/grid");
+        var url = _sut.BuildResourceUrl(config, "/api/channel/grid");
 
         Assert.Contains("auth=token123", url);
     }
 
     [Fact]
-    public void BuildUrlWithHeaderAuth_MultipleCallsWithSameConfig_ProduceConsistentResults()
+    public void BuildUrl_MultipleCallsWithSameConfig_ProduceConsistentResults()
     {
         var config = new PluginConfiguration { Host = "localhost", Port = 9981 };
 
-        var url1 = _sut.BuildUrlWithHeaderAuth(config, "/api/test");
-        var url2 = _sut.BuildUrlWithHeaderAuth(config, "/api/test");
+        var url1 = _sut.BuildApiUrl(config, "/api/test");
+        var url2 = _sut.BuildApiUrl(config, "/api/test");
 
         Assert.Equal(url1, url2);
     }
 
     [Fact]
-    public void MaskSensitiveData_WithCredentialsInUrl_PreservesStructure()
+    public void MaskSensitiveData_WithTokenInUrl_MasksToken()
     {
         var config = new PluginConfiguration
         {
             Host = "tvheadend.local",
             Port = 9981,
-            Username = "testuser",
-            Password = "testpass",
+            AuthToken = "secret42",
             UseSSL = false
         };
-        var url = "http://testuser:testpass@tvheadend.local:9981/api/test";
+        var url = "http://tvheadend.local:9981/api/test?auth=secret42";
 
         var masked = _sut.MaskSensitiveData(url, config);
 
         Assert.Contains("tvheadend.local", masked);
-        Assert.DoesNotContain("testpass", masked);
+        Assert.DoesNotContain("secret42", masked);
     }
 
     [Fact]

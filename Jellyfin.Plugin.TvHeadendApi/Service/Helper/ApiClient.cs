@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
@@ -11,8 +10,15 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 
 /// <summary>
-/// Provides centralized access to TVHeadend configuration, URL creation, and HTTP client setup.
-/// Uses <see cref="IHttpClientFactory"/> to manage HTTP client lifetimes and avoid socket exhaustion.
+/// Provides centralized HTTP client creation and request execution for TVHeadend API calls.
+/// <para>
+/// Anonymous requests use factory-managed clients (connection pooling, resilience).
+/// Authenticated requests create an explicit <see cref="HttpClientHandler"/> with
+/// <see cref="CredentialCache"/> for Basic+Digest support, wrapped in a
+/// <see cref="ResilienceHandler"/> for retry and circuit-breaker behavior.
+/// The handler is created intentionally — no casting of factory-internal handlers —
+/// so this remains safe under .NET 9 where <c>SocketsHttpHandler</c> is the default.
+/// </para>
 /// </summary>
 internal sealed class ApiClient : IApiClient
 {
@@ -49,41 +55,29 @@ internal sealed class ApiClient : IApiClient
     }
 
     /// <inheritdoc />
-    public HttpClient BuildHttpClient(PluginConfiguration config)
+    public HttpClient CreateApiHttpClient(PluginConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
 
+        // When credentials are configured, create a dedicated HttpClientHandler with
+        // CredentialCache so .NET automatically responds to the server's 401 challenge
+        // with the correct auth scheme (Basic, Digest, or both).
+        // The handler is wrapped in a ResilienceHandler for retry/circuit-breaker parity
+        // with factory-managed clients.
+        // This bypasses IHttpClientFactory because the factory-registered handlers
+        // cannot accept per-request credentials, and casting factory handlers to
+        // HttpClientHandler is unsafe in .NET 9 where SocketsHttpHandler is the default.
+        if (!config.AllowAnonymousAccess && !string.IsNullOrWhiteSpace(config.Username))
+        {
+            return CreateAuthenticatedClient(config);
+        }
+
+        // Anonymous access — use the factory-managed client (connection pooling, resilience handler).
         var clientName = config.UseSSL && config.IgnoreCertificateErrors
             ? HttpClientUnsafeName
             : HttpClientName;
 
-        var client = _httpClientFactory.CreateClient(clientName);
-
-        if (!config.AllowAnonymousAccess && !string.IsNullOrWhiteSpace(config.Username))
-        {
-            var creds = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{config.Username}:{config.Password}"));
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", creds);
-        }
-
-        return client;
-    }
-
-    /// <inheritdoc />
-    public string GetBaseUrl(PluginConfiguration config)
-    {
-        return UrlHelper.GetBaseUrl(config);
-    }
-
-    /// <inheritdoc />
-    public string GetWebRoot(PluginConfiguration config)
-    {
-        return UrlHelper.GetWebRoot(config);
-    }
-
-    /// <inheritdoc />
-    public string BuildUrl(PluginConfiguration config, string endpoint)
-    {
-        return UrlHelper.BuildEndpointUrl(config, endpoint);
+        return _httpClientFactory.CreateClient(clientName);
     }
 
     /// <inheritdoc />
@@ -114,5 +108,40 @@ internal sealed class ApiClient : IApiClient
         await source.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
         target.Position = 0;
         return target;
+    }
+
+    /// <summary>
+    /// Creates an authenticated <see cref="HttpClient"/> with Digest and Basic auth support.
+    /// <para>
+    /// .NET's <see cref="SocketsHttpHandler"/> (default since .NET Core) does not support
+    /// HTTP Digest Authentication. TVHeadend defaults to Digest auth, so a custom
+    /// <see cref="DigestAuthHandler"/> intercepts 401 challenges and computes the Digest
+    /// response. The handler chain is: <c>ResilienceHandler → DigestAuthHandler → HttpClientHandler</c>.
+    /// </para>
+    /// </summary>
+    private static HttpClient CreateAuthenticatedClient(PluginConfiguration config)
+    {
+#pragma warning disable CA5400 // User explicitly opted into ignoring certificate errors via config
+        var innerHandler = new HttpClientHandler
+        {
+            CheckCertificateRevocationList = true,
+        };
+
+        if (config.UseSSL && config.IgnoreCertificateErrors)
+        {
+            innerHandler.CheckCertificateRevocationList = false;
+            innerHandler.ServerCertificateCustomValidationCallback = static (_, _, _, _) => true;
+        }
+#pragma warning restore CA5400
+
+        // DigestAuthHandler handles 401 Digest challenges from TVHeadend.
+        var digestHandler = new DigestAuthHandler(config.Username ?? string.Empty, config.Password ?? string.Empty)
+        {
+            InnerHandler = innerHandler,
+        };
+
+        // Wrap in ResilienceHandler for retry + circuit-breaker parity with factory-managed clients.
+        var resilienceHandler = new ResilienceHandler { InnerHandler = digestHandler };
+        return new HttpClient(resilienceHandler);
     }
 }

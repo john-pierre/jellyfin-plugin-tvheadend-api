@@ -3,13 +3,13 @@
   <component name="NewModuleRootManager" inherit-compiler-output="true">
     <exclude-output />
     <content url="file://$MODULE_DIR$">
-      <excludeFolder url="file://$MODULE_DIR$/.docker" />
       <excludeFolder url="file://$MODULE_DIR$/Jellyfin.Plugin.TvHeadendApi.Tests/TestResults" />
       <excludeFolder url="file://$MODULE_DIR$/Jellyfin.Plugin.TvHeadendApi.Tests/bin" />
       <excludeFolder url="file://$MODULE_DIR$/Jellyfin.Plugin.TvHeadendApi.Tests/obj" />
       <excludeFolder url="file://$MODULE_DIR$/Jellyfin.Plugin.TvHeadendApi/bin" />
       <excludeFolder url="file://$MODULE_DIR$/Jellyfin.Plugin.TvHeadendApi/obj" />
       <excludeFolder url="file://$MODULE_DIR$/TestResults" />
+      <excludeFolder url="file://$MODULE_DIR$/docker/.dev-volumes" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

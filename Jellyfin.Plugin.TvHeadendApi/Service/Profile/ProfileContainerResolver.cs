@@ -17,6 +17,7 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
     private readonly SemaphoreSlim _profileContainerLock = new(1, 1);
     private readonly ILogger<ProfileContainerResolver> _logger;
     private readonly IApiClient _tvheadendApiClient;
+    private readonly IUrlBuilder _tvheadendUrlBuilder;
     private readonly IProfileResolver _streamProfileResolver;
 
     private volatile ProfileCacheEntry? _profileCache;
@@ -26,14 +27,17 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
     /// </summary>
     /// <param name="logger">Logger instance.</param>
     /// <param name="tvheadendApiClient">TVHeadend API client.</param>
+    /// <param name="tvheadendUrlBuilder">TVHeadend URL builder.</param>
     /// <param name="streamProfileResolver">TVHeadend stream profile resolver.</param>
     public ProfileContainerResolver(
         ILogger<ProfileContainerResolver> logger,
         IApiClient tvheadendApiClient,
+        IUrlBuilder tvheadendUrlBuilder,
         IProfileResolver streamProfileResolver)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
+        _tvheadendUrlBuilder = tvheadendUrlBuilder ?? throw new ArgumentNullException(nameof(tvheadendUrlBuilder));
         _streamProfileResolver = streamProfileResolver ?? throw new ArgumentNullException(nameof(streamProfileResolver));
     }
 
@@ -97,9 +101,9 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
 
         try
         {
-            using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
-            var baseUrl = _tvheadendApiClient.GetBaseUrl(config);
-            var webRoot = _tvheadendApiClient.GetWebRoot(config);
+            using var httpClient = _tvheadendApiClient.CreateApiHttpClient(config);
+            var baseUrl = _tvheadendUrlBuilder.GetBaseUrl(config);
+            var webRoot = _tvheadendUrlBuilder.GetWebRoot(config);
 
             var resolved = await _streamProfileResolver
                 .ResolveProfileByNameAsync(httpClient, baseUrl, webRoot, profileName, cancellationToken)

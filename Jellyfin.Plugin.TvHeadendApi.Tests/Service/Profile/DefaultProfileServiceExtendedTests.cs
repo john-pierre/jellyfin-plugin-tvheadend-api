@@ -27,9 +27,9 @@ public class DefaultProfileServiceExtendedTests
     {
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(TestConfig);
-        api.Setup(x => x.BuildHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
-        api.Setup(x => x.GetBaseUrl(It.IsAny<PluginConfiguration>())).Returns("http://tvh:9981");
-        api.Setup(x => x.GetWebRoot(It.IsAny<PluginConfiguration>())).Returns("/");
+        api.Setup(x => x.CreateApiHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
+        
+        
 
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
@@ -71,7 +71,7 @@ public class DefaultProfileServiceExtendedTests
             return "{}";
         });
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -96,7 +96,7 @@ public class DefaultProfileServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -121,7 +121,7 @@ public class DefaultProfileServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.True(profileCreated);
@@ -152,7 +152,7 @@ public class DefaultProfileServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -177,7 +177,7 @@ public class DefaultProfileServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -189,13 +189,13 @@ public class DefaultProfileServiceExtendedTests
     {
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(TestConfig);
-        api.Setup(x => x.BuildHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
-        api.Setup(x => x.GetBaseUrl(It.IsAny<PluginConfiguration>())).Returns("http://tvh:9981");
-        api.Setup(x => x.GetWebRoot(It.IsAny<PluginConfiguration>())).Returns("/");
+        api.Setup(x => x.CreateApiHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
+        
+        
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("boom"));
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -220,7 +220,7 @@ public class DefaultProfileServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -243,7 +243,7 @@ public class DefaultProfileServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -260,7 +260,7 @@ public class DefaultProfileServiceExtendedTests
             return "{}";
         });
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -285,7 +285,7 @@ public class DefaultProfileServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -303,7 +303,7 @@ public class DefaultProfileServiceExtendedTests
             return "{}";
         });
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -321,7 +321,7 @@ public class DefaultProfileServiceExtendedTests
             return "{}";
         });
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -339,7 +339,7 @@ public class DefaultProfileServiceExtendedTests
                 return "{}";
             });
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.True(result.Success);
@@ -350,7 +350,7 @@ public class DefaultProfileServiceExtendedTests
     public void Constructor_NullApiClient_Throws()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, null!));
+            new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, null!, new Mock<IUrlBuilder>().Object));
     }
 }
 

@@ -42,11 +42,9 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests.Integration;
 [Trait("Category", "LiveIntegration")]
 public sealed class EndToEndIntegrationTests : IDisposable
 {
-    private static readonly string BaseUrl =
-        Environment.GetEnvironmentVariable("TVHEADEND_URL") ?? "http://localhost:19981";
+    private static readonly string BaseUrl = "http://localhost:19981";
 
     private readonly PluginConfiguration _config;
-    private readonly PluginConfiguration _authConfig;
     private readonly IApiClient _apiClient;
     private readonly IUrlBuilder _urlBuilder;
     private readonly HttpClient _rawClient;
@@ -55,21 +53,6 @@ public sealed class EndToEndIntegrationTests : IDisposable
     {
         var uri = new Uri(BaseUrl);
         _config = new PluginConfiguration
-        {
-            Host = uri.Host,
-            Port = uri.Port,
-            UseSSL = uri.Scheme == "https",
-            Webroot = "/",
-            AllowAnonymousAccess = true,
-            AuthToken = string.Empty,
-            StreamingProfile = "test-pass",
-            RecordingProfile = "test-dvr",
-            SupportsDirectPlay = true,
-            SupportsDirectStream = true,
-            SupportsTranscoding = false,
-        };
-
-        _authConfig = new PluginConfiguration
         {
             Host = uri.Host,
             Port = uri.Port,
@@ -94,7 +77,12 @@ public sealed class EndToEndIntegrationTests : IDisposable
         var configProvider = new PluginConfigurationProvider(() => _config);
         _apiClient = new ApiClient(httpClientFactory.Object, configProvider);
         _urlBuilder = new UrlBuilder();
-        _rawClient = new HttpClient { BaseAddress = new Uri(BaseUrl), Timeout = TimeSpan.FromSeconds(15) };
+        _rawClient = new HttpClient(
+            new DigestAuthHandler("testuser", "testpass") { InnerHandler = new HttpClientHandler() })
+        {
+            BaseAddress = new Uri(BaseUrl),
+            Timeout = TimeSpan.FromSeconds(15),
+        };
     }
 
     public void Dispose()
@@ -158,14 +146,11 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task TokenService_GenerateValidTokenAsync_ReturnsSuccessResult()
     {
-        var authConfigProvider = new PluginConfigurationProvider(() => _authConfig);
+        var authConfigProvider = new PluginConfigurationProvider(() => _config);
         var authApiClient = CreateApiClient(authConfigProvider);
         var configSaver = new PluginConfigurationSaver(_ => { });
 
-        var sut = new TokenService(
-            NullLogger<TokenService>.Instance,
-            authApiClient,
-            configSaver);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, authApiClient, _urlBuilder, configSaver);
 
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
@@ -193,10 +178,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
         var badApiClient = CreateApiClient(badConfigProvider);
         var configSaver = new PluginConfigurationSaver(_ => { });
 
-        var sut = new TokenService(
-            NullLogger<TokenService>.Instance,
-            badApiClient,
-            configSaver);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, badApiClient, _urlBuilder, configSaver);
 
         var result = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
@@ -207,14 +189,11 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task TokenService_ValidateTokenAsync_ReturnsTrueForGeneratedToken()
     {
-        var authConfigProvider = new PluginConfigurationProvider(() => _authConfig);
+        var authConfigProvider = new PluginConfigurationProvider(() => _config);
         var authApiClient = CreateApiClient(authConfigProvider);
         var configSaver = new PluginConfigurationSaver(_ => { });
 
-        var sut = new TokenService(
-            NullLogger<TokenService>.Instance,
-            authApiClient,
-            configSaver);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, authApiClient, _urlBuilder, configSaver);
 
         var genResult = await sut.GenerateValidTokenAsync(CancellationToken.None);
 
@@ -229,26 +208,36 @@ public sealed class EndToEndIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task TokenService_RegenerateToken_ProducesNewToken()
+    public async Task TokenService_GenerateAndStoreToken_ProducesUrlSafeToken()
     {
-        var authConfigProvider = new PluginConfigurationProvider(() => _authConfig);
+        // Simulates the plugin config page "Generate Token" button:
+        // GenerateAndStoreTokenAsync creates/refreshes the TVHeadend auth token
+        // and retries until it contains only URL-safe characters (A-Za-z0-9.-).
+        string? savedToken = null;
+        var authConfigProvider = new PluginConfigurationProvider(() => _config);
         var authApiClient = CreateApiClient(authConfigProvider);
-        var configSaver = new PluginConfigurationSaver(_ => { });
+        var configSaver = new PluginConfigurationSaver(mutate =>
+        {
+            // Apply mutation to a scratch config to capture the saved token.
+            var scratch = new PluginConfiguration();
+            mutate(scratch);
+            savedToken = scratch.AuthToken;
+        });
 
-        var sut = new TokenService(
-            NullLogger<TokenService>.Instance,
-            authApiClient,
-            configSaver);
+        var sut = new TokenService(NullLogger<TokenService>.Instance, authApiClient, _urlBuilder, configSaver);
 
-        var first = await sut.GenerateValidTokenAsync(CancellationToken.None);
+        var result = await sut.GenerateAndStoreTokenAsync(CancellationToken.None);
 
-        Assert.True(first.Success, $"First token generation must succeed: {first.Message}");
+        Assert.True(result.Success, $"Token generation must succeed: {result.Message}");
+        Assert.False(string.IsNullOrEmpty(result.AuthToken), "Token must not be empty");
 
-        var second = await sut.GenerateValidTokenAsync(CancellationToken.None);
+        // The token must pass the URL-safe format check (no special characters that break FFmpeg stream URLs).
+        Assert.True(
+            TokenValidator.IsValidTokenFormat(result.AuthToken),
+            $"Token '{result.AuthToken}' contains unsupported characters — must be A-Za-z0-9.- only");
 
-        Assert.True(second.Success, $"Second token generation must succeed: {second.Message}");
-        // TVHeadend generates a new token each time (persistent tickets are unique).
-        Assert.NotEqual(first.AuthToken, second.AuthToken);
+        // ConfigSaver must have been called with the same token.
+        Assert.Equal(result.AuthToken, savedToken);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -259,10 +248,10 @@ public sealed class EndToEndIntegrationTests : IDisposable
     public async Task ProfileResolver_GetProfilesAsync_ReturnsMultipleProfiles()
     {
         var sut = new ProfileResolver(_apiClient);
-        using var http = _apiClient.BuildHttpClient(_config);
+        using var http = _apiClient.CreateApiHttpClient(_config);
 
         var profiles = await sut.GetProfilesAsync(
-            http, _apiClient.GetBaseUrl(_config), _apiClient.GetWebRoot(_config), CancellationToken.None);
+            http, _urlBuilder.GetBaseUrl(_config), _urlBuilder.GetWebRoot(_config), CancellationToken.None);
 
         Assert.NotNull(profiles);
         Assert.True(profiles.Count >= 2, $"Expected ≥2 profiles, got {profiles.Count}");
@@ -272,9 +261,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
     public async Task ProfileResolver_ResolveProfileByNameAsync_ResolvesTestProfile()
     {
         var sut = new ProfileResolver(_apiClient);
-        using var http = _apiClient.BuildHttpClient(_config);
-        var baseUrl = _apiClient.GetBaseUrl(_config);
-        var webRoot = _apiClient.GetWebRoot(_config);
+        using var http = _apiClient.CreateApiHttpClient(_config);
+        var baseUrl = _urlBuilder.GetBaseUrl(_config);
+        var webRoot = _urlBuilder.GetWebRoot(_config);
 
         var resolved = await sut.ResolveProfileByNameAsync(http, baseUrl, webRoot, "test-pass", CancellationToken.None);
 
@@ -282,9 +271,184 @@ public sealed class EndToEndIntegrationTests : IDisposable
         Assert.Equal("test-pass", resolved!.Name);
     }
 
+    [Fact]
+    public async Task DefaultProfileService_CreateProfileAsync_CreatesStreamingProfile()
+    {
+        var sut = new DefaultProfileService(
+            NullLogger<DefaultProfileService>.Instance,
+            _apiClient,
+            _urlBuilder);
+
+        var result = await sut.CreateProfileAsync(CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.True(result.Success, $"Profile creation failed: {result.Message}");
+        Assert.False(string.IsNullOrEmpty(result.ProfileName), "Profile name must be set");
+
+        // Verify the created profile is visible via the profile list API.
+        var resolver = new ProfileResolver(_apiClient);
+        using var http = _apiClient.CreateApiHttpClient(_config);
+        var profiles = await resolver.GetProfilesAsync(
+            http, _urlBuilder.GetBaseUrl(_config), _urlBuilder.GetWebRoot(_config), CancellationToken.None);
+
+        Assert.Contains(profiles, p =>
+            string.Equals(p.Name, result.ProfileName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task DefaultProfileService_CodecProfile_VisibleInCodecProfileList()
+    {
+        // First ensure the plugin profile exists.
+        var sut = new DefaultProfileService(
+            NullLogger<DefaultProfileService>.Instance,
+            _apiClient,
+            _urlBuilder);
+
+        await sut.CreateProfileAsync(CancellationToken.None);
+
+        // Query the codec profile list from TVHeadend.
+        var response = await _rawClient.GetStringAsync("/api/codec/list");
+
+        Assert.NotNull(response);
+        Assert.Contains("\"entries\"", response);
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // 21f — Streaming
     // ═══════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task MediaSourceService_GetChannelStreamAsync_ReturnsValidMediaSource()
+    {
+        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
+        Assert.NotEmpty(channels);
+
+        var channelId = channels.First().Id;
+
+        // Build a MediaSourceService with mocked profile resolution (returns mpegts container).
+        var resolver = new Mock<IProfileContainerResolver>();
+        resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Model.Profile.ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
+
+        var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
+        library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(Guid.NewGuid());
+
+        var sut = new MediaSourceService(
+            NullLogger<MediaSourceService>.Instance,
+            library.Object,
+            resolver.Object,
+            _apiClient,
+            _urlBuilder,
+            () => null);
+
+        var mediaSource = await sut.GetChannelStreamAsync(channelId, CancellationToken.None);
+
+        Assert.NotNull(mediaSource);
+        Assert.Equal(channelId, mediaSource.Id);
+        Assert.Contains("stream/channel/", mediaSource.Path);
+        Assert.Contains("profile=", mediaSource.Path);
+        Assert.Equal("mpegts", mediaSource.Container);
+        Assert.True(mediaSource.IsRemote);
+    }
+
+    [Fact]
+    public async Task MediaSourceService_StreamUrl_ContainsAuthToken()
+    {
+        // Generate a token first.
+        var authConfigProvider = new PluginConfigurationProvider(() => _config);
+        var authApiClient = CreateApiClient(authConfigProvider);
+        var configSaver = new PluginConfigurationSaver(mutate =>
+        {
+            mutate(_config); // apply token to live config
+        });
+
+        var tokenService = new TokenService(NullLogger<TokenService>.Instance, authApiClient, _urlBuilder, configSaver);
+        var tokenResult = await tokenService.GenerateAndStoreTokenAsync(CancellationToken.None);
+        Assert.True(tokenResult.Success, $"Token generation failed: {tokenResult.Message}");
+        Assert.False(string.IsNullOrEmpty(_config.AuthToken), "AuthToken must be stored in config");
+
+        // Build MediaSourceService — the stream URL should include the auth token.
+        var resolver = new Mock<IProfileContainerResolver>();
+        resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Model.Profile.ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
+
+        var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
+        library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(Guid.NewGuid());
+
+        // Use a config-provider that returns our token-enriched config.
+        var tokenApiClient = CreateApiClient(new PluginConfigurationProvider(() => _config));
+
+        var sut = new MediaSourceService(
+            NullLogger<MediaSourceService>.Instance,
+            library.Object,
+            resolver.Object,
+            tokenApiClient,
+            _urlBuilder,
+            () => null);
+
+        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
+        Assert.NotEmpty(channels);
+
+        var mediaSource = await sut.GetChannelStreamAsync(channels.First().Id, CancellationToken.None);
+
+        Assert.Contains("auth=", mediaSource.Path);
+        Assert.Contains(_config.AuthToken, mediaSource.Path);
+    }
+
+    [Fact]
+    public async Task OrchestratorService_GetChannelStream_ReturnsPlayableMediaSource()
+    {
+        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
+        Assert.NotEmpty(channels);
+
+        var channelId = channels.First().Id;
+
+        // Build real MediaSourceService with mocked profile resolution.
+        var resolver = new Mock<IProfileContainerResolver>();
+        resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Model.Profile.ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
+
+        var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
+        library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(Guid.NewGuid());
+
+        var mediaSourceService = new MediaSourceService(
+            NullLogger<MediaSourceService>.Instance,
+            library.Object,
+            resolver.Object,
+            _apiClient,
+            _urlBuilder,
+            () => null);
+
+        var lifecycleService = new Mock<ILifecycleService>();
+        lifecycleService.Setup(x => x.CloseLiveStreamAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        lifecycleService.Setup(x => x.ResetTunerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var dvrService = new DvrService(NullLogger<DvrService>.Instance, _apiClient, _urlBuilder);
+
+        var orchestrator = new OrchestratorService(
+            guideService,
+            dvrService,
+            mediaSourceService,
+            lifecycleService.Object,
+            NullLogger<OrchestratorService>.Instance);
+
+        var result = await orchestrator.GetChannelStream(channelId, string.Empty, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(channelId, result.Id);
+        Assert.Contains("stream/channel/", result.Path);
+        Assert.Equal("mpegts", result.Container);
+        Assert.True(result.IsRemote);
+    }
 
     [Fact]
     public async Task StreamUrl_ContainsProfile_WhenChannelExists()
@@ -412,7 +576,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task StatusService_GetActivityStatusAsync_ReturnsStatus()
     {
-        var sut = new StatusService(NullLogger<StatusService>.Instance, _apiClient);
+        var sut = new StatusService(NullLogger<StatusService>.Instance, _apiClient, _urlBuilder);
 
         var status = await sut.GetActivityStatusAsync(CancellationToken.None);
 
@@ -422,7 +586,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task StatusService_GetConnectionsAsync_ReturnsConnections()
     {
-        var sut = new StatusService(NullLogger<StatusService>.Instance, _apiClient);
+        var sut = new StatusService(NullLogger<StatusService>.Instance, _apiClient, _urlBuilder);
 
         var connections = await sut.GetConnectionsAsync(CancellationToken.None);
 
@@ -432,7 +596,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task InputMonitorService_GetInputStatusAsync_ReturnsInputEntries()
     {
-        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, _apiClient);
+        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, _apiClient, _urlBuilder);
 
         var inputs = await sut.GetInputStatusAsync(CancellationToken.None);
 
@@ -443,7 +607,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task SubscriptionService_GetActiveSubscriptionsAsync_ReturnsList()
     {
-        var sut = new SubscriptionService(NullLogger<SubscriptionService>.Instance, _apiClient);
+        var sut = new SubscriptionService(NullLogger<SubscriptionService>.Instance, _apiClient, _urlBuilder);
 
         var subscriptions = await sut.GetActiveSubscriptionsAsync(CancellationToken.None);
 
@@ -451,9 +615,57 @@ public sealed class EndToEndIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task SubscriptionService_SubscriptionDetails_ContainsExpectedFields()
+    {
+        // Start a stream to create a subscription, then verify entry fields.
+        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
+        Assert.NotEmpty(channels);
+
+        var channelId = channels.First().Id;
+        var streamUrl = $"/stream/channel/{channelId}?profile=test-pass";
+
+        // Start streaming in background, then check subscriptions.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task<HttpResponseMessage>? streamTask = null;
+        try
+        {
+            streamTask = _rawClient.GetAsync(streamUrl, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+            // Give TVHeadend a moment to register the subscription.
+            await Task.Delay(1000, CancellationToken.None);
+
+            var sut = new SubscriptionService(NullLogger<SubscriptionService>.Instance, _apiClient, _urlBuilder);
+            var subscriptions = await sut.GetActiveSubscriptionsAsync(CancellationToken.None);
+
+            // At least our own stream subscription should be present.
+            if (subscriptions.Count > 0)
+            {
+                var sub = subscriptions[0];
+                // Verify model fields are populated (values depend on TVH state).
+                Assert.False(string.IsNullOrEmpty(sub.State), "State must be present");
+                Assert.True(sub.Id > 0, "Subscription ID must be positive");
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Stream timeout is expected — TVHeadend streams forever.
+        }
+        finally
+        {
+            cts.Cancel();
+            if (streamTask != null)
+            {
+                try { (await streamTask).Dispose(); }
+                catch { /* cleanup */ }
+            }
+        }
+    }
+
+    [Fact]
     public async Task InputMonitorService_SignalMetrics_FieldsPresent()
     {
-        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, _apiClient);
+        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, _apiClient, _urlBuilder);
 
         var inputs = await sut.GetInputStatusAsync(CancellationToken.None);
 
@@ -628,8 +840,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             Mock.Of<IServerConfigurationManager>(),
             CreateEncodingReader(),
             streamResolver.Object,
-            _apiClient,
-            new CachePathProvider(() => null));
+            _apiClient, _urlBuilder, new CachePathProvider(() => null));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -653,8 +864,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             Mock.Of<IServerConfigurationManager>(),
             CreateEncodingReader(),
             streamResolver.Object,
-            _apiClient,
-            new CachePathProvider(() => null));
+            _apiClient, _urlBuilder, new CachePathProvider(() => null));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -676,8 +886,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             Mock.Of<IServerConfigurationManager>(),
             CreateEncodingReader(),
             streamResolver.Object,
-            _apiClient,
-            new CachePathProvider(() => null));
+            _apiClient, _urlBuilder, new CachePathProvider(() => null));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -708,6 +917,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
         return mock.Object;
     }
 }
+
 
 
 

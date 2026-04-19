@@ -36,8 +36,8 @@ internal sealed partial class DvrService : IDvrService
         ArgumentNullException.ThrowIfNull(profileName);
 
         var config = GetConfig();
-        var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/dvr/config/grid");
-        using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
+        var url = _tvheadendUrlBuilder.BuildApiUrl(config, "api/dvr/config/grid");
+        using var httpClient = _tvheadendApiClient.CreateApiHttpClient(config);
         var result = await Helper.GridFetcher.FetchAllAsync<DvrConfigGridResponse>(
             httpClient,
             url,

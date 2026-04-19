@@ -117,7 +117,7 @@ public class GridFetcherIntegrationTests
         config.Webroot = "/tvh/";
 
         var builder = new UrlBuilder();
-        var url = builder.BuildUrlWithParameterAuth(config, "stream/channel/ch1?profile=jellyfin");
+        var url = builder.BuildResourceUrl(config, "stream/channel/ch1?profile=jellyfin");
 
         Assert.Contains("http://tvh.local:9981/tvh/stream/channel/ch1", url);
         Assert.Contains("profile=jellyfin", url);
@@ -132,7 +132,7 @@ public class GridFetcherIntegrationTests
         config.AuthToken = "should-be-omitted";
 
         var builder = new UrlBuilder();
-        var url = builder.BuildUrlWithParameterAuth(config, "stream/channel/ch1");
+        var url = builder.BuildResourceUrl(config, "stream/channel/ch1");
 
         Assert.DoesNotContain("auth=", url);
     }

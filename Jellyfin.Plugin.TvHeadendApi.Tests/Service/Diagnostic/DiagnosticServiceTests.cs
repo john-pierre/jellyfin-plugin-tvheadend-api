@@ -29,6 +29,7 @@ public class DiagnosticServiceTests
             Mock.Of<IEncodingOptionsReader>(),
             Mock.Of<IProfileResolver>(),
             Mock.Of<IApiClient>(),
+            Mock.Of<IUrlBuilder>(),
             new CachePathProvider(() => null)));
 
         Assert.Throws<ArgumentNullException>(sutFactory);
@@ -52,7 +53,7 @@ public class DiagnosticServiceTests
     {
         var sut = CreateSut(out var apiClient);
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(CreateConfig());
-        apiClient.Setup(x => x.BuildHttpClient(It.IsAny<PluginConfiguration>())).Throws(new InvalidOperationException("boom"));
+        apiClient.Setup(x => x.CreateApiHttpClient(It.IsAny<PluginConfiguration>())).Throws(new InvalidOperationException("boom"));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -70,9 +71,9 @@ public class DiagnosticServiceTests
         var sut = CreateSut(out var apiClient);
         var config = CreateConfig();
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.Is<string>(u => u.Contains("api/serverinfo", StringComparison.Ordinal)), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("unreachable"));
 
@@ -93,9 +94,9 @@ public class DiagnosticServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
 
@@ -151,9 +152,9 @@ public class DiagnosticServiceTests
         config.StreamingProfile = "missing-profile";
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
 
@@ -180,9 +181,9 @@ public class DiagnosticServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
             {
@@ -235,9 +236,9 @@ public class DiagnosticServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
 
@@ -273,9 +274,9 @@ public class DiagnosticServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
             {
@@ -325,9 +326,9 @@ public class DiagnosticServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
             {
@@ -370,9 +371,9 @@ public class DiagnosticServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
             {
@@ -418,9 +419,9 @@ public class DiagnosticServiceTests
         config.StreamingProfile = string.Empty;
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
             {
@@ -461,9 +462,9 @@ public class DiagnosticServiceTests
         config.AnalyzeDurationMs = 0;
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
 
@@ -488,9 +489,9 @@ public class DiagnosticServiceTests
         config.AuthToken = "abc_def-123";
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
 
@@ -514,9 +515,9 @@ public class DiagnosticServiceTests
         config.AuthToken = string.Empty;
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
 
@@ -536,9 +537,9 @@ public class DiagnosticServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
             {
@@ -564,9 +565,9 @@ public class DiagnosticServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
         streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
@@ -591,9 +592,9 @@ public class DiagnosticServiceTests
         config.AnalyzeDurationMs = 20;
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
         streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
@@ -615,9 +616,9 @@ public class DiagnosticServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
         streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
@@ -640,9 +641,9 @@ public class DiagnosticServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
         streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
@@ -665,9 +666,9 @@ public class DiagnosticServiceTests
         var config = CreateConfig();
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
         streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
@@ -695,9 +696,9 @@ public class DiagnosticServiceTests
         config.RecordingProfile = "myprofile";
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
         streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
@@ -728,9 +729,9 @@ public class DiagnosticServiceTests
         config.RecordingProfile = "missing-dvr-profile";
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        apiClient.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        apiClient.Setup(x => x.GetBaseUrl(config)).Returns("http://tvh");
-        apiClient.Setup(x => x.GetWebRoot(config)).Returns("/");
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
         streamResolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), "http://tvh", "/", It.IsAny<CancellationToken>()))
@@ -822,6 +823,11 @@ public class DiagnosticServiceTests
         encodingReader = new Mock<IEncodingOptionsReader>(MockBehavior.Strict);
 
         var serverConfigManager = new Mock<IServerConfigurationManager>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        urlBuilder.Setup(x => x.GetBaseUrl(It.IsAny<PluginConfiguration>())).Returns("http://tvh");
+        urlBuilder.Setup(x => x.GetWebRoot(It.IsAny<PluginConfiguration>())).Returns("/");
+        urlBuilder.Setup(x => x.BuildApiUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
+            .Returns<PluginConfiguration, string>((_, ep) => $"http://tvh/{ep.TrimStart('/')}");
 
         // Default no-op values; tests can override these setups.
         streamResolver
@@ -853,6 +859,7 @@ public class DiagnosticServiceTests
             encodingReader.Object,
             streamResolver.Object,
             apiClient.Object,
+            urlBuilder.Object,
             new CachePathProvider(() => null));
     }
 

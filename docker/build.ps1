@@ -1,7 +1,7 @@
 param(
     [string]$ComposeService = "jellyfin",
     [string]$ComposeFile = "docker\docker-compose.yaml",
-    [string]$VersionFile = ".\.docker\dev-version.txt",
+    [string]$VersionFile = "docker\dev-version.txt",
     [switch]$DryRun,
     [switch]$NoLogs
 )
@@ -48,7 +48,7 @@ function Increment-Version {
 $repoRoot = (Split-Path -Parent $PSScriptRoot)
 Push-Location $repoRoot
 try {
-    $dockerfilePath = Join-Path (Join-Path $repoRoot "docker") "Dockerfile"
+    $dockerfilePath = Join-Path (Join-Path $repoRoot "docker") "jellyfin\Dockerfile"
     $composeFilePath = Join-Path $repoRoot $ComposeFile
     $versionFilePath = Join-Path $repoRoot $VersionFile
 

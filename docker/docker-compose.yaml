@@ -1,9 +1,12 @@
 # DEV-ONLY: This compose file is for local development. Do NOT use in production.
+
+name: jellyfin-plugin-tvheadend-api
+
 services:
   jellyfin:
     build:
       context: ../
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/jellyfin/Dockerfile
     container_name: jellyfin-tvheadend-dev
     # Root + privileged required for local dev bind-mounts; not for production use.
     user: "0:0"
@@ -15,7 +18,7 @@ services:
       - "8920:8920"   # Jellyfin HTTPS
     volumes:
       # Persist the entire Jellyfin data directory (users, plugins, plugin config, DB)
-      - ./.docker/config:/config
-      - ./.docker/cache:/cache
-      - ./.docker/media:/media
+      - ./.dev-volumes/config:/config
+      - ./.dev-volumes/cache:/cache
+      - ./.dev-volumes/media:/media
     restart: unless-stopped

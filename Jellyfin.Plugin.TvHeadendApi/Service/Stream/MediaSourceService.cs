@@ -104,7 +104,7 @@ internal sealed class MediaSourceService : IMediaSourceService
         // The auth token is required for direct playback from clients.
         var encodedChannelId = Uri.EscapeDataString(channelId);
         var encodedProfile = Uri.EscapeDataString(config.StreamingProfile ?? string.Empty);
-        var streamUrl = _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, $"stream/channel/{encodedChannelId}?profile={encodedProfile}");
+        var streamUrl = _tvheadendUrlBuilder.BuildResourceUrl(config, $"stream/channel/{encodedChannelId}?profile={encodedProfile}");
         var container = await _streamProfileContainerResolver.ResolveContainerAsync(config, cancellationToken).ConfigureAwait(false);
         var mediaSource = new MediaSourceInfo
         {
@@ -487,28 +487,6 @@ internal sealed class MediaSourceService : IMediaSourceService
         {
             _logger.LogWarning(ex, "Failed to delete unreadable mediainfo cache file for channel {ChannelId}: {CacheFile}", channelId, cacheFilePath);
         }
-    }
-
-    /// <summary>
-    /// Builds a streaming URL for a DVR recording file using the configured auth token.
-    /// </summary>
-    /// <param name="recordingId">TVHeadend DVR entry UUID.</param>
-    /// <returns>The absolute HTTP URL for the recording file, or <c>null</c> if the configuration is unavailable.</returns>
-    public string? GetRecordingStreamUrl(string recordingId)
-    {
-        var config = _tvheadendApiClient.GetCurrentConfiguration();
-        if (config == null)
-        {
-            _logger.LogWarning("Plugin configuration is not available — cannot build recording URL.");
-            return null;
-        }
-
-        var baseUrl = _tvheadendApiClient.GetBaseUrl(config);
-        var webRoot = _tvheadendApiClient.GetWebRoot(config);
-        var authSuffix = string.IsNullOrWhiteSpace(config.AuthToken)
-            ? string.Empty
-            : $"?auth={Uri.EscapeDataString(config.AuthToken)}";
-        return $"{baseUrl}{webRoot}dvrfile/{recordingId}{authSuffix}";
     }
 
     private PluginConfiguration GetConfig()

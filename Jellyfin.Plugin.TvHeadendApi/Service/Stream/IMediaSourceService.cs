@@ -25,11 +25,4 @@ public interface IMediaSourceService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A list containing the media source info for the channel.</returns>
     Task<List<MediaSourceInfo>> GetChannelStreamMediaSourcesAsync(string channelId, CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Builds a streaming URL for a DVR recording file.
-    /// </summary>
-    /// <param name="recordingId">TVHeadend DVR entry UUID.</param>
-    /// <returns>The absolute HTTP URL for the recording file, or <c>null</c> if the configuration is unavailable.</returns>
-    string? GetRecordingStreamUrl(string recordingId);
 }

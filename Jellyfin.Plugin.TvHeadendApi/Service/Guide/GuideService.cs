@@ -118,10 +118,10 @@ internal sealed class GuideService : IGuideService
         try
         {
             var config = GetConfig();
-            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/channel/grid");
+            var url = _tvheadendUrlBuilder.BuildApiUrl(config, "api/channel/grid");
             _logger.LogDebug("Fetching channels from TVHeadEnd at {Url}...", _tvheadendUrlBuilder.MaskSensitiveData(url, config));
 
-            using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
+            using var httpClient = _tvheadendApiClient.CreateApiHttpClient(config);
             var result = await GridFetcher.FetchAllAsync<ChannelGridResponse>(
                 httpClient,
                 url,
@@ -158,7 +158,7 @@ internal sealed class GuideService : IGuideService
                         Name = channel.Name,
                         Number = FormatChannelNumber(channel.Number),
                         ImageUrl = !string.IsNullOrWhiteSpace(channel.IconPublicUrl)
-                            ? _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, channel.IconPublicUrl.TrimStart('/'))
+                            ? _tvheadendUrlBuilder.BuildResourceUrl(config, channel.IconPublicUrl.TrimStart('/'))
                             : null,
                         HasImage = !string.IsNullOrWhiteSpace(channel.IconPublicUrl),
                         Tags = resolvedTags,
@@ -191,8 +191,8 @@ internal sealed class GuideService : IGuideService
                 + ",\"comparison\":\"gt\"},{\"field\":\"start\",\"type\":\"numeric\",\"value\":" + endUnix
                 + ",\"comparison\":\"lt\"}]";
             var encodedFilter = Uri.EscapeDataString(filterJson);
-            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, $"api/epg/events/grid?channel={encodedChannelId}&filter={encodedFilter}");
-            using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
+            var url = _tvheadendUrlBuilder.BuildApiUrl(config, $"api/epg/events/grid?channel={encodedChannelId}&filter={encodedFilter}");
+            using var httpClient = _tvheadendApiClient.CreateApiHttpClient(config);
             var result = await GridFetcher.FetchAllAsync<EpgEventsGridResponse>(
                 httpClient,
                 url,
@@ -290,8 +290,8 @@ internal sealed class GuideService : IGuideService
         try
         {
             var config = GetConfig();
-            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/epg/content_type/list");
-            using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
+            var url = _tvheadendUrlBuilder.BuildApiUrl(config, "api/epg/content_type/list");
+            using var httpClient = _tvheadendApiClient.CreateApiHttpClient(config);
             using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
@@ -314,8 +314,8 @@ internal sealed class GuideService : IGuideService
         try
         {
             var config = GetConfig();
-            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/channeltag/list");
-            using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
+            var url = _tvheadendUrlBuilder.BuildApiUrl(config, "api/channeltag/list");
+            using var httpClient = _tvheadendApiClient.CreateApiHttpClient(config);
             using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
@@ -365,7 +365,7 @@ internal sealed class GuideService : IGuideService
 
         if (normalized.StartsWith("imagecache/", StringComparison.OrdinalIgnoreCase))
         {
-            return _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, normalized);
+            return _tvheadendUrlBuilder.BuildResourceUrl(config, normalized);
         }
 
         if (Uri.TryCreate(raw, UriKind.Absolute, out _))
@@ -373,7 +373,7 @@ internal sealed class GuideService : IGuideService
             return raw;
         }
 
-        return _tvheadendUrlBuilder.BuildUrlWithParameterAuth(config, normalized);
+        return _tvheadendUrlBuilder.BuildResourceUrl(config, normalized);
     }
 
     private static ProviderHintSet BuildProviderHints(EpgEventsGridEntry entry)

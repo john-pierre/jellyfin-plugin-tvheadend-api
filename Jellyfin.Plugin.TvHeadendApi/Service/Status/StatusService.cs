@@ -16,16 +16,19 @@ internal sealed class StatusService : IStatusService
 {
     private readonly ILogger<StatusService> _logger;
     private readonly IApiClient _apiClient;
+    private readonly IUrlBuilder _urlBuilder;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StatusService"/> class.
     /// </summary>
     /// <param name="logger">Logger instance.</param>
     /// <param name="apiClient">TVHeadend API client.</param>
-    public StatusService(ILogger<StatusService> logger, IApiClient apiClient)
+    /// <param name="urlBuilder">TVHeadend URL builder.</param>
+    public StatusService(ILogger<StatusService> logger, IApiClient apiClient, IUrlBuilder urlBuilder)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        _urlBuilder = urlBuilder ?? throw new ArgumentNullException(nameof(urlBuilder));
     }
 
     /// <summary>
@@ -42,8 +45,8 @@ internal sealed class StatusService : IStatusService
             return null;
         }
 
-        using var httpClient = _apiClient.BuildHttpClient(config);
-        var url = _apiClient.BuildUrl(config, "api/status/activity");
+        using var httpClient = _apiClient.CreateApiHttpClient(config);
+        var url = _urlBuilder.BuildApiUrl(config, "api/status/activity");
         var json = await _apiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
         return JsonSerializer.Deserialize<ActivityStatus>(json, JsonDefaults.Api);
     }
@@ -62,8 +65,8 @@ internal sealed class StatusService : IStatusService
             return [];
         }
 
-        using var httpClient = _apiClient.BuildHttpClient(config);
-        var url = _apiClient.BuildUrl(config, "api/status/connections");
+        using var httpClient = _apiClient.CreateApiHttpClient(config);
+        var url = _urlBuilder.BuildApiUrl(config, "api/status/connections");
         var json = await _apiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
         var grid = JsonSerializer.Deserialize<ConnectionGridResponse>(json, JsonDefaults.Api);
         return grid?.Entries ?? [];

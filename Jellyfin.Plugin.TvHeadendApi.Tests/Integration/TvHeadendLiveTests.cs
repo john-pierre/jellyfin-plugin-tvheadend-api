@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests.Integration;
@@ -30,9 +31,18 @@ public class TvHeadendLiveTests : IDisposable
 
     public TvHeadendLiveTests()
     {
-        _client = new HttpClient
+        var serverUri = new Uri(BaseUrl);
+
+        // TVHeadend uses Digest auth by default. .NET's SocketsHttpHandler does not
+        // support Digest, so we use the same DigestAuthHandler as the plugin.
+        var digestHandler = new DigestAuthHandler("testuser", "testpass")
         {
-            BaseAddress = new Uri(BaseUrl),
+            InnerHandler = new HttpClientHandler(),
+        };
+
+        _client = new HttpClient(digestHandler)
+        {
+            BaseAddress = serverUri,
             Timeout = TimeSpan.FromSeconds(10),
         };
     }

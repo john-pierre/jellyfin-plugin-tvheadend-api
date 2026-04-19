@@ -16,16 +16,19 @@ internal sealed class InputMonitorService : IInputMonitorService
 {
     private readonly ILogger<InputMonitorService> _logger;
     private readonly IApiClient _apiClient;
+    private readonly IUrlBuilder _urlBuilder;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InputMonitorService"/> class.
     /// </summary>
     /// <param name="logger">Logger instance.</param>
     /// <param name="apiClient">TVHeadend API client.</param>
-    public InputMonitorService(ILogger<InputMonitorService> logger, IApiClient apiClient)
+    /// <param name="urlBuilder">TVHeadend URL builder.</param>
+    public InputMonitorService(ILogger<InputMonitorService> logger, IApiClient apiClient, IUrlBuilder urlBuilder)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        _urlBuilder = urlBuilder ?? throw new ArgumentNullException(nameof(urlBuilder));
     }
 
     /// <inheritdoc />
@@ -38,8 +41,8 @@ internal sealed class InputMonitorService : IInputMonitorService
             return [];
         }
 
-        using var httpClient = _apiClient.BuildHttpClient(config);
-        var url = _apiClient.BuildUrl(config, "api/status/inputs");
+        using var httpClient = _apiClient.CreateApiHttpClient(config);
+        var url = _urlBuilder.BuildApiUrl(config, "api/status/inputs");
         var json = await _apiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
         var grid = JsonSerializer.Deserialize<InputGridResponse>(json, JsonDefaults.Api);
         return grid?.Entries ?? [];

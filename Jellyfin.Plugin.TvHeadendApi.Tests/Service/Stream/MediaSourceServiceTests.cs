@@ -565,6 +565,7 @@ public class MediaSourceServiceTests
         Assert.Equal("aac", streams[1]["Codec"]);
     }
 
+
     private static MediaSourceService CreateSut(PluginConfiguration config, ProfileSnapshot snapshot, string cachePath)
     {
         var library = new Mock<ILibraryManager>();

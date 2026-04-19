@@ -18,7 +18,7 @@ public class DefaultProfileServiceTests
     {
         var api = new Mock<IApiClient>();
 
-        Assert.Throws<ArgumentNullException>(() => new DefaultProfileService(null!, api.Object));
+        Assert.Throws<ArgumentNullException>(() => new DefaultProfileService(null!, api.Object, new Mock<IUrlBuilder>().Object));
     }
 
     [Fact]
@@ -27,7 +27,7 @@ public class DefaultProfileServiceTests
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, new Mock<IUrlBuilder>().Object);
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.False(result.Success);
@@ -39,15 +39,16 @@ public class DefaultProfileServiceTests
     {
         var config = new PluginConfiguration();
         var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.BuildHttpClient(config)).Returns(new HttpClient());
-        api.Setup(x => x.GetBaseUrl(config)).Returns("http://127.0.0.1:9981");
-        api.Setup(x => x.GetWebRoot(config)).Returns("/");
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+        urlBuilder.Setup(x => x.GetBaseUrl(config)).Returns("http://127.0.0.1:9981");
+        urlBuilder.Setup(x => x.GetWebRoot(config)).Returns("/");
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("offline"));
 
-        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object);
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.CreateProfileAsync(CancellationToken.None);
 
         Assert.False(result.Success);

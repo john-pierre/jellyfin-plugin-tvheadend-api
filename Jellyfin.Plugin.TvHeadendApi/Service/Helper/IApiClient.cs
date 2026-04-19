@@ -8,7 +8,10 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 
 /// <summary>
-/// Defines a minimal TVHeadend API client abstraction for configuration, URL building, and HTTP client creation.
+/// Provides HTTP client creation and request execution for TVHeadend API calls.
+/// URL construction is handled by <see cref="IUrlBuilder"/>; this interface
+/// is responsible only for authentication-aware HTTP client lifecycle and
+/// raw HTTP operations (GET string, GET stream, POST form).
 /// </summary>
 public interface IApiClient
 {
@@ -19,33 +22,22 @@ public interface IApiClient
     PluginConfiguration? GetCurrentConfiguration();
 
     /// <summary>
-    /// Builds a configured HTTP client for TVHeadend API calls.
+    /// Creates an HTTP client configured for TVHeadend API requests.
+    /// <para>
+    /// When <see cref="PluginConfiguration.AllowAnonymousAccess"/> is <c>false</c> and
+    /// credentials are configured, the returned client includes a proactive Basic
+    /// Authorization header and a <see cref="System.Net.CredentialCache"/> fallback
+    /// for Digest auth negotiation. The handler is created explicitly (not cast from
+    /// factory internals) to remain safe under .NET 9.
+    /// </para>
+    /// <para>
+    /// When anonymous access is enabled, the client is obtained from
+    /// <see cref="IHttpClientFactory"/> with connection pooling and resilience.
+    /// </para>
     /// </summary>
     /// <param name="config">Plugin configuration.</param>
     /// <returns>A configured HTTP client instance.</returns>
-    HttpClient BuildHttpClient(PluginConfiguration config);
-
-    /// <summary>
-    /// Gets the normalized TVHeadend base URL.
-    /// </summary>
-    /// <param name="config">Plugin configuration.</param>
-    /// <returns>The normalized TVHeadend base URL.</returns>
-    string GetBaseUrl(PluginConfiguration config);
-
-    /// <summary>
-    /// Gets the normalized TVHeadend web root.
-    /// </summary>
-    /// <param name="config">Plugin configuration.</param>
-    /// <returns>The normalized TVHeadend web root.</returns>
-    string GetWebRoot(PluginConfiguration config);
-
-    /// <summary>
-    /// Builds a full TVHeadend endpoint URL.
-    /// </summary>
-    /// <param name="config">Plugin configuration.</param>
-    /// <param name="endpoint">Relative TVHeadend endpoint.</param>
-    /// <returns>The full endpoint URL.</returns>
-    string BuildUrl(PluginConfiguration config, string endpoint);
+    HttpClient CreateApiHttpClient(PluginConfiguration config);
 
     /// <summary>
     /// Executes a GET request and returns the response body as a string.
@@ -57,12 +49,12 @@ public interface IApiClient
     Task<string> GetStringAsync(HttpClient httpClient, string url, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Executes a GET request and returns the response stream.
+    /// Executes a GET request and returns the response as an in-memory stream.
     /// </summary>
     /// <param name="httpClient">Configured HTTP client.</param>
     /// <param name="url">Absolute request URL.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Response stream.</returns>
+    /// <returns>Response stream (caller owns the stream).</returns>
     Task<global::System.IO.Stream> GetStreamAsync(HttpClient httpClient, string url, CancellationToken cancellationToken);
 
     /// <summary>

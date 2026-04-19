@@ -24,9 +24,9 @@ internal sealed partial class DvrService
         ArgumentException.ThrowIfNullOrWhiteSpace(timerId);
 
         var config = GetConfig();
-        var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/dvr/entry/cancel");
+        var url = _tvheadendUrlBuilder.BuildApiUrl(config, "api/dvr/entry/cancel");
         var requestPayload = new[] { new KeyValuePair<string, string>("uuid", timerId) };
-        using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
+        using var httpClient = _tvheadendApiClient.CreateApiHttpClient(config);
         using var response = await _tvheadendApiClient.PostFormAsync(
             httpClient,
             url,
@@ -92,12 +92,12 @@ internal sealed partial class DvrService
             formValues = new[] { new KeyValuePair<string, string>("conf", requestBodyJson) };
         }
 
-        var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, path);
+        var url = _tvheadendUrlBuilder.BuildApiUrl(config, path);
         _logger.LogDebug(
             "TVHeadend timer create request. URL={Url}, RequestBody={RequestBody}",
             url,
             requestBodyJson);
-        using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
+        using var httpClient = _tvheadendApiClient.CreateApiHttpClient(config);
         using var response = await _tvheadendApiClient.PostFormAsync(
             httpClient,
             url,
@@ -134,7 +134,7 @@ internal sealed partial class DvrService
         ArgumentException.ThrowIfNullOrWhiteSpace(updatedTimer.Id);
 
         var config = GetConfig();
-        var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/idnode/save");
+        var url = _tvheadendUrlBuilder.BuildApiUrl(config, "api/idnode/save");
         var updates = new Dictionary<string, object>
         {
             { "uuid", updatedTimer.Id },
@@ -178,7 +178,7 @@ internal sealed partial class DvrService
             "TVHeadend timer update request. URL={Url}, RequestBody={RequestBody}",
             url,
             nodeJson);
-        using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
+        using var httpClient = _tvheadendApiClient.CreateApiHttpClient(config);
         using var response = await _tvheadendApiClient.PostFormAsync(
             httpClient,
             url,
@@ -203,8 +203,8 @@ internal sealed partial class DvrService
         {
             var config = GetConfig();
             var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            var url = _tvheadendUrlBuilder.BuildUrlWithHeaderAuth(config, "api/dvr/entry/grid");
-            using var httpClient = _tvheadendApiClient.BuildHttpClient(config);
+            var url = _tvheadendUrlBuilder.BuildApiUrl(config, "api/dvr/entry/grid");
+            using var httpClient = _tvheadendApiClient.CreateApiHttpClient(config);
             var result = await Helper.GridFetcher.FetchAllAsync<DvrEntryGridResponse>(
                 httpClient,
                 url,

@@ -913,20 +913,20 @@ public class DvrServiceTests
         apiClient = new Mock<IApiClient>();
 
         urlBuilder
-            .Setup(x => x.BuildUrlWithHeaderAuth(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
+            .Setup(x => x.BuildApiUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) =>
                 "http://tvheadend.local/" + endpoint.TrimStart('/'));
         urlBuilder
-            .Setup(x => x.BuildUrlWithParameterAuth(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
+            .Setup(x => x.BuildResourceUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) =>
                 "http://tvheadend.local/" + endpoint.TrimStart('/'));
         urlBuilder
-            .Setup(x => x.BuildUrlWithUrlAuth(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
+            .Setup(x => x.BuildApiUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) =>
                 "http://tvheadend.local/" + endpoint.TrimStart('/'));
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(configuration);
-        apiClient.Setup(x => x.BuildHttpClient(It.IsAny<PluginConfiguration>()))
+        apiClient.Setup(x => x.CreateApiHttpClient(It.IsAny<PluginConfiguration>()))
             .Returns(() => new HttpClient(handler, disposeHandler: false));
         apiClient.Setup(x => x.PostFormAsync(
                 It.IsAny<HttpClient>(),

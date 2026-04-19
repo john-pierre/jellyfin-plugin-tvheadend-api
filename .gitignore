@@ -63,7 +63,8 @@ appsettings.*.json       # App settings files for local development
 # Ignore misc files
 *.cache        # Cache files
 *.ide          # IDE-generated files
-/.docker/
+/docker/.dev-volumes/
+/docker/dev-version.txt
 
 # AI Agent local artifacts
 agent-results/

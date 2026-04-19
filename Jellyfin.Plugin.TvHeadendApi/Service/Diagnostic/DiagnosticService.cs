@@ -29,6 +29,7 @@ internal sealed class DiagnosticService : IDiagnosticService
     private readonly IEncodingOptionsReader _encodingOptionsReader;
     private readonly IProfileResolver _streamProfileResolver;
     private readonly IApiClient _tvheadendApiClient;
+    private readonly IUrlBuilder _tvheadendUrlBuilder;
     private readonly CachePathProvider _cachePathProvider;
 
     /// <summary>
@@ -39,6 +40,7 @@ internal sealed class DiagnosticService : IDiagnosticService
     /// <param name="encodingOptionsReader">Reader for Jellyfin FFmpeg encoding options.</param>
     /// <param name="streamProfileResolver">Service for TVHeadend stream profile inspection.</param>
     /// <param name="tvheadendApiClient">TVHeadend API client.</param>
+    /// <param name="tvheadendUrlBuilder">TVHeadend URL builder.</param>
     /// <param name="cachePathProvider">Provider for the plugin cache path.</param>
     public DiagnosticService(
         ILogger<DiagnosticService> logger,
@@ -46,6 +48,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         IEncodingOptionsReader encodingOptionsReader,
         IProfileResolver streamProfileResolver,
         IApiClient tvheadendApiClient,
+        IUrlBuilder tvheadendUrlBuilder,
         CachePathProvider cachePathProvider)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -53,6 +56,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         _encodingOptionsReader = encodingOptionsReader ?? throw new ArgumentNullException(nameof(encodingOptionsReader));
         _streamProfileResolver = streamProfileResolver ?? throw new ArgumentNullException(nameof(streamProfileResolver));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
+        _tvheadendUrlBuilder = tvheadendUrlBuilder ?? throw new ArgumentNullException(nameof(tvheadendUrlBuilder));
         _cachePathProvider = cachePathProvider ?? throw new ArgumentNullException(nameof(cachePathProvider));
     }
 
@@ -79,9 +83,9 @@ internal sealed class DiagnosticService : IDiagnosticService
         string webRoot;
         try
         {
-            httpClient = _tvheadendApiClient.BuildHttpClient(config);
-            baseUrl = _tvheadendApiClient.GetBaseUrl(config);
-            webRoot = _tvheadendApiClient.GetWebRoot(config);
+            httpClient = _tvheadendApiClient.CreateApiHttpClient(config);
+            baseUrl = _tvheadendUrlBuilder.GetBaseUrl(config);
+            webRoot = _tvheadendUrlBuilder.GetWebRoot(config);
         }
         catch (Exception ex)
         {
@@ -102,7 +106,7 @@ internal sealed class DiagnosticService : IDiagnosticService
                 return report;
             }
 
-            await FetchChannelGridAsync(report, httpClient, baseUrl, webRoot, allChannelUuids, cancellationToken).ConfigureAwait(false);
+            await FetchChannelGridAsync(report, config, httpClient, baseUrl, webRoot, allChannelUuids, cancellationToken).ConfigureAwait(false);
             scoreDeductions += await CheckStreamingProfilesAsync(report, config, httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
             scoreDeductions += await CheckDvrProfilesAsync(report, config, httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
         }
@@ -189,7 +193,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         var scoreDeductions = 0;
         try
         {
-            var infoUrl = $"{baseUrl}{webRoot}api/serverinfo";
+            var infoUrl = _tvheadendUrlBuilder.BuildApiUrl(config, "api/serverinfo");
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var infoResponse = await _tvheadendApiClient.GetStringAsync(httpClient, infoUrl, cancellationToken).ConfigureAwait(false);
             sw.Stop();
@@ -240,11 +244,11 @@ internal sealed class DiagnosticService : IDiagnosticService
         return scoreDeductions;
     }
 
-    private async Task FetchChannelGridAsync(DiagnoseResult report, HttpClient httpClient, string baseUrl, string webRoot, HashSet<string> allChannelUuids, CancellationToken cancellationToken)
+    private async Task FetchChannelGridAsync(DiagnoseResult report, Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, HashSet<string> allChannelUuids, CancellationToken cancellationToken)
     {
         try
         {
-            var chUrl = $"{baseUrl}{webRoot}api/channel/grid?limit=500&sort=number";
+            var chUrl = _tvheadendUrlBuilder.BuildApiUrl(config, "api/channel/grid?limit=500&sort=number");
             var chResponse = await _tvheadendApiClient.GetStringAsync(httpClient, chUrl, cancellationToken).ConfigureAwait(false);
             var channelGrid = JsonSerializer.Deserialize<ChannelGridResponse>(chResponse, JsonDefaults.Api);
             if (channelGrid != null)
@@ -332,7 +336,7 @@ internal sealed class DiagnosticService : IDiagnosticService
                 var deinterlace = profileDetails.Deinterlace;
                 if (deinterlace != true && !string.IsNullOrWhiteSpace(proVideoCodec))
                 {
-                    deinterlace = await GetCodecProfileBoolSettingAsync(httpClient, baseUrl, webRoot, proVideoCodec, "deinterlace", cancellationToken).ConfigureAwait(false) ?? deinterlace;
+                    deinterlace = await GetCodecProfileBoolSettingAsync(httpClient, config, baseUrl, webRoot, proVideoCodec, "deinterlace", cancellationToken).ConfigureAwait(false) ?? deinterlace;
                 }
 
                 report.PluginSettings.Add($"TVH stream profile: class={profileClass}, container={(string.IsNullOrWhiteSpace(container) ? "(unknown)" : container)}");
@@ -409,7 +413,7 @@ internal sealed class DiagnosticService : IDiagnosticService
 
         try
         {
-            var dvrUrl = $"{baseUrl}{webRoot}api/dvr/entry/grid?limit=1";
+            var dvrUrl = _tvheadendUrlBuilder.BuildApiUrl(config, "api/dvr/entry/grid?limit=1");
             var dvrResponse = await _tvheadendApiClient.GetStringAsync(httpClient, dvrUrl, cancellationToken).ConfigureAwait(false);
             var dvrEntries = JsonSerializer.Deserialize<DvrEntryGridResponse>(dvrResponse, JsonDefaults.Api);
             report.DvrEntryCount = dvrEntries?.Total ?? 0;
@@ -421,7 +425,7 @@ internal sealed class DiagnosticService : IDiagnosticService
 
         try
         {
-            var dvrLoadUrl = $"{baseUrl}{webRoot}api/idnode/load";
+            var dvrLoadUrl = _tvheadendUrlBuilder.BuildApiUrl(config, "api/idnode/load");
             using var dvrHttpResponse = await _tvheadendApiClient.PostFormAsync(
                 httpClient,
                 dvrLoadUrl,
@@ -640,7 +644,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         }
     }
 
-    private async Task<bool?> GetCodecProfileBoolSettingAsync(HttpClient httpClient, string baseUrl, string webRoot, string codecProfileRef, string settingName, CancellationToken cancellationToken)
+    private async Task<bool?> GetCodecProfileBoolSettingAsync(HttpClient httpClient, Configuration.PluginConfiguration config, string baseUrl, string webRoot, string codecProfileRef, string settingName, CancellationToken cancellationToken)
     {
         var codecProfile = await Profile.ProfileMappingHelper.FindCodecProfileEntryByReferenceAsync(_tvheadendApiClient, httpClient, baseUrl, webRoot, codecProfileRef, cancellationToken).ConfigureAwait(false);
         if (codecProfile == null || string.IsNullOrWhiteSpace(codecProfile.Key))
@@ -648,7 +652,7 @@ internal sealed class DiagnosticService : IDiagnosticService
             return null;
         }
 
-        var codecResponse = await LoadIdNodeByUuidAsync(httpClient, baseUrl, webRoot, codecProfile.Key, cancellationToken).ConfigureAwait(false);
+        var codecResponse = await LoadIdNodeByUuidAsync(httpClient, config, codecProfile.Key, cancellationToken).ConfigureAwait(false);
         if (codecResponse?.Entries == null || codecResponse.Entries.Length == 0)
         {
             return null;
@@ -659,9 +663,9 @@ internal sealed class DiagnosticService : IDiagnosticService
         return ReadBoolOrParam(directValue, codecEntry.Params, settingName);
     }
 
-    private async Task<IdNodeLoadResponse?> LoadIdNodeByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string uuid, CancellationToken cancellationToken)
+    private async Task<IdNodeLoadResponse?> LoadIdNodeByUuidAsync(HttpClient httpClient, Configuration.PluginConfiguration config, string uuid, CancellationToken cancellationToken)
     {
-        var url = $"{baseUrl}{webRoot}api/idnode/load?uuid={Uri.EscapeDataString(uuid)}";
+        var url = _tvheadendUrlBuilder.BuildApiUrl(config, $"api/idnode/load?uuid={Uri.EscapeDataString(uuid)}");
         var body = await _tvheadendApiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
         return JsonSerializer.Deserialize<IdNodeLoadResponse>(body, JsonDefaults.Api);
     }
