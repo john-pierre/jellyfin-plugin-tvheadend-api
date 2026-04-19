@@ -292,9 +292,6 @@ jobs:
           docker compose -f docker/docker-compose.test.yaml up tvheadend-bootstrap --exit-code-from tvheadend-bootstrap
           echo "Bootstrap complete."
 
-      - name: Wait for Recording
-        run: sleep 20
-
       - name: Restore Dependencies
         run: dotnet restore Jellyfin.Plugin.TvHeadendApi.sln
 
