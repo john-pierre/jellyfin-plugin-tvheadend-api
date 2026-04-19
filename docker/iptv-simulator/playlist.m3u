@@ -1,12 +1,12 @@
 #EXTM3U
-#EXTINF:-1 tvg-id="test-ch1" tvg-name="Test Channel 1" tvg-logo="http://iptv-sim/logo1.png" group-title="News",Test Channel 1
-http://iptv-sim/stream/ch1.ts
-#EXTINF:-1 tvg-id="test-ch2" tvg-name="Test Channel 2" tvg-logo="http://iptv-sim/logo2.png" group-title="Entertainment",Test Channel 2
-http://iptv-sim/stream/ch2.ts
-#EXTINF:-1 tvg-id="test-ch3" tvg-name="Test Channel 3" tvg-logo="http://iptv-sim/logo3.png" group-title="Sports",Test Channel 3
-http://iptv-sim/stream/ch3.ts
-#EXTINF:-1 tvg-id="test-ch4" tvg-name="Test Channel 4" tvg-logo="http://iptv-sim/logo4.png" group-title="Documentary",Test Channel 4
-http://iptv-sim/stream/ch4.ts
-#EXTINF:-1 tvg-id="test-ch5" tvg-name="Test Channel 5" tvg-logo="http://iptv-sim/logo5.png" group-title="Music",Test Channel 5
-http://iptv-sim/stream/ch5.ts
+#EXTINF:-1 tvg-id="test-ch1" tvg-name="Test Channel 1" tvg-logo="http://iptv-simulator/logo1.png" group-title="News",Test Channel 1
+http://iptv-simulator/stream/ch1.ts
+#EXTINF:-1 tvg-id="test-ch2" tvg-name="Test Channel 2" tvg-logo="http://iptv-simulator/logo2.png" group-title="Entertainment",Test Channel 2
+http://iptv-simulator/stream/ch2.ts
+#EXTINF:-1 tvg-id="test-ch3" tvg-name="Test Channel 3" tvg-logo="http://iptv-simulator/logo3.png" group-title="Sports",Test Channel 3
+http://iptv-simulator/stream/ch3.ts
+#EXTINF:-1 tvg-id="test-ch4" tvg-name="Test Channel 4" tvg-logo="http://iptv-simulator/logo4.png" group-title="Documentary",Test Channel 4
+http://iptv-simulator/stream/ch4.ts
+#EXTINF:-1 tvg-id="test-ch5" tvg-name="Test Channel 5" tvg-logo="http://iptv-simulator/logo5.png" group-title="Music",Test Channel 5
+http://iptv-simulator/stream/ch5.ts
 

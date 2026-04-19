@@ -271,7 +271,7 @@ jobs:
         run: docker compose -f docker/docker-compose.test.yaml down --volumes --remove-orphans 2>/dev/null || true
 
       - name: Start TVHeadend & IPTV Simulator
-        run: docker compose -f docker/docker-compose.test.yaml up -d --build iptv-sim tvheadend
+        run: docker compose -f docker/docker-compose.test.yaml up -d --build iptv-simulator tvheadend
 
       - name: Wait for TVHeadend Healthy
         run: |
@@ -331,7 +331,7 @@ jobs:
 
       - name: Show Bootstrap Logs on Failure
         if: failure()
-        run: docker compose -f docker/docker-compose.test.yaml logs tvh-bootstrap iptv-sim tvheadend
+        run: docker compose -f docker/docker-compose.test.yaml logs tvh-bootstrap iptv-simulator tvheadend
 
       - name: Tear Down Services
         if: always()
