@@ -355,77 +355,7 @@
                     </div>
                 </div>
 
-                <!-- ── 6. Viewing Statistics ────────────────────────────── -->
-                <div class="section">
-                    <h2>📊 Viewing Statistics</h2>
-                    <p class="sectionDescription">Live TV viewing history — who watched what, from which device, and how the stream was played.</p>
-
-                    <div style="display:flex; flex-wrap:wrap; gap:0.75em; margin-bottom:1em; align-items:center;">
-                        <label class="inputLabel" for="StatsDays" style="margin:0;">Time range:</label>
-                        <select id="StatsDays" style="width:auto; min-width:120px; padding:0.3em 0.5em;">
-                            <option value="1">Last 24 hours</option>
-                            <option value="7" selected>Last 7 days</option>
-                            <option value="30">Last 30 days</option>
-                            <option value="0">All time</option>
-                        </select>
-                        <button id="RefreshStatsBtn" is="emby-button" type="button" class="raised emby-button" style="min-height:40px; padding:0.4em 1em; margin:0;">
-                            <span>🔄 Refresh</span>
-                        </button>
-                        <button id="ClearStatsBtn" is="emby-button" type="button" class="raised emby-button" style="background:#c0392b; color:#fff; min-height:40px; padding:0.4em 1em; margin:0;">
-                            <span>🗑️ Clear All</span>
-                        </button>
-                        <span id="StatsStatusMsg" style="font-style:italic; opacity:0.8;"></span>
-                    </div>
-
-                    <div id="StatsEmpty" style="display:none; padding:1em; text-align:center; opacity:0.6;">
-                        <em>No viewing sessions recorded yet. Statistics will appear after users watch live TV.</em>
-                    </div>
-
-                    <div id="StatsCharts" style="display:none;">
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5em; margin-bottom:1.5em;">
-                            <div style="background:rgba(255,255,255,0.03); border:1px solid #333; border-radius:8px; padding:1em;">
-                                <h3 style="margin:0 0 0.5em 0; font-size:0.95em;">Viewing Hours per User</h3>
-                                <canvas id="ChartUserHours" height="200"></canvas>
-                            </div>
-                            <div style="background:rgba(255,255,255,0.03); border:1px solid #333; border-radius:8px; padding:1em;">
-                                <h3 style="margin:0 0 0.5em 0; font-size:0.95em;">Play Method Distribution</h3>
-                                <canvas id="ChartPlayMethod" height="200"></canvas>
-                            </div>
-                        </div>
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5em; margin-bottom:1.5em;">
-                            <div style="background:rgba(255,255,255,0.03); border:1px solid #333; border-radius:8px; padding:1em;">
-                                <h3 style="margin:0 0 0.5em 0; font-size:0.95em;">Sessions per Device</h3>
-                                <canvas id="ChartDevices" height="200"></canvas>
-                            </div>
-                            <div style="background:rgba(255,255,255,0.03); border:1px solid #333; border-radius:8px; padding:1em;">
-                                <h3 style="margin:0 0 0.5em 0; font-size:0.95em;">Most Watched Channels</h3>
-                                <canvas id="ChartChannels" height="200"></canvas>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="StatsTable" style="display:none;">
-                        <h3 style="margin:0.5em 0;">Recent Sessions</h3>
-                        <div style="overflow-x:auto;">
-                            <table style="width:100%; border-collapse:collapse; font-size:0.9em;">
-                                <thead>
-                                    <tr style="border-bottom:2px solid #444; text-align:left;">
-                                        <th style="padding:0.5em;">User</th>
-                                        <th style="padding:0.5em;">Device</th>
-                                        <th style="padding:0.5em;">Client</th>
-                                        <th style="padding:0.5em;">Channel</th>
-                                        <th style="padding:0.5em;">Play Method</th>
-                                        <th style="padding:0.5em;">Start</th>
-                                        <th style="padding:0.5em;">Duration</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="StatsTableBody"></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ── 7. Expert ────────────────────────────────────────── -->
+                <!-- ── 6. Expert ─────────────────────────────────────────── -->
                 <div class="section">
                     <details>
                         <summary style="cursor:pointer; font-size:1.15em; font-weight:bold;">🔧 Expert Settings</summary>
@@ -796,7 +726,6 @@
             }).then(function () {
                 Dashboard.hideLoadingMsg();
                 loadDiagnose();
-                loadStatistics();
             }).catch(function (err) {
                 Dashboard.hideLoadingMsg();
                 console.error('Error loading configuration:', err);
@@ -812,133 +741,6 @@
 
         document.querySelector('#AuthToken').addEventListener('input', updateAuthTokenButtonLabel);
 
-        // ── Statistics ──────────────────────────────────────────────────
-        var statsChartInstances = {};
-
-        function loadChartJs() {
-            if (window.Chart) return Promise.resolve();
-            return new Promise(function (resolve, reject) {
-                var s = document.createElement('script');
-                s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js';
-                s.onload = resolve;
-                s.onerror = function () { console.warn('Chart.js CDN failed'); reject(); };
-                document.head.appendChild(s);
-            });
-        }
-
-        function destroyChart(key) {
-            if (statsChartInstances[key]) { statsChartInstances[key].destroy(); delete statsChartInstances[key]; }
-        }
-
-        var chartColors = ['#00a4dc','#4caf50','#f0ad4e','#e74c3c','#9b59b6','#3498db','#1abc9c','#e67e22','#2ecc71','#e91e63'];
-
-        function renderStats(data) {
-            var empty = document.querySelector('#StatsEmpty');
-            var charts = document.querySelector('#StatsCharts');
-            var table = document.querySelector('#StatsTable');
-            var sessions = data.Sessions || [];
-
-            if (sessions.length === 0 && data.ActiveCount === 0) {
-                empty.style.display = ''; charts.style.display = 'none'; table.style.display = 'none';
-                return;
-            }
-            empty.style.display = 'none'; charts.style.display = ''; table.style.display = '';
-
-            // Aggregate: hours per user
-            var userHours = {};
-            sessions.forEach(function (s) {
-                var mins = s.DurationMinutes || 0;
-                userHours[s.UserName] = (userHours[s.UserName] || 0) + mins / 60;
-            });
-            destroyChart('userHours');
-            var userLabels = Object.keys(userHours);
-            statsChartInstances.userHours = new Chart(document.querySelector('#ChartUserHours'), {
-                type: 'bar',
-                data: { labels: userLabels, datasets: [{ label: 'Hours', data: userLabels.map(function (u) { return +userHours[u].toFixed(1); }), backgroundColor: chartColors }] },
-                options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-            });
-
-            // Play method distribution
-            var methods = {};
-            sessions.forEach(function (s) { methods[s.PlayMethod || 'Unknown'] = (methods[s.PlayMethod || 'Unknown'] || 0) + 1; });
-            destroyChart('playMethod');
-            var methodLabels = Object.keys(methods);
-            var methodColors = { DirectPlay: '#4caf50', DirectStream: '#00a4dc', Transcode: '#e74c3c', Unknown: '#888' };
-            statsChartInstances.playMethod = new Chart(document.querySelector('#ChartPlayMethod'), {
-                type: 'doughnut',
-                data: { labels: methodLabels, datasets: [{ data: methodLabels.map(function (m) { return methods[m]; }), backgroundColor: methodLabels.map(function (m) { return methodColors[m] || '#888'; }) }] },
-                options: { responsive: true }
-            });
-
-            // Sessions per device
-            var devices = {};
-            sessions.forEach(function (s) { devices[s.DeviceName || 'Unknown'] = (devices[s.DeviceName || 'Unknown'] || 0) + 1; });
-            destroyChart('devices');
-            var devLabels = Object.keys(devices).sort(function (a, b) { return devices[b] - devices[a]; });
-            statsChartInstances.devices = new Chart(document.querySelector('#ChartDevices'), {
-                type: 'bar',
-                data: { labels: devLabels, datasets: [{ label: 'Sessions', data: devLabels.map(function (d) { return devices[d]; }), backgroundColor: chartColors.slice(2) }] },
-                options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } } }
-            });
-
-            // Most watched channels
-            var channels = {};
-            sessions.forEach(function (s) {
-                var mins = s.DurationMinutes || 0;
-                channels[s.ChannelName || 'Unknown'] = (channels[s.ChannelName || 'Unknown'] || 0) + mins / 60;
-            });
-            destroyChart('channels');
-            var chLabels = Object.keys(channels).sort(function (a, b) { return channels[b] - channels[a]; }).slice(0, 10);
-            statsChartInstances.channels = new Chart(document.querySelector('#ChartChannels'), {
-                type: 'bar',
-                data: { labels: chLabels, datasets: [{ label: 'Hours', data: chLabels.map(function (c) { return +channels[c].toFixed(1); }), backgroundColor: chartColors.slice(1) }] },
-                options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } } }
-            });
-
-            // Table
-            var tbody = document.querySelector('#StatsTableBody');
-            tbody.innerHTML = '';
-            sessions.slice(0, 50).forEach(function (s) {
-                var dur = s.DurationMinutes != null ? s.DurationMinutes.toFixed(0) + ' min' : '<em>active</em>';
-                var start = s.StartTimeUtc ? new Date(s.StartTimeUtc).toLocaleString() : '—';
-                var methodBadge = s.PlayMethod === 'DirectPlay' ? '🟢' : s.PlayMethod === 'Transcode' ? '🔴' : '🔵';
-                tbody.innerHTML += '<tr style="border-bottom:1px solid #333;">'
-                    + '<td style="padding:0.4em;">' + escapeHtml(s.UserName) + '</td>'
-                    + '<td style="padding:0.4em;">' + escapeHtml(s.DeviceName) + '</td>'
-                    + '<td style="padding:0.4em;">' + escapeHtml(s.ClientName) + '</td>'
-                    + '<td style="padding:0.4em;">' + escapeHtml(s.ChannelName) + '</td>'
-                    + '<td style="padding:0.4em;">' + methodBadge + ' ' + escapeHtml(s.PlayMethod || 'Unknown') + '</td>'
-                    + '<td style="padding:0.4em;">' + start + '</td>'
-                    + '<td style="padding:0.4em;">' + dur + '</td>'
-                    + '</tr>';
-            });
-        }
-
-        function loadStatistics() {
-            var days = document.querySelector('#StatsDays').value;
-            var msgEl = document.querySelector('#StatsStatusMsg');
-            msgEl.textContent = 'Loading…';
-
-            loadChartJs().then(function () {
-                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Statistics?days=' + days), dataType: 'json' });
-            }).then(function (data) {
-                msgEl.textContent = data.TotalCount + ' sessions' + (data.ActiveCount > 0 ? ' (' + data.ActiveCount + ' active)' : '');
-                renderStats(data);
-            }).catch(function (err) {
-                msgEl.textContent = 'Failed to load statistics.';
-                console.error('Statistics load error:', err);
-            });
-        }
-
-        document.querySelector('#RefreshStatsBtn').addEventListener('click', loadStatistics);
-        document.querySelector('#StatsDays').addEventListener('change', loadStatistics);
-        document.querySelector('#ClearStatsBtn').addEventListener('click', function () {
-            if (!confirm('Delete all viewing statistics?')) return;
-            ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('TvHeadendApi/Statistics') }).then(function () {
-                document.querySelector('#StatsStatusMsg').textContent = 'Statistics cleared.';
-                loadStatistics();
-            });
-        });
 
         // ── Save config ────────────────────────────────────────────────
         document.querySelector('#TvHeadendApiConfigForm').addEventListener('submit', function (e) {
@@ -977,8 +779,6 @@
             <a href="https://github.com/sponsors/john-pierre" target="_blank" rel="noopener" style="margin:0 0.5em;">GitHub Sponsors</a>
             &middot;
             <a href="https://ko-fi.com/johnpierre" target="_blank" rel="noopener" style="margin:0 0.5em;">Ko-fi</a>
-            &middot;
-            <a href="https://www.paypal.com/donate/?hosted_button_id=YOUR_BUTTON_ID" target="_blank" rel="noopener" style="margin:0 0.5em;">PayPal</a>
         </p>
     </div>
 </div>

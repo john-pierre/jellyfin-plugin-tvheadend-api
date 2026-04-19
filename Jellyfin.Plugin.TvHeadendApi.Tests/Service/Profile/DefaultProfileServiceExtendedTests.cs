@@ -352,7 +352,63 @@ public class DefaultProfileServiceExtendedTests
         Assert.Throws<ArgumentNullException>(() =>
             new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, null!, new Mock<IUrlBuilder>().Object));
     }
-}
 
+    [Fact]
+    public void Constructor_NullUrlBuilder_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, new Mock<IApiClient>().Object, null!));
+    }
+
+    [Fact]
+    public async Task StreamingProfileCreated_ThenResolved_LinksSuccessfully()
+    {
+        var profileListCallCount = 0;
+        var api = CreateApi(
+            url =>
+            {
+                if (url.Contains("codec_profile/list")) return CodecListWith("jellyfin-h264");
+                if (url.Contains("profile/list"))
+                {
+                    profileListCallCount++;
+                    return profileListCallCount == 1 ? EmptyList : ProfileListWith("jellyfin");
+                }
+                if (url.Contains("idnode/load")) return IdNodeLoad;
+                return "{}";
+            },
+            url => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
+        var result = await sut.CreateProfileAsync(CancellationToken.None);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public async Task GetStreamingProfileByName_Throws_AddsWarning()
+    {
+        var profileListCallCount = 0;
+        var api = CreateApi(
+            url =>
+            {
+                if (url.Contains("codec_profile/list")) return CodecListWith("jellyfin-h264");
+                if (url.Contains("profile/list"))
+                {
+                    profileListCallCount++;
+                    if (profileListCallCount == 1) return EmptyList;
+                    throw new HttpRequestException("list fail");
+                }
+                if (url.Contains("idnode/load")) return IdNodeLoad;
+                return "{}";
+            },
+            url => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+
+        var sut = new DefaultProfileService(NullLogger<DefaultProfileService>.Instance, api.Object, Mock.Of<IUrlBuilder>(u => u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981" && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/"));
+        var result = await sut.CreateProfileAsync(CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Contains("WARNING", result.Message);
+    }
+}
 
 

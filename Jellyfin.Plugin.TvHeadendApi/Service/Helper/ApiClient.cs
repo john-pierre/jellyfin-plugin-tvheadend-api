@@ -87,14 +87,15 @@ internal sealed class ApiClient : IApiClient
     }
 
     /// <inheritdoc />
-    public Task<HttpResponseMessage> PostFormAsync(
+    public async Task<HttpResponseMessage> PostFormAsync(
         HttpClient httpClient,
         string url,
         IEnumerable<KeyValuePair<string, string>> formValues,
         CancellationToken cancellationToken)
     {
-        var content = new FormUrlEncodedContent(formValues);
-        return httpClient.PostAsync(url, content, cancellationToken);
+        // FormUrlEncodedContent is IDisposable — dispose after the request completes.
+        using var content = new FormUrlEncodedContent(formValues);
+        return await httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

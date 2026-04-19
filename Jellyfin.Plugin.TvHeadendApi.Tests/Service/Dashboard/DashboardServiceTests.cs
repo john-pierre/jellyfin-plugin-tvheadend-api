@@ -186,6 +186,24 @@ public class DashboardServiceTests
     }
 
     [Fact]
+    public async Task GetDashboardStatusAsync_ConnectionsFail_SetsConnectionsError()
+    {
+        _diagMock.Setup(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiagnoseResult { OverallStatus = "OK" });
+        _statusMock.Setup(x => x.GetActivityStatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync((ActivityStatus?)null);
+        _inputMock.Setup(x => x.GetInputStatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<InputStatusEntry>());
+        _subMock.Setup(x => x.GetActiveSubscriptionsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<SubscriptionEntry>());
+        _statusMock.Setup(x => x.GetConnectionsAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Network error"));
+
+        var sut = CreateSut();
+        var result = await sut.GetDashboardStatusAsync(CancellationToken.None);
+
+        Assert.Equal("Network error", result.ConnectionsError);
+        Assert.Empty(result.Connections);
+    }
+
+    [Fact]
     public async Task GetDashboardStatusAsync_AlwaysHasTimestampAndPluginVersion()
     {
         _diagMock.Setup(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()))

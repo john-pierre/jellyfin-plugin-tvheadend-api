@@ -48,10 +48,148 @@ Covered scenarios:
 - `UrlBuilder` anonymous access
 - `UrlBuilder.MaskSensitiveData`
 
-### No End-to-End Tests
+### End-to-End Tests (Docker Compose)
 
-- Full Jellyfin + TVHeadend E2E testing is out of scope for automated CI.
-- Manual smoke testing is documented in `CONTRIBUTING.md` (Docker Compose workflow).
+Full E2E tests run against a real TVHeadend + Jellyfin + IPTV simulator stack via `docker-compose.test.yaml`. These tests exercise the complete plugin surface including channels, EPG, streams, profiles, auth tokens, DVR, tuner status, subscriptions, and diagnostics.
+
+#### Prerequisites
+
+| Tool | Version | Notes |
+|------|---------|-------|
+| Docker | latest | With Compose V2 (`docker compose`) |
+| .NET SDK | 8.0+ | For running the test project |
+| ~2 GB disk | — | Docker images + volumes |
+| Ports free | 18888, 19981, 19982, 18096 | IPTV simulator, TVHeadend HTTP/HTSP, Jellyfin |
+
+#### Architecture
+
+The test stack consists of four containers:
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ iptv-simulator   │────▶│ tvheadend        │────▶│ jellyfin         │
+│ (M3U + TS + EPG) │     │ (API on :9981)   │     │ (HTTP on :8096)  │
+│ Port: 18888      │     │ Port: 19981      │     │ Port: 18096      │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                              ▲
+                              │
+                        ┌─────────────────┐
+                        │ tvheadend-       │
+                        │ bootstrap        │
+                        │ (runs once, exit)│
+                        └─────────────────┘
+```
+
+- **iptv-simulator** — Python HTTP server generating live MPEG-TS streams (ffmpeg testsrc2 + clock overlay), XMLTV EPG, M3U playlist, and channel logos/thumbnails. Serves 5 test channels in groups: News, Entertainment, Sports, Documentary, Music.
+- **tvheadend** — TVHeadend 4.3+ with `-C` flag (no initial auth). After bootstrap, all access requires `testuser`/`testpass`.
+- **tvheadend-bootstrap** — Runs once after TVHeadend is healthy. Creates IPTV network, triggers mux scan, maps channels, configures EPG grabber, creates test user/profiles/DVR config, then exits.
+- **jellyfin** — Jellyfin instance with the plugin installed for full integration testing.
+
+#### Running E2E Tests
+
+**Option A: Automated script (recommended)**
+
+```powershell
+# Windows PowerShell
+.\docker\run-e2e-tests.ps1
+```
+
+The script:
+1. Tears down any previous stack (clean volumes)
+2. Builds and starts all containers (`docker compose up -d --build --wait`)
+3. Waits for bootstrap completion (max 120s)
+4. Runs live integration tests (`--filter "Category=LiveIntegration"`)
+5. Outputs TRX results to `TestResults/e2e-results.trx`
+
+**Option B: Manual steps**
+
+```bash
+# 1. Start the stack (builds images on first run)
+docker compose -f docker/docker-compose.test.yaml -p tvh-test up -d --build
+
+# 2. Wait for TVHeadend healthcheck + bootstrap completion (~30-60s)
+docker logs -f tvheadend-bootstrap-test
+# Wait until you see: "Bootstrap complete."
+
+# 3. Run live integration tests
+dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj \
+  -c Release --filter "Category=LiveIntegration"
+
+# 4. Tear down (removes volumes for clean state)
+docker compose -f docker/docker-compose.test.yaml -p tvh-test down -v
+```
+
+#### Teardown and Cleanup
+
+```bash
+# Full cleanup (removes containers, networks, and volumes)
+docker compose -f docker/docker-compose.test.yaml -p tvh-test down -v --remove-orphans
+```
+
+Always use `-v` to remove volumes. TVHeadend persists configuration in a Docker volume — leaving it behind can cause subsequent bootstrap runs to fail or produce inconsistent state.
+
+#### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Bootstrap times out | TVHeadend mux scan slow or IPTV simulator not ready | Check `docker logs iptv-simulator-test` and `docker logs tvheadend-test`. Increase `MAX_WAIT` env var on bootstrap. |
+| 0 channels after bootstrap | Bouquet auto-mapping failed | Bootstrap falls back to manual service mapper. Check `docker logs tvheadend-bootstrap-test` for mapper output. |
+| EPG empty | XMLTV grabber module not found | TVHeadend build may lack internal XMLTV support. Check bootstrap logs for "XMLTV URL grabber module not found". |
+| Port conflicts | Other services using 18888/19981/18096 | Stop conflicting services or change ports in `docker-compose.test.yaml`. |
+| Tests fail with connection refused | Stack not fully started | Wait for all healthchecks to pass: `docker compose -f docker/docker-compose.test.yaml ps` should show all services as "healthy". |
+| Auth failures (401) | Bootstrap user creation failed | Check `docker logs tvheadend-bootstrap-test`. The default `-C` user is removed after bootstrap creates `testuser`. |
+
+#### IPTV Simulator
+
+The IPTV simulator (`docker/iptv-simulator/`) is a self-contained Python HTTP server that provides deterministic test content for TVHeadend.
+
+**Endpoints:**
+
+| Route | Content |
+|-------|---------|
+| `GET /health` | Health check (returns `OK`) |
+| `GET /playlist.m3u` | M3U playlist with 5 test channels |
+| `GET /epg.xml` | XMLTV EPG with 48 hours of 1-hour programmes per channel |
+| `GET /logo{n}.png` | Dynamically generated 256×256 channel logo (colored square with number) |
+| `GET /thumb/{id}/{hour}.png` | Dynamically generated 320×180 programme thumbnail |
+| `GET /stream/ch{n}.ts` | Live MPEG-TS stream via ffmpeg (testsrc2 + clock overlay + 880 Hz tick audio) |
+
+**Channels:**
+
+| ID | Name | Group | Color |
+|----|------|-------|-------|
+| test-ch1 | Test Channel 1 | News | Red |
+| test-ch2 | Test Channel 2 | Entertainment | Blue |
+| test-ch3 | Test Channel 3 | Sports | Green |
+| test-ch4 | Test Channel 4 | Documentary | Orange |
+| test-ch5 | Test Channel 5 | Music | Purple |
+
+**Adding channels:**
+
+Edit the `CHANNELS` list in `docker/iptv-simulator/server.py`:
+
+```python
+CHANNELS = [
+    {"id": "test-ch1", "name": "Test Channel 1", "group": "News", "color": (180, 30, 30)},
+    # Add new channels here:
+    {"id": "test-ch6", "name": "My Channel", "group": "Kids", "color": (255, 180, 0)},
+]
+```
+
+The playlist, EPG, logos, thumbnails, and streams are all generated dynamically from this list. No other files need editing.
+
+**Modifying EPG:**
+
+The EPG is generated in `make_epg()` in `server.py`. By default, each channel gets 48 one-hour slots starting from midnight UTC today. To change programme duration, genre, or descriptions, edit the loop in `make_epg()`.
+
+**Extending streams:**
+
+Streams are generated live by ffmpeg. To change resolution, bitrate, or overlay content, edit the `stream_channel()` function in `server.py`. Key parameters:
+- Video: `testsrc2=size=1280x720:rate=25`, `libx264 800k`
+- Audio: `aac 64k 44100 Hz`, 880 Hz tick pattern
+- Container: MPEG-TS
+
+The `BASE_URL` environment variable controls the URL prefix in M3U/EPG. Inside Docker Compose, it defaults to `http://iptv-simulator` (the service name).
 
 ### Live Integration Tests
 

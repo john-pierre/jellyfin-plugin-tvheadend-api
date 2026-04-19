@@ -381,7 +381,6 @@ If this plugin is useful to you, consider supporting its development:
 
 - [GitHub Sponsors](https://github.com/sponsors/john-pierre)
 - [Ko-fi](https://ko-fi.com/johnpierre)
-- [PayPal](https://www.paypal.com/donate/?hosted_button_id=YOUR_BUTTON_ID)
 
 Every contribution helps keep this project maintained and improved. Thank you!
 
@@ -397,7 +396,7 @@ dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release --no-restore
 Run tests:
 
 ```bash
-dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj -c Release --no-build
+dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj -c Release --no-build --filter "Category!=LiveIntegration"
 ```
 
 For cross-repo debugging and behavior checks, keep the Jellyfin core repository as a sibling folder (for example `../jellyfin`) and add it to your IDE workspace.

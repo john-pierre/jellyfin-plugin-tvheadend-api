@@ -64,19 +64,37 @@ internal sealed class UrlBuilder : IUrlBuilder
         ArgumentNullException.ThrowIfNull(config);
 
         var output = input;
+
+        // Mask both raw and URL-encoded forms of sensitive values.
+        // URL-encoded credentials can appear in logged URLs when special characters are present.
         if (!string.IsNullOrWhiteSpace(config.AuthToken))
         {
             output = output.Replace(config.AuthToken, MaskReplacement, StringComparison.Ordinal);
+            var encoded = Uri.EscapeDataString(config.AuthToken);
+            if (!string.Equals(encoded, config.AuthToken, StringComparison.Ordinal))
+            {
+                output = output.Replace(encoded, MaskReplacement, StringComparison.Ordinal);
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(config.Password))
         {
             output = output.Replace(config.Password, MaskReplacement, StringComparison.Ordinal);
+            var encoded = Uri.EscapeDataString(config.Password);
+            if (!string.Equals(encoded, config.Password, StringComparison.Ordinal))
+            {
+                output = output.Replace(encoded, MaskReplacement, StringComparison.Ordinal);
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(config.Username))
         {
             output = output.Replace(config.Username, MaskReplacement, StringComparison.Ordinal);
+            var encoded = Uri.EscapeDataString(config.Username);
+            if (!string.Equals(encoded, config.Username, StringComparison.Ordinal))
+            {
+                output = output.Replace(encoded, MaskReplacement, StringComparison.Ordinal);
+            }
         }
 
         return output;

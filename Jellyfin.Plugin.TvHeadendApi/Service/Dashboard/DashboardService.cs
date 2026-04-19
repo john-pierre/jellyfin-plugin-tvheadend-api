@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
@@ -68,7 +69,7 @@ internal sealed class DashboardService : IDashboardService
             dashboard.CompatibilityScore = diag.CompatibilityScore;
             dashboard.DiagnosticStatus = diag.OverallStatus;
             dashboard.BaseUrl = diag.Connection;
-            dashboard.Warnings = (System.Collections.Generic.IReadOnlyList<string>)diag.Warnings;
+            dashboard.Warnings = diag.Warnings.ToList().AsReadOnly();
 
             if (diag.OverallStatus == "ERROR")
             {

@@ -414,6 +414,87 @@ public class ApiClientTests
         Assert.NotNull(result2);
     }
 
+    [Fact]
+    public void Constructor_NullHttpClientFactory_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new ApiClient(null!, CreateConfigProvider()));
+    }
+
+    [Fact]
+    public void Constructor_NullConfigProvider_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new ApiClient(CreateMockFactory(), null!));
+    }
+
+    [Fact]
+    public void CreateApiHttpClient_NullConfig_Throws()
+    {
+        var client = CreateApiClient();
+        Assert.Throws<ArgumentNullException>(() => client.CreateApiHttpClient(null!));
+    }
+
+    [Fact]
+    public void GetCurrentConfiguration_ReturnsProviderValue()
+    {
+        var config = new PluginConfiguration { Host = "test" };
+        var client = CreateApiClient(configProvider: CreateConfigProvider(config));
+        Assert.Same(config, client.GetCurrentConfiguration());
+    }
+
+    [Fact]
+    public void GetCurrentConfiguration_WhenNull_ReturnsNull()
+    {
+        var client = CreateApiClient(configProvider: CreateConfigProvider(null));
+        Assert.Null(client.GetCurrentConfiguration());
+    }
+
+    [Fact]
+    public void CreateApiHttpClient_AuthenticatedWithSslAndIgnoreCerts_ReturnsClient()
+    {
+        var client = CreateApiClient();
+        var config = new PluginConfiguration
+        {
+            AllowAnonymousAccess = false,
+            Username = "admin",
+            Password = "secret",
+            UseSSL = true,
+            IgnoreCertificateErrors = true,
+        };
+
+        var httpClient = client.CreateApiHttpClient(config);
+        Assert.NotNull(httpClient);
+    }
+
+    [Fact]
+    public void CreateApiHttpClient_AuthenticatedWithSslNoCertIgnore_ReturnsClient()
+    {
+        var client = CreateApiClient();
+        var config = new PluginConfiguration
+        {
+            AllowAnonymousAccess = false,
+            Username = "admin",
+            Password = "secret",
+            UseSSL = true,
+            IgnoreCertificateErrors = false,
+        };
+
+        var httpClient = client.CreateApiHttpClient(config);
+        Assert.NotNull(httpClient);
+    }
+
+    [Fact]
+    public void CreateApiHttpClient_AnonymousWithSslNoIgnore_UsesStandardFactory()
+    {
+        var factoryMock = new Mock<IHttpClientFactory>();
+        factoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(new HttpClient());
+        var client = CreateApiClient(factoryMock.Object);
+        var config = new PluginConfiguration { AllowAnonymousAccess = true, UseSSL = true, IgnoreCertificateErrors = false };
+
+        client.CreateApiHttpClient(config);
+
+        factoryMock.Verify(f => f.CreateClient(ApiClient.HttpClientName), Times.Once);
+    }
+
     /// <summary>
     /// Mock HTTP message handler for testing HTTP operations.
     /// </summary>

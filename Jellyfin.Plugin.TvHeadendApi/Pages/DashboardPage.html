@@ -3,111 +3,271 @@
 <head>
     <meta charset="utf-8">
     <title>TvHeadend Dashboard</title>
-    <!--suppress CssUnusedSymbol -- classes are applied dynamically via JavaScript -->
-    <style>
-        #TvHeadendDashboardPage { max-width: 1200px; margin: 0 auto; }
-        #TvHeadendDashboardPage .tvh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2em; margin-bottom: 1.5em; }
-        #TvHeadendDashboardPage .tvh-card { background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 8px; padding: 1em 1.2em; }
-        #TvHeadendDashboardPage .tvh-card h3 { margin: 0 0 0.6em 0; font-size: 1em; opacity: 0.9; }
-        #TvHeadendDashboardPage .tvh-badge { display: inline-block; padding: 0.15em 0.6em; border-radius: 4px; font-size: 0.85em; font-weight: bold; }
-        #TvHeadendDashboardPage .tvh-badge-ok { background: #1b5e20; color: #a5d6a7; }
-        #TvHeadendDashboardPage .tvh-badge-warn { background: #e65100; color: #ffe0b2; }
-        #TvHeadendDashboardPage .tvh-badge-err { background: #b71c1c; color: #ef9a9a; }
-        #TvHeadendDashboardPage .tvh-badge-idle { background: #37474f; color: #b0bec5; }
-        #TvHeadendDashboardPage .tvh-badge-active { background: #0d47a1; color: #90caf9; }
-        #TvHeadendDashboardPage .tvh-kv { display: grid; grid-template-columns: auto 1fr; gap: 0.2em 1em; font-size: 0.92em; line-height: 1.6; }
-        #TvHeadendDashboardPage .tvh-kv dt { opacity: 0.7; white-space: nowrap; }
-        #TvHeadendDashboardPage .tvh-kv dd { margin: 0; }
-        #TvHeadendDashboardPage table { width: 100%; border-collapse: collapse; font-size: 0.88em; }
-        #TvHeadendDashboardPage th { text-align: left; border-bottom: 2px solid #444; padding: 0.4em 0.6em; opacity: 0.8; }
-        #TvHeadendDashboardPage td { padding: 0.4em 0.6em; border-bottom: 1px solid #333; }
-        #TvHeadendDashboardPage .tvh-toolbar { display: flex; align-items: center; gap: 0.8em; margin-bottom: 1.2em; flex-wrap: wrap; }
-        #TvHeadendDashboardPage .tvh-error-banner { background: rgba(183,28,28,0.15); border: 1px solid #b71c1c; border-radius: 6px; padding: 0.8em 1em; margin-bottom: 1em; color: #ef9a9a; }
-        #TvHeadendDashboardPage .tvh-section-error { font-style: italic; opacity: 0.6; padding: 0.5em; }
-        #TvHeadendDashboardPage .tvh-full { grid-column: 1 / -1; }
-        #TvHeadendDashboardPage .tvh-signal-bar { display: inline-block; width: 60px; height: 10px; background: #333; border-radius: 3px; overflow: hidden; vertical-align: middle; }
-        #TvHeadendDashboardPage .tvh-signal-fill { height: 100%; border-radius: 3px; }
-        @media (max-width: 800px) { #TvHeadendDashboardPage .tvh-grid { grid-template-columns: 1fr; } }
-    </style>
 </head>
 <body>
 <div id="TvHeadendDashboardPage" data-role="page" class="page type-interior" data-require="emby-button">
+    <!--suppress CssUnusedSymbol -- classes are applied dynamically via JavaScript -->
+    <style>
+        /* ── Layout ─────────────────────────────────────────── */
+        #TvHeadendDashboardPage { max-width: 1200px; margin: 0 auto; }
+
+        /* ── Header ─────────────────────────────────────────── */
+        .tvh-header { margin-bottom: 1.5em; }
+        .tvh-header h1 { margin: 0 0 0.15em 0; font-size: 1.6em; }
+        .tvh-header-sub { opacity: 0.65; font-size: 0.92em; margin-bottom: 0.8em; }
+        .tvh-toolbar { display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap; }
+        .tvh-toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 0.6em; }
+        .tvh-meta { font-size: 0.82em; opacity: 0.55; }
+
+        /* ── Summary row ────────────────────────────────────── */
+        .tvh-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8em; margin-bottom: 1.5em; }
+        .tvh-stat { background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 8px; padding: 0.8em 1em; text-align: center; }
+        .tvh-stat-value { font-size: 1.4em; font-weight: 700; line-height: 1.2; }
+        .tvh-stat-label { font-size: 0.78em; opacity: 0.6; margin-top: 0.2em; }
+
+        /* ── Cards & sections ───────────────────────────────── */
+        .tvh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; margin-bottom: 1.2em; }
+        .tvh-card { background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 8px; padding: 1em 1.2em; }
+        .tvh-card h3 { margin: 0 0 0.6em 0; font-size: 1em; font-weight: 600; opacity: 0.9; }
+        .tvh-full { grid-column: 1 / -1; }
+        .tvh-section { margin-bottom: 1.5em; }
+        .tvh-section-title { font-size: 1.1em; font-weight: 600; margin: 0 0 0.6em 0; padding-bottom: 0.3em; border-bottom: 1px solid #333; }
+
+        /* ── Key-value pairs ────────────────────────────────── */
+        .tvh-kv { display: grid; grid-template-columns: auto 1fr; gap: 0.2em 1em; font-size: 0.92em; line-height: 1.6; }
+        .tvh-kv dt { opacity: 0.6; white-space: nowrap; }
+        .tvh-kv dd { margin: 0; }
+
+        /* ── Badges ─────────────────────────────────────────── */
+        .tvh-badge { display: inline-block; padding: 0.15em 0.55em; border-radius: 4px; font-size: 0.82em; font-weight: 600; }
+        .tvh-badge-ok { background: #1b5e20; color: #a5d6a7; }
+        .tvh-badge-warn { background: #e65100; color: #ffe0b2; }
+        .tvh-badge-err { background: #b71c1c; color: #ef9a9a; }
+        .tvh-badge-idle { background: #37474f; color: #b0bec5; }
+        .tvh-badge-active { background: #0d47a1; color: #90caf9; }
+
+        /* ── Tables ─────────────────────────────────────────── */
+        .tvh-table-wrap { overflow-x: auto; }
+        #TvHeadendDashboardPage table { width: 100%; border-collapse: collapse; font-size: 0.86em; }
+        #TvHeadendDashboardPage th { text-align: left; border-bottom: 2px solid #444; padding: 0.45em 0.6em; opacity: 0.7; font-weight: 600; white-space: nowrap; }
+        #TvHeadendDashboardPage td { padding: 0.45em 0.6em; border-bottom: 1px solid rgba(255,255,255,0.06); }
+
+        /* ── Signal bars ────────────────────────────────────── */
+        .tvh-signal-bar { display: inline-block; width: 56px; height: 8px; background: #333; border-radius: 3px; overflow: hidden; vertical-align: middle; }
+        .tvh-signal-fill { height: 100%; border-radius: 3px; }
+
+        /* ── Error / empty / loading ────────────────────────── */
+        .tvh-error-banner { background: rgba(183,28,28,0.12); border: 1px solid rgba(183,28,28,0.4); border-radius: 6px; padding: 0.7em 1em; margin-bottom: 1em; color: #ef9a9a; font-size: 0.92em; }
+        .tvh-empty { text-align: center; padding: 1.5em 1em; opacity: 0.5; font-size: 0.9em; font-style: italic; }
+        .tvh-section-error { font-style: italic; opacity: 0.55; padding: 0.6em 0; font-size: 0.9em; }
+        .tvh-loading { display: none; font-size: 0.82em; opacity: 0.6; }
+        .tvh-warnings-list { margin: 0; padding-left: 1.4em; font-size: 0.9em; line-height: 1.7; }
+        .tvh-warnings-list li { color: #f0ad4e; }
+
+        /* ── Charts ─────────────────────────────────────────── */
+        .tvh-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; margin-bottom: 1em; }
+        .tvh-chart-card { background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 8px; padding: 0.8em 1em; }
+        .tvh-chart-card h4 { margin: 0 0 0.4em 0; font-size: 0.9em; font-weight: 600; opacity: 0.8; }
+
+        /* ── KPI row for analytics ──────────────────────────── */
+        .tvh-kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.6em; margin-bottom: 1em; }
+        .tvh-kpi { background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 6px; padding: 0.6em 0.8em; text-align: center; }
+        .tvh-kpi-value { font-size: 1.15em; font-weight: 700; }
+        .tvh-kpi-label { font-size: 0.75em; opacity: 0.55; }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 800px) {
+            .tvh-grid, .tvh-chart-grid { grid-template-columns: 1fr; }
+            .tvh-summary { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+        }
+    </style>
     <div data-role="content">
         <div class="content-primary">
-            <h1 style="margin-bottom:0.3em;">TvHeadend Dashboard</h1>
 
-            <div class="tvh-toolbar">
-                <button id="tvhRefreshBtn" is="emby-button" type="button" class="raised emby-button" style="min-height:40px; padding:0.4em 1.2em;">
-                    <span>🔄 Refresh</span>
-                </button>
-                <label style="display:flex; align-items:center; gap:0.4em; font-size:0.9em;">
-                    <input id="tvhAutoRefresh" type="checkbox" /> Auto-refresh (10s)
-                </label>
-                <span id="tvhLastRefresh" style="font-size:0.85em; opacity:0.6;"></span>
-                <span id="tvhLoadingIndicator" style="display:none; font-size:0.85em;">⏳ Loading…</span>
+            <!-- ── Header ──────────────────────────────────── -->
+            <div class="tvh-header">
+                <h1>TvHeadend</h1>
+                <p class="tvh-header-sub">Live TV backend status, tuner monitoring, and viewing analytics.</p>
+                <div class="tvh-toolbar">
+                    <button id="tvhSettingsBtn" is="emby-button" type="button" class="raised emby-button">
+                        <span>Open Settings</span>
+                    </button>
+                    <button id="tvhRefreshBtn" is="emby-button" type="button" class="raised emby-button">
+                        <span>Refresh</span>
+                    </button>
+                    <label style="display:flex; align-items:center; gap:0.35em; font-size:0.88em;">
+                        <input id="tvhAutoRefresh" type="checkbox" /> Auto-refresh (10 s)
+                    </label>
+                    <div class="tvh-toolbar-right">
+                        <span id="tvhLoadingIndicator" class="tvh-loading">Loading…</span>
+                        <span id="tvhLastRefresh" class="tvh-meta"></span>
+                    </div>
+                </div>
             </div>
 
             <div id="tvhErrorBanner" class="tvh-error-banner" style="display:none;"></div>
 
-            <!-- Connection Status -->
-            <div class="tvh-grid">
-                <div class="tvh-card" id="tvhConnectionCard">
-                    <h3>🔗 Connection &amp; Backend</h3>
-                    <dl class="tvh-kv" id="tvhConnectionKv"></dl>
-                </div>
-                <div class="tvh-card" id="tvhHealthCard">
-                    <h3>🩺 Plugin Health</h3>
-                    <dl class="tvh-kv" id="tvhHealthKv"></dl>
+            <!-- ── Summary cards ────────────────────────────── -->
+            <div class="tvh-summary" id="tvhSummaryRow">
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumConnection">—</div><div class="tvh-stat-label">Connection</div></div>
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumTuners">—</div><div class="tvh-stat-label">Active Tuners</div></div>
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumSubscriptions">—</div><div class="tvh-stat-label">Subscriptions</div></div>
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumConnections">—</div><div class="tvh-stat-label">Connections</div></div>
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumHealth">—</div><div class="tvh-stat-label">Health</div></div>
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumAlerts">—</div><div class="tvh-stat-label">Alerts</div></div>
+            </div>
+
+            <!-- ── A. Backend & Health ──────────────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Backend &amp; Health</h2>
+                <div class="tvh-grid">
+                    <div class="tvh-card" id="tvhConnectionCard">
+                        <h3>Connection</h3>
+                        <dl class="tvh-kv" id="tvhConnectionKv"></dl>
+                    </div>
+                    <div class="tvh-card" id="tvhHealthCard">
+                        <h3>Plugin Health</h3>
+                        <dl class="tvh-kv" id="tvhHealthKv"></dl>
+                    </div>
                 </div>
             </div>
 
-            <!-- Tuners / Inputs -->
-            <div class="tvh-grid">
-                <div class="tvh-card tvh-full" id="tvhInputsCard">
-                    <h3>📡 Tuner / Input Status</h3>
+            <!-- ── B. Tuners / Inputs ───────────────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Tuners / Inputs</h2>
+                <div class="tvh-card tvh-full">
                     <div id="tvhInputsContent"></div>
                 </div>
             </div>
 
-            <!-- Subscriptions -->
-            <div class="tvh-grid">
-                <div class="tvh-card tvh-full" id="tvhSubsCard">
-                    <h3>📺 Active Subscriptions</h3>
+            <!-- ── C. Active Subscriptions ──────────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Active Subscriptions</h2>
+                <div class="tvh-card tvh-full">
                     <div id="tvhSubsContent"></div>
                 </div>
             </div>
 
-            <!-- Connections -->
-            <div class="tvh-grid">
-                <div class="tvh-card tvh-full" id="tvhConnsCard">
-                    <h3>🌐 Active Connections</h3>
+            <!-- ── D. Active Connections ────────────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Active Connections</h2>
+                <div class="tvh-card tvh-full">
                     <div id="tvhConnsContent"></div>
                 </div>
             </div>
 
-            <!-- Summary Stats -->
-            <div class="tvh-grid">
-                <div class="tvh-card" id="tvhChannelCard">
-                    <h3>📋 Channel &amp; EPG Summary</h3>
-                    <dl class="tvh-kv" id="tvhChannelKv"></dl>
-                </div>
-                <div class="tvh-card" id="tvhWarningsCard">
-                    <h3>⚠️ Warnings &amp; Recommendations</h3>
-                    <div id="tvhWarningsContent"></div>
+            <!-- ── E. Live TV Summary ───────────────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Live TV Summary</h2>
+                <div class="tvh-grid">
+                    <div class="tvh-card">
+                        <h3>Channels &amp; EPG</h3>
+                        <dl class="tvh-kv" id="tvhChannelKv"></dl>
+                    </div>
+                    <div class="tvh-card">
+                        <h3>Warnings &amp; Recommendations</h3>
+                        <div id="tvhWarningsContent"></div>
+                    </div>
                 </div>
             </div>
+
+            <!-- ── F. Viewing Analytics ─────────────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Viewing Analytics</h2>
+
+                <div class="tvh-toolbar" style="margin-bottom:1em;">
+                    <label style="font-size:0.9em;">Time range:</label>
+                    <select id="tvhStatsDays" style="width:auto; min-width:120px; padding:0.3em 0.5em;">
+                        <option value="1">Last 24 hours</option>
+                        <option value="7" selected>Last 7 days</option>
+                        <option value="30">Last 30 days</option>
+                        <option value="0">All time</option>
+                    </select>
+                    <button id="tvhRefreshStatsBtn" is="emby-button" type="button" class="raised emby-button">
+                        <span>Refresh Stats</span>
+                    </button>
+                    <button id="tvhClearStatsBtn" is="emby-button" type="button" class="raised emby-button" style="background:#c0392b; color:#fff;">
+                        <span>Clear All</span>
+                    </button>
+                    <span id="tvhStatsStatus" class="tvh-meta"></span>
+                </div>
+
+                <!-- KPI row -->
+                <div class="tvh-kpi-row" id="tvhStatsKpi" style="display:none;">
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiSessions">—</div><div class="tvh-kpi-label">Total Sessions</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiWatchTime">—</div><div class="tvh-kpi-label">Watch Time</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiUsers">—</div><div class="tvh-kpi-label">Unique Users</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiTopChannel">—</div><div class="tvh-kpi-label">Top Channel</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiTopMethod">—</div><div class="tvh-kpi-label">Most Common Method</div></div>
+                </div>
+
+                <!-- Empty state -->
+                <div id="tvhStatsEmpty" class="tvh-empty" style="display:none;">
+                    No viewing sessions recorded yet. Statistics will appear after users watch live TV.
+                </div>
+
+                <!-- Charts -->
+                <div id="tvhStatsCharts" style="display:none;">
+                    <div class="tvh-chart-grid">
+                        <div class="tvh-chart-card">
+                            <h4>Viewing Hours per User</h4>
+                            <canvas id="ChartUserHours" height="200"></canvas>
+                        </div>
+                        <div class="tvh-chart-card">
+                            <h4>Play Method Distribution</h4>
+                            <canvas id="ChartPlayMethod" height="200"></canvas>
+                        </div>
+                    </div>
+                    <div class="tvh-chart-grid">
+                        <div class="tvh-chart-card">
+                            <h4>Sessions per Device</h4>
+                            <canvas id="ChartDevices" height="200"></canvas>
+                        </div>
+                        <div class="tvh-chart-card">
+                            <h4>Most Watched Channels</h4>
+                            <canvas id="ChartChannels" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sessions table -->
+                <div id="tvhStatsTable" style="display:none;">
+                    <h3 style="margin:0.8em 0 0.4em 0; font-size:0.95em; font-weight:600;">Recent Sessions</h3>
+                    <div class="tvh-table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>User</th><th>Device</th><th>Client</th><th>Channel</th>
+                                    <th>Play Method</th><th>Start</th><th>Duration</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tvhStatsTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 
     <script type="text/javascript">
         (function () {
             'use strict';
-            var autoRefreshTimer = null;
 
+            // ── State ──────────────────────────────────────────
+            var autoRefreshTimer = null;
+            var chartInstances = {};
+
+            // ── Helpers ────────────────────────────────────────
             function esc(text) {
                 var d = document.createElement('div');
-                d.appendChild(document.createTextNode(text || ''));
+                d.appendChild(document.createTextNode(text != null ? text : ''));
                 return d.innerHTML;
+            }
+
+            function val(v) {
+                if (v == null || v === '' || (typeof v === 'number' && isNaN(v))) return '—';
+                return esc(String(v));
             }
 
             function badge(cls, text) {
@@ -116,7 +276,9 @@
 
             function kvHtml(pairs) {
                 var html = '';
-                pairs.forEach(function (p) { html += '<dt>' + esc(p[0]) + '</dt><dd>' + p[1] + '</dd>'; });
+                for (var i = 0; i < pairs.length; i++) {
+                    html += '<dt>' + esc(pairs[i][0]) + '</dt><dd>' + pairs[i][1] + '</dd>';
+                }
                 return html;
             }
 
@@ -125,99 +287,127 @@
                 return new Date(epoch * 1000).toLocaleString();
             }
 
-
             function formatBps(bps) {
+                if (bps == null || isNaN(bps) || bps <= 0) return '—';
                 if (bps > 1000000) return (bps / 1000000).toFixed(1) + ' Mbps';
                 if (bps > 1000) return (bps / 1000).toFixed(1) + ' kbps';
                 return bps + ' bps';
             }
 
-            function signalBar(value, scale) {
-                // scale: 0=unknown, 1=relative (0-65535), 2=dBm
-                var pct = 0;
-                var label = '';
-                if (scale === 1) { pct = Math.min(100, Math.round(value / 655.35)); label = pct + '%'; }
-                else if (scale === 2) { pct = Math.min(100, Math.max(0, (value + 100))); label = value + ' dBm'; }
-                else if (value > 0) { pct = Math.min(100, Math.round(value / 655.35)); label = value.toString(); }
-                else { return '<span style="opacity:0.5;">n/a</span>'; }
-                var color = pct > 70 ? '#4caf50' : pct > 40 ? '#f0ad4e' : '#e74c3c';
-                return '<span class="tvh-signal-bar"><span class="tvh-signal-fill" style="width:' + pct + '%; background:' + color + ';"></span></span> ' + esc(label);
+            function formatMinutes(mins) {
+                if (mins == null || isNaN(mins) || mins <= 0) return '—';
+                var h = Math.floor(mins / 60);
+                var m = Math.round(mins % 60);
+                return h > 0 ? h + ' h ' + m + ' min' : m + ' min';
             }
 
+            function signalBar(value, scale) {
+                var pct = 0, label = '';
+                if (scale === 1) { pct = Math.min(100, Math.round(value / 655.35)); label = pct + '%'; }
+                else if (scale === 2) { pct = Math.min(100, Math.max(0, (value + 100))); label = value + ' dBm'; }
+                else if (value > 0) { pct = Math.min(100, Math.round(value / 655.35)); label = String(value); }
+                else { return '<span class="tvh-meta">n/a</span>'; }
+                var color = pct > 70 ? '#4caf50' : pct > 40 ? '#f0ad4e' : '#e74c3c';
+                return '<span class="tvh-signal-bar"><span class="tvh-signal-fill" style="width:' + pct + '%;background:' + color + ';"></span></span> ' + esc(label);
+            }
+
+            function emptyRow(msg) { return '<div class="tvh-empty">' + esc(msg) + '</div>'; }
+            function errorRow(msg) { return '<div class="tvh-section-error">' + esc(msg) + '</div>'; }
+
+            function destroyChart(key) {
+                if (chartInstances[key]) { chartInstances[key].destroy(); delete chartInstances[key]; }
+            }
+
+            // ── Navigate to settings ───────────────────────────
+            document.getElementById('tvhSettingsBtn').addEventListener('click', function () {
+                Dashboard.navigate('configurationpage?name=TvHeadendApiConfig');
+            });
+
+            // ── Render dashboard data ──────────────────────────
             function renderDashboard(d) {
+                // Error banner
                 var banner = document.getElementById('tvhErrorBanner');
                 if (!d.IsReachable && d.ConnectionError) {
-                    banner.innerHTML = '❌ <strong>TVHeadend unreachable:</strong> ' + esc(d.ConnectionError);
+                    banner.innerHTML = '<strong>TVHeadend unreachable:</strong> ' + esc(d.ConnectionError);
                     banner.style.display = '';
                 } else {
                     banner.style.display = 'none';
                 }
 
+                // Summary row
+                var connOk = d.IsReachable && d.IsAuthenticated;
+                document.getElementById('sumConnection').innerHTML = connOk ? badge('ok', 'OK') : (d.IsReachable ? badge('warn', 'Auth') : badge('err', 'Down'));
+                var activeTuners = d.Inputs ? d.Inputs.filter(function(i){ return i.Subs > 0; }).length : 0;
+                var totalTuners = d.Inputs ? d.Inputs.length : 0;
+                document.getElementById('sumTuners').textContent = activeTuners + ' / ' + totalTuners;
+                document.getElementById('sumSubscriptions').textContent = d.Activity ? String(d.Activity.SubscriptionCount) : '—';
+                document.getElementById('sumConnections').textContent = d.Activity ? String(d.Activity.ConnectionCount) : '—';
+                var healthBadge = d.DiagnosticStatus === 'OK' ? badge('ok', 'OK')
+                    : d.DiagnosticStatus === 'WARNING' ? badge('warn', 'Warning')
+                    : d.DiagnosticStatus === 'ERROR' ? badge('err', 'Error')
+                    : badge('idle', 'Unknown');
+                document.getElementById('sumHealth').innerHTML = healthBadge;
+                document.getElementById('sumAlerts').textContent = d.Warnings ? String(d.Warnings.length) : '0';
+
                 // Connection card
                 var connStatus = d.IsReachable
                     ? (d.IsAuthenticated ? badge('ok', 'Connected') : badge('warn', 'Auth Failed'))
                     : badge('err', 'Unreachable');
-
                 document.getElementById('tvhConnectionKv').innerHTML = kvHtml([
                     ['Status', connStatus],
-                    ['Base URL', esc(d.BaseUrl || '—')],
-                    ['Server Version', esc(d.ServerVersion || '—')],
+                    ['Base URL', val(d.BaseUrl)],
+                    ['Server Version', val(d.ServerVersion)],
                     ['Latency', d.LatencyMs > 0 ? d.LatencyMs + ' ms' : '—'],
-                    ['Connections', d.Activity ? d.Activity.ConnectionCount.toString() : '—'],
-                    ['Subscriptions', d.Activity ? d.Activity.SubscriptionCount.toString() : '—'],
+                    ['Connections', d.Activity ? String(d.Activity.ConnectionCount) : '—'],
+                    ['Subscriptions', d.Activity ? String(d.Activity.SubscriptionCount) : '—'],
                     ['Next Activity', d.Activity && d.Activity.NextActivity ? formatUnix(d.Activity.NextActivity) : 'None']
                 ]);
 
                 // Health card
-                var diagBadge = d.DiagnosticStatus === 'OK' ? badge('ok', 'OK')
-                    : d.DiagnosticStatus === 'WARNING' ? badge('warn', 'WARNING')
-                    : d.DiagnosticStatus === 'ERROR' ? badge('err', 'ERROR')
-                    : badge('idle', d.DiagnosticStatus || 'Unknown');
                 var scoreColor = d.CompatibilityScore >= 80 ? '#4caf50' : d.CompatibilityScore >= 50 ? '#f0ad4e' : '#e74c3c';
-
                 document.getElementById('tvhHealthKv').innerHTML = kvHtml([
-                    ['Diagnostic Status', diagBadge],
-                    ['Compatibility', '<span style="color:' + scoreColor + '; font-weight:bold;">' + d.CompatibilityScore + '/100</span>'],
-                    ['Plugin Version', esc(d.PluginVersion || '—')],
+                    ['Diagnostic Status', healthBadge],
+                    ['Compatibility', '<span style="color:' + scoreColor + ';font-weight:700;">' + (d.CompatibilityScore != null ? d.CompatibilityScore + '/100' : '—') + '</span>'],
+                    ['Plugin Version', val(d.PluginVersion)],
                     ['Timestamp', d.Timestamp ? new Date(d.Timestamp).toLocaleString() : '—']
                 ]);
 
-                // Inputs / Tuners
+                // Inputs
                 var inputsEl = document.getElementById('tvhInputsContent');
                 if (d.InputsError) {
-                    inputsEl.innerHTML = '<div class="tvh-section-error">⚠️ ' + esc(d.InputsError) + '</div>';
+                    inputsEl.innerHTML = errorRow(d.InputsError);
                 } else if (!d.Inputs || d.Inputs.length === 0) {
-                    inputsEl.innerHTML = '<div class="tvh-section-error">No active tuners/inputs.</div>';
+                    inputsEl.innerHTML = emptyRow('No active tuners or inputs.');
                 } else {
-                    var html = '<table><thead><tr>'
-                        + '<th>Input</th><th>Stream/Mux</th><th>Subs</th><th>Signal</th><th>SNR</th>'
+                    var html = '<div class="tvh-table-wrap"><table><thead><tr>'
+                        + '<th>Input</th><th>Stream / Mux</th><th>Subs</th><th>Signal</th><th>SNR</th>'
                         + '<th>BER</th><th>Bitrate</th><th>TE</th><th>CC</th></tr></thead><tbody>';
                     d.Inputs.forEach(function (inp) {
                         var subsBadge = inp.Subs > 0 ? badge('active', inp.Subs + ' active') : badge('idle', 'Idle');
                         html += '<tr>'
-                            + '<td>' + esc(inp.Input) + '</td>'
-                            + '<td>' + esc(inp.Stream) + '</td>'
+                            + '<td>' + val(inp.Input) + '</td>'
+                            + '<td>' + val(inp.Stream) + '</td>'
                             + '<td>' + subsBadge + '</td>'
                             + '<td>' + signalBar(inp.Signal, inp.SignalScale) + '</td>'
                             + '<td>' + signalBar(inp.Snr, inp.SnrScale) + '</td>'
-                            + '<td>' + inp.Ber + '</td>'
-                            + '<td>' + (inp.Bps > 0 ? formatBps(inp.Bps) : '—') + '</td>'
-                            + '<td>' + inp.Te + '</td>'
-                            + '<td>' + inp.Cc + '</td>'
+                            + '<td>' + val(inp.Ber) + '</td>'
+                            + '<td>' + formatBps(inp.Bps) + '</td>'
+                            + '<td>' + val(inp.Te) + '</td>'
+                            + '<td>' + val(inp.Cc) + '</td>'
                             + '</tr>';
                     });
-                    html += '</tbody></table>';
+                    html += '</tbody></table></div>';
                     inputsEl.innerHTML = html;
                 }
 
                 // Subscriptions
                 var subsEl = document.getElementById('tvhSubsContent');
                 if (d.SubscriptionsError) {
-                    subsEl.innerHTML = '<div class="tvh-section-error">⚠️ ' + esc(d.SubscriptionsError) + '</div>';
+                    subsEl.innerHTML = errorRow(d.SubscriptionsError);
                 } else if (!d.Subscriptions || d.Subscriptions.length === 0) {
-                    subsEl.innerHTML = '<div class="tvh-section-error">No active subscriptions.</div>';
+                    subsEl.innerHTML = emptyRow('No active subscriptions.');
                 } else {
-                    var shtml = '<table><thead><tr>'
+                    var shtml = '<div class="tvh-table-wrap"><table><thead><tr>'
                         + '<th>Channel</th><th>User</th><th>Client</th><th>State</th><th>Profile</th>'
                         + '<th>In</th><th>Out</th><th>Errors</th><th>Start</th></tr></thead><tbody>';
                     d.Subscriptions.forEach(function (sub) {
@@ -225,62 +415,63 @@
                             : sub.State === 'Bad' ? badge('err', sub.State)
                             : badge('idle', sub.State || 'Unknown');
                         shtml += '<tr>'
-                            + '<td>' + esc(sub.Channel) + '</td>'
-                            + '<td>' + esc(sub.Username) + '</td>'
-                            + '<td>' + esc(sub.Client) + '</td>'
+                            + '<td>' + val(sub.Channel) + '</td>'
+                            + '<td>' + val(sub.Username) + '</td>'
+                            + '<td>' + val(sub.Client) + '</td>'
                             + '<td>' + stateBadge + '</td>'
-                            + '<td>' + esc(sub.Profile) + '</td>'
-                            + '<td>' + formatBps(sub.In * 8) + '</td>'
-                            + '<td>' + formatBps(sub.Out * 8) + '</td>'
+                            + '<td>' + val(sub.Profile) + '</td>'
+                            + '<td>' + formatBps(sub.In != null ? sub.In * 8 : null) + '</td>'
+                            + '<td>' + formatBps(sub.Out != null ? sub.Out * 8 : null) + '</td>'
                             + '<td>' + (sub.Errors > 0 ? '<span style="color:#e74c3c;">' + sub.Errors + '</span>' : '0') + '</td>'
                             + '<td>' + formatUnix(sub.Start) + '</td>'
                             + '</tr>';
                     });
-                    shtml += '</tbody></table>';
+                    shtml += '</tbody></table></div>';
                     subsEl.innerHTML = shtml;
                 }
 
                 // Connections
                 var connsEl = document.getElementById('tvhConnsContent');
                 if (d.ConnectionsError) {
-                    connsEl.innerHTML = '<div class="tvh-section-error">⚠️ ' + esc(d.ConnectionsError) + '</div>';
+                    connsEl.innerHTML = errorRow(d.ConnectionsError);
                 } else if (!d.Connections || d.Connections.length === 0) {
-                    connsEl.innerHTML = '<div class="tvh-section-error">No active connections.</div>';
+                    connsEl.innerHTML = emptyRow('No active connections.');
                 } else {
-                    var chtml = '<table><thead><tr>'
+                    var chtml = '<div class="tvh-table-wrap"><table><thead><tr>'
                         + '<th>User</th><th>Peer</th><th>Type</th><th>Streaming</th><th>Started</th></tr></thead><tbody>';
                     d.Connections.forEach(function (conn) {
                         var streamBadge = conn.Streaming > 0 ? badge('active', 'Yes') : badge('idle', 'No');
                         chtml += '<tr>'
-                            + '<td>' + esc(conn.User) + '</td>'
-                            + '<td>' + esc(conn.Peer) + ':' + conn.PeerPort + '</td>'
-                            + '<td>' + esc(conn.Type) + '</td>'
+                            + '<td>' + val(conn.User) + '</td>'
+                            + '<td>' + val(conn.Peer) + (conn.PeerPort != null ? ':' + conn.PeerPort : '') + '</td>'
+                            + '<td>' + val(conn.Type) + '</td>'
                             + '<td>' + streamBadge + '</td>'
                             + '<td>' + formatUnix(conn.Started) + '</td>'
                             + '</tr>';
                     });
-                    chtml += '</tbody></table>';
+                    chtml += '</tbody></table></div>';
                     connsEl.innerHTML = chtml;
                 }
 
                 // Channel summary
                 document.getElementById('tvhChannelKv').innerHTML = kvHtml([
-                    ['Channels', d.ChannelCount.toString()],
-                    ['DVR Entries', d.DvrEntryCount.toString()]
+                    ['Channels', d.ChannelCount != null ? String(d.ChannelCount) : '—'],
+                    ['DVR Entries', d.DvrEntryCount != null ? String(d.DvrEntryCount) : '—']
                 ]);
 
                 // Warnings
                 var warningsEl = document.getElementById('tvhWarningsContent');
                 if (d.Warnings && d.Warnings.length > 0) {
-                    var whtml = '<ul style="margin:0; padding-left:1.5em; font-size:0.92em;">';
-                    d.Warnings.forEach(function (w) { whtml += '<li style="color:#f0ad4e;">' + esc(w) + '</li>'; });
+                    var whtml = '<ul class="tvh-warnings-list">';
+                    d.Warnings.forEach(function (w) { whtml += '<li>' + esc(w) + '</li>'; });
                     whtml += '</ul>';
                     warningsEl.innerHTML = whtml;
                 } else {
-                    warningsEl.innerHTML = '<div style="opacity:0.5; font-size:0.9em;">No warnings.</div>';
+                    warningsEl.innerHTML = '<div class="tvh-empty" style="text-align:left;">No warnings.</div>';
                 }
             }
 
+            // ── Refresh dashboard ──────────────────────────────
             function refreshDashboard() {
                 var loadEl = document.getElementById('tvhLoadingIndicator');
                 loadEl.style.display = '';
@@ -288,33 +479,183 @@
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Dashboard'), dataType: 'json' })
                     .then(function (data) {
                         loadEl.style.display = 'none';
-                        document.getElementById('tvhLastRefresh').textContent = 'Last refresh: ' + new Date().toLocaleTimeString();
+                        document.getElementById('tvhLastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
                         renderDashboard(data);
                     })
                     .catch(function (err) {
                         loadEl.style.display = 'none';
-                        document.getElementById('tvhErrorBanner').innerHTML = '❌ <strong>Dashboard request failed:</strong> ' + esc(err.statusText || err.message || 'Unknown error');
-                        document.getElementById('tvhErrorBanner').style.display = '';
+                        var banner = document.getElementById('tvhErrorBanner');
+                        banner.innerHTML = '<strong>Dashboard request failed:</strong> ' + esc(err.statusText || err.message || 'Unknown error');
+                        banner.style.display = '';
                     });
             }
 
+            // ── Statistics ─────────────────────────────────────
+            var chartColors = ['#00a4dc','#4caf50','#f0ad4e','#e74c3c','#9b59b6','#3498db','#1abc9c','#e67e22','#2ecc71','#e91e63'];
+
+            function loadChartJs() {
+                if (window.Chart) return Promise.resolve();
+                return new Promise(function (resolve, reject) {
+                    var s = document.createElement('script');
+                    s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js';
+                    s.onload = resolve;
+                    s.onerror = function () { console.warn('Chart.js CDN failed'); reject(); };
+                    document.head.appendChild(s);
+                });
+            }
+
+            function renderStats(data) {
+                var emptyEl = document.getElementById('tvhStatsEmpty');
+                var chartsEl = document.getElementById('tvhStatsCharts');
+                var tableEl = document.getElementById('tvhStatsTable');
+                var kpiEl = document.getElementById('tvhStatsKpi');
+                var sessions = data.Sessions || [];
+
+                if (sessions.length === 0 && data.ActiveCount === 0) {
+                    emptyEl.style.display = '';
+                    chartsEl.style.display = 'none';
+                    tableEl.style.display = 'none';
+                    kpiEl.style.display = 'none';
+                    return;
+                }
+                emptyEl.style.display = 'none';
+                chartsEl.style.display = '';
+                tableEl.style.display = '';
+                kpiEl.style.display = '';
+
+                // Aggregate data
+                var totalMins = 0, users = {}, channelMins = {}, methods = {}, userHours = {}, devices = {};
+                sessions.forEach(function (s) {
+                    var mins = s.DurationMinutes || 0;
+                    totalMins += mins;
+                    users[s.UserName || 'Unknown'] = true;
+                    var ch = s.ChannelName || 'Unknown';
+                    channelMins[ch] = (channelMins[ch] || 0) + mins;
+                    var m = s.PlayMethod || 'Unknown';
+                    methods[m] = (methods[m] || 0) + 1;
+                    var u = s.UserName || 'Unknown';
+                    userHours[u] = (userHours[u] || 0) + mins / 60;
+                    var dev = s.DeviceName || 'Unknown';
+                    devices[dev] = (devices[dev] || 0) + 1;
+                });
+
+                // KPIs
+                document.getElementById('kpiSessions').textContent = String(sessions.length);
+                document.getElementById('kpiWatchTime').textContent = formatMinutes(totalMins);
+                document.getElementById('kpiUsers').textContent = String(Object.keys(users).length);
+                var topCh = Object.keys(channelMins).sort(function(a,b){ return channelMins[b]-channelMins[a]; })[0];
+                document.getElementById('kpiTopChannel').textContent = topCh || '—';
+                var topMethod = Object.keys(methods).sort(function(a,b){ return methods[b]-methods[a]; })[0];
+                document.getElementById('kpiTopMethod').textContent = topMethod || '—';
+
+                // Chart: hours per user
+                destroyChart('userHours');
+                var userLabels = Object.keys(userHours);
+                chartInstances.userHours = new Chart(document.getElementById('ChartUserHours'), {
+                    type: 'bar',
+                    data: { labels: userLabels, datasets: [{ label: 'Hours', data: userLabels.map(function (u) { return +userHours[u].toFixed(1); }), backgroundColor: chartColors }] },
+                    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+                });
+
+                // Chart: play method
+                destroyChart('playMethod');
+                var methodLabels = Object.keys(methods);
+                var methodColors = { DirectPlay: '#4caf50', DirectStream: '#00a4dc', Transcode: '#e74c3c', Unknown: '#666' };
+                chartInstances.playMethod = new Chart(document.getElementById('ChartPlayMethod'), {
+                    type: 'doughnut',
+                    data: { labels: methodLabels, datasets: [{ data: methodLabels.map(function (m) { return methods[m]; }), backgroundColor: methodLabels.map(function (m) { return methodColors[m] || '#888'; }) }] },
+                    options: { responsive: true }
+                });
+
+                // Chart: devices
+                destroyChart('devices');
+                var devLabels = Object.keys(devices).sort(function (a, b) { return devices[b] - devices[a]; });
+                chartInstances.devices = new Chart(document.getElementById('ChartDevices'), {
+                    type: 'bar',
+                    data: { labels: devLabels, datasets: [{ label: 'Sessions', data: devLabels.map(function (d) { return devices[d]; }), backgroundColor: chartColors.slice(2) }] },
+                    options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } } }
+                });
+
+                // Chart: top channels
+                destroyChart('channels');
+                var chLabels = Object.keys(channelMins).sort(function (a, b) { return channelMins[b] - channelMins[a]; }).slice(0, 10);
+                chartInstances.channels = new Chart(document.getElementById('ChartChannels'), {
+                    type: 'bar',
+                    data: { labels: chLabels, datasets: [{ label: 'Hours', data: chLabels.map(function (c) { return +(channelMins[c] / 60).toFixed(1); }), backgroundColor: chartColors.slice(1) }] },
+                    options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } } }
+                });
+
+                // Sessions table
+                var tbody = document.getElementById('tvhStatsTableBody');
+                tbody.innerHTML = '';
+                sessions.slice(0, 50).forEach(function (s) {
+                    var dur = s.DurationMinutes != null ? formatMinutes(s.DurationMinutes) : '<em>active</em>';
+                    var start = s.StartTimeUtc ? new Date(s.StartTimeUtc).toLocaleString() : '—';
+                    var methodBadge = s.PlayMethod === 'DirectPlay' ? badge('ok', 'Direct Play')
+                        : s.PlayMethod === 'Transcode' ? badge('err', 'Transcode')
+                        : s.PlayMethod === 'DirectStream' ? badge('active', 'Direct Stream')
+                        : badge('idle', s.PlayMethod || 'Unknown');
+                    tbody.innerHTML += '<tr>'
+                        + '<td>' + val(s.UserName) + '</td>'
+                        + '<td>' + val(s.DeviceName) + '</td>'
+                        + '<td>' + val(s.ClientName) + '</td>'
+                        + '<td>' + val(s.ChannelName) + '</td>'
+                        + '<td>' + methodBadge + '</td>'
+                        + '<td>' + start + '</td>'
+                        + '<td>' + dur + '</td>'
+                        + '</tr>';
+                });
+            }
+
+            function loadStatistics() {
+                var days = document.getElementById('tvhStatsDays').value;
+                var msgEl = document.getElementById('tvhStatsStatus');
+                msgEl.textContent = 'Loading…';
+
+                loadChartJs().then(function () {
+                    return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Statistics?days=' + days), dataType: 'json' });
+                }).then(function (data) {
+                    msgEl.textContent = data.TotalCount + ' sessions' + (data.ActiveCount > 0 ? ' (' + data.ActiveCount + ' active)' : '');
+                    renderStats(data);
+                }).catch(function (err) {
+                    msgEl.textContent = 'Failed to load statistics.';
+                    console.error('Statistics load error:', err);
+                });
+            }
+
+            // ── Auto-refresh ───────────────────────────────────
             function toggleAutoRefresh() {
                 if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
                 if (document.getElementById('tvhAutoRefresh').checked) {
-                    autoRefreshTimer = setInterval(refreshDashboard, 10000);
+                    autoRefreshTimer = setInterval(function () { refreshDashboard(); }, 10000);
                 }
             }
 
-            document.getElementById('tvhRefreshBtn').addEventListener('click', refreshDashboard);
-            document.getElementById('tvhAutoRefresh').addEventListener('change', toggleAutoRefresh);
-
-            document.getElementById('TvHeadendDashboardPage').addEventListener('pageshow', function () {
+            // ── Event listeners ────────────────────────────────
+            document.getElementById('tvhRefreshBtn').addEventListener('click', function () {
                 refreshDashboard();
+                loadStatistics();
+            });
+            document.getElementById('tvhAutoRefresh').addEventListener('change', toggleAutoRefresh);
+            document.getElementById('tvhRefreshStatsBtn').addEventListener('click', loadStatistics);
+            document.getElementById('tvhStatsDays').addEventListener('change', loadStatistics);
+            document.getElementById('tvhClearStatsBtn').addEventListener('click', function () {
+                if (!confirm('Delete all viewing statistics?')) return;
+                ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('TvHeadendApi/Statistics') }).then(function () {
+                    document.getElementById('tvhStatsStatus').textContent = 'Statistics cleared.';
+                    loadStatistics();
+                });
             });
 
-            // Cleanup auto-refresh on page hide
+            // ── Lifecycle ──────────────────────────────────────
+            document.getElementById('TvHeadendDashboardPage').addEventListener('pageshow', function () {
+                refreshDashboard();
+                loadStatistics();
+            });
+
             document.getElementById('TvHeadendDashboardPage').addEventListener('pagehide', function () {
                 if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+                Object.keys(chartInstances).forEach(destroyChart);
             });
         })();
     </script>

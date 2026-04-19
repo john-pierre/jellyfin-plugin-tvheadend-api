@@ -280,6 +280,103 @@ public class ResiliencePoliciesTests
         Assert.Equal(1, callCount);
     }
 
+    [Fact]
+    public async Task ResilienceHandler_CloneRequest_WithContent_PreservesContentAndHeaders()
+    {
+        var callCount = 0;
+        var inner = new FakeHandler(() =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        using var invoker = CreateInvoker(inner);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost");
+        request.Content = new StringContent("test body", System.Text.Encoding.UTF8, "text/plain");
+        request.Headers.Add("X-Custom", "value");
+
+        var result = await invoker.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, result.StatusCode);
+        Assert.True(callCount >= 2);
+    }
+
+    [Fact]
+    public async Task ResilienceHandler_CloneRequest_WithoutContent_Works()
+    {
+        var callCount = 0;
+        var inner = new FakeHandler(() =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        using var invoker = CreateInvoker(inner);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "http://localhost");
+        request.Headers.Add("X-Test", "hello");
+
+        var result = await invoker.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task RetryPolicy_HttpRequestException_AfterMaxRetries_Throws()
+    {
+        var callCount = 0;
+        using var invoker = CreateInvoker(new FakeHandler(() =>
+        {
+            callCount++;
+            throw new HttpRequestException("Connection failed");
+        }));
+
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None));
+
+        Assert.Equal(1 + ResiliencePolicies.RetryCount, callCount);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError, true)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, true)]
+    [InlineData(HttpStatusCode.GatewayTimeout, true)]
+    [InlineData(HttpStatusCode.BadGateway, true)]
+    [InlineData(HttpStatusCode.RequestTimeout, true)]
+    [InlineData(HttpStatusCode.OK, false)]
+    [InlineData(HttpStatusCode.NotFound, false)]
+    [InlineData(HttpStatusCode.BadRequest, false)]
+    [InlineData(HttpStatusCode.Unauthorized, false)]
+    public void IsTransientStatusCode_ReturnsExpected(HttpStatusCode code, bool expected)
+    {
+        Assert.Equal(expected, ResiliencePolicies.IsTransientStatusCode(code));
+    }
+
+    [Fact]
+    public void ShouldRetry_NullResponse_ReturnsTrue()
+    {
+        Assert.True(ResiliencePolicies.ShouldRetry(null));
+    }
+
+    [Fact]
+    public void ShouldRetry_429_ReturnsTrue()
+    {
+        Assert.True(ResiliencePolicies.ShouldRetry(new HttpResponseMessage(HttpStatusCode.TooManyRequests)));
+    }
+
+    [Fact]
+    public void ShouldRetry_200_ReturnsFalse()
+    {
+        Assert.False(ResiliencePolicies.ShouldRetry(new HttpResponseMessage(HttpStatusCode.OK)));
+    }
+
     /// <summary>
     /// A fake <see cref="HttpMessageHandler"/> that delegates to a factory function.
     /// </summary>

@@ -422,9 +422,9 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 - [x] Create `scripts/run-e2e-tests.sh` — Linux/CI equivalent
 - [x] Add retry/wait logic for TVHeadend mux scan completion (poll `/api/mpegts/mux/grid` until all muxes are `IDLE`)
 - [x] Add timeout safety (max 120s for full bootstrap)
-- [ ] Document full E2E test procedure in `docs/guides/test-strategy.md` — prerequisites, setup, run, teardown, troubleshooting
-- [ ] Document IPTV simulator in `docs/guides/test-strategy.md` — how to add channels, modify EPG, extend streams
-- [ ] Update `AGENTS.md` testing workflow section with E2E instructions
+- [x] Document full E2E test procedure in `docs/guides/test-strategy.md` — prerequisites, setup, run, teardown, troubleshooting
+- [x] Document IPTV simulator in `docs/guides/test-strategy.md` — how to add channels, modify EPG, extend streams
+- [x] Update `AGENTS.md` testing workflow section with E2E instructions — **N/A**: `AGENTS.md` no longer exists; E2E instructions are in `docs/guides/test-strategy.md`
 
 ### Milestone 22 — Post-Refactor Codebase Cleanup (Short-Term)
 
@@ -475,4 +475,28 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 - [x] **Fix CS8625 nullable warnings in `MediaSourceServiceTests.cs`** — replaced `null` with `string.Empty` for non-nullable `ProfileSnapshot` parameters.
 
 **Result:** Build 0 warnings / 0 errors, 536 tests passing.
+
+### Milestone 23 — Full Quality Audit and Hardening (Short-Term)
+
+**Baseline (2026-04-19):** Full repository-wide quality audit. 563 tests, build 0 warnings / 0 errors.
+
+#### 23a — Bug Fixes
+
+- [x] **`PostFormAsync` does not dispose `FormUrlEncodedContent`** — wrapped in `using` statement and made method `async` in `ApiClient.cs`.
+- [x] **`DashboardService` unsafe cast of `diag.Warnings`** — replaced `(IReadOnlyList<string>)` cast with `.ToList().AsReadOnly()`.
+- [x] **`MaskSensitiveData` does not mask URL-encoded credentials** — added `Uri.EscapeDataString()` masking for AuthToken, Password, and Username when encoded form differs from raw value.
+
+#### 23b — Consistency and Documentation
+
+- [x] **PayPal donate link placeholder** — removed broken `YOUR_BUTTON_ID` PayPal link from ConfigPage.html and README.md.
+- [x] **README test command missing `--filter`** — added `--filter "Category!=LiveIntegration"` to developer test command.
+- [x] **Missing `business-description.md` for Dashboard module** — created `Service/Dashboard/business-description.md`.
+
+#### 23c — Test Gaps
+
+- [x] **Add `DashboardService` connections failure test** — 1 test: connections failure sets `ConnectionsError` property.
+
+**Result:** Build 0 warnings / 0 errors, 564 tests passing (563 + 1 new).
+
+
 
