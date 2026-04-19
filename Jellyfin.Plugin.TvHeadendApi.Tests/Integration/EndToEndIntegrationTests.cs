@@ -33,7 +33,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests.Integration;
 /// <para>
 /// Unlike <see cref="LiveServiceIntegrationTests"/> which tests against an empty TVHeadend,
 /// these tests expect channels, EPG data, profiles, users, and recordings to be present
-/// (configured by <c>tvh-bootstrap.sh</c>).
+/// (configured by <c>tvheadend-bootstrap.sh</c>).
 /// </para>
 /// </summary>
 /// <remarks>

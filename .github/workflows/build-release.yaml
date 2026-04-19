@@ -289,7 +289,7 @@ jobs:
 
       - name: Run Bootstrap
         run: |
-          docker compose -f docker/docker-compose.test.yaml up tvh-bootstrap --exit-code-from tvh-bootstrap
+          docker compose -f docker/docker-compose.test.yaml up tvheadend-bootstrap --exit-code-from tvheadend-bootstrap
           echo "Bootstrap complete."
 
       - name: Wait for Recording
@@ -331,7 +331,7 @@ jobs:
 
       - name: Show Bootstrap Logs on Failure
         if: failure()
-        run: docker compose -f docker/docker-compose.test.yaml logs tvh-bootstrap iptv-simulator tvheadend
+        run: docker compose -f docker/docker-compose.test.yaml logs tvheadend-bootstrap iptv-simulator tvheadend
 
       - name: Tear Down Services
         if: always()

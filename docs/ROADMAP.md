@@ -344,7 +344,7 @@ An IPTV simulator container that provides deterministic test channels and EPG da
 
 Automated first-run configuration of TVHeadend so it has channels, EPG, users, and profiles ready for testing.
 
-- [x] Create `docker/tvh-bootstrap.sh` — runs against TVHeadend API after startup
+- [x] Create `docker/tvheadend-bootstrap.sh` — runs against TVHeadend API after startup
 - [x] Bootstrap: create IPTV automatic network pointing at `http://iptv-simulator/playlist.m3u` (`/api/mpegts/network/create`)
 - [x] Bootstrap: trigger initial mux scan and wait for completion (`/api/mpegts/network/mux_scanner`)
 - [x] Bootstrap: map all discovered services to channels (`/api/channel/grid`)
