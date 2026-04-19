@@ -1,6 +1,7 @@
 using System.Net.Http;
 using Jellyfin.Plugin.TvHeadendApi.Service;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
+using Jellyfin.Plugin.TvHeadendApi.Service.Dashboard;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
@@ -87,6 +88,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IStatusService, StatusService>();
         serviceCollection.AddSingleton<IInputMonitorService, InputMonitorService>();
         serviceCollection.AddSingleton<ISubscriptionService, SubscriptionService>();
+        serviceCollection.AddSingleton<IDashboardService, DashboardService>();
         serviceCollection.AddSingleton<StatisticsService>();
         serviceCollection.AddSingleton<IStatisticsService>(sp => sp.GetRequiredService<StatisticsService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StatisticsService>());

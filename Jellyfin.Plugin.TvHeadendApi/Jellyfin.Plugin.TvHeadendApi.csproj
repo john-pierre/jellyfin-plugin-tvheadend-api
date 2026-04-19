@@ -31,6 +31,8 @@
   <ItemGroup>
     <None Remove="Configuration\ConfigPage.html" />
     <EmbeddedResource Include="Configuration\ConfigPage.html" />
+    <None Remove="Pages\DashboardPage.html" />
+    <EmbeddedResource Include="Pages\DashboardPage.html" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>TvHeadend Dashboard</title>
+    <style>
+        #TvHeadendDashboardPage { max-width: 1200px; margin: 0 auto; }
+        #TvHeadendDashboardPage .tvh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2em; margin-bottom: 1.5em; }
+        #TvHeadendDashboardPage .tvh-card { background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 8px; padding: 1em 1.2em; }
+        #TvHeadendDashboardPage .tvh-card h3 { margin: 0 0 0.6em 0; font-size: 1em; opacity: 0.9; }
+        #TvHeadendDashboardPage .tvh-badge { display: inline-block; padding: 0.15em 0.6em; border-radius: 4px; font-size: 0.85em; font-weight: bold; }
+        #TvHeadendDashboardPage .tvh-badge-ok { background: #1b5e20; color: #a5d6a7; }
+        #TvHeadendDashboardPage .tvh-badge-warn { background: #e65100; color: #ffe0b2; }
+        #TvHeadendDashboardPage .tvh-badge-err { background: #b71c1c; color: #ef9a9a; }
+        #TvHeadendDashboardPage .tvh-badge-idle { background: #37474f; color: #b0bec5; }
+        #TvHeadendDashboardPage .tvh-badge-active { background: #0d47a1; color: #90caf9; }
+        #TvHeadendDashboardPage .tvh-kv { display: grid; grid-template-columns: auto 1fr; gap: 0.2em 1em; font-size: 0.92em; line-height: 1.6; }
+        #TvHeadendDashboardPage .tvh-kv dt { opacity: 0.7; white-space: nowrap; }
+        #TvHeadendDashboardPage .tvh-kv dd { margin: 0; }
+        #TvHeadendDashboardPage table { width: 100%; border-collapse: collapse; font-size: 0.88em; }
+        #TvHeadendDashboardPage th { text-align: left; border-bottom: 2px solid #444; padding: 0.4em 0.6em; opacity: 0.8; }
+        #TvHeadendDashboardPage td { padding: 0.4em 0.6em; border-bottom: 1px solid #333; }
+        #TvHeadendDashboardPage .tvh-toolbar { display: flex; align-items: center; gap: 0.8em; margin-bottom: 1.2em; flex-wrap: wrap; }
+        #TvHeadendDashboardPage .tvh-error-banner { background: rgba(183,28,28,0.15); border: 1px solid #b71c1c; border-radius: 6px; padding: 0.8em 1em; margin-bottom: 1em; color: #ef9a9a; }
+        #TvHeadendDashboardPage .tvh-section-error { font-style: italic; opacity: 0.6; padding: 0.5em; }
+        #TvHeadendDashboardPage .tvh-full { grid-column: 1 / -1; }
+        #TvHeadendDashboardPage .tvh-signal-bar { display: inline-block; width: 60px; height: 10px; background: #333; border-radius: 3px; overflow: hidden; vertical-align: middle; }
+        #TvHeadendDashboardPage .tvh-signal-fill { height: 100%; border-radius: 3px; }
+        @media (max-width: 800px) { #TvHeadendDashboardPage .tvh-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<div id="TvHeadendDashboardPage" data-role="page" class="page type-interior" data-require="emby-button">
+    <div data-role="content">
+        <div class="content-primary">
+            <h1 style="margin-bottom:0.3em;">TvHeadend Dashboard</h1>
+
+            <div class="tvh-toolbar">
+                <button id="tvhRefreshBtn" is="emby-button" type="button" class="raised emby-button" style="min-height:40px; padding:0.4em 1.2em;">
+                    <span>🔄 Refresh</span>
+                </button>
+                <label style="display:flex; align-items:center; gap:0.4em; font-size:0.9em;">
+                    <input id="tvhAutoRefresh" type="checkbox" /> Auto-refresh (10s)
+                </label>
+                <span id="tvhLastRefresh" style="font-size:0.85em; opacity:0.6;"></span>
+                <span id="tvhLoadingIndicator" style="display:none; font-size:0.85em;">⏳ Loading…</span>
+            </div>
+
+            <div id="tvhErrorBanner" class="tvh-error-banner" style="display:none;"></div>
+
+            <!-- Connection Status -->
+            <div class="tvh-grid">
+                <div class="tvh-card" id="tvhConnectionCard">
+                    <h3>🔗 Connection &amp; Backend</h3>
+                    <dl class="tvh-kv" id="tvhConnectionKv"></dl>
+                </div>
+                <div class="tvh-card" id="tvhHealthCard">
+                    <h3>🩺 Plugin Health</h3>
+                    <dl class="tvh-kv" id="tvhHealthKv"></dl>
+                </div>
+            </div>
+
+            <!-- Tuners / Inputs -->
+            <div class="tvh-grid">
+                <div class="tvh-card tvh-full" id="tvhInputsCard">
+                    <h3>📡 Tuner / Input Status</h3>
+                    <div id="tvhInputsContent"></div>
+                </div>
+            </div>
+
+            <!-- Subscriptions -->
+            <div class="tvh-grid">
+                <div class="tvh-card tvh-full" id="tvhSubsCard">
+                    <h3>📺 Active Subscriptions</h3>
+                    <div id="tvhSubsContent"></div>
+                </div>
+            </div>
+
+            <!-- Connections -->
+            <div class="tvh-grid">
+                <div class="tvh-card tvh-full" id="tvhConnsCard">
+                    <h3>🌐 Active Connections</h3>
+                    <div id="tvhConnsContent"></div>
+                </div>
+            </div>
+
+            <!-- Summary Stats -->
+            <div class="tvh-grid">
+                <div class="tvh-card" id="tvhChannelCard">
+                    <h3>📋 Channel &amp; EPG Summary</h3>
+                    <dl class="tvh-kv" id="tvhChannelKv"></dl>
+                </div>
+                <div class="tvh-card" id="tvhWarningsCard">
+                    <h3>⚠️ Warnings &amp; Recommendations</h3>
+                    <div id="tvhWarningsContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            'use strict';
+            var autoRefreshTimer = null;
+
+            function esc(text) {
+                var d = document.createElement('div');
+                d.appendChild(document.createTextNode(text || ''));
+                return d.innerHTML;
+            }
+
+            function badge(cls, text) {
+                return '<span class="tvh-badge tvh-badge-' + cls + '">' + esc(text) + '</span>';
+            }
+
+            function kvHtml(pairs) {
+                var html = '';
+                pairs.forEach(function (p) { html += '<dt>' + esc(p[0]) + '</dt><dd>' + p[1] + '</dd>'; });
+                return html;
+            }
+
+            function formatUnix(epoch) {
+                if (!epoch) return '—';
+                return new Date(epoch * 1000).toLocaleString();
+            }
+
+
+            function formatBps(bps) {
+                if (bps > 1000000) return (bps / 1000000).toFixed(1) + ' Mbps';
+                if (bps > 1000) return (bps / 1000).toFixed(1) + ' kbps';
+                return bps + ' bps';
+            }
+
+            function signalBar(value, scale) {
+                // scale: 0=unknown, 1=relative (0-65535), 2=dBm
+                var pct = 0;
+                var label = '';
+                if (scale === 1) { pct = Math.min(100, Math.round(value / 655.35)); label = pct + '%'; }
+                else if (scale === 2) { pct = Math.min(100, Math.max(0, (value + 100))); label = value + ' dBm'; }
+                else if (value > 0) { pct = Math.min(100, Math.round(value / 655.35)); label = value.toString(); }
+                else { return '<span style="opacity:0.5;">n/a</span>'; }
+                var color = pct > 70 ? '#4caf50' : pct > 40 ? '#f0ad4e' : '#e74c3c';
+                return '<span class="tvh-signal-bar"><span class="tvh-signal-fill" style="width:' + pct + '%; background:' + color + ';"></span></span> ' + esc(label);
+            }
+
+            function renderDashboard(d) {
+                var banner = document.getElementById('tvhErrorBanner');
+                if (!d.IsReachable && d.ConnectionError) {
+                    banner.innerHTML = '❌ <strong>TVHeadend unreachable:</strong> ' + esc(d.ConnectionError);
+                    banner.style.display = '';
+                } else {
+                    banner.style.display = 'none';
+                }
+
+                // Connection card
+                var connStatus = d.IsReachable
+                    ? (d.IsAuthenticated ? badge('ok', 'Connected') : badge('warn', 'Auth Failed'))
+                    : badge('err', 'Unreachable');
+
+                document.getElementById('tvhConnectionKv').innerHTML = kvHtml([
+                    ['Status', connStatus],
+                    ['Base URL', esc(d.BaseUrl || '—')],
+                    ['Server Version', esc(d.ServerVersion || '—')],
+                    ['Latency', d.LatencyMs > 0 ? d.LatencyMs + ' ms' : '—'],
+                    ['Connections', d.Activity ? d.Activity.ConnectionCount.toString() : '—'],
+                    ['Subscriptions', d.Activity ? d.Activity.SubscriptionCount.toString() : '—'],
+                    ['Next Activity', d.Activity && d.Activity.NextActivity ? formatUnix(d.Activity.NextActivity) : 'None']
+                ]);
+
+                // Health card
+                var diagBadge = d.DiagnosticStatus === 'OK' ? badge('ok', 'OK')
+                    : d.DiagnosticStatus === 'WARNING' ? badge('warn', 'WARNING')
+                    : d.DiagnosticStatus === 'ERROR' ? badge('err', 'ERROR')
+                    : badge('idle', d.DiagnosticStatus || 'Unknown');
+                var scoreColor = d.CompatibilityScore >= 80 ? '#4caf50' : d.CompatibilityScore >= 50 ? '#f0ad4e' : '#e74c3c';
+
+                document.getElementById('tvhHealthKv').innerHTML = kvHtml([
+                    ['Diagnostic Status', diagBadge],
+                    ['Compatibility', '<span style="color:' + scoreColor + '; font-weight:bold;">' + d.CompatibilityScore + '/100</span>'],
+                    ['Plugin Version', esc(d.PluginVersion || '—')],
+                    ['Timestamp', d.Timestamp ? new Date(d.Timestamp).toLocaleString() : '—']
+                ]);
+
+                // Inputs / Tuners
+                var inputsEl = document.getElementById('tvhInputsContent');
+                if (d.InputsError) {
+                    inputsEl.innerHTML = '<div class="tvh-section-error">⚠️ ' + esc(d.InputsError) + '</div>';
+                } else if (!d.Inputs || d.Inputs.length === 0) {
+                    inputsEl.innerHTML = '<div class="tvh-section-error">No active tuners/inputs.</div>';
+                } else {
+                    var html = '<table><thead><tr>'
+                        + '<th>Input</th><th>Stream/Mux</th><th>Subs</th><th>Signal</th><th>SNR</th>'
+                        + '<th>BER</th><th>Bitrate</th><th>TE</th><th>CC</th></tr></thead><tbody>';
+                    d.Inputs.forEach(function (inp) {
+                        var subsBadge = inp.Subs > 0 ? badge('active', inp.Subs + ' active') : badge('idle', 'Idle');
+                        html += '<tr>'
+                            + '<td>' + esc(inp.Input) + '</td>'
+                            + '<td>' + esc(inp.Stream) + '</td>'
+                            + '<td>' + subsBadge + '</td>'
+                            + '<td>' + signalBar(inp.Signal, inp.SignalScale) + '</td>'
+                            + '<td>' + signalBar(inp.Snr, inp.SnrScale) + '</td>'
+                            + '<td>' + inp.Ber + '</td>'
+                            + '<td>' + (inp.Bps > 0 ? formatBps(inp.Bps) : '—') + '</td>'
+                            + '<td>' + inp.Te + '</td>'
+                            + '<td>' + inp.Cc + '</td>'
+                            + '</tr>';
+                    });
+                    html += '</tbody></table>';
+                    inputsEl.innerHTML = html;
+                }
+
+                // Subscriptions
+                var subsEl = document.getElementById('tvhSubsContent');
+                if (d.SubscriptionsError) {
+                    subsEl.innerHTML = '<div class="tvh-section-error">⚠️ ' + esc(d.SubscriptionsError) + '</div>';
+                } else if (!d.Subscriptions || d.Subscriptions.length === 0) {
+                    subsEl.innerHTML = '<div class="tvh-section-error">No active subscriptions.</div>';
+                } else {
+                    var shtml = '<table><thead><tr>'
+                        + '<th>Channel</th><th>User</th><th>Client</th><th>State</th><th>Profile</th>'
+                        + '<th>In</th><th>Out</th><th>Errors</th><th>Start</th></tr></thead><tbody>';
+                    d.Subscriptions.forEach(function (sub) {
+                        var stateBadge = sub.State === 'Running' ? badge('ok', sub.State)
+                            : sub.State === 'Bad' ? badge('err', sub.State)
+                            : badge('idle', sub.State || 'Unknown');
+                        shtml += '<tr>'
+                            + '<td>' + esc(sub.Channel) + '</td>'
+                            + '<td>' + esc(sub.Username) + '</td>'
+                            + '<td>' + esc(sub.Client) + '</td>'
+                            + '<td>' + stateBadge + '</td>'
+                            + '<td>' + esc(sub.Profile) + '</td>'
+                            + '<td>' + formatBps(sub.In * 8) + '</td>'
+                            + '<td>' + formatBps(sub.Out * 8) + '</td>'
+                            + '<td>' + (sub.Errors > 0 ? '<span style="color:#e74c3c;">' + sub.Errors + '</span>' : '0') + '</td>'
+                            + '<td>' + formatUnix(sub.Start) + '</td>'
+                            + '</tr>';
+                    });
+                    shtml += '</tbody></table>';
+                    subsEl.innerHTML = shtml;
+                }
+
+                // Connections
+                var connsEl = document.getElementById('tvhConnsContent');
+                if (d.ConnectionsError) {
+                    connsEl.innerHTML = '<div class="tvh-section-error">⚠️ ' + esc(d.ConnectionsError) + '</div>';
+                } else if (!d.Connections || d.Connections.length === 0) {
+                    connsEl.innerHTML = '<div class="tvh-section-error">No active connections.</div>';
+                } else {
+                    var chtml = '<table><thead><tr>'
+                        + '<th>User</th><th>Peer</th><th>Type</th><th>Streaming</th><th>Started</th></tr></thead><tbody>';
+                    d.Connections.forEach(function (conn) {
+                        var streamBadge = conn.Streaming > 0 ? badge('active', 'Yes') : badge('idle', 'No');
+                        chtml += '<tr>'
+                            + '<td>' + esc(conn.User) + '</td>'
+                            + '<td>' + esc(conn.Peer) + ':' + conn.PeerPort + '</td>'
+                            + '<td>' + esc(conn.Type) + '</td>'
+                            + '<td>' + streamBadge + '</td>'
+                            + '<td>' + formatUnix(conn.Started) + '</td>'
+                            + '</tr>';
+                    });
+                    chtml += '</tbody></table>';
+                    connsEl.innerHTML = chtml;
+                }
+
+                // Channel summary
+                document.getElementById('tvhChannelKv').innerHTML = kvHtml([
+                    ['Channels', d.ChannelCount.toString()],
+                    ['DVR Entries', d.DvrEntryCount.toString()]
+                ]);
+
+                // Warnings
+                var warningsEl = document.getElementById('tvhWarningsContent');
+                if (d.Warnings && d.Warnings.length > 0) {
+                    var whtml = '<ul style="margin:0; padding-left:1.5em; font-size:0.92em;">';
+                    d.Warnings.forEach(function (w) { whtml += '<li style="color:#f0ad4e;">' + esc(w) + '</li>'; });
+                    whtml += '</ul>';
+                    warningsEl.innerHTML = whtml;
+                } else {
+                    warningsEl.innerHTML = '<div style="opacity:0.5; font-size:0.9em;">No warnings.</div>';
+                }
+            }
+
+            function refreshDashboard() {
+                var loadEl = document.getElementById('tvhLoadingIndicator');
+                loadEl.style.display = '';
+
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Dashboard'), dataType: 'json' })
+                    .then(function (data) {
+                        loadEl.style.display = 'none';
+                        document.getElementById('tvhLastRefresh').textContent = 'Last refresh: ' + new Date().toLocaleTimeString();
+                        renderDashboard(data);
+                    })
+                    .catch(function (err) {
+                        loadEl.style.display = 'none';
+                        document.getElementById('tvhErrorBanner').innerHTML = '❌ <strong>Dashboard request failed:</strong> ' + esc(err.statusText || err.message || 'Unknown error');
+                        document.getElementById('tvhErrorBanner').style.display = '';
+                    });
+            }
+
+            function toggleAutoRefresh() {
+                if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+                if (document.getElementById('tvhAutoRefresh').checked) {
+                    autoRefreshTimer = setInterval(refreshDashboard, 10000);
+                }
+            }
+
+            document.getElementById('tvhRefreshBtn').addEventListener('click', refreshDashboard);
+            document.getElementById('tvhAutoRefresh').addEventListener('change', toggleAutoRefresh);
+
+            document.getElementById('TvHeadendDashboardPage').addEventListener('pageshow', function () {
+                refreshDashboard();
+            });
+
+            // Cleanup auto-refresh on page hide
+            document.getElementById('TvHeadendDashboardPage').addEventListener('pagehide', function () {
+                if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>
+

@@ -79,12 +79,22 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// </returns>
     public IEnumerable<PluginPageInfo> GetPages()
     {
+        var ns = this.GetType().Namespace;
         return new[]
         {
             new PluginPageInfo
             {
                 Name = "TvHeadendApiConfig",
-                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.ConfigPage.html", this.GetType().Namespace),
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.ConfigPage.html", ns),
+            },
+            new PluginPageInfo
+            {
+                Name = "TvHeadendDashboard",
+                DisplayName = "TvHeadend",
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Pages.DashboardPage.html", ns),
+                EnableInMainMenu = true,
+                MenuSection = "Live TV",
+                MenuIcon = "live_tv",
             },
         };
     }
