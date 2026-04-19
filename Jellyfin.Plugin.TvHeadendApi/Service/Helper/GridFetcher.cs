@@ -1,5 +1,7 @@
 using System;
+using System.IO;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -65,7 +67,36 @@ internal static class GridFetcher
     {
         using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+
+        // TVHeadend may emit invalid UTF-8 bytes from DVB sources (e.g. truncated multi-byte sequences).
+        // System.Text.Json uses DecoderExceptionFallback and throws on invalid UTF-8.
+        // Read raw bytes and sanitize before deserializing.
+        var rawBytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        var sanitized = SanitizeUtf8(rawBytes);
+        using var stream = new MemoryStream(sanitized);
         return await JsonSerializer.DeserializeAsync<TResponse>(stream, JsonDefaults.Api, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Replaces invalid UTF-8 byte sequences with the UTF-8 encoding of U+FFFD (replacement character).
+    /// This prevents <see cref="JsonSerializer"/> from throwing on malformed DVB strings.
+    /// </summary>
+    private static byte[] SanitizeUtf8(byte[] input)
+    {
+        // Fast path: if the input is valid UTF-8, return it as-is.
+        var utf8Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+        try
+        {
+            utf8Encoding.GetCharCount(input);
+            return input;
+        }
+        catch (DecoderFallbackException)
+        {
+            // Slow path: re-decode with replacement fallback and re-encode.
+        }
+
+        var lenient = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: false);
+        var chars = lenient.GetChars(input);
+        return lenient.GetBytes(chars);
     }
 }
