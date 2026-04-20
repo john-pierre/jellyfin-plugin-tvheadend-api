@@ -115,8 +115,10 @@ public class UrlBuilderTests
         var sut = new UrlBuilder();
         var config = new PluginConfiguration
         {
-            Host = "tvh.local", Port = 9981,
-            AllowAnonymousAccess = true, AuthToken = "abc123",
+            Host = "tvh.local",
+            Port = 9981,
+            AllowAnonymousAccess = true,
+            AuthToken = "abc123",
         };
         var url = sut.BuildResourceUrl(config, "stream/channel/1");
         Assert.DoesNotContain("auth=", url);
@@ -128,8 +130,10 @@ public class UrlBuilderTests
         var sut = new UrlBuilder();
         var config = new PluginConfiguration
         {
-            Host = "tvh.local", Port = 9981,
-            AllowAnonymousAccess = false, AuthToken = "",
+            Host = "tvh.local",
+            Port = 9981,
+            AllowAnonymousAccess = false,
+            AuthToken = "",
         };
         var url = sut.BuildResourceUrl(config, "stream/channel/1");
         Assert.DoesNotContain("auth=", url);

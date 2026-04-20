@@ -1,5 +1,7 @@
 using Jellyfin.Plugin.TvHeadendApi.Service;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
+using Jellyfin.Plugin.TvHeadendApi.Service.Comet;
+using Jellyfin.Plugin.TvHeadendApi.Service.Dashboard;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
@@ -43,6 +45,8 @@ public class ServiceRegistratorTests
         Assert.Contains(services, d => d.ServiceType == typeof(ITokenService) && d.ImplementationType == typeof(TokenService));
         Assert.Contains(services, d => d.ServiceType == typeof(ILiveTvService) && d.ImplementationType == typeof(OrchestratorService));
         Assert.Contains(services, d => d.ServiceType == typeof(IDiagnosticService) && d.ImplementationType == typeof(DiagnosticService));
+        Assert.Contains(services, d => d.ServiceType == typeof(IDashboardService) && d.ImplementationType == typeof(DashboardService));
+        Assert.Contains(services, d => d.ServiceType == typeof(ICometSnapshotReader));
     }
 
     [Fact]
@@ -78,11 +82,14 @@ public class ServiceRegistratorTests
         Assert.NotNull(provider.GetRequiredService<IInputMonitorService>());
         Assert.NotNull(provider.GetRequiredService<ISubscriptionService>());
         Assert.NotNull(provider.GetRequiredService<IStatisticsService>());
+        Assert.NotNull(provider.GetRequiredService<IDashboardService>());
+        Assert.NotNull(provider.GetRequiredService<ICometSnapshotReader>());
         Assert.NotNull(provider.GetRequiredService<ILiveTvService>());
         Assert.NotNull(provider.GetRequiredService<IEncodingOptionsReader>());
 
         // StatisticsService is also registered as IHostedService
         var hostedServices = provider.GetServices<IHostedService>();
         Assert.Contains(hostedServices, s => s is StatisticsService);
+        Assert.Contains(hostedServices, s => s is TvHeadendCometService);
     }
 }

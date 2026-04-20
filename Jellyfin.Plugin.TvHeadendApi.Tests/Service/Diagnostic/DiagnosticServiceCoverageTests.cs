@@ -268,7 +268,7 @@ public class DiagnosticServiceCoverageTests
         resolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<ProfileReference> { new("p1", "pass") });
         resolver.Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), "p1", "pass", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ProfileDetails("p1", "pass", "profile-passthrough", null, null, null, null, new List<string>(), new List<string>(), null));
+            .ReturnsAsync(new ProfileDetails("p1", "pass", "profile-passthrough", string.Empty, string.Empty, string.Empty, string.Empty, new List<string>(), new List<string>(), null));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -328,7 +328,7 @@ public class DiagnosticServiceCoverageTests
         resolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<ProfileReference> { new("p1", "jellyfin") });
         resolver.Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), "p1", "jellyfin", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ProfileDetails("p1", "jellyfin", "profile-transcode", "mpegts", "mpegts", null, null, new List<string>(), new List<string>(), false));
+            .ReturnsAsync(new ProfileDetails("p1", "jellyfin", "profile-transcode", "mpegts", "mpegts", string.Empty, string.Empty, new List<string>(), new List<string>(), false));
 
         var result = await sut.DiagnoseAsync(CancellationToken.None);
 
@@ -550,9 +550,15 @@ public class DiagnosticServiceCoverageTests
 
     private static PluginConfiguration DefaultConfig() => new()
     {
-        Host = "tvh", Port = 9981, Webroot = "/", AllowAnonymousAccess = true,
-        StreamingProfile = "pass", RecordingProfile = "", AuthToken = "abc123",
-        AnalyzeDurationMs = 200, BufferMs = 0,
+        Host = "tvh",
+        Port = 9981,
+        Webroot = "/",
+        AllowAnonymousAccess = true,
+        StreamingProfile = "pass",
+        RecordingProfile = "",
+        AuthToken = "abc123",
+        AnalyzeDurationMs = 200,
+        BufferMs = 0,
     };
 
     private static string ServerInfoJson() => """{"sw_version":"4.3","api_version":19,"name":"tvh"}""";

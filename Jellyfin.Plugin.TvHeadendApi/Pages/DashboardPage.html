@@ -21,13 +21,13 @@
 
         /* ── Summary row ────────────────────────────────────── */
         .tvh-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8em; margin-bottom: 1.5em; }
-        .tvh-stat { background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 8px; padding: 0.8em 1em; text-align: center; }
+        .tvh-stat { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 0.8em 1em; text-align: center; }
         .tvh-stat-value { font-size: 1.4em; font-weight: 700; line-height: 1.2; }
         .tvh-stat-label { font-size: 0.78em; opacity: 0.6; margin-top: 0.2em; }
 
         /* ── Cards & sections ───────────────────────────────── */
         .tvh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; margin-bottom: 1.2em; }
-        .tvh-card { background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 8px; padding: 1em 1.2em; }
+        .tvh-card { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 1em 1.2em; }
         .tvh-card h3 { margin: 0 0 0.6em 0; font-size: 1em; font-weight: 600; opacity: 0.9; }
         .tvh-full { grid-column: 1 / -1; }
         .tvh-section { margin-bottom: 1.5em; }
@@ -66,20 +66,57 @@
 
         /* ── Charts ─────────────────────────────────────────── */
         .tvh-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; margin-bottom: 1em; }
-        .tvh-chart-card { background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 8px; padding: 0.8em 1em; }
+        .tvh-chart-card { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 0.8em 1em; }
         .tvh-chart-card h4 { margin: 0 0 0.4em 0; font-size: 0.9em; font-weight: 600; opacity: 0.8; }
 
         /* ── KPI row for analytics ──────────────────────────── */
         .tvh-kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.6em; margin-bottom: 1em; }
-        .tvh-kpi { background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 6px; padding: 0.6em 0.8em; text-align: center; }
+        .tvh-kpi { background: rgba(255,255,255,0.03); border-radius: 6px; padding: 0.6em 0.8em; text-align: center; }
         .tvh-kpi-value { font-size: 1.15em; font-weight: 700; }
         .tvh-kpi-label { font-size: 0.75em; opacity: 0.55; }
+
+        /* ── Session table toolbar ──────────────────────────── */
+        .tvh-table-toolbar { display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; margin-bottom: 0.6em; }
+        .tvh-table-toolbar input[type="text"] { flex: 1 1 180px; min-width: 140px; padding: 0.35em 0.6em; border: 1px solid #555; border-radius: 4px; background: rgba(255,255,255,0.06); color: inherit; font-size: 0.88em; }
+        .tvh-table-toolbar select { padding: 0.35em 0.5em; border: 1px solid #555; border-radius: 4px; background: #1c1c1e; color: #e0e0e0; font-size: 0.88em; min-width: 100px; }
+        .tvh-table-toolbar select option { background: #1c1c1e; color: #e0e0e0; }
+        .tvh-table-toolbar .tvh-filter-count { font-size: 0.8em; opacity: 0.5; }
+
+        /* ── Sortable headers ──────────────────────────────── */
+        #TvHeadendDashboardPage th.tvh-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+        #TvHeadendDashboardPage th.tvh-sortable:hover { opacity: 1; }
+        #TvHeadendDashboardPage th .tvh-sort-arrow { font-size: 0.75em; margin-left: 0.3em; opacity: 0.4; }
+        #TvHeadendDashboardPage th.tvh-sort-asc .tvh-sort-arrow { opacity: 1; }
+        #TvHeadendDashboardPage th.tvh-sort-desc .tvh-sort-arrow { opacity: 1; }
+
+        /* ── Logs panel ─────────────────────────────────────── */
+        .tvh-logs-panel { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 1em 1.2em; font-family: 'Monaco', 'Courier New', monospace; font-size: 0.85em; }
+        .tvh-logs-list { list-style: none; margin: 0; padding: 0; max-height: 400px; overflow-y: auto; }
+        .tvh-logs-item { padding: 0.3em 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+        .tvh-logs-item:last-child { border-bottom: none; }
+        .tvh-logs-time { opacity: 0.5; margin-right: 0.6em; }
+        .tvh-logs-text { color: #e0e0e0; word-wrap: break-word; }
+        .tvh-logs-empty { text-align: center; padding: 1em; opacity: 0.5; font-style: italic; }
 
         /* ── Responsive ─────────────────────────────────────── */
         @media (max-width: 800px) {
             .tvh-grid, .tvh-chart-grid { grid-template-columns: 1fr; }
             .tvh-summary { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+            .tvh-table-toolbar { flex-direction: column; align-items: stretch; }
         }
+
+        /* ── Icon buttons ────────────────────────────────────── */
+        .tvh-icon-button { min-width: 40px; padding: 0.4em 0.6em !important; display: inline-flex; align-items: center; justify-content: center; }
+        .tvh-icon-button span { line-height: 1; margin: 0; }
+
+        /* ── Pagination ──────────────────────────────────────── */
+        .tvh-pagination { display: flex; gap: 0.3em; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 0.85em; }
+        .tvh-pagination button, .tvh-pagination span { display: inline-block; padding: 0.3em 0.5em; min-width: 1.8em; text-align: center; border: 1px solid #555; border-radius: 3px; cursor: pointer; user-select: none; }
+        .tvh-pagination button { background: rgba(255,255,255,0.06); color: #e0e0e0; }
+        .tvh-pagination button:hover { background: rgba(255,255,255,0.12); }
+        .tvh-pagination span { background: #333; opacity: 0.6; cursor: default; }
+        .tvh-pagination .tvh-page-active { background: #0d47a1; color: #90caf9; border-color: #0d47a1; font-weight: 600; }
+        .tvh-pagination .tvh-page-disabled { opacity: 0.3; cursor: not-allowed; }
     </style>
     <div data-role="content">
         <div class="content-primary">
@@ -92,11 +129,11 @@
                     <button id="tvhSettingsBtn" is="emby-button" type="button" class="raised emby-button">
                         <span>Open Settings</span>
                     </button>
-                    <button id="tvhRefreshBtn" is="emby-button" type="button" class="raised emby-button">
-                        <span>Refresh</span>
+                    <button id="tvhRefreshBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" title="Refresh dashboard">
+                        <span style="font-size:1.3em;">⟳</span>
                     </button>
                     <label style="display:flex; align-items:center; gap:0.35em; font-size:0.88em;">
-                        <input id="tvhAutoRefresh" type="checkbox" /> Auto-refresh (10 s)
+                        <input id="tvhAutoRefresh" type="checkbox" checked /> Auto-refresh (2 s)
                     </label>
                     <div class="tvh-toolbar-right">
                         <span id="tvhLoadingIndicator" class="tvh-loading">Loading…</span>
@@ -156,6 +193,14 @@
                 </div>
             </div>
 
+            <!-- ── D2. Active Jellyfin Sessions ─────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Active Jellyfin Sessions</h2>
+                <div class="tvh-card tvh-full">
+                    <div id="tvhActiveSessionsContent"></div>
+                </div>
+            </div>
+
             <!-- ── E. Live TV Summary ───────────────────────── -->
             <div class="tvh-section">
                 <h2 class="tvh-section-title">Live TV Summary</h2>
@@ -177,19 +222,33 @@
 
                 <div class="tvh-toolbar" style="margin-bottom:1em;">
                     <label style="font-size:0.9em;">Time range:</label>
-                    <select id="tvhStatsDays" style="width:auto; min-width:120px; padding:0.3em 0.5em;">
+                    <select id="tvhStatsDays" style="width:auto; min-width:120px; padding:0.3em 0.5em; background:#1c1c1e; color:#e0e0e0; border:1px solid #555; border-radius:4px;">
                         <option value="1">Last 24 hours</option>
                         <option value="7" selected>Last 7 days</option>
                         <option value="30">Last 30 days</option>
                         <option value="0">All time</option>
                     </select>
-                    <button id="tvhRefreshStatsBtn" is="emby-button" type="button" class="raised emby-button">
-                        <span>Refresh Stats</span>
+                    <button id="tvhRefreshStatsBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" title="Refresh statistics">
+                        <span style="font-size:1.3em;">⟳</span>
                     </button>
-                    <button id="tvhClearStatsBtn" is="emby-button" type="button" class="raised emby-button" style="background:#c0392b; color:#fff;">
-                        <span>Clear All</span>
+                    <button id="tvhClearStatsBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" style="background:#c0392b; color:#fff;" title="Clear all statistics">
+                        <span style="font-size:1.3em;">🗑️</span>
                     </button>
-                    <span id="tvhStatsStatus" class="tvh-meta"></span>
+                    <label style="display:flex; align-items:center; gap:0.35em; font-size:0.88em;">
+                        <input id="tvhStatsAutoRefresh" type="checkbox" checked /> Auto-refresh (60 s)
+                    </label>
+                    <div style="border-left:1px solid rgba(255,255,255,0.1); height:1.5em; margin:0 0.5em;"></div>
+                    <label style="display:flex; align-items:center; gap:0.5em; font-size:0.88em;">
+                        <span>Show times as:</span>
+                        <select id="tvhTimezoneMode" style="width:auto; min-width:100px; padding:0.3em 0.5em; background:#1c1c1e; color:#e0e0e0; border:1px solid #555; border-radius:4px;">
+                            <option value="utc">UTC</option>
+                            <option value="local" selected>Local Time</option>
+                        </select>
+                    </label>
+                    <div class="tvh-toolbar-right">
+                        <span id="tvhStatsStatus" class="tvh-meta"></span>
+                        <span id="tvhStatsLastRefresh" class="tvh-meta"></span>
+                    </div>
                 </div>
 
                 <!-- KPI row -->
@@ -233,16 +292,65 @@
                 <!-- Sessions table -->
                 <div id="tvhStatsTable" style="display:none;">
                     <h3 style="margin:0.8em 0 0.4em 0; font-size:0.95em; font-weight:600;">Recent Sessions</h3>
+                    <div class="tvh-table-toolbar">
+                        <input id="tvhSessionSearch" type="text" placeholder="Search sessions…" />
+                        <select id="tvhFilterUser"><option value="">All Users</option></select>
+                        <select id="tvhFilterDevice"><option value="">All Devices</option></select>
+                        <select id="tvhFilterClient"><option value="">All Clients</option></select>
+                        <select id="tvhFilterMethod"><option value="">All Methods</option></select>
+                        <span id="tvhFilterCount" class="tvh-filter-count"></span>
+                        <div style="margin-left:auto; display:flex; gap:0.5em; align-items:center; font-size:0.88em;">
+                            <label>Per page:</label>
+                            <select id="tvhSessionsPerPage" style="width:auto; padding:0.3em 0.5em; background:#1c1c1e; color:#e0e0e0; border:1px solid #555; border-radius:4px;">
+                                <option value="100">100</option>
+                                <option value="250">250</option>
+                                <option value="500">500</option>
+                                <option value="all">All</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="tvhPaginationTop" class="tvh-pagination" style="margin-bottom:0.8em; display:none;"></div>
+                    </div>
                     <div class="tvh-table-wrap">
-                        <table>
+                        <table id="tvhSessionsTable">
                             <thead>
                                 <tr>
-                                    <th>User</th><th>Device</th><th>Client</th><th>Channel</th>
-                                    <th>Play Method</th><th>Start</th><th>Duration</th>
+                                    <th class="tvh-sortable" data-sort="UserName">User <span class="tvh-sort-arrow">▲▼</span></th>
+                                    <th class="tvh-sortable" data-sort="DeviceName">Device <span class="tvh-sort-arrow">▲▼</span></th>
+                                    <th class="tvh-sortable" data-sort="ClientName">Client <span class="tvh-sort-arrow">▲▼</span></th>
+                                    <th class="tvh-sortable" data-sort="ChannelName">Channel <span class="tvh-sort-arrow">▲▼</span></th>
+                                    <th class="tvh-sortable" data-sort="PlayMethod">Play Method <span class="tvh-sort-arrow">▲▼</span></th>
+                                    <th class="tvh-sortable tvh-sort-desc" data-sort="StartTimeUtc">Start <span class="tvh-sort-arrow">▼</span></th>
+                                    <th class="tvh-sortable" data-sort="DurationMinutes">Duration <span class="tvh-sort-arrow">▲▼</span></th>
                                 </tr>
                             </thead>
                             <tbody id="tvhStatsTableBody"></tbody>
                         </table>
+                    </div>
+                    <div id="tvhPaginationBottom" class="tvh-pagination" style="margin-top:0.8em; display:none;"></div>
+                </div>
+            </div>
+
+            <!-- ── G. TVHeadend Logs ────────────────────────── -->
+            <div class="tvh-section" id="sec-logs">
+                <h2 class="tvh-section-title">TVHeadend Logs</h2>
+                <p class="tvh-section-desc">Real-time log messages from TVHeadend streamed via WebSocket.</p>
+
+                <div class="tvh-card">
+                    <div style="margin-bottom:1em; display:flex; flex-wrap:wrap; gap:0.5em; align-items:center;">
+                        <label style="font-size:0.9em;">Filter:</label>
+                        <input id="tvhLogFilter" type="text" placeholder="Search logs…" style="flex:1 1 200px; min-width:120px; padding:0.35em 0.6em; border:1px solid #555; border-radius:4px; background:rgba(255,255,255,0.06); color:inherit; font-size:0.88em;" />
+                        <button id="tvhClearLogsBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" style="font-size:0.85em; background:#444; color:#fff;" title="Clear logs">
+                            <span style="font-size:1.3em;">🗑️</span>
+                        </button>
+                        <label style="display:flex; align-items:center; gap:0.35em; font-size:0.88em;">
+                            <input id="tvhLogsAutoRefresh" type="checkbox" checked /> Auto-scroll
+                        </label>
+                        <span id="tvhLogsStatus" class="tvh-meta">Loading…</span>
+                    </div>
+
+                    <div class="tvh-logs-panel">
+                        <ul class="tvh-logs-list" id="tvhLogsList"></ul>
                     </div>
                 </div>
             </div>
@@ -256,7 +364,9 @@
 
             // ── State ──────────────────────────────────────────
             var autoRefreshTimer = null;
+            var statsRefreshTimer = null;
             var chartInstances = {};
+            var timezoneMode = localStorage.getItem('tvhTimezoneMode') || 'local'; // 'local' or 'utc'
 
             // ── Helpers ────────────────────────────────────────
             function esc(text) {
@@ -301,12 +411,68 @@
                 return h > 0 ? h + ' h ' + m + ' min' : m + ' min';
             }
 
+            function parseUtcDate(value) {
+                if (!value) return null;
+
+                // Ensure the string is treated as UTC
+                // If it doesn't end with 'Z', add it to force UTC interpretation
+                var utcString = typeof value === 'string' && !value.endsWith('Z') ? value + 'Z' : value;
+                var date = new Date(utcString);
+                return isNaN(date.getTime()) ? null : date;
+            }
+
+            function formatDateWithTimezone(utcDateString) {
+                if (!utcDateString) return '—';
+                var date = parseUtcDate(utcDateString);
+                if (!date) return '—';
+
+                if (timezoneMode === 'utc') {
+                    // Format in UTC
+                    return date.toLocaleString('en-US', { timeZone: 'UTC' });
+                } else {
+                    // Format in local timezone
+                    return date.toLocaleString();
+                }
+            }
+
+            function formatSessionDurationCell(session) {
+                if (session.DurationMinutes != null && !isNaN(session.DurationMinutes) && session.DurationMinutes > 0) {
+                    return formatMinutes(session.DurationMinutes);
+                }
+
+                var start = parseUtcDate(session.StartTimeUtc);
+                if (!start) {
+                    return '— ' + badge('ok', 'Live');
+                }
+
+                // Duration calculation is timezone-independent (it's always UTC based)
+                var minutes = Math.max(0, Math.floor((Date.now() - start.getTime()) / 60000));
+                return minutes + ' min ' + badge('ok', 'Live');
+            }
+
             function signalBar(value, scale) {
                 var pct = 0, label = '';
-                if (scale === 1) { pct = Math.min(100, Math.round(value / 655.35)); label = pct + '%'; }
-                else if (scale === 2) { pct = Math.min(100, Math.max(0, (value + 100))); label = value + ' dBm'; }
-                else if (value > 0) { pct = Math.min(100, Math.round(value / 655.35)); label = String(value); }
-                else { return '<span class="tvh-meta">n/a</span>'; }
+                if (scale === 1) {
+                    // Relative 0–65535
+                    pct = Math.min(100, Math.round(value / 655.35));
+                    label = pct + ' %';
+                } else if (scale === 2) {
+                    // dBm values from TvHeadend are in milli-units (1/1000)
+                    var db = value / 1000;
+                    label = db.toFixed(1) + ' dB';
+                    if (value < 0) {
+                        // Signal strength: typical DVB-S range -65 dBm (weak) to -20 dBm (strong)
+                        pct = Math.min(100, Math.max(0, Math.round(((db + 65) / 45) * 100)));
+                    } else {
+                        // SNR: 0 dB (bad) to 20 dB (excellent)
+                        pct = Math.min(100, Math.max(0, Math.round((db / 20) * 100)));
+                    }
+                } else if (value > 0) {
+                    pct = Math.min(100, Math.round(value / 655.35));
+                    label = String(value);
+                } else {
+                    return '<span class="tvh-meta">n/a</span>';
+                }
                 var color = pct > 70 ? '#4caf50' : pct > 40 ? '#f0ad4e' : '#e74c3c';
                 return '<span class="tvh-signal-bar"><span class="tvh-signal-fill" style="width:' + pct + '%;background:' + color + ';"></span></span> ' + esc(label);
             }
@@ -328,20 +494,26 @@
                 // Error banner
                 var banner = document.getElementById('tvhErrorBanner');
                 if (!d.IsReachable && d.ConnectionError) {
-                    banner.innerHTML = '<strong>TVHeadend unreachable:</strong> ' + esc(d.ConnectionError);
+                    banner.innerHTML = '<strong>TvHeadend unreachable:</strong> ' + esc(d.ConnectionError);
                     banner.style.display = '';
                 } else {
                     banner.style.display = 'none';
                 }
 
+                // Helper: read Activity fields (snake_case from TVHeadend passthrough)
+                var act = d.Activity || {};
+                var actSubs = act.subscription_count;
+                var actConns = act.connection_count;
+                var actNext = act.next_activity;
+
                 // Summary row
                 var connOk = d.IsReachable && d.IsAuthenticated;
                 document.getElementById('sumConnection').innerHTML = connOk ? badge('ok', 'OK') : (d.IsReachable ? badge('warn', 'Auth') : badge('err', 'Down'));
-                var activeTuners = d.Inputs ? d.Inputs.filter(function(i){ return i.Subs > 0; }).length : 0;
+                var activeTuners = d.Inputs ? d.Inputs.filter(function(i){ return i.subs > 0; }).length : 0;
                 var totalTuners = d.Inputs ? d.Inputs.length : 0;
                 document.getElementById('sumTuners').textContent = activeTuners + ' / ' + totalTuners;
-                document.getElementById('sumSubscriptions').textContent = d.Activity ? String(d.Activity.SubscriptionCount) : '—';
-                document.getElementById('sumConnections').textContent = d.Activity ? String(d.Activity.ConnectionCount) : '—';
+                document.getElementById('sumSubscriptions').textContent = actSubs != null ? String(actSubs) : '—';
+                document.getElementById('sumConnections').textContent = actConns != null ? String(actConns) : '—';
                 var healthBadge = d.DiagnosticStatus === 'OK' ? badge('ok', 'OK')
                     : d.DiagnosticStatus === 'WARNING' ? badge('warn', 'Warning')
                     : d.DiagnosticStatus === 'ERROR' ? badge('err', 'Error')
@@ -358,9 +530,9 @@
                     ['Base URL', val(d.BaseUrl)],
                     ['Server Version', val(d.ServerVersion)],
                     ['Latency', d.LatencyMs > 0 ? d.LatencyMs + ' ms' : '—'],
-                    ['Connections', d.Activity ? String(d.Activity.ConnectionCount) : '—'],
-                    ['Subscriptions', d.Activity ? String(d.Activity.SubscriptionCount) : '—'],
-                    ['Next Activity', d.Activity && d.Activity.NextActivity ? formatUnix(d.Activity.NextActivity) : 'None']
+                    ['Connections', actConns != null ? String(actConns) : '—'],
+                    ['Subscriptions', actSubs != null ? String(actSubs) : '—'],
+                    ['Next Activity', actNext ? formatUnix(actNext) : 'None']
                 ]);
 
                 // Health card
@@ -383,17 +555,17 @@
                         + '<th>Input</th><th>Stream / Mux</th><th>Subs</th><th>Signal</th><th>SNR</th>'
                         + '<th>BER</th><th>Bitrate</th><th>TE</th><th>CC</th></tr></thead><tbody>';
                     d.Inputs.forEach(function (inp) {
-                        var subsBadge = inp.Subs > 0 ? badge('active', inp.Subs + ' active') : badge('idle', 'Idle');
+                        var subsBadge = inp.subs > 0 ? badge('active', inp.subs + ' active') : badge('idle', 'Idle');
                         html += '<tr>'
-                            + '<td>' + val(inp.Input) + '</td>'
-                            + '<td>' + val(inp.Stream) + '</td>'
+                            + '<td>' + val(inp.input) + '</td>'
+                            + '<td>' + val(inp.stream) + '</td>'
                             + '<td>' + subsBadge + '</td>'
-                            + '<td>' + signalBar(inp.Signal, inp.SignalScale) + '</td>'
-                            + '<td>' + signalBar(inp.Snr, inp.SnrScale) + '</td>'
-                            + '<td>' + val(inp.Ber) + '</td>'
-                            + '<td>' + formatBps(inp.Bps) + '</td>'
-                            + '<td>' + val(inp.Te) + '</td>'
-                            + '<td>' + val(inp.Cc) + '</td>'
+                            + '<td>' + signalBar(inp.signal, inp.signal_scale) + '</td>'
+                            + '<td>' + signalBar(inp.snr, inp.snr_scale) + '</td>'
+                            + '<td>' + val(inp.ber) + '</td>'
+                            + '<td>' + formatBps(inp.bps) + '</td>'
+                            + '<td>' + val(inp.te) + '</td>'
+                            + '<td>' + val(inp.cc) + '</td>'
                             + '</tr>';
                     });
                     html += '</tbody></table></div>';
@@ -411,19 +583,20 @@
                         + '<th>Channel</th><th>User</th><th>Client</th><th>State</th><th>Profile</th>'
                         + '<th>In</th><th>Out</th><th>Errors</th><th>Start</th></tr></thead><tbody>';
                     d.Subscriptions.forEach(function (sub) {
-                        var stateBadge = sub.State === 'Running' ? badge('ok', sub.State)
-                            : sub.State === 'Bad' ? badge('err', sub.State)
-                            : badge('idle', sub.State || 'Unknown');
+                        var st = sub.state || '';
+                        var stateBadge = st === 'Running' ? badge('ok', st)
+                            : st === 'Bad' ? badge('err', st)
+                            : badge('idle', st || 'Unknown');
                         shtml += '<tr>'
-                            + '<td>' + val(sub.Channel) + '</td>'
-                            + '<td>' + val(sub.Username) + '</td>'
-                            + '<td>' + val(sub.Client) + '</td>'
+                            + '<td>' + val(sub.channel) + '</td>'
+                            + '<td>' + val(sub.username) + '</td>'
+                            + '<td>' + val(sub.client) + '</td>'
                             + '<td>' + stateBadge + '</td>'
-                            + '<td>' + val(sub.Profile) + '</td>'
-                            + '<td>' + formatBps(sub.In != null ? sub.In * 8 : null) + '</td>'
-                            + '<td>' + formatBps(sub.Out != null ? sub.Out * 8 : null) + '</td>'
-                            + '<td>' + (sub.Errors > 0 ? '<span style="color:#e74c3c;">' + sub.Errors + '</span>' : '0') + '</td>'
-                            + '<td>' + formatUnix(sub.Start) + '</td>'
+                            + '<td>' + val(sub.profile) + '</td>'
+                            + '<td>' + formatBps(sub['in'] != null ? sub['in'] * 8 : null) + '</td>'
+                            + '<td>' + formatBps(sub.out != null ? sub.out * 8 : null) + '</td>'
+                            + '<td>' + (sub.errors > 0 ? '<span style="color:#e74c3c;">' + sub.errors + '</span>' : '0') + '</td>'
+                            + '<td>' + formatUnix(sub.start) + '</td>'
                             + '</tr>';
                     });
                     shtml += '</tbody></table></div>';
@@ -440,18 +613,21 @@
                     var chtml = '<div class="tvh-table-wrap"><table><thead><tr>'
                         + '<th>User</th><th>Peer</th><th>Type</th><th>Streaming</th><th>Started</th></tr></thead><tbody>';
                     d.Connections.forEach(function (conn) {
-                        var streamBadge = conn.Streaming > 0 ? badge('active', 'Yes') : badge('idle', 'No');
+                        var streamBadge = conn.streaming > 0 ? badge('active', 'Yes') : badge('idle', 'No');
                         chtml += '<tr>'
-                            + '<td>' + val(conn.User) + '</td>'
-                            + '<td>' + val(conn.Peer) + (conn.PeerPort != null ? ':' + conn.PeerPort : '') + '</td>'
-                            + '<td>' + val(conn.Type) + '</td>'
+                            + '<td>' + val(conn.user) + '</td>'
+                            + '<td>' + val(conn.peer) + (conn.peer_port != null ? ':' + conn.peer_port : '') + '</td>'
+                            + '<td>' + val(conn.type) + '</td>'
                             + '<td>' + streamBadge + '</td>'
-                            + '<td>' + formatUnix(conn.Started) + '</td>'
+                            + '<td>' + formatUnix(conn.started) + '</td>'
                             + '</tr>';
                     });
                     chtml += '</tbody></table></div>';
                     connsEl.innerHTML = chtml;
                 }
+
+                // Active Jellyfin Sessions (from statistics endpoint, rendered separately)
+                renderActiveSessions();
 
                 // Channel summary
                 document.getElementById('tvhChannelKv').innerHTML = kvHtml([
@@ -510,8 +686,10 @@
                 var tableEl = document.getElementById('tvhStatsTable');
                 var kpiEl = document.getElementById('tvhStatsKpi');
                 var sessions = data.Sessions || [];
+                var activeSessions = data.ActiveSessions || [];
+                var allSessions = sessions.concat(activeSessions);
 
-                if (sessions.length === 0 && data.ActiveCount === 0) {
+                if (allSessions.length === 0 && data.ActiveCount === 0) {
                     emptyEl.style.display = '';
                     chartsEl.style.display = 'none';
                     tableEl.style.display = 'none';
@@ -540,12 +718,12 @@
                 });
 
                 // KPIs
-                document.getElementById('kpiSessions').textContent = String(sessions.length);
+                document.getElementById('kpiSessions').textContent = String(data.TotalCount || allSessions.length);
                 document.getElementById('kpiWatchTime').textContent = formatMinutes(totalMins);
                 document.getElementById('kpiUsers').textContent = String(Object.keys(users).length);
-                var topCh = Object.keys(channelMins).sort(function(a,b){ return channelMins[b]-channelMins[a]; })[0];
+                var topCh = Object.keys(channelMins).sort(function (a, b) { return channelMins[b] - channelMins[a]; })[0];
                 document.getElementById('kpiTopChannel').textContent = topCh || '—';
-                var topMethod = Object.keys(methods).sort(function(a,b){ return methods[b]-methods[a]; })[0];
+                var topMethod = Object.keys(methods).sort(function (a, b) { return methods[b] - methods[a]; })[0];
                 document.getElementById('kpiTopMethod').textContent = topMethod || '—';
 
                 // Chart: hours per user
@@ -563,7 +741,15 @@
                 var methodColors = { DirectPlay: '#4caf50', DirectStream: '#00a4dc', Transcode: '#e74c3c', Unknown: '#666' };
                 chartInstances.playMethod = new Chart(document.getElementById('ChartPlayMethod'), {
                     type: 'doughnut',
-                    data: { labels: methodLabels, datasets: [{ data: methodLabels.map(function (m) { return methods[m]; }), backgroundColor: methodLabels.map(function (m) { return methodColors[m] || '#888'; }) }] },
+                    data: {
+                        labels: methodLabels,
+                        datasets: [{
+                            data: methodLabels.map(function (m) { return methods[m]; }),
+                            backgroundColor: methodLabels.map(function (m) { return methodColors[m] || '#888'; }),
+                            borderWidth: 0,
+                            hoverBorderWidth: 0
+                        }]
+                    },
                     options: { responsive: true }
                 });
 
@@ -585,17 +771,180 @@
                     options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } } }
                 });
 
-                // Sessions table
+                // Sessions table — store data, render with filters/sort
+                lastStatsSessions = allSessions;
+                sessionSortKey = 'StartTimeUtc';
+                sessionSortAsc = false;
+                populateSessionFilters(allSessions);
+                renderSessionsTable();
+            }
+
+            // ── Session table: state ────────────────────────────
+            var lastStatsSessions = [];
+            var sessionSortKey = 'StartTimeUtc';
+            var sessionSortAsc = false;
+            var sessionCurrentPage = 1;
+            var savedSessionsPerPage = localStorage.getItem('tvhSessionsPerPage');
+            var sessionItemsPerPage = savedSessionsPerPage === 'all'
+                ? 'all'
+                : (parseInt(savedSessionsPerPage, 10) || 100);
+
+            function populateSessionFilters(sessions) {
+                var fields = [
+                    { id: 'tvhFilterUser', key: 'UserName', label: 'All Users' },
+                    { id: 'tvhFilterDevice', key: 'DeviceName', label: 'All Devices' },
+                    { id: 'tvhFilterClient', key: 'ClientName', label: 'All Clients' },
+                    { id: 'tvhFilterMethod', key: 'PlayMethod', label: 'All Methods' }
+                ];
+                fields.forEach(function (f) {
+                    var sel = document.getElementById(f.id);
+                    var prev = sel.value;
+                    var vals = {};
+                    sessions.forEach(function (s) { var v = s[f.key]; if (v) vals[v] = true; });
+                    sel.innerHTML = '<option value="">' + esc(f.label) + '</option>';
+                    Object.keys(vals).sort().forEach(function (v) {
+                        var o = document.createElement('option');
+                        o.value = v; o.textContent = v;
+                        if (v === prev) o.selected = true;
+                        sel.appendChild(o);
+                    });
+                });
+            }
+
+            function getFilteredSessions() {
+                var search = (document.getElementById('tvhSessionSearch').value || '').toLowerCase();
+                var fUser = document.getElementById('tvhFilterUser').value;
+                var fDevice = document.getElementById('tvhFilterDevice').value;
+                var fClient = document.getElementById('tvhFilterClient').value;
+                var fMethod = document.getElementById('tvhFilterMethod').value;
+
+                return lastStatsSessions.filter(function (s) {
+                    if (fUser && s.UserName !== fUser) return false;
+                    if (fDevice && s.DeviceName !== fDevice) return false;
+                    if (fClient && s.ClientName !== fClient) return false;
+                    if (fMethod && s.PlayMethod !== fMethod) return false;
+                    if (search) {
+                        var hay = [s.UserName, s.DeviceName, s.ClientName, s.ChannelName, s.PlayMethod].join(' ').toLowerCase();
+                        if (hay.indexOf(search) === -1) return false;
+                    }
+                    return true;
+                });
+            }
+
+            function sortSessions(arr) {
+                var key = sessionSortKey;
+                var asc = sessionSortAsc;
+                return arr.slice().sort(function (a, b) {
+                    var va = a[key], vb = b[key];
+                    // nulls last (active sessions have null Duration)
+                    if (va == null && vb == null) return 0;
+                    if (va == null) return 1;
+                    if (vb == null) return -1;
+                    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
+                    if (va < vb) return asc ? -1 : 1;
+                    if (va > vb) return asc ? 1 : -1;
+                    return 0;
+                });
+            }
+
+            function updateSortHeaders() {
+                var ths = document.querySelectorAll('#tvhSessionsTable th.tvh-sortable');
+                for (var i = 0; i < ths.length; i++) {
+                    var th = ths[i];
+                    th.classList.remove('tvh-sort-asc', 'tvh-sort-desc');
+                    var arrow = th.querySelector('.tvh-sort-arrow');
+                    if (th.getAttribute('data-sort') === sessionSortKey) {
+                        th.classList.add(sessionSortAsc ? 'tvh-sort-asc' : 'tvh-sort-desc');
+                        arrow.textContent = sessionSortAsc ? '▲' : '▼';
+                    } else {
+                        arrow.textContent = '▲▼';
+                    }
+                }
+            }
+
+            function buildPageButton(page, label, isDisabled, isActive) {
+                var cssClass = isActive ? 'tvh-page-active' : (isDisabled ? 'tvh-page-disabled' : '');
+                var disabledAttr = isDisabled ? ' disabled' : '';
+                return '<button type="button" class="' + cssClass + '" data-page="' + page + '"' + disabledAttr + '>' + esc(label) + '</button>';
+            }
+
+            function renderPagination(filtered) {
+                var pageCount = sessionItemsPerPage === 'all' ? 1 : Math.ceil(filtered.length / sessionItemsPerPage);
+                if (pageCount <= 1) {
+                    document.getElementById('tvhPaginationTop').style.display = 'none';
+                    document.getElementById('tvhPaginationBottom').style.display = 'none';
+                    return;
+                }
+
+                var paginationHtml = buildPageButton(1, '« First', sessionCurrentPage <= 1, false);
+                paginationHtml += ' ' + buildPageButton(sessionCurrentPage - 1, '‹ Prev', sessionCurrentPage <= 1, false) + ' ';
+
+                // Show page numbers (max 10 pages shown)
+                var startPage = Math.max(1, sessionCurrentPage - 4);
+                var endPage = Math.min(pageCount, sessionCurrentPage + 4);
+                if (startPage > 1) paginationHtml += ' <span>…</span> ';
+                for (var p = startPage; p <= endPage; p++) {
+                    if (p === sessionCurrentPage) {
+                        paginationHtml += ' ' + buildPageButton(p, String(p), false, true) + ' ';
+                    } else {
+                        paginationHtml += ' ' + buildPageButton(p, String(p), false, false) + ' ';
+                    }
+                }
+                if (endPage < pageCount) paginationHtml += ' <span>…</span> ';
+
+                paginationHtml += ' ' + buildPageButton(sessionCurrentPage + 1, 'Next ›', sessionCurrentPage >= pageCount, false) + ' ';
+                paginationHtml += buildPageButton(pageCount, 'Last »', sessionCurrentPage >= pageCount, false);
+                paginationHtml += ' <span style="margin-left:0.5em;">Page ' + sessionCurrentPage + ' of ' + pageCount + '</span>';
+
+                document.getElementById('tvhPaginationTop').innerHTML = paginationHtml;
+                document.getElementById('tvhPaginationBottom').innerHTML = paginationHtml;
+                document.getElementById('tvhPaginationTop').style.display = '';
+                document.getElementById('tvhPaginationBottom').style.display = '';
+            }
+
+            function sessionPageClick(page) {
+                if (!page || page < 1) {
+                    return;
+                }
+
+                sessionCurrentPage = page;
+                renderSessionsTable();
+
+                // Keep viewport near the sessions table without triggering route/hash side effects.
+                var statsTable = document.getElementById('tvhStatsTable');
+                if (statsTable && typeof statsTable.scrollIntoView === 'function') {
+                    statsTable.scrollIntoView({ block: 'start', behavior: 'auto' });
+                }
+            }
+
+            function renderSessionsTable() {
+                var filtered = getFilteredSessions();
+                var sorted = sortSessions(filtered);
+                var countEl = document.getElementById('tvhFilterCount');
+                if (filtered.length !== lastStatsSessions.length) {
+                    countEl.textContent = filtered.length + ' / ' + lastStatsSessions.length;
+                } else {
+                    countEl.textContent = '';
+                }
+                updateSortHeaders();
+                renderPagination(filtered);
+
+                // Pagination: calculate start and end
+                var itemsPerPage = sessionItemsPerPage === 'all' ? filtered.length : sessionItemsPerPage;
+                var startIdx = (sessionCurrentPage - 1) * itemsPerPage;
+                var endIdx = Math.min(startIdx + itemsPerPage, filtered.length);
+                var pageItems = sorted.slice(startIdx, endIdx);
+
                 var tbody = document.getElementById('tvhStatsTableBody');
-                tbody.innerHTML = '';
-                sessions.slice(0, 50).forEach(function (s) {
-                    var dur = s.DurationMinutes != null ? formatMinutes(s.DurationMinutes) : '<em>active</em>';
-                    var start = s.StartTimeUtc ? new Date(s.StartTimeUtc).toLocaleString() : '—';
+                var html = '';
+                pageItems.forEach(function (s) {
+                    var dur = formatSessionDurationCell(s);
+                    var start = formatDateWithTimezone(s.StartTimeUtc);
                     var methodBadge = s.PlayMethod === 'DirectPlay' ? badge('ok', 'Direct Play')
                         : s.PlayMethod === 'Transcode' ? badge('err', 'Transcode')
                         : s.PlayMethod === 'DirectStream' ? badge('active', 'Direct Stream')
                         : badge('idle', s.PlayMethod || 'Unknown');
-                    tbody.innerHTML += '<tr>'
+                    html += '<tr>'
                         + '<td>' + val(s.UserName) + '</td>'
                         + '<td>' + val(s.DeviceName) + '</td>'
                         + '<td>' + val(s.ClientName) + '</td>'
@@ -605,7 +954,50 @@
                         + '<td>' + dur + '</td>'
                         + '</tr>';
                 });
+                tbody.innerHTML = html || '<tr><td colspan="7" style="text-align:center; opacity:0.5; padding:1em;">No matching sessions.</td></tr>';
             }
+
+            // Session table event listeners
+            document.getElementById('tvhSessionSearch').addEventListener('input', renderSessionsTable);
+            document.getElementById('tvhFilterUser').addEventListener('change', renderSessionsTable);
+            document.getElementById('tvhFilterDevice').addEventListener('change', renderSessionsTable);
+            document.getElementById('tvhFilterClient').addEventListener('change', renderSessionsTable);
+            document.getElementById('tvhFilterMethod').addEventListener('change', renderSessionsTable);
+            document.getElementById('tvhSessionsPerPage').addEventListener('change', function(e) {
+                sessionItemsPerPage = e.target.value;
+                localStorage.setItem('tvhSessionsPerPage', sessionItemsPerPage);
+                sessionCurrentPage = 1; // Reset to first page
+                renderSessionsTable();
+            });
+
+            function onPaginationClick(e) {
+                var button = e.target.closest('button[data-page]');
+                if (!button || button.disabled) {
+                    return;
+                }
+
+                var page = parseInt(button.getAttribute('data-page'), 10);
+                if (!isNaN(page)) {
+                    sessionPageClick(page);
+                }
+            }
+
+            document.getElementById('tvhPaginationTop').addEventListener('click', onPaginationClick);
+            document.getElementById('tvhPaginationBottom').addEventListener('click', onPaginationClick);
+
+            document.getElementById('tvhSessionsTable').querySelector('thead').addEventListener('click', function (e) {
+                var th = e.target.closest('th.tvh-sortable');
+                if (!th) return;
+                var key = th.getAttribute('data-sort');
+                if (sessionSortKey === key) {
+                    sessionSortAsc = !sessionSortAsc;
+                } else {
+                    sessionSortKey = key;
+                    sessionSortAsc = (key !== 'StartTimeUtc' && key !== 'DurationMinutes');
+                }
+                sessionCurrentPage = 1; // Reset to first page when sorting changes
+                renderSessionsTable();
+            });
 
             function loadStatistics() {
                 var days = document.getElementById('tvhStatsDays').value;
@@ -616,6 +1008,7 @@
                     return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Statistics?days=' + days), dataType: 'json' });
                 }).then(function (data) {
                     msgEl.textContent = data.TotalCount + ' sessions' + (data.ActiveCount > 0 ? ' (' + data.ActiveCount + ' active)' : '');
+                    document.getElementById('tvhStatsLastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
                     renderStats(data);
                 }).catch(function (err) {
                     msgEl.textContent = 'Failed to load statistics.';
@@ -623,11 +1016,116 @@
                 });
             }
 
+            // ── Active Jellyfin Sessions ────────────────────────
+            var lastActiveSessions = [];
+
+            function renderActiveSessions() {
+                var el = document.getElementById('tvhActiveSessionsContent');
+                var sessions = lastActiveSessions;
+
+                if (!sessions || sessions.length === 0) {
+                    el.innerHTML = emptyRow('No active Jellyfin Live TV sessions.');
+                    return;
+                }
+
+                var html = '<div class="tvh-table-wrap"><table><thead><tr>'
+                    + '<th>User</th><th>Device</th><th>Client</th><th>Channel</th>'
+                    + '<th>Play Method</th><th>Start</th><th>Duration</th></tr></thead><tbody>';
+                sessions.forEach(function (s) {
+                    var dur = formatSessionDurationCell(s);
+                    var start = formatDateWithTimezone(s.StartTimeUtc);
+                    var methodBadge = s.PlayMethod === 'DirectPlay' ? badge('ok', 'Direct Play')
+                        : s.PlayMethod === 'Transcode' ? badge('err', 'Transcode')
+                        : s.PlayMethod === 'DirectStream' ? badge('active', 'Direct Stream')
+                        : badge('idle', s.PlayMethod || 'Unknown');
+                    html += '<tr>'
+                        + '<td>' + val(s.UserName) + '</td>'
+                        + '<td>' + val(s.DeviceName) + '</td>'
+                        + '<td>' + val(s.ClientName) + '</td>'
+                        + '<td>' + val(s.ChannelName) + '</td>'
+                        + '<td>' + methodBadge + '</td>'
+                        + '<td>' + start + '</td>'
+                        + '<td>' + dur + '</td>'
+                        + '</tr>';
+                });
+                html += '</tbody></table></div>';
+                el.innerHTML = html;
+            }
+
+            function refreshActiveSessions() {
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Statistics?days=1'), dataType: 'json' })
+                    .then(function (data) {
+                        var activeSessions = data.ActiveSessions || [];
+                        lastActiveSessions = activeSessions;
+                        renderActiveSessions();
+                    })
+                    .catch(function () { /* silent */ });
+            }
+
             // ── Auto-refresh ───────────────────────────────────
+            var statsAutoRefreshTimer = null;
+
             function toggleAutoRefresh() {
                 if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+                if (statsRefreshTimer) { clearInterval(statsRefreshTimer); statsRefreshTimer = null; }
                 if (document.getElementById('tvhAutoRefresh').checked) {
-                    autoRefreshTimer = setInterval(function () { refreshDashboard(); }, 10000);
+                    autoRefreshTimer = setInterval(function () { refreshDashboard(); refreshActiveSessions(); }, 2000);
+                    statsRefreshTimer = setInterval(function () { loadStatistics(); }, 60000);
+                }
+            }
+
+            function toggleStatsAutoRefresh() {
+                if (statsAutoRefreshTimer) { clearInterval(statsAutoRefreshTimer); statsAutoRefreshTimer = null; }
+                if (document.getElementById('tvhStatsAutoRefresh').checked) {
+                    statsAutoRefreshTimer = setInterval(function () { loadStatistics(); }, 60000);
+                }
+            }
+
+            // ── Logs ────────────────────────────────────────────
+            var logsRefreshTimer = null;
+            var allLogs = [];
+
+            function loadLogs() {
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Logs?count=100'), dataType: 'json' })
+                    .then(function (data) {
+                        allLogs = data.LogEntries || [];
+                        renderLogs();
+                        document.getElementById('tvhLogsStatus').textContent = allLogs.length + ' messages';
+                    })
+                    .catch(function (err) {
+                        document.getElementById('tvhLogsStatus').textContent = 'Failed to load logs';
+                        console.error('Logs load error:', err);
+                    });
+            }
+
+            function renderLogs() {
+                var filterText = (document.getElementById('tvhLogFilter').value || '').toLowerCase();
+                var filtered = allLogs.filter(function (log) {
+                    return log.Message.toLowerCase().indexOf(filterText) !== -1;
+                });
+
+                var listEl = document.getElementById('tvhLogsList');
+                if (filtered.length === 0) {
+                    listEl.innerHTML = '<li class="tvh-logs-empty">No logs to display</li>';
+                    return;
+                }
+
+                var html = '';
+                filtered.forEach(function (log) {
+                    var time = new Date(log.Timestamp).toLocaleTimeString();
+                    html += '<li class="tvh-logs-item"><span class="tvh-logs-time">' + esc(time) + '</span><span class="tvh-logs-text">' + esc(log.Message) + '</span></li>';
+                });
+                listEl.innerHTML = html;
+
+                if (document.getElementById('tvhLogsAutoRefresh').checked) {
+                    listEl.scrollTop = listEl.scrollHeight;
+                }
+            }
+
+            function toggleLogsAutoRefresh() {
+                if (logsRefreshTimer) { clearInterval(logsRefreshTimer); logsRefreshTimer = null; }
+                if (document.getElementById('tvhLogsAutoRefresh').checked) {
+                    logsRefreshTimer = setInterval(loadLogs, 5000);
                 }
             }
 
@@ -635,10 +1133,18 @@
             document.getElementById('tvhRefreshBtn').addEventListener('click', function () {
                 refreshDashboard();
                 loadStatistics();
+                loadLogs();
             });
             document.getElementById('tvhAutoRefresh').addEventListener('change', toggleAutoRefresh);
+            document.getElementById('tvhStatsAutoRefresh').addEventListener('change', toggleStatsAutoRefresh);
             document.getElementById('tvhRefreshStatsBtn').addEventListener('click', loadStatistics);
             document.getElementById('tvhStatsDays').addEventListener('change', loadStatistics);
+            document.getElementById('tvhTimezoneMode').addEventListener('change', function(e) {
+                timezoneMode = e.target.value;
+                localStorage.setItem('tvhTimezoneMode', timezoneMode);
+                renderSessionsTable();
+                renderActiveSessions();
+            });
             document.getElementById('tvhClearStatsBtn').addEventListener('click', function () {
                 if (!confirm('Delete all viewing statistics?')) return;
                 ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('TvHeadendApi/Statistics') }).then(function () {
@@ -646,15 +1152,41 @@
                     loadStatistics();
                 });
             });
+            document.getElementById('tvhLogFilter').addEventListener('input', renderLogs);
+            document.getElementById('tvhLogsAutoRefresh').addEventListener('change', toggleLogsAutoRefresh);
+            document.getElementById('tvhClearLogsBtn').addEventListener('click', function () {
+                allLogs = [];
+                renderLogs();
+                document.getElementById('tvhLogsStatus').textContent = '0 messages';
+            });
 
             // ── Lifecycle ──────────────────────────────────────
             document.getElementById('TvHeadendDashboardPage').addEventListener('pageshow', function () {
+                // Initialize timezone selector
+                var timezoneSelect = document.getElementById('tvhTimezoneMode');
+                if (timezoneSelect) {
+                    timezoneSelect.value = timezoneMode;
+                }
+
+                // Initialize pagination selector
+                var pageSelect = document.getElementById('tvhSessionsPerPage');
+                if (pageSelect) {
+                    pageSelect.value = sessionItemsPerPage;
+                }
+
                 refreshDashboard();
                 loadStatistics();
+                loadLogs();
+                toggleAutoRefresh();
+                toggleStatsAutoRefresh();
+                toggleLogsAutoRefresh();
             });
 
             document.getElementById('TvHeadendDashboardPage').addEventListener('pagehide', function () {
                 if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+                if (statsRefreshTimer) { clearInterval(statsRefreshTimer); statsRefreshTimer = null; }
+                if (statsAutoRefreshTimer) { clearInterval(statsAutoRefreshTimer); statsAutoRefreshTimer = null; }
+                if (logsRefreshTimer) { clearInterval(logsRefreshTimer); logsRefreshTimer = null; }
                 Object.keys(chartInstances).forEach(destroyChart);
             });
         })();

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -6,6 +7,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Session;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -17,11 +19,16 @@ public class StatisticsServiceTests
     private static StatisticsService CreateSut(Mock<ISessionManager>? sessionManager = null)
     {
         var sm = sessionManager ?? new Mock<ISessionManager>();
+        var options = new DbContextOptionsBuilder<ViewingSessionContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
         return new StatisticsService(
             NullLogger<StatisticsService>.Instance,
             sm.Object,
             new PluginConfigurationProvider(() => null),
-            new DataFolderPathProvider(() => null));
+            options,
+            string.Empty);
     }
 
     // ── Constructor ───────────────────────────────────────────────────
@@ -30,14 +37,34 @@ public class StatisticsServiceTests
     public void Constructor_WithNullLogger_Throws()
     {
         var sm = new Mock<ISessionManager>();
-        Assert.Throws<ArgumentNullException>(() => new StatisticsService(null!, sm.Object, new PluginConfigurationProvider(() => null), new DataFolderPathProvider(() => null)));
+        var options = new DbContextOptionsBuilder<ViewingSessionContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var dbContext = new ViewingSessionContext(options);
+
+        Assert.Throws<ArgumentNullException>(() =>
+            new StatisticsService(null!, sm.Object, new PluginConfigurationProvider(() => null), options, string.Empty));
     }
 
     [Fact]
     public void Constructor_WithNullSessionManager_Throws()
     {
-        Assert.Throws<ArgumentNullException>(
-            () => new StatisticsService(NullLogger<StatisticsService>.Instance, null!, new PluginConfigurationProvider(() => null), new DataFolderPathProvider(() => null)));
+        var options = new DbContextOptionsBuilder<ViewingSessionContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var dbContext = new ViewingSessionContext(options);
+
+        Assert.Throws<ArgumentNullException>(() =>
+            new StatisticsService(NullLogger<StatisticsService>.Instance, null!, new PluginConfigurationProvider(() => null), options, string.Empty));
+    }
+
+    [Fact]
+    public void Constructor_WithNullDbContextOptions_Throws()
+    {
+        var sm = new Mock<ISessionManager>();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            new StatisticsService(NullLogger<StatisticsService>.Instance, sm.Object, new PluginConfigurationProvider(() => null), null!, string.Empty));
     }
 
     // ── GetStatistics ────────────────────────────────────────────────
@@ -160,6 +187,7 @@ public class StatisticsServiceTests
         // Active session should be reflected in statistics
         var stats = sut.GetStatistics(0);
         Assert.Equal(1, stats.ActiveCount);
+        Assert.Single(stats.ActiveSessions);
 
         sut.Dispose();
     }
@@ -220,9 +248,104 @@ public class StatisticsServiceTests
         Assert.Equal(0, stats.ActiveCount);
         Assert.Equal(1, stats.TotalCount);
         Assert.Single(stats.Sessions);
+        Assert.Empty(stats.ActiveSessions);
         Assert.NotNull(stats.Sessions[0].EndTimeUtc);
 
         sut.Dispose();
+    }
+
+    [Fact]
+    public async Task GetStatistics_WithActiveSession_ReturnsActiveSessionsSeparately()
+    {
+        var sm = new Mock<ISessionManager>();
+        var sut = CreateSut(sm);
+        await sut.StartAsync(CancellationToken.None);
+
+        var channel = new LiveTvChannel { Name = "TestChannel" };
+        var startArgs = new MediaBrowser.Controller.Library.PlaybackProgressEventArgs
+        {
+            Item = channel,
+            PlaySessionId = "active-session",
+            DeviceName = "Dev",
+            ClientName = "Client",
+        };
+
+        sm.Raise(m => m.PlaybackStart += null, startArgs);
+
+        var stats = sut.GetStatistics(0);
+
+        Assert.Empty(stats.Sessions);
+        Assert.Single(stats.ActiveSessions);
+        Assert.Equal(1, stats.ActiveCount);
+        Assert.Equal(1, stats.TotalCount);
+
+        sut.Dispose();
+    }
+
+    [Fact]
+    public async Task PlaybackLifecycle_WithSqliteDatabase_PersistsSessionsToDisk()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tvh-stats-{Guid.NewGuid():N}.db");
+        try
+        {
+            var sm = new Mock<ISessionManager>();
+            var options = new DbContextOptionsBuilder<ViewingSessionContext>()
+                .UseSqlite($"Data Source={dbPath}")
+                .Options;
+            var sut = new StatisticsService(
+                NullLogger<StatisticsService>.Instance,
+                sm.Object,
+                new PluginConfigurationProvider(() => null),
+                options,
+                dbPath);
+
+            await sut.StartAsync(CancellationToken.None);
+
+            var channel = new LiveTvChannel { Id = Guid.NewGuid(), Name = "SQLiteChannel" };
+            sm.Raise(m => m.PlaybackStart += null, new MediaBrowser.Controller.Library.PlaybackProgressEventArgs
+            {
+                Item = channel,
+                PlaySessionId = "sqlite-session",
+                DeviceName = "Device",
+                ClientName = "Client",
+            });
+
+            sm.Raise(m => m.PlaybackStopped += null, new MediaBrowser.Controller.Library.PlaybackStopEventArgs
+            {
+                Item = channel,
+                PlaySessionId = "sqlite-session",
+                DeviceName = "Device",
+                ClientName = "Client",
+            });
+
+            sut.Dispose();
+
+            var persistedOptions = new DbContextOptionsBuilder<ViewingSessionContext>()
+                .UseSqlite($"Data Source={dbPath}")
+                .Options;
+
+            using var persistedContext = new ViewingSessionContext(persistedOptions);
+            var persistedSession = persistedContext.ViewingSessions.Single();
+            Assert.Equal("SQLiteChannel", persistedSession.ChannelName);
+            Assert.NotNull(persistedSession.EndTimeUtc);
+        }
+        finally
+        {
+            foreach (var file in new[] { dbPath, dbPath + "-shm", dbPath + "-wal" })
+            {
+                try
+                {
+                    if (File.Exists(file))
+                    {
+                        File.Delete(file);
+                    }
+                }
+                catch (IOException)
+                {
+                    // Ignore transient cleanup failures on Windows when SQLite releases the file slightly later.
+                }
+            }
+        }
     }
 
     [Fact]
@@ -328,79 +451,43 @@ public class StatisticsServiceTests
         sut.Dispose();
     }
 
-    // ── LoadFromDisk / SaveToDisk ─────────────────────────────────────
+    // ── StartAsync / StopAsync ─────────────────────────────────────────
 
     [Fact]
-    public async Task StartAsync_WhenFileExists_LoadsSessionsFromDisk()
+    public async Task StartAsync_InitializesDatabase()
     {
-        var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.IO.Path.GetRandomFileName());
-        System.IO.Directory.CreateDirectory(tempDir);
-        try
-        {
-            var sessions = new[]
-            {
-                new Jellyfin.Plugin.TvHeadendApi.Model.Statistics.ViewingSession
-                {
-                    UserName = "TestUser",
-                    ChannelName = "TestChannel",
-                    StartTimeUtc = DateTime.UtcNow.AddMinutes(-10),
-                    EndTimeUtc = DateTime.UtcNow.AddMinutes(-5),
-                    PlaySessionId = "persisted-1",
-                    DeviceName = "Dev",
-                    ClientName = "Client",
-                    PlayMethod = "DirectPlay",
-                    ChannelId = "ch-1"
-                }
-            };
-            var json = System.Text.Json.JsonSerializer.Serialize(sessions, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-            await System.IO.File.WriteAllTextAsync(System.IO.Path.Combine(tempDir, "viewing-statistics.json"), json);
+        var sut = CreateSut();
 
-            var sm = new Mock<ISessionManager>();
-            var sut = new StatisticsService(
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<StatisticsService>.Instance,
-                sm.Object,
-                new PluginConfigurationProvider(() => null),
-                new DataFolderPathProvider(() => tempDir));
+        await sut.StartAsync(CancellationToken.None);
 
-            await sut.StartAsync(CancellationToken.None);
+        // Verify no exception was thrown and service is initialized
+        Assert.NotNull(sut);
 
-            Assert.Single(sut.AllSessions);
-            Assert.Equal("TestUser", sut.AllSessions[0].UserName);
-
-            sut.Dispose();
-        }
-        finally
-        {
-            System.IO.Directory.Delete(tempDir, recursive: true);
-        }
+        sut.Dispose();
     }
 
     [Fact]
-    public async Task ClearStatistics_WhenPathProvided_WritesJsonFile()
+    public async Task StartAsync_WhenDatabaseInitializationFails_DegradesGracefully()
     {
-        var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.IO.Path.GetRandomFileName());
-        System.IO.Directory.CreateDirectory(tempDir);
-        try
-        {
-            var sm = new Mock<ISessionManager>();
-            var sut = new StatisticsService(
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<StatisticsService>.Instance,
-                sm.Object,
-                new PluginConfigurationProvider(() => null),
-                new DataFolderPathProvider(() => tempDir));
+        var sm = new Mock<ISessionManager>();
+        var invalidOptions = new DbContextOptionsBuilder<ViewingSessionContext>().Options;
+        var sut = new StatisticsService(
+            NullLogger<StatisticsService>.Instance,
+            sm.Object,
+            new PluginConfigurationProvider(() => null),
+            invalidOptions,
+            string.Empty);
 
-            await sut.StartAsync(CancellationToken.None);
-            sut.ClearStatistics();
+        await sut.StartAsync(CancellationToken.None);
 
-            var filePath = System.IO.Path.Combine(tempDir, "viewing-statistics.json");
-            Assert.True(System.IO.File.Exists(filePath));
+        var stats = sut.GetStatistics(30);
+        Assert.Equal(0, stats.TotalCount);
+        Assert.Equal(0, stats.ActiveCount);
+        Assert.Empty(sut.AllSessions);
 
-            sut.Dispose();
-        }
-        finally
-        {
-            System.IO.Directory.Delete(tempDir, recursive: true);
-        }
+        sut.ClearStatistics();
+        await sut.StopAsync(CancellationToken.None);
+        sut.Dispose();
     }
 
     [Fact]

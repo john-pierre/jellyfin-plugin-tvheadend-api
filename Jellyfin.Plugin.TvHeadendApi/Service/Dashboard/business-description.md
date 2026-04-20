@@ -2,14 +2,14 @@
 
 ## Purpose
 
-Aggregates data from multiple TVHeadend services into a single dashboard snapshot for the admin UI. Each section (diagnostics, activity, inputs, subscriptions, connections) is fetched independently so a failure in one does not break the others.
+Aggregates data from multiple TVHeadend services into a single dashboard snapshot for the admin UI. Each section (diagnostics, activity, inputs, subscriptions, connections) is fetched independently so a failure in one does not break the others, and the service only composes already-owned data instead of reimplementing lower-level HTTP calls.
 
 ## Key Types
 
 | Type | Role |
 |------|------|
 | `IDashboardService` | Interface for dashboard aggregation |
-| `DashboardService` | Orchestrates calls to `IDiagnosticService`, `IStatusService`, `IInputMonitorService`, `ISubscriptionService` |
+| `DashboardService` | Orchestrates calls to `IDiagnosticService`, `IStatusService`, `IInputMonitorService`, and `ISubscriptionService` |
 
 ## Data Flow
 

@@ -43,7 +43,7 @@ Quick reference for what each module owns and its boundaries.
 
 ### Service/Statistics (`StatisticsService`)
 
-- **Owns:** Tracking live TV viewing sessions, persisting to JSON, retention cleanup.
+- **Owns:** Tracking live TV viewing sessions, persisting to SQLite, retention cleanup.
 - **Boundary:** Listens to Jellyfin `ISessionManager` playback events.
 - **Does not:** Interact with TVHeadend.
 
@@ -64,6 +64,13 @@ Quick reference for what each module owns and its boundaries.
 - **Owns:** Active streaming subscription listing.
 - **Boundary:** Reads `/api/status/subscriptions`.
 - **Does not:** Manage connections or input status.
+
+### Service/Comet (`TvHeadendCometService`)
+
+- **Owns:** Real-time Comet/WebSocket connection, dashboard log buffering, disk-space update buffering.
+- **Owns:** `ICometSnapshotReader`, the read-only snapshot contract consumed by dashboard endpoints.
+- **Boundary:** Connects to `/comet/ws` using the configured TVHeadend web root, SSL mode, and authentication settings.
+- **Does not:** Expose dashboard endpoints directly or perform polling-based status reads.
 
 ### Service/Helper (`ApiClient`, `UrlBuilder`, `GridFetcher`, `IdNodeValueHelper`, `ResiliencePolicies`, `PluginMetrics`)
 

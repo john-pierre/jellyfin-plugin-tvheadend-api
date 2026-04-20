@@ -52,12 +52,11 @@ public class PluginConfiguration : BasePluginConfiguration
         this.RecordingProfile = string.Empty;
 
         // Statistics
-        this.StatisticsRetentionDays = 30;
+        this.StatisticsRetentionPeriod = StatisticsRetentionPeriod.ThirtyDays;
 
         // Expert
         this.AuthTokenMaxAttempts = 5;
         this.ProfileCacheTtlMinutes = 5;
-        this.StatisticsSaveIntervalMinutes = 5;
     }
 
     // ── Connection ─────────────────────────────────────────────────────
@@ -268,9 +267,10 @@ public class PluginConfiguration : BasePluginConfiguration
     // ── Statistics ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Gets or sets the number of days to retain viewing statistics. Default: 30. Max: 90.
+    /// Gets or sets how long viewing statistics are retained before being pruned.
+    /// Default: 30 days.
     /// </summary>
-    public int StatisticsRetentionDays { get; set; }
+    public StatisticsRetentionPeriod StatisticsRetentionPeriod { get; set; }
 
     // ── Expert ────────────────────────────────────────────────────────
 
@@ -283,9 +283,4 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the TTL in minutes for the cached streaming profile metadata. Default: 5.
     /// </summary>
     public int ProfileCacheTtlMinutes { get; set; }
-
-    /// <summary>
-    /// Gets or sets the interval in minutes for auto-saving viewing statistics to disk. Default: 5.
-    /// </summary>
-    public int StatisticsSaveIntervalMinutes { get; set; }
 }

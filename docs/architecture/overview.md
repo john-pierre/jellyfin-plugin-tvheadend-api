@@ -47,6 +47,8 @@ The plugin integrates TVHeadend with Jellyfin's Live TV subsystem using TVHeaden
 | `DefaultProfileService` | Creates recommended TVHeadend streaming profiles | Admin UI |
 | `ProfileResolver` / `ProfileContainerResolver` | Resolves active streaming profile metadata for cache/container decisions | Stream services |
 | `StatisticsService` | Tracks live TV viewing sessions via Jellyfin playback events | Background (`IHostedService`) |
+| `DashboardService` | Aggregates diagnostics, status, input, and subscription data for the admin dashboard | Admin UI |
+| `TvHeadendCometService` | Buffers TVHeadend Comet log and disk-space updates for dashboard endpoints | Background (`IHostedService`) |
 | `EncodingOptionsReader` | Reads Jellyfin's FFmpeg encoding options for diagnostic reporting | DiagnosticService |
 
 ### API Controller
@@ -120,7 +122,8 @@ All endpoints require Jellyfin admin elevation.
 
 - **Profile cache**: `ProfileContainerResolver` caches resolved profile metadata with configurable TTL.
 - **MediaInfo cache**: `MediaSourceService` reads/writes Jellyfin's `cache/mediainfo/*.json` files to pre-populate probe data.
-- **Statistics state**: `StatisticsService` maintains in-memory sessions and persists to JSON file periodically.
+- **Statistics state**: `StatisticsService` maintains active sessions in memory and persists history to SQLite.
+- **Comet state**: `TvHeadendCometService` buffers recent log messages and the latest disk-space update in memory.
 - **No other shared mutable state** across services.
 
 ## Error Handling Strategy

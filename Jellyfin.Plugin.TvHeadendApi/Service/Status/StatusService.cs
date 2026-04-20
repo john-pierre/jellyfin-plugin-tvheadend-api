@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
+using Jellyfin.Plugin.TvHeadendApi.Model.Subscription;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Microsoft.Extensions.Logging;
 
@@ -32,7 +33,7 @@ internal sealed class StatusService : IStatusService
     }
 
     /// <summary>
-    /// Gets the current server activity status including connection and subscription counts.
+    /// Gets current activity counters synthesized from dedicated status endpoints.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The activity status summary, or <c>null</c> if the configuration is unavailable.</returns>
@@ -46,9 +47,21 @@ internal sealed class StatusService : IStatusService
         }
 
         using var httpClient = _apiClient.CreateApiHttpClient(config);
-        var url = _urlBuilder.BuildApiUrl(config, "api/status/activity");
-        var json = await _apiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
-        return JsonSerializer.Deserialize<ActivityStatus>(json, JsonDefaults.Api);
+        var subscriptionsUrl = _urlBuilder.BuildApiUrl(config, "api/status/subscriptions");
+        var subscriptionsJson = await _apiClient.GetStringAsync(httpClient, subscriptionsUrl, cancellationToken).ConfigureAwait(false);
+        var subscriptionsGrid = JsonSerializer.Deserialize<SubscriptionGridResponse>(subscriptionsJson, JsonDefaults.Api);
+
+        var connectionsUrl = _urlBuilder.BuildApiUrl(config, "api/status/connections");
+        var connectionsJson = await _apiClient.GetStringAsync(httpClient, connectionsUrl, cancellationToken).ConfigureAwait(false);
+        var connectionsGrid = JsonSerializer.Deserialize<ConnectionGridResponse>(connectionsJson, JsonDefaults.Api);
+
+        return new ActivityStatus
+        {
+            CurrentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            NextActivity = 0,
+            SubscriptionCount = subscriptionsGrid?.Entries?.Count ?? 0,
+            ConnectionCount = connectionsGrid?.Entries?.Count ?? 0,
+        };
     }
 
     /// <summary>

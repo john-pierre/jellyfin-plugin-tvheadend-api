@@ -120,7 +120,7 @@ internal sealed class DiagnosticService : IDiagnosticService
 
         if (report.Warnings.Count == 0 && report.Recommendations.Count == 0 && report.CompatibilityScore >= 80)
         {
-            report.Recommendations.Add("? Everything looks good!");
+            report.Recommendations.Add("Everything looks good!");
         }
 
         return report;
@@ -205,7 +205,7 @@ internal sealed class DiagnosticService : IDiagnosticService
             var apiVersion = serverInfo.ApiVersion?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?";
             var serverName = serverInfo.Name;
 
-            report.Connection = $"? Connected to {(string.IsNullOrEmpty(serverName) ? config.Host : serverName)}";
+            report.Connection = $"Connected to {(string.IsNullOrEmpty(serverName) ? config.Host : serverName)} ({config.Host}:{config.Port})";
             report.ServerVersion = $"TVHeadend {swVersion} (API v{apiVersion})";
 
             report.Checks.Add(new DiagnoseCheck

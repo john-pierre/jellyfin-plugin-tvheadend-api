@@ -28,8 +28,9 @@ This document defines the naming standards for the Jellyfin TVHeadend API Plugin
 ## File and Class Naming
 
 ### Core Rule
-- **File name MUST exactly match the primary type name**
+- **Each code file should contain one primary type and the file name MUST exactly match that type**
 - Example: `TokenValidator.cs` contains the `TokenValidator` class
+- Supporting DTOs, providers, and value objects belong in their own files when they are reused or publicly exposed.
 - Exception: None. This rule is absolute.
 
 ### Class Naming Style
@@ -91,16 +92,22 @@ Services are organized by **domain responsibility**, not by implementation detai
 | Service Folder | Responsibility | Examples |
 |---|---|---|
 | **Service.Auth** | Token validation and authentication | `TokenValidator` - validates TVHeadend user tokens |
-| **Service.Profile** | TVHeadend profile configuration and provisioning | `ProfileResolver`, `ProvisioningService`, `ProfileDetails` |
+| **Service.Profile** | TVHeadend profile configuration and provisioning | `ProfileResolver`, `DefaultProfileService`, `ProfileDetails` |
 | **Service.Stream** | Stream URL construction and stream lifecycle | `MediaSourceService`, stream URL building |
 | **Service.Diagnostic** | Plugin diagnostics and health checks | `DiagnosticService` |
 | **Service.Helper** | Low-level HTTP and URL helpers | `ApiClient`, `UrlBuilder`, `ResiliencePolicies`, `PluginMetrics` |
 
 ### Service Type Suffixes
-- **Service**: Full lifecycle service (e.g., `DiagnosticService`, `ProvisioningService`)
-- **Resolver**: Returns computed/resolved values (e.g., `ProfileResolver`)
+- **Service**: Full lifecycle service (e.g., `DiagnosticService`, `ProvisioningService`, `MediaSourceService`)
+- **Resolver**: Returns computed/resolved values (e.g., `ProfileResolver`, `ProfileContainerResolver`)
 - **Validator**: Validates input according to rules (e.g., `TokenValidator`)
-- **Helper**: Static utility methods (e.g., `ProfileMappingHelper`)
+- **Helper**: Static utility methods or utility classes (e.g., `ProfileMappingHelper`, `IdNodeValueHelper`)
+- **Provider**: Supplies/resolves dependencies or configuration (e.g., `PluginConfigurationProvider`, `CachePathProvider`)
+- **Saver**: Persists/saves data (e.g., `PluginConfigurationSaver`)
+- **Reader**: Reads or extracts data (e.g., `EncodingOptionsReader`)
+- **Handler**: HTTP/network middleware (e.g., `DigestAuthHandler`, `ResilienceHandler`)
+- **Fetcher**: Retrieves/fetches data from sources (e.g., `GridFetcher`)
+- **Context**: Database context or request context (e.g., `ViewingSessionContext`)
 - **Manager**: Resource management (reserved for future use)
 
 ## Import Organization
@@ -158,6 +165,24 @@ using Microsoft.Extensions.Logging;
 - **Correct Location**: `Service/Auth/`
 - **Rationale**: Separates concerns; "Validation" and "Profile" are different domains
 
+### ✓ Correct: `PluginConfigurationProvider`
+- **Why**: Supplies/provides the plugin configuration without direct coupling
+- **Location**: `Service/Helper/PluginConfigurationProvider.cs`
+- **Namespace**: `Jellyfin.Plugin.TvHeadendApi.Service.Helper`
+- **Usage**: Constructor injection; provides lazily-resolved configuration
+
+### ✓ Correct: `DigestAuthHandler`
+- **Why**: HTTP middleware handler for digest authentication
+- **Location**: `Service/Helper/DigestAuthHandler.cs`
+- **Namespace**: `Jellyfin.Plugin.TvHeadendApi.Service.Helper`
+- **Usage**: Registered in `DelegatingHandler` chain for HTTP client
+
+### ✓ Correct: `EncodingOptionsReader`
+- **Why**: Reads/extracts encoding options from server configuration
+- **Location**: `Service/Diagnostic/EncodingOptionsReader.cs`
+- **Namespace**: `Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic`
+- **Usage**: `_reader.ReadFfmpegSettings(...)`
+
 ## Refactoring Checklist
 
 When adding or moving files and folders:
@@ -165,7 +190,7 @@ When adding or moving files and folders:
 - [ ] All folder names are **singular** (e.g., `Service/`, not `Services/`; `Model/`, not `Models/`)
 - [ ] File name matches class name exactly (e.g., `TokenValidator.cs`)
 - [ ] Namespace path matches folder structure
-- [ ] Class uses appropriate suffix: `-Service`, `-Resolver`, `-Validator`, `-Helper`
+- [ ] Class uses appropriate suffix: `-Service`, `-Resolver`, `-Validator`, `-Helper`, `-Provider`, `-Saver`, `-Reader`, `-Handler`, `-Fetcher`, `-Context`
 - [ ] No redundant prefixes in class names (context from namespace is sufficient)
 - [ ] All imports are updated in consuming files
 - [ ] Imports are organized per the order above
@@ -175,7 +200,7 @@ When adding or moving files and folders:
 ## Related Documentation
 
 - See `AGENTS.md` for agent workflow and repository context
-- See `docs/architecture/architecture-overview.md` for architectural layers
+- See `docs/architecture/overview.md` for architectural layers
 - See `docs/architecture/module-responsibilities.md` for module boundaries
 - See `README.md` for project overview
 

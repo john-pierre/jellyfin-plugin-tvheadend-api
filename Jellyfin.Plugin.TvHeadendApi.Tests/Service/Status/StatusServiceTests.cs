@@ -51,15 +51,19 @@ public class StatusServiceTests
         var urlBuilder = new Mock<IUrlBuilder>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
-        urlBuilder.Setup(x => x.BuildApiUrl(config, "api/status/activity")).Returns("http://localhost:9981/api/status/activity");
-        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://localhost:9981/api/status/activity", It.IsAny<CancellationToken>()))
-            .ReturnsAsync("{\"current_time\":1700000000,\"next_activity\":1700003600,\"subscription_count\":2,\"connection_count\":5}");
+        urlBuilder.Setup(x => x.BuildApiUrl(config, "api/status/subscriptions")).Returns("http://localhost:9981/api/status/subscriptions");
+        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://localhost:9981/api/status/subscriptions", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"entries\":[{\"id\":1},{\"id\":2}],\"totalCount\":2}");
+        urlBuilder.Setup(x => x.BuildApiUrl(config, "api/status/connections")).Returns("http://localhost:9981/api/status/connections");
+        api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://localhost:9981/api/status/connections", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"entries\":[{\"id\":1},{\"id\":2},{\"id\":3},{\"id\":4},{\"id\":5}],\"totalCount\":5}");
 
         var sut = new StatusService(NullLogger<StatusService>.Instance, api.Object, urlBuilder.Object);
         var result = await sut.GetActivityStatusAsync(CancellationToken.None);
 
         Assert.NotNull(result);
-        Assert.Equal(1700000000, result!.CurrentTime);
+        Assert.True(result!.CurrentTime > 0);
+        Assert.Equal(0, result.NextActivity);
         Assert.Equal(2, result.SubscriptionCount);
         Assert.Equal(5, result.ConnectionCount);
     }

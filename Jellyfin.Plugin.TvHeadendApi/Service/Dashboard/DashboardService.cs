@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
+using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
@@ -14,6 +17,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Dashboard;
 /// <summary>
 /// Aggregates data from multiple TVHeadend services into a single dashboard snapshot.
 /// Each section is fetched independently so a failure in one does not break the others.
+/// Correlates connections and subscriptions into unified sessions for accurate multi-device tracking.
 /// </summary>
 internal sealed class DashboardService : IDashboardService
 {
@@ -21,6 +25,8 @@ internal sealed class DashboardService : IDashboardService
     private readonly IStatusService _statusService;
     private readonly IInputMonitorService _inputMonitorService;
     private readonly ISubscriptionService _subscriptionService;
+    private readonly IUrlBuilder _urlBuilder;
+    private readonly IApiClient _apiClient;
     private readonly ILogger<DashboardService> _logger;
 
     /// <summary>
@@ -30,18 +36,24 @@ internal sealed class DashboardService : IDashboardService
     /// <param name="statusService">Service for TVHeadend server status and connections.</param>
     /// <param name="inputMonitorService">Service for TVHeadend input/tuner monitoring.</param>
     /// <param name="subscriptionService">Service for TVHeadend subscription monitoring.</param>
+    /// <param name="urlBuilder">URL builder for TVHeadend API URLs.</param>
+    /// <param name="apiClient">API client for TVHeadend configuration access.</param>
     /// <param name="logger">Logger for diagnostics.</param>
     public DashboardService(
         IDiagnosticService diagnosticService,
         IStatusService statusService,
         IInputMonitorService inputMonitorService,
         ISubscriptionService subscriptionService,
+        IUrlBuilder urlBuilder,
+        IApiClient apiClient,
         ILogger<DashboardService> logger)
     {
         _diagnosticService = diagnosticService ?? throw new ArgumentNullException(nameof(diagnosticService));
         _statusService = statusService ?? throw new ArgumentNullException(nameof(statusService));
         _inputMonitorService = inputMonitorService ?? throw new ArgumentNullException(nameof(inputMonitorService));
         _subscriptionService = subscriptionService ?? throw new ArgumentNullException(nameof(subscriptionService));
+        _urlBuilder = urlBuilder ?? throw new ArgumentNullException(nameof(urlBuilder));
+        _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -68,7 +80,9 @@ internal sealed class DashboardService : IDashboardService
             dashboard.DvrEntryCount = diag.DvrEntryCount;
             dashboard.CompatibilityScore = diag.CompatibilityScore;
             dashboard.DiagnosticStatus = diag.OverallStatus;
-            dashboard.BaseUrl = diag.Connection;
+            dashboard.BaseUrl = _apiClient.GetCurrentConfiguration() is { } cfg
+                ? _urlBuilder.GetBaseUrl(cfg)
+                : diag.Connection;
             dashboard.Warnings = diag.Warnings.ToList().AsReadOnly();
 
             if (diag.OverallStatus == "ERROR")
@@ -125,6 +139,16 @@ internal sealed class DashboardService : IDashboardService
         {
             _logger.LogWarning(ex, "Dashboard connection query failed");
             dashboard.ConnectionsError = ex.Message;
+        }
+
+        // 6. Synthesize Activity from available status data if the activity endpoint was unavailable.
+        if (dashboard.Activity == null)
+        {
+            dashboard.Activity = new Model.Status.ActivityStatus
+            {
+                SubscriptionCount = dashboard.Subscriptions.Count,
+                ConnectionCount = dashboard.Connections.Count,
+            };
         }
 
         _logger.LogDebug(

@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Jellyfin.Plugin.TvHeadendApi.Model.Status;
 
 /// <summary>
-/// Represents the TVHeadend <c>/api/status/activity</c> response with next-activity scheduling.
+/// Represents activity counters shown in the dashboard status area.
 /// </summary>
 public sealed class ActivityStatus
 {

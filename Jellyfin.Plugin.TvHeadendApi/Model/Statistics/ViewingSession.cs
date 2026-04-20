@@ -8,6 +8,11 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
 public sealed class ViewingSession
 {
     /// <summary>
+    /// Gets or sets the database ID (primary key).
+    /// </summary>
+    public int Id { get; set; }
+
+    /// <summary>
     /// Gets or sets the Jellyfin username.
     /// </summary>
     public string UserName { get; set; } = string.Empty;

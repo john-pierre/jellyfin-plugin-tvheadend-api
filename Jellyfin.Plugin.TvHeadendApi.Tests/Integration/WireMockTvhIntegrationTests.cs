@@ -11,7 +11,9 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using MediaBrowser.Controller.Configuration;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using WireMock.RequestBuilders;
@@ -430,11 +432,18 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
         try
         {
             var sm = new Mock<MediaBrowser.Controller.Session.ISessionManager>();
+            var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<Jellyfin.Plugin.TvHeadendApi.Service.Statistics.ViewingSessionContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var dbContext = new Jellyfin.Plugin.TvHeadendApi.Service.Statistics.ViewingSessionContext(options);
+            dbContext.Database.EnsureCreated();
+
             var sut1 = new Jellyfin.Plugin.TvHeadendApi.Service.Statistics.StatisticsService(
                 NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Statistics.StatisticsService>.Instance,
                 sm.Object,
-                new PluginConfigurationProvider(() => null),
-                new DataFolderPathProvider(() => tempDir));
+                new Jellyfin.Plugin.TvHeadendApi.Service.Helper.PluginConfigurationProvider(() => null),
+                options,
+                string.Empty);
 
             await sut1.StartAsync(CancellationToken.None);
 
@@ -458,12 +467,13 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
             await sut1.StopAsync(CancellationToken.None);
             sut1.Dispose();
 
-            // Reload from disk
+            // Create a new instance with the same in-memory database
             var sut2 = new Jellyfin.Plugin.TvHeadendApi.Service.Statistics.StatisticsService(
                 NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Statistics.StatisticsService>.Instance,
                 sm.Object,
-                new PluginConfigurationProvider(() => null),
-                new DataFolderPathProvider(() => tempDir));
+                new Jellyfin.Plugin.TvHeadendApi.Service.Helper.PluginConfigurationProvider(() => null),
+                options,
+                string.Empty);
             await sut2.StartAsync(CancellationToken.None);
 
             Assert.NotEmpty(sut2.AllSessions);

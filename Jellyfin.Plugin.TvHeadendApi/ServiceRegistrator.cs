@@ -1,6 +1,7 @@
 using System.Net.Http;
 using Jellyfin.Plugin.TvHeadendApi.Service;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
+using Jellyfin.Plugin.TvHeadendApi.Service.Comet;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dashboard;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
@@ -15,21 +16,20 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Plugins;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Jellyfin.Plugin.TvHeadendApi;
 
 /// <summary>
-/// Responsible for registering all necessary services required by the TVHeadEnd plugin.
-/// This class ensures that the plugin integrates seamlessly with the Jellyfin service architecture
-/// by utilizing dependency injection and hosted services.
+/// Registers the plugin's infrastructure, domain services, and hosted background services.
 /// </summary>
 public class ServiceRegistrator : IPluginServiceRegistrator
 {
     /// <summary>
     /// Registers all services required by the plugin in the application's dependency injection container.
-    /// This method is called automatically during plugin initialization to configure services and dependencies.
     /// </summary>
     /// <param name="serviceCollection">
     /// The <see cref="IServiceCollection"/> instance where services should be registered.
@@ -73,6 +73,35 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             }
         }));
 
+        // Register EF Core DbContext + StatisticsService with resolved DB path.
+        // Both use the same lazy factory so Plugin.Instance is available at resolve time.
+        serviceCollection.AddSingleton<StatisticsService>(sp =>
+        {
+            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
+            var folder = pathProvider.Path ?? string.Empty;
+            var dbPath = System.IO.Path.Combine(folder, "viewing-statistics.db");
+
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = dbPath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Shared,
+                Pooling = false,
+            }.ToString();
+
+            var contextOptions = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<ViewingSessionContext>()
+                .UseSqlite(connectionString)
+                .Options;
+
+            return new StatisticsService(
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<StatisticsService>>(),
+                sp.GetRequiredService<MediaBrowser.Controller.Session.ISessionManager>(),
+                sp.GetRequiredService<PluginConfigurationProvider>(),
+                contextOptions,
+                dbPath);
+        });
+        serviceCollection.AddSingleton<IStatisticsService>(sp => sp.GetRequiredService<StatisticsService>());
+
         serviceCollection.AddSingleton<IUrlBuilder, UrlBuilder>();
         serviceCollection.AddSingleton<IEncodingOptionsReader, EncodingOptionsReader>();
         serviceCollection.AddSingleton<ITokenService, TokenService>();
@@ -89,9 +118,10 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IInputMonitorService, InputMonitorService>();
         serviceCollection.AddSingleton<ISubscriptionService, SubscriptionService>();
         serviceCollection.AddSingleton<IDashboardService, DashboardService>();
-        serviceCollection.AddSingleton<StatisticsService>();
-        serviceCollection.AddSingleton<IStatisticsService>(sp => sp.GetRequiredService<StatisticsService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StatisticsService>());
+        serviceCollection.AddSingleton<TvHeadendCometService>();
+        serviceCollection.AddSingleton<ICometSnapshotReader>(sp => sp.GetRequiredService<TvHeadendCometService>());
+        serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<TvHeadendCometService>());
 
         // Register OrchestratorService as the implementation of ILiveTvService
         serviceCollection.AddSingleton<ILiveTvService, OrchestratorService>();

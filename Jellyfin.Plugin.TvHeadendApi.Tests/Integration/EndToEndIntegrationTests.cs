@@ -18,6 +18,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+using Microsoft.EntityFrameworkCore;
 using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.LiveTv;
@@ -938,15 +939,17 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task StatisticsService_TrackPlayback_ReflectsSessionCount()
     {
-        var configProvider = new PluginConfigurationProvider(() => _config);
-        var dataFolderProvider = new DataFolderPathProvider(() => Path.GetTempPath());
         var sessionManager = new Mock<MediaBrowser.Controller.Session.ISessionManager>();
+        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<ViewingSessionContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
 
         var sut = new StatisticsService(
             NullLogger<StatisticsService>.Instance,
             sessionManager.Object,
-            configProvider,
-            dataFolderProvider);
+            new Jellyfin.Plugin.TvHeadendApi.Service.Helper.PluginConfigurationProvider(() => null),
+            options,
+            string.Empty);
 
         await sut.StartAsync(CancellationToken.None);
 

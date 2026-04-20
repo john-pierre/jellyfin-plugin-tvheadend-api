@@ -8,12 +8,17 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
 public sealed class ViewingStatisticsResult
 {
     /// <summary>
-    /// Gets the list of viewing sessions.
+    /// Gets the list of completed viewing sessions.
     /// </summary>
     public IReadOnlyList<ViewingSession> Sessions { get; init; } = [];
 
     /// <summary>
-    /// Gets or sets the total number of sessions (before any limit was applied).
+    /// Gets the list of currently active viewing sessions.
+    /// </summary>
+    public IReadOnlyList<ViewingSession> ActiveSessions { get; init; } = [];
+
+    /// <summary>
+    /// Gets or sets the total number of sessions in the requested range, including active sessions.
     /// </summary>
     public int TotalCount { get; set; }
 
