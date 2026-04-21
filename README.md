@@ -15,8 +15,6 @@ If this plugin helps you, please consider supporting development:
 
 A Jellyfin Live TV plugin for TVHeadend that works entirely through HTTP/JSON APIs.
 
-This README is written for normal Jellyfin users first (setup, playback behavior, troubleshooting), and then includes a short section for developers and AI agents.
-
 ## What Makes This Plugin Different?
 
 Compared to the official TVHeadend plugin path many users know, this plugin is optimized for:
