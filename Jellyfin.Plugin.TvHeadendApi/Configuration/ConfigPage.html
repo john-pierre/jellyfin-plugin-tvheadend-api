@@ -734,7 +734,7 @@
                 if (!target) return;
                 e.preventDefault();
                 var el = document.getElementById(target.getAttribute('data-scroll'));
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                if (el) el.scrollIntoView(true);
             });
 
             $('#DiagnoseBtn').addEventListener('click', loadDiagnose);

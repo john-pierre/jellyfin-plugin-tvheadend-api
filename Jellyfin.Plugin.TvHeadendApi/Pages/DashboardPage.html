@@ -54,7 +54,7 @@
 
         /* ── Signal bars ────────────────────────────────────── */
         .tvh-signal-bar { display: inline-block; width: 56px; height: 8px; background: #333; border-radius: 3px; overflow: hidden; vertical-align: middle; }
-        .tvh-signal-fill { height: 100%; border-radius: 3px; }
+        .tvh-signal-fill { display: block; height: 100%; border-radius: 3px; transition: width 0.2s ease; }
 
         /* ── Error / empty / loading ────────────────────────── */
         .tvh-error-banner { background: rgba(183,28,28,0.12); border: 1px solid rgba(183,28,28,0.4); border-radius: 6px; padding: 0.7em 1em; margin-bottom: 1em; color: #ef9a9a; font-size: 0.92em; }
@@ -310,7 +310,6 @@
                         </div>
                     </div>
                     <div id="tvhPaginationTop" class="tvh-pagination" style="margin-bottom:0.8em; display:none;"></div>
-                    </div>
                     <div class="tvh-table-wrap">
                         <table id="tvhSessionsTable">
                             <thead>
@@ -909,12 +908,6 @@
 
                 sessionCurrentPage = page;
                 renderSessionsTable();
-
-                // Keep viewport near the sessions table without triggering route/hash side effects.
-                var statsTable = document.getElementById('tvhStatsTable');
-                if (statsTable && typeof statsTable.scrollIntoView === 'function') {
-                    statsTable.scrollIntoView({ block: 'start', behavior: 'auto' });
-                }
             }
 
             function renderSessionsTable() {
