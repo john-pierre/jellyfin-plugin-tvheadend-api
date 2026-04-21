@@ -13,9 +13,6 @@ If this plugin helps you, please consider supporting development:
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-29abe0?logo=kofi&logoColor=white)](https://ko-fi.com/johnpierre)
 [![Buy Me a Coffee](https://img.shields.io/badge/Support-Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/johnpierre)
 
-[![TVHeadend API Repo](https://img.shields.io/badge/Repo-TVHeadend%20API-181717?logo=github)](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api)
-[![Plugin Suite (Proposed)](https://img.shields.io/badge/Repo-jellyfin--plugin--suite-1f6feb?logo=github)](https://github.com/john-pierre/jellyfin-plugin-suite)
-
 A Jellyfin Live TV plugin for TVHeadend that works entirely through HTTP/JSON APIs.
 
 This README is written for normal Jellyfin users first (setup, playback behavior, troubleshooting), and then includes a short section for developers and AI agents.
