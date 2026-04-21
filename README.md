@@ -4,6 +4,9 @@
 [![Minimum Jellyfin Version](https://img.shields.io/badge/Jellyfin-10.10.3%2B-blue)](https://jellyfin.org)
 [![Minimum TVHeadend Version](https://img.shields.io/badge/TVHeadend-4.3%2B-green)](https://tvheadend.org)
 [![License](https://img.shields.io/github/license/john-pierre/jellyfin-plugin-tvheadend-api)](LICENSE)
+[![Issues](https://img.shields.io/github/issues/john-pierre/jellyfin-plugin-tvheadend-api)](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/issues)
+[![Target Framework](https://img.shields.io/badge/.NET-8.0-purple)](https://dotnet.microsoft.com/en-us/)
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org)
 
 ## Support & Project Links
 
