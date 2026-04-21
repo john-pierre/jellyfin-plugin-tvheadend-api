@@ -65,7 +65,7 @@ Quick reference for what each module owns and its boundaries.
 - **Boundary:** Reads `/api/status/subscriptions`.
 - **Does not:** Manage connections or input status.
 
-### Service/Comet (`TvHeadendCometService`)
+### Service/Comet (`CometService`)
 
 - **Owns:** Real-time Comet/WebSocket connection, dashboard log buffering, disk-space update buffering.
 - **Owns:** `ICometSnapshotReader`, the read-only snapshot contract consumed by dashboard endpoints.
@@ -99,4 +99,3 @@ Quick reference for what each module owns and its boundaries.
 
 - **Owns:** Plugin lifecycle, DI registration.
 - **Rule:** No business logic. Changes only when adding/removing services.
-

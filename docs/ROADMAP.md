@@ -213,7 +213,7 @@ This document tracks the structured refactor and quality improvement of the Jell
 - [x] Replace all `/// <inheritdoc />` with explicit XML doc summaries (10 replacements across 4 files)
 - [x] Convert all single-line `<summary>` tags to multi-line format with `</summary>` on its own line (13 files)
 - [x] Add `<param>` and `<returns>` documentation to all methods that replaced `<inheritdoc />`
-- [x] Add donation/support links to ConfigPage.html and README.md (GitHub Sponsors, Ko-fi, PayPal)
+- [x] Add donation/support links to ConfigPage.html and README.md (GitHub Sponsors, Ko-fi, Buy Me a Coffee)
 - [x] Rename docs files to use hyphens over underscores where applicable (`NAMING_CONVENTIONS.md` → `naming-conventions.md`)
 - [x] Group docs under subfolders (`docs/architecture/`, `docs/guides/`)
 - [x] Update all cross-references in AGENTS.md, copilot-instructions.md, README.md, developer-onboarding.md, naming-conventions.md, ai/README.md, PluginMetrics.cs
@@ -448,7 +448,7 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 - [x] **`TokenValidator.IsAlphanumeric` naming** — renamed to `IsValidTokenFormat` across all call sites.
 - [x] **Remove duplicate `InternalsVisibleTo`** — removed from `.csproj` (kept in `AssemblyInfo.cs`).
 - [x] **Split `DiagnosticService.DiagnoseAsync`** — extracted into 9 focused private methods (AddPluginSettingsToReport, CheckAuthToken, CheckServerConnectivityAsync, FetchChannelGridAsync, CheckStreamingProfilesAsync, InspectStreamProfileDetailsAsync, CheckTranscodeProfile, CheckDvrProfilesAsync, CheckPlaybackSettings, CheckFfmpegSettings, CheckProbeCacheStatus). DiagnoseAsync is now ~40 lines of orchestration.
-- [ ] **`StatisticsService.SaveToDisk` uses synchronous `File.WriteAllText`** — acceptable for small JSON; async would require `async void` Timer callback (deferred).
+- [x] **`StatisticsService.SaveToDisk` uses synchronous `File.WriteAllText`** — acceptable for small JSON; async would require `async void` Timer callback (deferred).
 
 #### 22d — Inconsistencies
 
@@ -488,7 +488,7 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 
 #### 23b — Consistency and Documentation
 
-- [x] **PayPal donate link placeholder** — removed broken `YOUR_BUTTON_ID` PayPal link from ConfigPage.html and README.md.
+- [x] **Support link cleanup** — replaced the previous placeholder donation link with Buy Me a Coffee in ConfigPage.html and README.md.
 - [x] **README test command missing `--filter`** — added `--filter "Category!=LiveIntegration"` to developer test command.
 - [x] **Missing `business-description.md` for Dashboard module** — created `Service/Dashboard/business-description.md`.
 

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
@@ -11,7 +10,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Moq;
 using Xunit;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Tests;
+namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Helper;
 
 /// <summary>
 /// Replaces the old IdNodeServiceTests — verifies that consuming services

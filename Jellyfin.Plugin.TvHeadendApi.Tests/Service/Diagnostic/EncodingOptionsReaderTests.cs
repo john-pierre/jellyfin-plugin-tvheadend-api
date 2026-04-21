@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Tests;
+namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Diagnostic;
 
 public class EncodingOptionsReaderTests
 {

@@ -90,6 +90,6 @@ public class ServiceRegistratorTests
         // StatisticsService is also registered as IHostedService
         var hostedServices = provider.GetServices<IHostedService>();
         Assert.Contains(hostedServices, s => s is StatisticsService);
-        Assert.Contains(hostedServices, s => s is TvHeadendCometService);
+        Assert.Contains(hostedServices, s => s is CometService);
     }
 }

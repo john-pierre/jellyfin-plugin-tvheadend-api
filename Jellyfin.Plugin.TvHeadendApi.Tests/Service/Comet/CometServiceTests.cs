@@ -5,7 +5,7 @@ using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Comet;
 
-public class TvHeadendCometServiceTests
+public class CometServiceTests
 {
     private readonly UrlBuilder _urlBuilder = new();
 
@@ -22,7 +22,7 @@ public class TvHeadendCometServiceTests
             AuthToken = "token123",
         };
 
-        var uri = TvHeadendCometService.BuildWebSocketUri(config, _urlBuilder);
+        var uri = CometService.BuildWebSocketUri(config, _urlBuilder);
 
         Assert.Equal("wss", uri.Scheme);
         Assert.Equal("tvheadend.local", uri.Host);
@@ -44,7 +44,7 @@ public class TvHeadendCometServiceTests
             AuthToken = "token123",
         };
 
-        var uri = TvHeadendCometService.BuildWebSocketUri(config, _urlBuilder);
+        var uri = CometService.BuildWebSocketUri(config, _urlBuilder);
 
         Assert.Equal("ws", uri.Scheme);
         Assert.Equal("/comet/ws", uri.AbsolutePath);
@@ -54,7 +54,6 @@ public class TvHeadendCometServiceTests
     [Fact]
     public void WebSocketSubProtocol_IsTvHeadendComet()
     {
-        Assert.Equal("tvheadend-comet", TvHeadendCometService.WebSocketSubProtocol);
+        Assert.Equal("tvheadend-comet", CometService.WebSocketSubProtocol);
     }
 }
-

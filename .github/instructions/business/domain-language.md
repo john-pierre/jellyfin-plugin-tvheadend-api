@@ -93,6 +93,7 @@
 | **DiagnosticService** | `Service.Diagnostic.DiagnosticService` | Runs compatibility checks and produces a structured diagnostic report with score. |
 | **StatisticsService** | `Service.Statistics.StatisticsService` | Tracks live TV viewing sessions via `ISessionManager` events; persists to JSON. |
 | **StatusService** | `Service.Status.StatusService` | Reads TVHeadend server activity and active connections. |
+| **CometService** | `Service.Comet.CometService` | Hosted service maintaining a WebSocket connection to TVHeadend's Comet endpoint; buffers log messages and disk-space updates for the admin UI. |
 | **InputMonitorService** | `Service.Input.InputMonitorService` | Monitors TV tuner signal quality (signal strength, BER, SNR, bitrate). |
 | **SubscriptionService** | `Service.Subscription.SubscriptionService` | Lists active streaming subscriptions in TVHeadend. |
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Input;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
@@ -224,5 +225,46 @@ public class DashboardServiceTests
         Assert.NotEqual(default, result.Timestamp);
         Assert.NotEmpty(result.PluginVersion);
     }
-}
 
+    [Fact]
+    public async Task GetDashboardStatusAsync_WhenActivityEndpointUnavailable_SynthesizesCountsFromSections()
+    {
+        _diagMock.Setup(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiagnoseResult { OverallStatus = "OK" });
+        _statusMock.Setup(x => x.GetActivityStatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync((ActivityStatus?)null);
+
+        _inputMock.Setup(x => x.GetInputStatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<InputStatusEntry>());
+        _subMock.Setup(x => x.GetActiveSubscriptionsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<SubscriptionEntry> { new SubscriptionEntry(), new SubscriptionEntry() });
+        _statusMock.Setup(x => x.GetConnectionsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ConnectionEntry> { new ConnectionEntry() });
+
+        var sut = CreateSut();
+        var result = await sut.GetDashboardStatusAsync(CancellationToken.None);
+
+        Assert.NotNull(result.Activity);
+        Assert.Equal(2, result.Activity!.SubscriptionCount);
+        Assert.Equal(1, result.Activity.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task GetDashboardStatusAsync_WhenConfigurationAvailable_UsesUrlBuilderForBaseUrl()
+    {
+        var pluginConfiguration = new PluginConfiguration { Host = "tvh.local", Port = 9981 };
+        _apiClientMock.Setup(x => x.GetCurrentConfiguration()).Returns(pluginConfiguration);
+        _urlBuilderMock.Setup(x => x.GetBaseUrl(pluginConfiguration)).Returns("http://tvh.local:9981");
+
+        _diagMock.Setup(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiagnoseResult { OverallStatus = "OK", Connection = "fallback-value" });
+        _statusMock.Setup(x => x.GetActivityStatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new ActivityStatus());
+        _inputMock.Setup(x => x.GetInputStatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<InputStatusEntry>());
+        _subMock.Setup(x => x.GetActiveSubscriptionsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<SubscriptionEntry>());
+        _statusMock.Setup(x => x.GetConnectionsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ConnectionEntry>());
+
+        var sut = CreateSut();
+        var result = await sut.GetDashboardStatusAsync(CancellationToken.None);
+
+        Assert.Equal("http://tvh.local:9981", result.BaseUrl);
+        _urlBuilderMock.Verify(x => x.GetBaseUrl(pluginConfiguration), Times.Once);
+    }
+}

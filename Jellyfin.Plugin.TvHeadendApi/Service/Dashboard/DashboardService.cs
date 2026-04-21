@@ -1,9 +1,9 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
+using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
@@ -68,83 +68,15 @@ internal sealed class DashboardService : IDashboardService
             Timestamp = DateTimeOffset.UtcNow,
         };
 
-        // 1. Diagnostics — provides connection status, server version, latency, channel/DVR counts.
-        try
-        {
-            var diag = await _diagnosticService.DiagnoseAsync(cancellationToken).ConfigureAwait(false);
-            dashboard.IsReachable = diag.OverallStatus != "ERROR" || !string.IsNullOrEmpty(diag.ServerVersion);
-            dashboard.IsAuthenticated = dashboard.IsReachable && diag.OverallStatus != "ERROR";
-            dashboard.ServerVersion = diag.ServerVersion;
-            dashboard.LatencyMs = diag.LatencyMs;
-            dashboard.ChannelCount = diag.ChannelCount;
-            dashboard.DvrEntryCount = diag.DvrEntryCount;
-            dashboard.CompatibilityScore = diag.CompatibilityScore;
-            dashboard.DiagnosticStatus = diag.OverallStatus;
-            dashboard.BaseUrl = _apiClient.GetCurrentConfiguration() is { } cfg
-                ? _urlBuilder.GetBaseUrl(cfg)
-                : diag.Connection;
-            dashboard.Warnings = diag.Warnings.ToList().AsReadOnly();
+        await PopulateDiagnosticsAsync(dashboard, cancellationToken).ConfigureAwait(false);
+        await PopulateActivityAsync(dashboard, cancellationToken).ConfigureAwait(false);
+        await PopulateInputsAsync(dashboard, cancellationToken).ConfigureAwait(false);
+        await PopulateSubscriptionsAsync(dashboard, cancellationToken).ConfigureAwait(false);
+        await PopulateConnectionsAsync(dashboard, cancellationToken).ConfigureAwait(false);
 
-            if (diag.OverallStatus == "ERROR")
-            {
-                dashboard.ConnectionError = diag.Connection;
-            }
-
-            _logger.LogDebug("Dashboard diagnostics completed: {Status}, score {Score}", diag.OverallStatus, diag.CompatibilityScore);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Dashboard diagnostics query failed");
-            dashboard.ConnectionError = ex.Message;
-        }
-
-        // 2. Activity status
-        try
-        {
-            dashboard.Activity = await _statusService.GetActivityStatusAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Dashboard activity status query failed");
-        }
-
-        // 3. Inputs / tuners
-        try
-        {
-            dashboard.Inputs = await _inputMonitorService.GetInputStatusAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Dashboard tuner/input query failed");
-            dashboard.InputsError = ex.Message;
-        }
-
-        // 4. Subscriptions
-        try
-        {
-            dashboard.Subscriptions = await _subscriptionService.GetActiveSubscriptionsAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Dashboard subscription query failed");
-            dashboard.SubscriptionsError = ex.Message;
-        }
-
-        // 5. Connections
-        try
-        {
-            dashboard.Connections = await _statusService.GetConnectionsAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Dashboard connection query failed");
-            dashboard.ConnectionsError = ex.Message;
-        }
-
-        // 6. Synthesize Activity from available status data if the activity endpoint was unavailable.
         if (dashboard.Activity == null)
         {
-            dashboard.Activity = new Model.Status.ActivityStatus
+            dashboard.Activity = new ActivityStatus
             {
                 SubscriptionCount = dashboard.Subscriptions.Count,
                 ConnectionCount = dashboard.Connections.Count,
@@ -159,5 +91,95 @@ internal sealed class DashboardService : IDashboardService
             dashboard.Connections.Count);
 
         return dashboard;
+    }
+
+    private async Task PopulateDiagnosticsAsync(DashboardStatus dashboard, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var diagnoseResult = await _diagnosticService.DiagnoseAsync(cancellationToken).ConfigureAwait(false);
+            ApplyDiagnosticResult(dashboard, diagnoseResult);
+            _logger.LogDebug(
+                "Dashboard diagnostics completed: {Status}, score {Score}",
+                diagnoseResult.OverallStatus,
+                diagnoseResult.CompatibilityScore);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Dashboard diagnostics query failed");
+            dashboard.ConnectionError = ex.Message;
+        }
+    }
+
+    private async Task PopulateActivityAsync(DashboardStatus dashboard, CancellationToken cancellationToken)
+    {
+        try
+        {
+            dashboard.Activity = await _statusService.GetActivityStatusAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Dashboard activity status query failed");
+        }
+    }
+
+    private async Task PopulateInputsAsync(DashboardStatus dashboard, CancellationToken cancellationToken)
+    {
+        try
+        {
+            dashboard.Inputs = await _inputMonitorService.GetInputStatusAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Dashboard tuner/input query failed");
+            dashboard.InputsError = ex.Message;
+        }
+    }
+
+    private async Task PopulateSubscriptionsAsync(DashboardStatus dashboard, CancellationToken cancellationToken)
+    {
+        try
+        {
+            dashboard.Subscriptions = await _subscriptionService.GetActiveSubscriptionsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Dashboard subscription query failed");
+            dashboard.SubscriptionsError = ex.Message;
+        }
+    }
+
+    private async Task PopulateConnectionsAsync(DashboardStatus dashboard, CancellationToken cancellationToken)
+    {
+        try
+        {
+            dashboard.Connections = await _statusService.GetConnectionsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Dashboard connection query failed");
+            dashboard.ConnectionsError = ex.Message;
+        }
+    }
+
+    private void ApplyDiagnosticResult(DashboardStatus dashboard, DiagnoseResult diagnoseResult)
+    {
+        dashboard.IsReachable = diagnoseResult.OverallStatus != "ERROR" || !string.IsNullOrEmpty(diagnoseResult.ServerVersion);
+        dashboard.IsAuthenticated = dashboard.IsReachable && diagnoseResult.OverallStatus != "ERROR";
+        dashboard.ServerVersion = diagnoseResult.ServerVersion;
+        dashboard.LatencyMs = diagnoseResult.LatencyMs;
+        dashboard.ChannelCount = diagnoseResult.ChannelCount;
+        dashboard.DvrEntryCount = diagnoseResult.DvrEntryCount;
+        dashboard.CompatibilityScore = diagnoseResult.CompatibilityScore;
+        dashboard.DiagnosticStatus = diagnoseResult.OverallStatus;
+        dashboard.BaseUrl = _apiClient.GetCurrentConfiguration() is { } config
+            ? _urlBuilder.GetBaseUrl(config)
+            : diagnoseResult.Connection;
+        dashboard.Warnings = diagnoseResult.Warnings.ToList().AsReadOnly();
+
+        if (diagnoseResult.OverallStatus == "ERROR")
+        {
+            dashboard.ConnectionError = diagnoseResult.Connection;
+        }
     }
 }

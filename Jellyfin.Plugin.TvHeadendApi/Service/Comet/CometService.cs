@@ -16,12 +16,12 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Comet;
 /// <summary>
 /// Manages the TVHeadend Comet WebSocket connection and buffers operational snapshots for the admin UI.
 /// </summary>
-internal sealed class TvHeadendCometService : IHostedService, ICometSnapshotReader, IDisposable
+internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisposable
 {
     private const int MaxBufferSize = 200;
     internal const string WebSocketSubProtocol = "tvheadend-comet";
 
-    private readonly ILogger<TvHeadendCometService> _logger;
+    private readonly ILogger<CometService> _logger;
     private readonly IApiClient _apiClient;
     private readonly IUrlBuilder _urlBuilder;
     private readonly PluginConfigurationProvider _configProvider;
@@ -36,8 +36,8 @@ internal sealed class TvHeadendCometService : IHostedService, ICometSnapshotRead
     // Buffers (thread-safe, bounded)
     private DiskSpaceUpdate? _lastDiskSpaceUpdate;
 
-    public TvHeadendCometService(
-        ILogger<TvHeadendCometService> logger,
+    public CometService(
+        ILogger<CometService> logger,
         IApiClient apiClient,
         IUrlBuilder urlBuilder,
         PluginConfigurationProvider configProvider)
@@ -381,3 +381,4 @@ internal sealed class TvHeadendCometService : IHostedService, ICometSnapshotRead
         StopAsync().GetAwaiter().GetResult();
     }
 }
+

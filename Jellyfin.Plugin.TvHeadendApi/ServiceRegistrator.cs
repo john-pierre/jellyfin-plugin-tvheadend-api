@@ -119,9 +119,9 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ISubscriptionService, SubscriptionService>();
         serviceCollection.AddSingleton<IDashboardService, DashboardService>();
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StatisticsService>());
-        serviceCollection.AddSingleton<TvHeadendCometService>();
-        serviceCollection.AddSingleton<ICometSnapshotReader>(sp => sp.GetRequiredService<TvHeadendCometService>());
-        serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<TvHeadendCometService>());
+        serviceCollection.AddSingleton<CometService>();
+        serviceCollection.AddSingleton<ICometSnapshotReader>(sp => sp.GetRequiredService<CometService>());
+        serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<CometService>());
 
         // Register OrchestratorService as the implementation of ILiveTvService
         serviceCollection.AddSingleton<ILiveTvService, OrchestratorService>();

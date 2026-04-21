@@ -82,6 +82,30 @@
         .tvh-status-checks { display: flex; flex-wrap: wrap; gap: 0.3em 0.8em; font-size: 0.85em; }
         .tvh-status-actions { margin-left: auto; display: flex; gap: 0.5em; }
 
+        /* ── Support banner ─────────────────────────────────── */
+        .tvh-support-banner {
+            margin-bottom: 1.2em;
+            padding: 1em 1.1em;
+            border-radius: 10px;
+            border: 1px solid rgba(0,164,220,0.45);
+            background: linear-gradient(135deg, rgba(0,164,220,0.14), rgba(46,204,113,0.1));
+        }
+        .tvh-support-banner h2 { margin: 0 0 0.35em 0; font-size: 1.1em; }
+        .tvh-support-banner p { margin: 0 0 0.75em 0; font-size: 0.9em; opacity: 0.9; }
+        .tvh-support-links { display: flex; flex-wrap: wrap; gap: 0.55em; }
+        .tvh-support-link {
+            display: inline-block;
+            text-decoration: none;
+            padding: 0.42em 0.72em;
+            border-radius: 5px;
+            border: 1px solid rgba(255,255,255,0.22);
+            background: rgba(255,255,255,0.08);
+            color: #e0f3ff;
+            font-size: 0.86em;
+            font-weight: 600;
+        }
+        .tvh-support-link:hover { background: rgba(255,255,255,0.16); }
+
         /* ── Footer ─────────────────────────────────────────── */
         .tvh-footer { margin-top: 2em; padding-top: 1em; border-top: 1px solid #333; text-align: center; opacity: 0.7; font-size: 0.88em; }
         .tvh-footer a { margin: 0 0.5em; }
@@ -108,6 +132,18 @@
                         <button id="OpenDashboardBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-primary">
                             <span>Open Dashboard</span>
                         </button>
+                    </div>
+                </div>
+
+                <div class="tvh-support-banner" role="region" aria-label="Support and project links">
+                    <h2>Support this plugin</h2>
+                    <p>If this plugin helps your Jellyfin setup, you can support development or follow project updates here.</p>
+                    <div class="tvh-support-links">
+                        <a class="tvh-support-link" href="https://github.com/sponsors/john-pierre" target="_blank" rel="noopener">GitHub Sponsors</a>
+                        <a class="tvh-support-link" href="https://ko-fi.com/johnpierre" target="_blank" rel="noopener">Ko-fi</a>
+                        <a class="tvh-support-link" href="https://buymeacoffee.com/johnpierre" target="_blank" rel="noopener">Buy Me a Coffee</a>
+                        <a class="tvh-support-link" href="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api" target="_blank" rel="noopener">TvHeadend API Repo</a>
+                        <a class="tvh-support-link" href="https://github.com/john-pierre/jellyfin-plugin-suite" target="_blank" rel="noopener">Proposed: jellyfin-plugin-suite</a>
                     </div>
                 </div>
 
@@ -915,6 +951,8 @@
             <a href="https://github.com/sponsors/john-pierre" target="_blank" rel="noopener">GitHub Sponsors</a>
             &middot;
             <a href="https://ko-fi.com/johnpierre" target="_blank" rel="noopener">Ko-fi</a>
+            &middot;
+            <a href="https://buymeacoffee.com/johnpierre" target="_blank" rel="noopener">Buy Me a Coffee</a>
         </p>
     </div>
 </div>

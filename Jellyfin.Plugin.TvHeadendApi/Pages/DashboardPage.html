@@ -117,6 +117,30 @@
         .tvh-pagination span { background: #333; opacity: 0.6; cursor: default; }
         .tvh-pagination .tvh-page-active { background: #0d47a1; color: #90caf9; border-color: #0d47a1; font-weight: 600; }
         .tvh-pagination .tvh-page-disabled { opacity: 0.3; cursor: not-allowed; }
+
+        /* ── Support banner ─────────────────────────────────── */
+        .tvh-support-banner {
+            margin-bottom: 1.2em;
+            padding: 1em 1.1em;
+            border-radius: 10px;
+            border: 1px solid rgba(0,164,220,0.45);
+            background: linear-gradient(135deg, rgba(0,164,220,0.14), rgba(46,204,113,0.1));
+        }
+        .tvh-support-banner h2 { margin: 0 0 0.35em 0; font-size: 1.1em; }
+        .tvh-support-banner p { margin: 0 0 0.75em 0; font-size: 0.9em; opacity: 0.9; }
+        .tvh-support-links { display: flex; flex-wrap: wrap; gap: 0.55em; }
+        .tvh-support-link {
+            display: inline-block;
+            text-decoration: none;
+            padding: 0.42em 0.72em;
+            border-radius: 5px;
+            border: 1px solid rgba(255,255,255,0.22);
+            background: rgba(255,255,255,0.08);
+            color: #e0f3ff;
+            font-size: 0.86em;
+            font-weight: 600;
+        }
+        .tvh-support-link:hover { background: rgba(255,255,255,0.16); }
     </style>
     <div data-role="content">
         <div class="content-primary">
@@ -139,6 +163,18 @@
                         <span id="tvhLoadingIndicator" class="tvh-loading">Loading…</span>
                         <span id="tvhLastRefresh" class="tvh-meta"></span>
                     </div>
+                </div>
+            </div>
+
+            <div class="tvh-support-banner" role="region" aria-label="Support and project links">
+                <h2>Support this plugin</h2>
+                <p>If this dashboard and plugin help your Jellyfin setup, you can support development or follow project updates here.</p>
+                <div class="tvh-support-links">
+                    <a class="tvh-support-link" href="https://github.com/sponsors/john-pierre" target="_blank" rel="noopener">GitHub Sponsors</a>
+                    <a class="tvh-support-link" href="https://ko-fi.com/johnpierre" target="_blank" rel="noopener">Ko-fi</a>
+                    <a class="tvh-support-link" href="https://buymeacoffee.com/johnpierre" target="_blank" rel="noopener">Buy Me a Coffee</a>
+                    <a class="tvh-support-link" href="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api" target="_blank" rel="noopener">TvHeadend API Repo</a>
+                    <a class="tvh-support-link" href="https://github.com/john-pierre/jellyfin-plugin-suite" target="_blank" rel="noopener">Proposed: jellyfin-plugin-suite</a>
                 </div>
             </div>
 
@@ -221,7 +257,7 @@
                 <h2 class="tvh-section-title">Viewing Analytics</h2>
 
                 <div class="tvh-toolbar" style="margin-bottom:1em;">
-                    <label style="font-size:0.9em;">Time range:</label>
+                    <label for="tvhStatsDays" style="font-size:0.9em;">Time range:</label>
                     <select id="tvhStatsDays" style="width:auto; min-width:120px; padding:0.3em 0.5em; background:#1c1c1e; color:#e0e0e0; border:1px solid #555; border-radius:4px;">
                         <option value="1">Last 24 hours</option>
                         <option value="7" selected>Last 7 days</option>
@@ -254,6 +290,7 @@
                 <!-- KPI row -->
                 <div class="tvh-kpi-row" id="tvhStatsKpi" style="display:none;">
                     <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiSessions">—</div><div class="tvh-kpi-label">Total Sessions</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiActiveSessions">—</div><div class="tvh-kpi-label">Active Sessions</div></div>
                     <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiWatchTime">—</div><div class="tvh-kpi-label">Watch Time</div></div>
                     <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiUsers">—</div><div class="tvh-kpi-label">Unique Users</div></div>
                     <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiTopChannel">—</div><div class="tvh-kpi-label">Top Channel</div></div>
@@ -293,14 +330,19 @@
                 <div id="tvhStatsTable" style="display:none;">
                     <h3 style="margin:0.8em 0 0.4em 0; font-size:0.95em; font-weight:600;">Recent Sessions</h3>
                     <div class="tvh-table-toolbar">
+                        <label for="tvhSessionSearch" style="display:none;">Search sessions</label>
                         <input id="tvhSessionSearch" type="text" placeholder="Search sessions…" />
+                        <label for="tvhFilterUser" style="display:none;">Filter by user</label>
                         <select id="tvhFilterUser"><option value="">All Users</option></select>
+                        <label for="tvhFilterDevice" style="display:none;">Filter by device</label>
                         <select id="tvhFilterDevice"><option value="">All Devices</option></select>
+                        <label for="tvhFilterClient" style="display:none;">Filter by client</label>
                         <select id="tvhFilterClient"><option value="">All Clients</option></select>
+                        <label for="tvhFilterMethod" style="display:none;">Filter by play method</label>
                         <select id="tvhFilterMethod"><option value="">All Methods</option></select>
                         <span id="tvhFilterCount" class="tvh-filter-count"></span>
                         <div style="margin-left:auto; display:flex; gap:0.5em; align-items:center; font-size:0.88em;">
-                            <label>Per page:</label>
+                            <label for="tvhSessionsPerPage">Per page:</label>
                             <select id="tvhSessionsPerPage" style="width:auto; padding:0.3em 0.5em; background:#1c1c1e; color:#e0e0e0; border:1px solid #555; border-radius:4px;">
                                 <option value="100">100</option>
                                 <option value="250">250</option>
@@ -337,7 +379,7 @@
 
                 <div class="tvh-card">
                     <div style="margin-bottom:1em; display:flex; flex-wrap:wrap; gap:0.5em; align-items:center;">
-                        <label style="font-size:0.9em;">Filter:</label>
+                        <label for="tvhLogFilter" style="font-size:0.9em;">Filter:</label>
                         <input id="tvhLogFilter" type="text" placeholder="Search logs…" style="flex:1 1 200px; min-width:120px; padding:0.35em 0.6em; border:1px solid #555; border-radius:4px; background:rgba(255,255,255,0.06); color:inherit; font-size:0.88em;" />
                         <button id="tvhClearLogsBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" style="font-size:0.85em; background:#444; color:#fff;" title="Clear logs">
                             <span style="font-size:1.3em;">🗑️</span>
@@ -363,7 +405,6 @@
 
             // ── State ──────────────────────────────────────────
             var autoRefreshTimer = null;
-            var statsRefreshTimer = null;
             var chartInstances = {};
             var timezoneMode = localStorage.getItem('tvhTimezoneMode') || 'local'; // 'local' or 'utc'
 
@@ -724,6 +765,7 @@
                 document.getElementById('kpiTopChannel').textContent = topCh || '—';
                 var topMethod = Object.keys(methods).sort(function (a, b) { return methods[b] - methods[a]; })[0];
                 document.getElementById('kpiTopMethod').textContent = topMethod || '—';
+                document.getElementById('kpiActiveSessions').textContent = String(data.ActiveCount || 0);
 
                 // Chart: hours per user
                 destroyChart('userHours');
@@ -867,8 +909,16 @@
                 return '<button type="button" class="' + cssClass + '" data-page="' + page + '"' + disabledAttr + '>' + esc(label) + '</button>';
             }
 
+            function getSessionPageCount(filteredCount) {
+                if (sessionItemsPerPage === 'all') {
+                    return 1;
+                }
+
+                return Math.max(1, Math.ceil(filteredCount / sessionItemsPerPage));
+            }
+
             function renderPagination(filtered) {
-                var pageCount = sessionItemsPerPage === 'all' ? 1 : Math.ceil(filtered.length / sessionItemsPerPage);
+                var pageCount = getSessionPageCount(filtered.length);
                 if (pageCount <= 1) {
                     document.getElementById('tvhPaginationTop').style.display = 'none';
                     document.getElementById('tvhPaginationBottom').style.display = 'none';
@@ -919,6 +969,12 @@
                 } else {
                     countEl.textContent = '';
                 }
+
+                var pageCount = getSessionPageCount(filtered.length);
+                if (sessionCurrentPage > pageCount) {
+                    sessionCurrentPage = pageCount;
+                }
+
                 updateSortHeaders();
                 renderPagination(filtered);
 
@@ -1048,8 +1104,7 @@
             function refreshActiveSessions() {
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Statistics?days=1'), dataType: 'json' })
                     .then(function (data) {
-                        var activeSessions = data.ActiveSessions || [];
-                        lastActiveSessions = activeSessions;
+                        lastActiveSessions = data.ActiveSessions || [];
                         renderActiveSessions();
                     })
                     .catch(function () { /* silent */ });
@@ -1060,10 +1115,8 @@
 
             function toggleAutoRefresh() {
                 if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
-                if (statsRefreshTimer) { clearInterval(statsRefreshTimer); statsRefreshTimer = null; }
                 if (document.getElementById('tvhAutoRefresh').checked) {
                     autoRefreshTimer = setInterval(function () { refreshDashboard(); refreshActiveSessions(); }, 2000);
-                    statsRefreshTimer = setInterval(function () { loadStatistics(); }, 60000);
                 }
             }
 
@@ -1161,7 +1214,7 @@
                     timezoneSelect.value = timezoneMode;
                 }
 
-                // Initialize pagination selector
+                // // Initialize pagination selector
                 var pageSelect = document.getElementById('tvhSessionsPerPage');
                 if (pageSelect) {
                     pageSelect.value = sessionItemsPerPage;
@@ -1177,7 +1230,6 @@
 
             document.getElementById('TvHeadendDashboardPage').addEventListener('pagehide', function () {
                 if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
-                if (statsRefreshTimer) { clearInterval(statsRefreshTimer); statsRefreshTimer = null; }
                 if (statsAutoRefreshTimer) { clearInterval(statsAutoRefreshTimer); statsAutoRefreshTimer = null; }
                 if (logsRefreshTimer) { clearInterval(logsRefreshTimer); logsRefreshTimer = null; }
                 Object.keys(chartInstances).forEach(destroyChart);
