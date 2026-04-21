@@ -381,4 +381,3 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         StopAsync().GetAwaiter().GetResult();
     }
 }
-
