@@ -68,7 +68,7 @@ public class GuideServiceCoreTests
 
         Assert.Equal(2, result.Count);
         Assert.Equal("7", result[0].Number);
-        Assert.Equal("http://tvh/imagecache/my icon.png", result[0].ImageUrl);
+        Assert.Equal("http://jellyfin:8096/api/tvheadend/images/imagecache/my icon.png", result[0].ImageUrl);
         Assert.True(result[0].HasImage);
         Assert.Equal("7.5", result[1].Number);
         Assert.Null(result[1].ImageUrl);
@@ -313,7 +313,7 @@ public class GuideServiceCoreTests
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
-        Assert.Equal("http://tvh/imagecache/poster 1.png", program.ImageUrl);
+        Assert.Equal("http://jellyfin:8096/api/tvheadend/images/imagecache/poster 1.png", program.ImageUrl);
         Assert.True(program.HasImage);
     }
 
@@ -351,7 +351,7 @@ public class GuideServiceCoreTests
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
-        Assert.Equal("http://tvh/imagecache/ch1.png", program.ImageUrl);
+        Assert.Equal("http://jellyfin:8096/api/tvheadend/images/imagecache/ch1.png", program.ImageUrl);
         Assert.True(program.HasImage);
     }
 
@@ -632,7 +632,7 @@ public class GuideServiceCoreTests
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
-        Assert.Equal("http://tvh/imagecache/poster.png", program.ImageUrl);
+        Assert.Equal("http://jellyfin:8096/api/tvheadend/images/imagecache/poster.png", program.ImageUrl);
         Assert.True(program.HasImage);
     }
 
@@ -671,7 +671,7 @@ public class GuideServiceCoreTests
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
-        Assert.Equal("http://tvh/imagecache/ch-fallback.png", program.ImageUrl);
+        Assert.Equal("http://jellyfin:8096/api/tvheadend/images/imagecache/ch-fallback.png", program.ImageUrl);
         Assert.True(program.HasImage);
     }
 
@@ -721,8 +721,8 @@ public class GuideServiceCoreTests
         var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
-        Assert.Equal("http://tvh/imagecache/poster.png", program.ImageUrl);
-        Assert.Equal("http://tvh/imagecache/rating-pg.png", program.LogoImageUrl);
+        Assert.Equal("http://jellyfin:8096/api/tvheadend/images/imagecache/poster.png", program.ImageUrl);
+        Assert.Equal("http://jellyfin:8096/api/tvheadend/images/imagecache/rating-pg.png", program.LogoImageUrl);
         Assert.True(program.HasImage);
     }
 

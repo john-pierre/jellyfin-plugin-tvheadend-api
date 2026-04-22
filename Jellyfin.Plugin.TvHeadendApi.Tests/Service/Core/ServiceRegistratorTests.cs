@@ -63,6 +63,7 @@ public class ServiceRegistratorTests
         services.AddSingleton(Mock.Of<IServerConfigurationManager>());
         services.AddSingleton(Mock.Of<ILibraryManager>());
         services.AddSingleton(Mock.Of<ISessionManager>());
+        services.AddSingleton(host.Object);
 
         using var provider = services.BuildServiceProvider();
 

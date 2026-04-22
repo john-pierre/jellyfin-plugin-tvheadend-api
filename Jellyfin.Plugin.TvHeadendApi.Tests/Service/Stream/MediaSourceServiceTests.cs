@@ -25,7 +25,9 @@ public class MediaSourceServiceTests
     {
         var mock = new Mock<IRelayUrlBuilder>();
         mock.Setup(x => x.BuildStreamRelayUrl(It.IsAny<string>(), It.IsAny<string?>()))
-            .Returns<string, string?>((ch, _) => $"http://jellyfin:8096/api/tvheadend/stream/{ch}");
+            .Returns<string, string?>((ch, p) => string.IsNullOrWhiteSpace(p)
+                ? $"http://jellyfin:8096/api/tvheadend/stream/{Uri.EscapeDataString(ch)}"
+                : $"http://jellyfin:8096/api/tvheadend/stream/{Uri.EscapeDataString(ch)}?profile={Uri.EscapeDataString(p)}");
         mock.Setup(x => x.BuildImageRelayUrl(It.IsAny<string>()))
             .Returns<string>(path => $"http://jellyfin:8096/api/tvheadend/images/{path}");
         return mock.Object;
@@ -105,7 +107,7 @@ public class MediaSourceServiceTests
 
         Assert.Equal("ch-42", mediaSource.Id);
         Assert.Equal("mpegts", mediaSource.Container);
-        Assert.Contains("stream/channel/ch-42?profile=pass", mediaSource.Path);
+        Assert.Contains("stream/ch-42?profile=pass", mediaSource.Path);
         Assert.True(mediaSource.SupportsDirectPlay);
         Assert.True(mediaSource.SupportsDirectStream);
     }
@@ -223,7 +225,7 @@ public class MediaSourceServiceTests
         var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, StubRelay(), () => null);
         var mediaSource = await sut.GetChannelStreamAsync("ch/1", CancellationToken.None);
 
-        Assert.Contains("stream/channel/ch%2F1", mediaSource.Path, StringComparison.Ordinal);
+        Assert.Contains("stream/ch%2F1", mediaSource.Path, StringComparison.Ordinal);
         Assert.Contains("profile=jelly%20fin%2Bfast", mediaSource.Path, StringComparison.Ordinal);
     }
 

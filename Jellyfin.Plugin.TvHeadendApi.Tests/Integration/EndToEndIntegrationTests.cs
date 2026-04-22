@@ -468,7 +468,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             .ReturnsAsync(new Model.Profile.ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
-        library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>)).Returns(Guid.NewGuid());
+        library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(Guid.NewGuid());
 
         // Use a config-provider that returns our token-enriched config.
         var tokenApiClient = CreateApiClient(new PluginConfigurationProvider(() => _config));
