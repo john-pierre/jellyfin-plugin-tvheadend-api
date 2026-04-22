@@ -13,6 +13,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
@@ -49,6 +50,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     private readonly IApiClient _apiClient;
     private readonly IUrlBuilder _urlBuilder;
     private readonly HttpClient _rawClient;
+    private readonly IRelayUrlBuilder _relayUrlBuilder;
 
     public EndToEndIntegrationTests()
     {
@@ -84,6 +86,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             BaseAddress = new Uri(BaseUrl),
             Timeout = TimeSpan.FromSeconds(15),
         };
+        _relayUrlBuilder = CreateStubRelay();
     }
 
     public void Dispose()
@@ -98,7 +101,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetChannelsAsync_ReturnsBootstrappedChannels()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
 
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
 
@@ -109,7 +112,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetProgramsAsync_ReturnsEpgEntries()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -133,7 +136,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetContentTypesAsync_ReturnsDictionaryFromPopulatedEpg()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
 
         var types = await sut.GetContentTypesAsync(CancellationToken.None);
 
@@ -143,7 +146,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetChannelTagsAsync_ReturnsDictionary()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
 
         var tags = await sut.GetChannelTagsAsync(CancellationToken.None);
 
@@ -153,7 +156,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_ChannelInfo_HasRequiredFields()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -166,7 +169,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetProgramsAsync_AllChannelsReturnWithoutError()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -182,7 +185,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetProgramsAsync_ProgramFieldsValid()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -204,7 +207,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     public async Task GuideService_GetProgramsAsync_FutureWindow_ReturnsNonEmpty()
     {
         // EPG grabber should have populated at least some future data.
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -406,7 +409,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task MediaSourceService_GetChannelStreamAsync_ReturnsValidMediaSource()
     {
-        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -428,6 +431,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             resolver.Object,
             _apiClient,
             _urlBuilder,
+            _relayUrlBuilder,
             () => null);
 
         var mediaSource = await sut.GetChannelStreamAsync(channelId, CancellationToken.None);
@@ -464,7 +468,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             .ReturnsAsync(new Model.Profile.ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
-        library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(Guid.NewGuid());
+        library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>)).Returns(Guid.NewGuid());
 
         // Use a config-provider that returns our token-enriched config.
         var tokenApiClient = CreateApiClient(new PluginConfigurationProvider(() => _config));
@@ -475,9 +479,10 @@ public sealed class EndToEndIntegrationTests : IDisposable
             resolver.Object,
             tokenApiClient,
             _urlBuilder,
+            _relayUrlBuilder,
             () => null);
 
-        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -490,7 +495,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task OrchestratorService_GetChannelStream_ReturnsPlayableMediaSource()
     {
-        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -512,6 +517,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             resolver.Object,
             _apiClient,
             _urlBuilder,
+            _relayUrlBuilder,
             () => null);
 
         var lifecycleService = new Mock<ILifecycleService>();
@@ -539,7 +545,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task StreamUrl_ContainsProfile_WhenChannelExists()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -565,7 +571,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task StreamUrl_HttpHead_ReturnsVideoContentType()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -612,7 +618,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     public async Task DvrService_CreateAndCancelTimerAsync_RoundTrips()
     {
         var sut = new DvrService(NullLogger<DvrService>.Instance, _apiClient, _urlBuilder);
-        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
 
         var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
@@ -704,7 +710,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     public async Task SubscriptionService_SubscriptionDetails_ContainsExpectedFields()
     {
         // Start a stream to create a subscription, then verify entry fields.
-        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -769,7 +775,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     public async Task DvrService_CreateAndCancelSeriesTimerAsync_RoundTrips()
     {
         var sut = new DvrService(NullLogger<DvrService>.Instance, _apiClient, _urlBuilder);
-        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
 
         var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
@@ -836,7 +842,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     public async Task DvrService_UpdateTimerAsync_ModifiesExistingTimer()
     {
         var sut = new DvrService(NullLogger<DvrService>.Instance, _apiClient, _urlBuilder);
-        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -868,7 +874,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
     public async Task DvrService_UpdateSeriesTimerAsync_ModifiesExistingSeriesTimer()
     {
         var sut = new DvrService(NullLogger<DvrService>.Instance, _apiClient, _urlBuilder);
-        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder);
         var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
         Assert.NotEmpty(channels);
 
@@ -1106,6 +1112,16 @@ public sealed class EndToEndIntegrationTests : IDisposable
     // Helpers
     // ═══════════════════════════════════════════════════════════════════════
 
+    private static IRelayUrlBuilder CreateStubRelay()
+    {
+        var mock = new Mock<IRelayUrlBuilder>();
+        mock.Setup(x => x.BuildImageRelayUrl(It.IsAny<string>()))
+            .Returns<string>(path => $"http://jellyfin:8096/api/tvheadend/images/{path}");
+        mock.Setup(x => x.BuildStreamRelayUrl(It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns<string, string?>((ch, _) => $"http://jellyfin:8096/api/tvheadend/stream/{ch}");
+        return mock.Object;
+    }
+
     private IApiClient CreateApiClient(PluginConfigurationProvider configProvider)
     {
         var httpClientFactory = new Mock<IHttpClientFactory>();
@@ -1126,15 +1142,4 @@ public sealed class EndToEndIntegrationTests : IDisposable
         return mock.Object;
     }
 }
-
-
-
-
-
-
-
-
-
-
-
 

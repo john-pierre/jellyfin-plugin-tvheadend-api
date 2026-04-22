@@ -9,6 +9,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
@@ -118,6 +119,9 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IInputMonitorService, InputMonitorService>();
         serviceCollection.AddSingleton<ISubscriptionService, SubscriptionService>();
         serviceCollection.AddSingleton<IDashboardService, DashboardService>();
+        serviceCollection.AddSingleton<IRelayService, RelayService>();
+        serviceCollection.AddSingleton<IRelayUrlBuilder>(sp =>
+            new RelayUrlBuilder(sp.GetRequiredService<IServerApplicationHost>()));
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StatisticsService>());
         serviceCollection.AddSingleton<CometService>();
         serviceCollection.AddSingleton<ICometSnapshotReader>(sp => sp.GetRequiredService<CometService>());

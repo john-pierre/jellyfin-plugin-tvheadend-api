@@ -38,6 +38,7 @@ internal sealed class MediaSourceService : IMediaSourceService
     private readonly IProfileContainerResolver _streamProfileContainerResolver;
     private readonly IApiClient _tvheadendApiClient;
     private readonly IUrlBuilder _tvheadendUrlBuilder;
+    private readonly Relay.IRelayUrlBuilder _relayUrlBuilder;
     private readonly Func<string?> _cachePathResolver;
 
     public MediaSourceService(
@@ -46,8 +47,9 @@ internal sealed class MediaSourceService : IMediaSourceService
         IProfileContainerResolver streamProfileContainerResolver,
         IApiClient tvheadendApiClient,
         IUrlBuilder tvheadendUrlBuilder,
+        Relay.IRelayUrlBuilder relayUrlBuilder,
         CachePathProvider cachePathProvider)
-        : this(logger, libraryManager, streamProfileContainerResolver, tvheadendApiClient, tvheadendUrlBuilder, () => cachePathProvider.Path)
+        : this(logger, libraryManager, streamProfileContainerResolver, tvheadendApiClient, tvheadendUrlBuilder, relayUrlBuilder, () => cachePathProvider.Path)
     {
     }
 
@@ -57,6 +59,7 @@ internal sealed class MediaSourceService : IMediaSourceService
         IProfileContainerResolver streamProfileContainerResolver,
         IApiClient tvheadendApiClient,
         IUrlBuilder tvheadendUrlBuilder,
+        Relay.IRelayUrlBuilder relayUrlBuilder,
         Func<string?> cachePathResolver)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -64,6 +67,7 @@ internal sealed class MediaSourceService : IMediaSourceService
         _streamProfileContainerResolver = streamProfileContainerResolver ?? throw new ArgumentNullException(nameof(streamProfileContainerResolver));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
         _tvheadendUrlBuilder = tvheadendUrlBuilder ?? throw new ArgumentNullException(nameof(tvheadendUrlBuilder));
+        _relayUrlBuilder = relayUrlBuilder ?? throw new ArgumentNullException(nameof(relayUrlBuilder));
         _cachePathResolver = cachePathResolver ?? throw new ArgumentNullException(nameof(cachePathResolver));
     }
 
@@ -100,11 +104,9 @@ internal sealed class MediaSourceService : IMediaSourceService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(channelId);
 
-        // Append streaming profile parameter, then apply auth token as query parameter.
-        // The auth token is required for direct playback from clients.
-        var encodedChannelId = Uri.EscapeDataString(channelId);
-        var encodedProfile = Uri.EscapeDataString(config.StreamingProfile ?? string.Empty);
-        var streamUrl = _tvheadendUrlBuilder.BuildResourceUrl(config, $"stream/channel/{encodedChannelId}?profile={encodedProfile}");
+        // Route stream through the plugin's relay endpoint so TVHeadend credentials
+        // stay server-side and internal URLs are never exposed to clients.
+        var streamUrl = _relayUrlBuilder.BuildStreamRelayUrl(channelId, config.StreamingProfile);
         var container = await _streamProfileContainerResolver.ResolveContainerAsync(config, cancellationToken).ConfigureAwait(false);
         var mediaSource = new MediaSourceInfo
         {

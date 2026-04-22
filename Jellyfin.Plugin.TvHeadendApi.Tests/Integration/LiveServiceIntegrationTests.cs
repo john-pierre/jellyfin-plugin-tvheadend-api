@@ -8,6 +8,8 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
+using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
@@ -84,7 +86,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetChannelsAsync_ReturnsEmptyList_WhenNoChannelsConfigured()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, CreateStubRelay());
 
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
 
@@ -96,7 +98,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetProgramsAsync_ReturnsEmptyList_WhenNoEpgData()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, CreateStubRelay());
         var now = DateTime.UtcNow;
 
         // Use a dummy channel UUID — no channels exist, so no programs either.
@@ -113,7 +115,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetContentTypesAsync_ReturnsDictionary()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, CreateStubRelay());
 
         var types = await sut.GetContentTypesAsync(CancellationToken.None);
 
@@ -124,7 +126,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetChannelTagsAsync_ReturnsDictionary()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, CreateStubRelay());
 
         var tags = await sut.GetChannelTagsAsync(CancellationToken.None);
 
@@ -295,9 +297,15 @@ public sealed class LiveServiceIntegrationTests : IDisposable
             .Returns((null, null));
         return mock.Object;
     }
-}
 
-
-
-
+    private static IRelayUrlBuilder CreateStubRelay()
+    {
+        var mock = new Mock<IRelayUrlBuilder>();
+        mock.Setup(x => x.BuildImageRelayUrl(It.IsAny<string>()))
+            .Returns<string>(path => $"http://jellyfin:8096/api/tvheadend/images/{path}");
+        mock.Setup(x => x.BuildStreamRelayUrl(It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns<string, string?>((ch, _) => $"http://jellyfin:8096/api/tvheadend/stream/{ch}");
+        return mock.Object;
+    }
+    }
 

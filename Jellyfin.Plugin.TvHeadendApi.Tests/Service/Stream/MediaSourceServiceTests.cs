@@ -8,6 +8,7 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller.Library;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -20,6 +21,16 @@ public class MediaSourceServiceTests
 {
     private static readonly Guid FixedInternalChannelId = Guid.Parse("11111111-2222-3333-4444-555555555555");
 
+    private static IRelayUrlBuilder StubRelay()
+    {
+        var mock = new Mock<IRelayUrlBuilder>();
+        mock.Setup(x => x.BuildStreamRelayUrl(It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns<string, string?>((ch, _) => $"http://jellyfin:8096/api/tvheadend/stream/{ch}");
+        mock.Setup(x => x.BuildImageRelayUrl(It.IsAny<string>()))
+            .Returns<string>(path => $"http://jellyfin:8096/api/tvheadend/images/{path}");
+        return mock.Object;
+    }
+
     [Fact]
     public void Constructor_WithNullLogger_Throws()
     {
@@ -28,7 +39,7 @@ public class MediaSourceServiceTests
         var api = new Mock<IApiClient>();
         var urlBuilder = new UrlBuilder();
 
-        Assert.Throws<ArgumentNullException>(() => new MediaSourceService(null!, library.Object, resolver.Object, api.Object, urlBuilder, () => null));
+        Assert.Throws<ArgumentNullException>(() => new MediaSourceService(null!, library.Object, resolver.Object, api.Object, urlBuilder, StubRelay(), () => null));
     }
 
     [Fact]
@@ -40,7 +51,7 @@ public class MediaSourceServiceTests
         var urlBuilder = new UrlBuilder();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, StubRelay(), () => null);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetChannelStreamAsync("ch-1", CancellationToken.None));
     }
@@ -54,7 +65,7 @@ public class MediaSourceServiceTests
         var urlBuilder = new UrlBuilder();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(new PluginConfiguration());
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, StubRelay(), () => null);
 
         await Assert.ThrowsAsync<ArgumentException>(() => sut.GetChannelStreamAsync(string.Empty, CancellationToken.None));
     }
@@ -89,7 +100,7 @@ public class MediaSourceServiceTests
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, StubRelay(), () => null);
         var mediaSource = await sut.GetChannelStreamAsync("ch-42", CancellationToken.None);
 
         Assert.Equal("ch-42", mediaSource.Id);
@@ -122,7 +133,7 @@ public class MediaSourceServiceTests
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, StubRelay(), () => null);
         var mediaSource = await sut.GetChannelStreamAsync("ch-1", CancellationToken.None);
 
         Assert.Equal(0, mediaSource.AnalyzeDurationMs);
@@ -151,7 +162,7 @@ public class MediaSourceServiceTests
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, StubRelay(), () => null);
         var result = await sut.GetChannelStreamMediaSourcesAsync("ch-2", CancellationToken.None);
 
         Assert.Single(result);
@@ -181,7 +192,7 @@ public class MediaSourceServiceTests
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, StubRelay(), () => null);
         var mediaSource = await sut.GetChannelStreamAsync("ch-99", CancellationToken.None);
 
         Assert.Equal(1234, mediaSource.BufferMs);
@@ -209,7 +220,7 @@ public class MediaSourceServiceTests
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("jelly fin+fast", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, StubRelay(), () => null);
         var mediaSource = await sut.GetChannelStreamAsync("ch/1", CancellationToken.None);
 
         Assert.Contains("stream/channel/ch%2F1", mediaSource.Path, StringComparison.Ordinal);
@@ -238,7 +249,7 @@ public class MediaSourceServiceTests
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, urlBuilder, StubRelay(), () => null);
         var mediaSource = await sut.GetChannelStreamAsync("ch-cache", CancellationToken.None);
 
         Assert.NotNull(mediaSource);
@@ -578,7 +589,7 @@ public class MediaSourceServiceTests
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
 
-        return new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, new UrlBuilder(), () => cachePath);
+        return new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, api.Object, new UrlBuilder(), StubRelay(), () => cachePath);
     }
 
     private static string GetCacheFilePath(string cachePath, string channelId)

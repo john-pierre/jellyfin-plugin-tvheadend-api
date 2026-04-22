@@ -102,15 +102,18 @@ internal sealed class GuideService : IGuideService
     private readonly ILogger<GuideService> _logger;
     private readonly IApiClient _tvheadendApiClient;
     private readonly IUrlBuilder _tvheadendUrlBuilder;
+    private readonly Relay.IRelayUrlBuilder _relayUrlBuilder;
 
     public GuideService(
         ILogger<GuideService> logger,
         IApiClient tvheadendApiClient,
-        IUrlBuilder tvheadendUrlBuilder)
+        IUrlBuilder tvheadendUrlBuilder,
+        Relay.IRelayUrlBuilder relayUrlBuilder)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
         _tvheadendUrlBuilder = tvheadendUrlBuilder ?? throw new ArgumentNullException(nameof(tvheadendUrlBuilder));
+        _relayUrlBuilder = relayUrlBuilder ?? throw new ArgumentNullException(nameof(relayUrlBuilder));
     }
 
     public async Task<IEnumerable<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken)
@@ -158,7 +161,7 @@ internal sealed class GuideService : IGuideService
                         Name = channel.Name,
                         Number = FormatChannelNumber(channel.Number),
                         ImageUrl = !string.IsNullOrWhiteSpace(channel.IconPublicUrl)
-                            ? _tvheadendUrlBuilder.BuildResourceUrl(config, channel.IconPublicUrl.TrimStart('/'))
+                            ? _relayUrlBuilder.BuildImageRelayUrl(channel.IconPublicUrl.TrimStart('/'))
                             : null,
                         HasImage = !string.IsNullOrWhiteSpace(channel.IconPublicUrl),
                         Tags = resolvedTags,
@@ -373,17 +376,16 @@ internal sealed class GuideService : IGuideService
         var raw = rawImagePath.Trim();
         var normalized = raw.TrimStart('/');
 
-        if (normalized.StartsWith("imagecache/", StringComparison.OrdinalIgnoreCase))
-        {
-            return _tvheadendUrlBuilder.BuildResourceUrl(config, normalized);
-        }
-
+        // External absolute URLs (e.g. http://...) are passed through unchanged — they don't
+        // need relaying because they don't point to TVHeadend's internal API.
         if (Uri.TryCreate(raw, UriKind.Absolute, out _))
         {
             return raw;
         }
 
-        return _tvheadendUrlBuilder.BuildResourceUrl(config, normalized);
+        // All TVHeadend-relative image paths are routed through the relay endpoint
+        // so that TVHeadend credentials stay server-side.
+        return _relayUrlBuilder.BuildImageRelayUrl(normalized);
     }
 
     private static ProviderHintSet BuildProviderHints(EpgEventsGridEntry entry)
