@@ -42,4 +42,3 @@ public sealed class StreamingProfileResolutionResult
     /// </summary>
     public bool UsedFallback { get; set; }
 }
-

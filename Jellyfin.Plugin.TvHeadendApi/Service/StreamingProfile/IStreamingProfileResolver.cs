@@ -18,11 +18,10 @@ public interface IStreamingProfileResolver
     /// 4. User rule (sorted by priority)
     /// 5. Global default mode/profile
     /// 6. Legacy <see cref="Configuration.PluginConfiguration.StreamingProfile"/> fallback
-    /// 7. Safe hardcoded fallback ("pass")
+    /// 7. Safe hardcoded fallback ("pass").
     /// </para>
     /// </summary>
     /// <param name="context">The playback request context.</param>
     /// <returns>The resolution result with the effective profile, mode, and debug reasons.</returns>
     StreamingProfileResolutionResult Resolve(StreamingProfileContext context);
 }
-

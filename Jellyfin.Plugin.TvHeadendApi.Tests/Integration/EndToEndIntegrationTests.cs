@@ -18,6 +18,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
+using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using Microsoft.EntityFrameworkCore;
 using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
@@ -429,6 +430,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
             NullLogger<MediaSourceService>.Instance,
             library.Object,
             resolver.Object,
+            new StreamingProfileResolver(
+                NullLogger<StreamingProfileResolver>.Instance,
+                new PluginConfigurationProvider(() => _config)),
             _apiClient,
             _urlBuilder,
             _relayUrlBuilder,
@@ -477,6 +481,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
             NullLogger<MediaSourceService>.Instance,
             library.Object,
             resolver.Object,
+            new StreamingProfileResolver(
+                NullLogger<StreamingProfileResolver>.Instance,
+                new PluginConfigurationProvider(() => _config)),
             tokenApiClient,
             _urlBuilder,
             _relayUrlBuilder,
@@ -515,6 +522,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
             NullLogger<MediaSourceService>.Instance,
             library.Object,
             resolver.Object,
+            new StreamingProfileResolver(
+                NullLogger<StreamingProfileResolver>.Instance,
+                new PluginConfigurationProvider(() => _config)),
             _apiClient,
             _urlBuilder,
             _relayUrlBuilder,

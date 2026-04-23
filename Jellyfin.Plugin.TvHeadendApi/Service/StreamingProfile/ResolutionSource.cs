@@ -43,4 +43,3 @@ public enum ResolutionSource
     /// </summary>
     SafeFallback = 6,
 }
-

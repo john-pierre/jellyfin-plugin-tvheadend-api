@@ -33,4 +33,3 @@ public sealed record StreamingProfileContext
     /// </summary>
     public string? DeviceName { get; init; }
 }
-

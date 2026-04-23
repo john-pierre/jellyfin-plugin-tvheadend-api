@@ -13,6 +13,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.LiveTv;
@@ -120,6 +121,8 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ILifecycleService, LifecycleService>();
         serviceCollection.AddSingleton<IDefaultProfileService, DefaultProfileService>();
         serviceCollection.AddSingleton<IProfileContainerResolver, ProfileContainerResolver>();
+        serviceCollection.AddSingleton<IStreamingProfileResolver, StreamingProfileResolver>();
+        serviceCollection.AddSingleton<IProfileDiscoveryService, ProfileDiscoveryService>();
         serviceCollection.AddSingleton<IApiClient, ApiClient>();
         serviceCollection.AddSingleton<ITvHeadendHealthService>(sp =>
         {

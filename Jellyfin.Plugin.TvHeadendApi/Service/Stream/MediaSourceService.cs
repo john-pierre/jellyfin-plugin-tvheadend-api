@@ -13,6 +13,7 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
@@ -36,6 +37,7 @@ internal sealed class MediaSourceService : IMediaSourceService
     private readonly ILogger<MediaSourceService> _logger;
     private readonly ILibraryManager _libraryManager;
     private readonly IProfileContainerResolver _streamProfileContainerResolver;
+    private readonly IStreamingProfileResolver _streamingProfileResolver;
     private readonly IApiClient _tvheadendApiClient;
     private readonly IUrlBuilder _tvheadendUrlBuilder;
     private readonly Relay.IRelayUrlBuilder _relayUrlBuilder;
@@ -45,11 +47,12 @@ internal sealed class MediaSourceService : IMediaSourceService
         ILogger<MediaSourceService> logger,
         ILibraryManager libraryManager,
         IProfileContainerResolver streamProfileContainerResolver,
+        IStreamingProfileResolver streamingProfileResolver,
         IApiClient tvheadendApiClient,
         IUrlBuilder tvheadendUrlBuilder,
         Relay.IRelayUrlBuilder relayUrlBuilder,
         CachePathProvider cachePathProvider)
-        : this(logger, libraryManager, streamProfileContainerResolver, tvheadendApiClient, tvheadendUrlBuilder, relayUrlBuilder, () => cachePathProvider.Path)
+        : this(logger, libraryManager, streamProfileContainerResolver, streamingProfileResolver, tvheadendApiClient, tvheadendUrlBuilder, relayUrlBuilder, () => cachePathProvider.Path)
     {
     }
 
@@ -57,6 +60,7 @@ internal sealed class MediaSourceService : IMediaSourceService
         ILogger<MediaSourceService> logger,
         ILibraryManager libraryManager,
         IProfileContainerResolver streamProfileContainerResolver,
+        IStreamingProfileResolver streamingProfileResolver,
         IApiClient tvheadendApiClient,
         IUrlBuilder tvheadendUrlBuilder,
         Relay.IRelayUrlBuilder relayUrlBuilder,
@@ -65,6 +69,7 @@ internal sealed class MediaSourceService : IMediaSourceService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _libraryManager = libraryManager ?? throw new ArgumentNullException(nameof(libraryManager));
         _streamProfileContainerResolver = streamProfileContainerResolver ?? throw new ArgumentNullException(nameof(streamProfileContainerResolver));
+        _streamingProfileResolver = streamingProfileResolver ?? throw new ArgumentNullException(nameof(streamingProfileResolver));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
         _tvheadendUrlBuilder = tvheadendUrlBuilder ?? throw new ArgumentNullException(nameof(tvheadendUrlBuilder));
         _relayUrlBuilder = relayUrlBuilder ?? throw new ArgumentNullException(nameof(relayUrlBuilder));
@@ -104,9 +109,14 @@ internal sealed class MediaSourceService : IMediaSourceService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(channelId);
 
+        // Resolve the effective streaming profile using the hierarchical resolver.
+        var profileContext = new StreamingProfileContext { ChannelId = channelId };
+        var resolution = _streamingProfileResolver.Resolve(profileContext);
+        var effectiveProfile = resolution.EffectiveTvHeadendProfile;
+
         // Route stream through the plugin's relay endpoint so TVHeadend credentials
         // stay server-side and internal URLs are never exposed to clients.
-        var streamUrl = _relayUrlBuilder.BuildStreamRelayUrl(channelId, config.StreamingProfile);
+        var streamUrl = _relayUrlBuilder.BuildStreamRelayUrl(channelId, effectiveProfile);
         var container = await _streamProfileContainerResolver.ResolveContainerAsync(config, cancellationToken).ConfigureAwait(false);
         var mediaSource = new MediaSourceInfo
         {
