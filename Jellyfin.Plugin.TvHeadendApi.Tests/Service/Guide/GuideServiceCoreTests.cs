@@ -63,7 +63,7 @@ public class GuideServiceCoreTests
             .Setup(x => x.BuildApiUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
 
         Assert.Equal(2, result.Count);
@@ -93,7 +93,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/channels");
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns("http://tvh/channels");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = await sut.GetChannelsAsync(CancellationToken.None);
 
         Assert.Empty(result);
@@ -117,7 +117,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/channels");
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns("http://tvh/channels");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = await sut.GetChannelsAsync(CancellationToken.None);
 
         Assert.Empty(result);
@@ -129,7 +129,7 @@ public class GuideServiceCoreTests
         var api = new Mock<IApiClient>();
         var urlBuilder = new Mock<IUrlBuilder>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
 
         var result = await sut.GetChannelsAsync(CancellationToken.None);
 
@@ -157,7 +157,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((value, _) => value);
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = (await sut.GetChannelsAsync(CancellationToken.None)).Single();
 
         Assert.False(result.HasImage);
@@ -183,7 +183,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/channels");
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns("http://tvh/channels");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = await sut.GetChannelsAsync(CancellationToken.None);
 
         Assert.Empty(result);
@@ -194,7 +194,7 @@ public class GuideServiceCoreTests
     {
         var api = new Mock<IApiClient>();
         var urlBuilder = new Mock<IUrlBuilder>();
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             sut.GetProgramsAsync(string.Empty, DateTime.UtcNow, DateTime.UtcNow.AddHours(1), CancellationToken.None));
@@ -231,7 +231,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = (await sut.GetProgramsAsync("ch-1", startUtc, endUtc, CancellationToken.None)).ToList();
 
         Assert.Single(result);
@@ -268,7 +268,7 @@ public class GuideServiceCoreTests
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/image");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = (await sut.GetProgramsAsync("ch/1", startUtc, endUtc, CancellationToken.None)).ToList();
 
         Assert.Single(result);
@@ -310,7 +310,7 @@ public class GuideServiceCoreTests
             .Setup(x => x.BuildResourceUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal("http://jellyfin:8096/api/tvheadend/images/imagecache/poster 1.png", program.ImageUrl);
@@ -348,7 +348,7 @@ public class GuideServiceCoreTests
             .Setup(x => x.BuildResourceUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal("http://jellyfin:8096/api/tvheadend/images/imagecache/ch1.png", program.ImageUrl);
@@ -382,7 +382,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Contains("Comedy", program.Genres);
@@ -425,7 +425,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = await sut.GetProgramsAsync("ch-1", startUtc, endUtc, CancellationToken.None);
 
         Assert.Empty(result);
@@ -459,7 +459,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal(externalImage, program.ImageUrl);
@@ -484,7 +484,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, "api/epg/content_type/list")).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, "api/epg/content_type/list")).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = await sut.GetProgramsAsync("ch-1", DateTime.UtcNow.AddHours(-1), DateTime.UtcNow.AddHours(1), CancellationToken.None);
 
         Assert.Empty(result);
@@ -496,7 +496,7 @@ public class GuideServiceCoreTests
         var api = new Mock<IApiClient>();
         var urlBuilder = new Mock<IUrlBuilder>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
 
         var result = await sut.GetContentTypesAsync(CancellationToken.None);
 
@@ -520,7 +520,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = await sut.GetContentTypesAsync(CancellationToken.None);
 
         Assert.Single(result);
@@ -544,7 +544,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, "api/epg/content_type/list")).Returns("http://tvh/content-types");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = await sut.GetContentTypesAsync(CancellationToken.None);
 
         Assert.Empty(result);
@@ -567,7 +567,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = await sut.GetChannelTagsAsync(CancellationToken.None);
 
         Assert.Single(result);
@@ -591,7 +591,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, "api/channeltag/list")).Returns("http://tvh/channel-tags");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = await sut.GetChannelTagsAsync(CancellationToken.None);
 
         Assert.Empty(result);
@@ -629,7 +629,7 @@ public class GuideServiceCoreTests
             .Setup(x => x.BuildResourceUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal("http://jellyfin:8096/api/tvheadend/images/imagecache/poster.png", program.ImageUrl);
@@ -668,7 +668,7 @@ public class GuideServiceCoreTests
             .Setup(x => x.BuildResourceUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal("http://jellyfin:8096/api/tvheadend/images/imagecache/ch-fallback.png", program.ImageUrl);
@@ -718,7 +718,7 @@ public class GuideServiceCoreTests
             .Setup(x => x.BuildResourceUrl(config, It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, endpoint) => "http://tvh/" + endpoint.TrimStart('/'));
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal("http://jellyfin:8096/api/tvheadend/images/imagecache/poster.png", program.ImageUrl);
@@ -763,7 +763,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Empty(program.ProviderIds);
@@ -808,7 +808,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal("tt7654321", program.ProviderIds["Imdb"]);
@@ -844,7 +844,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
 
         Assert.Single(result);
@@ -880,7 +880,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
 
         Assert.Single(result);
@@ -918,7 +918,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
 
         Assert.Single(result);
@@ -948,7 +948,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.NotNull(program.OriginalAirDate);
@@ -977,7 +977,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.True(program.IsRepeat);
@@ -1021,7 +1021,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal(expectedAudio, program.Audio?.ToString());
@@ -1049,7 +1049,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal(1984, program.ProductionYear);
@@ -1091,7 +1091,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal("https://example.com/show/123", program.HomePageUrl);
@@ -1134,7 +1134,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
 
         Assert.Equal("456", program.ProviderIds["Tvdb"]);
@@ -1161,7 +1161,7 @@ public class GuideServiceCoreTests
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
 
         // Channel should still be returned, tags will be empty
@@ -1182,7 +1182,7 @@ public class GuideServiceCoreTests
         api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/content_type");
 
-        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
         var result = await sut.GetContentTypesAsync(CancellationToken.None);
 
         Assert.Empty(result);

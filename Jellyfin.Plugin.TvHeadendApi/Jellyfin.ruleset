@@ -102,6 +102,12 @@
         <Rule Id="CA1303" Action="None" />
         <!-- disable warning CA1308: Normalize strings to uppercase -->
         <Rule Id="CA1308" Action="None" />
+        <!-- disable warning CA1002: Do not expose generic lists (configuration DTOs need settable collections for JSON serialization) -->
+        <Rule Id="CA1002" Action="None" />
+        <!-- disable warning CA1819: Properties should not return arrays (configuration DTOs need settable collections for JSON serialization) -->
+        <Rule Id="CA1819" Action="None" />
+        <!-- disable warning CA2227: Collection properties should be read only (configuration DTOs need settable collections for JSON deserialization) -->
+        <Rule Id="CA2227" Action="None" />
         <!-- disable warning CA1848: Use the LoggerMessage delegates -->
         <Rule Id="CA1848" Action="None" />
         <!-- disable warning CA2101: Specify marshaling for P/Invoke string arguments -->

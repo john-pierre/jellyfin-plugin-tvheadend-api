@@ -2,7 +2,9 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
+using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dashboard;
+using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -18,14 +20,17 @@ namespace Jellyfin.Plugin.TvHeadendApi.Api;
 public class DashboardController : ControllerBase
 {
     private readonly IDashboardService _dashboardService;
+    private readonly IRelayMetricsService _relayMetricsService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DashboardController"/> class.
     /// </summary>
     /// <param name="dashboardService">The dashboard aggregation service.</param>
-    public DashboardController(IDashboardService dashboardService)
+    /// <param name="relayMetricsService">The relay metrics service.</param>
+    public DashboardController(IDashboardService dashboardService, IRelayMetricsService relayMetricsService)
     {
         _dashboardService = dashboardService ?? throw new ArgumentNullException(nameof(dashboardService));
+        _relayMetricsService = relayMetricsService ?? throw new ArgumentNullException(nameof(relayMetricsService));
     }
 
     /// <summary>
@@ -38,5 +43,16 @@ public class DashboardController : ControllerBase
     public async Task<ActionResult<DashboardStatus>> GetDashboard(CancellationToken cancellationToken)
     {
         return Ok(await _dashboardService.GetDashboardStatusAsync(cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Returns aggregated relay observability metrics for the dashboard.
+    /// </summary>
+    /// <param name="hours">Hours to look back: 1, 24, 168 (7d), 720 (30d), 0 (all).</param>
+    /// <returns>Aggregated relay metrics summary.</returns>
+    [HttpGet("RelayMetrics")]
+    public ActionResult<RelayMetricsSummary> GetRelayMetrics([FromQuery] int hours = 24)
+    {
+        return Ok(_relayMetricsService.GetSummary(hours));
     }
 }

@@ -37,6 +37,7 @@ public class DashboardServiceTests
             _subMock.Object,
             _urlBuilderMock.Object,
             _apiClientMock.Object,
+            NullHealthService.Instance,
             NullLogger<DashboardService>.Instance);
     }
 
@@ -44,35 +45,35 @@ public class DashboardServiceTests
     public void Constructor_NullDiagnostic_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            null!, _statusMock.Object, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullLogger<DashboardService>.Instance));
+            null!, _statusMock.Object, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, NullLogger<DashboardService>.Instance));
     }
 
     [Fact]
     public void Constructor_NullStatus_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            _diagMock.Object, null!, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullLogger<DashboardService>.Instance));
+            _diagMock.Object, null!, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, NullLogger<DashboardService>.Instance));
     }
 
     [Fact]
     public void Constructor_NullInput_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            _diagMock.Object, _statusMock.Object, null!, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullLogger<DashboardService>.Instance));
+            _diagMock.Object, _statusMock.Object, null!, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, NullLogger<DashboardService>.Instance));
     }
 
     [Fact]
     public void Constructor_NullSubscription_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            _diagMock.Object, _statusMock.Object, _inputMock.Object, null!, _urlBuilderMock.Object, _apiClientMock.Object, NullLogger<DashboardService>.Instance));
+            _diagMock.Object, _statusMock.Object, _inputMock.Object, null!, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, NullLogger<DashboardService>.Instance));
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            _diagMock.Object, _statusMock.Object, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, null!));
+            _diagMock.Object, _statusMock.Object, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, null!));
     }
 
     [Fact]

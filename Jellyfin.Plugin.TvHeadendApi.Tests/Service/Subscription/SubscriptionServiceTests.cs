@@ -16,13 +16,13 @@ public class SubscriptionServiceTests
     [Fact]
     public void Constructor_WithNullLogger_Throws()
     {
-        Assert.Throws<ArgumentNullException>(() => new SubscriptionService(null!, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object));
+        Assert.Throws<ArgumentNullException>(() => new SubscriptionService(null!, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object, NullHealthService.Instance));
     }
 
     [Fact]
     public void Constructor_WithNullApiClient_Throws()
     {
-        Assert.Throws<ArgumentNullException>(() => new SubscriptionService(NullLogger<SubscriptionService>.Instance, null!, new Mock<IUrlBuilder>().Object));
+        Assert.Throws<ArgumentNullException>(() => new SubscriptionService(NullLogger<SubscriptionService>.Instance, null!, new Mock<IUrlBuilder>().Object, NullHealthService.Instance));
     }
 
     [Fact]
@@ -30,7 +30,7 @@ public class SubscriptionServiceTests
     {
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
-        var sut = new SubscriptionService(NullLogger<SubscriptionService>.Instance, api.Object, new Mock<IUrlBuilder>().Object);
+        var sut = new SubscriptionService(NullLogger<SubscriptionService>.Instance, api.Object, new Mock<IUrlBuilder>().Object, NullHealthService.Instance);
 
         var result = await sut.GetActiveSubscriptionsAsync(CancellationToken.None);
 
@@ -49,7 +49,7 @@ public class SubscriptionServiceTests
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://localhost:9981/api/status/subscriptions", It.IsAny<CancellationToken>()))
             .ReturnsAsync("{\"entries\":[{\"id\":42,\"start\":1700000000,\"errors\":0,\"state\":\"Running\",\"hostname\":\"192.168.1.2\",\"username\":\"admin\",\"client\":\"Jellyfin\",\"title\":\"epg\",\"channel\":\"BBC One\",\"service\":\"DVB-T/690MHz\",\"profile\":\"pass\",\"in\":1500000,\"out\":1500000,\"total_in\":75000000,\"total_out\":75000000}],\"totalCount\":1}");
 
-        var sut = new SubscriptionService(NullLogger<SubscriptionService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new SubscriptionService(NullLogger<SubscriptionService>.Instance, api.Object, urlBuilder.Object, NullHealthService.Instance);
         var result = await sut.GetActiveSubscriptionsAsync(CancellationToken.None);
 
         Assert.Single(result);
@@ -72,7 +72,7 @@ public class SubscriptionServiceTests
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://localhost:9981/api/status/subscriptions", It.IsAny<CancellationToken>()))
             .ReturnsAsync("{\"entries\":[],\"totalCount\":0}");
 
-        var sut = new SubscriptionService(NullLogger<SubscriptionService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new SubscriptionService(NullLogger<SubscriptionService>.Instance, api.Object, urlBuilder.Object, NullHealthService.Instance);
         var result = await sut.GetActiveSubscriptionsAsync(CancellationToken.None);
 
         Assert.Empty(result);

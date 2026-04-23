@@ -406,6 +406,23 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
                 dbContext.SaveChanges();
                 _logger.LogInformation("Pruned {Count} viewing sessions older than {Days} days.", old.Count, (int)retention);
             }
+
+            // Prune old health transitions and TVH log entries with the same retention
+            var oldTransitions = dbContext.HealthTransitions.Where(h => h.TimestampUtc < cutoff).ToList();
+            if (oldTransitions.Count > 0)
+            {
+                dbContext.HealthTransitions.RemoveRange(oldTransitions);
+                dbContext.SaveChanges();
+                _logger.LogInformation("Pruned {Count} health transitions older than {Days} days.", oldTransitions.Count, (int)retention);
+            }
+
+            var oldLogs = dbContext.TvhLogEntries.Where(l => l.TimestampUtc < cutoff).ToList();
+            if (oldLogs.Count > 0)
+            {
+                dbContext.TvhLogEntries.RemoveRange(oldLogs);
+                dbContext.SaveChanges();
+                _logger.LogInformation("Pruned {Count} TVH log entries older than {Days} days.", oldLogs.Count, (int)retention);
+            }
         }
         finally
         {
@@ -554,6 +571,34 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
 
         dbContext.Database.ExecuteSqlRaw("""
             CREATE INDEX IF NOT EXISTS "IX_ViewingSessions_EndTimeUtc"  ON "ViewingSessions" ("EndTimeUtc")
+            """);
+
+        dbContext.Database.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "HealthTransitions" (
+                "Id"                  INTEGER NOT NULL CONSTRAINT "PK_HealthTransitions" PRIMARY KEY AUTOINCREMENT,
+                "TimestampUtc"        TEXT    NOT NULL,
+                "FromStatus"          TEXT    NOT NULL,
+                "ToStatus"            TEXT    NOT NULL,
+                "FailureReason"       TEXT    NULL,
+                "ResponseTimeMs"      INTEGER NULL,
+                "ConsecutiveFailures" INTEGER NOT NULL DEFAULT 0
+            )
+            """);
+
+        dbContext.Database.ExecuteSqlRaw("""
+            CREATE INDEX IF NOT EXISTS "IX_HealthTransitions_TimestampUtc" ON "HealthTransitions" ("TimestampUtc")
+            """);
+
+        dbContext.Database.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "TvhLogEntries" (
+                "Id"            INTEGER NOT NULL CONSTRAINT "PK_TvhLogEntries" PRIMARY KEY AUTOINCREMENT,
+                "TimestampUtc"  TEXT    NOT NULL,
+                "Text"          TEXT    NOT NULL
+            )
+            """);
+
+        dbContext.Database.ExecuteSqlRaw("""
+            CREATE INDEX IF NOT EXISTS "IX_TvhLogEntries_TimestampUtc" ON "TvhLogEntries" ("TimestampUtc")
             """);
     }
 

@@ -63,6 +63,7 @@ internal static class ResiliencePolicies
 /// <summary>
 /// A <see cref="DelegatingHandler"/> that retries requests on transient failures with exponential back-off
 /// and breaks the circuit after consecutive failures.
+/// Optionally reports success/failure to a <see cref="ITvHeadendHealthService"/> for centralized health tracking.
 /// </summary>
 internal sealed class ResilienceHandler : DelegatingHandler
 {
@@ -70,9 +71,21 @@ internal sealed class ResilienceHandler : DelegatingHandler
     private int _consecutiveFailures;
     private DateTimeOffset _openUntil = DateTimeOffset.MinValue;
 
+    /// <summary>
+    /// Gets or sets the optional health service callback for centralized health reporting.
+    /// </summary>
+    internal ITvHeadendHealthService? HealthService { get; set; }
+
     /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        // Fast-fail if the central health service says the circuit is open
+        if (HealthService?.ShouldBlockRequest() == true)
+        {
+            throw new InvalidOperationException(
+                "TVHeadend circuit breaker is open (central). Requests are temporarily blocked.");
+        }
+
         HttpResponseMessage? response = null;
 
         for (int attempt = 0; attempt <= ResiliencePolicies.RetryCount; attempt++)
@@ -161,6 +174,8 @@ internal sealed class ResilienceHandler : DelegatingHandler
                 _openUntil = DateTimeOffset.UtcNow.AddSeconds(ResiliencePolicies.CircuitBreakerDurationSeconds);
             }
         }
+
+        HealthService?.RecordFailure(FailureReason.UpstreamUnavailable);
     }
 
     private void RecordSuccess()
@@ -169,6 +184,8 @@ internal sealed class ResilienceHandler : DelegatingHandler
         {
             _consecutiveFailures = 0;
         }
+
+        HealthService?.RecordSuccess();
     }
 
     /// <summary>

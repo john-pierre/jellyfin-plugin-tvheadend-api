@@ -114,6 +114,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         scoreDeductions += CheckPlaybackSettings(report, config);
         CheckFfmpegSettings(report, config);
         CheckProbeCacheStatus(report, allChannelUuids, cancellationToken);
+        CheckRelayService(report, config);
 
         report.CompatibilityScore = Math.Max(0, 100 - scoreDeductions);
         report.OverallStatus = report.CompatibilityScore >= 80 ? "OK" : report.CompatibilityScore >= 50 ? "WARNING" : "ERROR";
@@ -705,5 +706,33 @@ internal sealed class DiagnosticService : IDiagnosticService
     private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         return IdNodeValueHelper.ReadBoolOrParam(directValue, parameters, parameterName);
+    }
+
+    private void CheckRelayService(DiagnoseResult report, Configuration.PluginConfiguration config)
+    {
+        if (!config.RelayEnabled)
+        {
+            report.Checks.Add(new DiagnoseCheck
+            {
+                Category = "Relay",
+                Name = "Relay Service",
+                Status = "WARNING",
+                Message = "Relay service is disabled. Images and streams are served directly from TVHeadend.",
+                Recommendation = "Enable the relay service to hide TVHeadend credentials and internal URLs from clients.",
+            });
+            report.Warnings.Add("Relay service is disabled — TVHeadend credentials may be exposed to clients.");
+            return;
+        }
+
+        var hasOverride = !string.IsNullOrWhiteSpace(config.RelayHostOverride);
+        report.Checks.Add(new DiagnoseCheck
+        {
+            Category = "Relay",
+            Name = "Relay Service",
+            Status = "OK",
+            Message = hasOverride
+                ? $"Relay enabled with custom host: {config.RelayHostOverride}"
+                : "Relay enabled with auto-detected Jellyfin host.",
+        });
     }
 }

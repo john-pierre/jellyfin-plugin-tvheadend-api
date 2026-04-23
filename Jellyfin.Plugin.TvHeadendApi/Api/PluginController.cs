@@ -12,6 +12,7 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Model.Subscription;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
@@ -38,6 +39,7 @@ public class PluginController : ControllerBase
     private readonly IStatusService _statusService;
     private readonly IInputMonitorService _inputMonitorService;
     private readonly ISubscriptionService _subscriptionService;
+    private readonly ITvHeadendHealthService _healthService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginController"/> class.
@@ -49,6 +51,7 @@ public class PluginController : ControllerBase
     /// <param name="statusService">Service for TVHeadend server status and connections.</param>
     /// <param name="inputMonitorService">Service for TVHeadend input/tuner monitoring.</param>
     /// <param name="subscriptionService">Service for TVHeadend subscription monitoring.</param>
+    /// <param name="healthService">TVHeadend health tracking service.</param>
     public PluginController(
         IDiagnosticService diagnoseService,
         IDefaultProfileService defaultProfileService,
@@ -56,7 +59,8 @@ public class PluginController : ControllerBase
         IStatisticsService statisticsService,
         IStatusService statusService,
         IInputMonitorService inputMonitorService,
-        ISubscriptionService subscriptionService)
+        ISubscriptionService subscriptionService,
+        ITvHeadendHealthService healthService)
     {
         _diagnoseService = diagnoseService ?? throw new ArgumentNullException(nameof(diagnoseService));
         _defaultProfileService = defaultProfileService ?? throw new ArgumentNullException(nameof(defaultProfileService));
@@ -65,6 +69,7 @@ public class PluginController : ControllerBase
         _statusService = statusService ?? throw new ArgumentNullException(nameof(statusService));
         _inputMonitorService = inputMonitorService ?? throw new ArgumentNullException(nameof(inputMonitorService));
         _subscriptionService = subscriptionService ?? throw new ArgumentNullException(nameof(subscriptionService));
+        _healthService = healthService ?? throw new ArgumentNullException(nameof(healthService));
     }
 
     /// <summary>
@@ -238,5 +243,26 @@ public class PluginController : ControllerBase
     public async Task<ActionResult<IReadOnlyList<SubscriptionEntry>>> GetSubscriptions(CancellationToken cancellationToken)
     {
         return Ok(await _subscriptionService.GetActiveSubscriptionsAsync(cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Returns the current TVHeadend upstream health snapshot.
+    /// </summary>
+    /// <returns>Health snapshot with status, circuit breaker state, and failure details.</returns>
+    [HttpGet("Health")]
+    public ActionResult<TvHeadendHealthSnapshot> GetHealth()
+    {
+        return Ok(_healthService.GetSnapshot());
+    }
+
+    /// <summary>
+    /// Triggers an active TVHeadend health check and returns the updated snapshot.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Updated health snapshot after the check.</returns>
+    [HttpPost("Health/Check")]
+    public async Task<ActionResult<TvHeadendHealthSnapshot>> CheckHealth(CancellationToken cancellationToken)
+    {
+        return Ok(await _healthService.CheckHealthAsync(cancellationToken).ConfigureAwait(false));
     }
 }

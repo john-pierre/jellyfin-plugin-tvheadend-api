@@ -50,7 +50,10 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             {
                 CheckCertificateRevocationList = true,
             })
-            .AddHttpMessageHandler(() => new ResilienceHandler());
+            .AddHttpMessageHandler(sp => new ResilienceHandler
+            {
+                HealthService = sp.GetService<ITvHeadendHealthService>(),
+            });
 
         serviceCollection.AddHttpClient(ApiClient.HttpClientUnsafeName)
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -58,7 +61,10 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 CheckCertificateRevocationList = false,
                 ServerCertificateCustomValidationCallback = static (_, _, _, _) => true,
             })
-            .AddHttpMessageHandler(() => new ResilienceHandler());
+            .AddHttpMessageHandler(sp => new ResilienceHandler
+            {
+                HealthService = sp.GetService<ITvHeadendHealthService>(),
+            });
 
         // Plugin path/config providers — decouple services from Plugin.Instance singleton.
         serviceCollection.AddSingleton(new PluginConfigurationProvider(() => Plugin.Instance?.Configuration as Configuration.PluginConfiguration));
@@ -115,15 +121,95 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IDefaultProfileService, DefaultProfileService>();
         serviceCollection.AddSingleton<IProfileContainerResolver, ProfileContainerResolver>();
         serviceCollection.AddSingleton<IApiClient, ApiClient>();
+        serviceCollection.AddSingleton<ITvHeadendHealthService>(sp =>
+        {
+            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
+            var folder = pathProvider.Path ?? string.Empty;
+            var dbPath = System.IO.Path.Combine(folder, "viewing-statistics.db");
+
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = dbPath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Shared,
+                Pooling = false,
+            }.ToString();
+
+            var contextOptions = new DbContextOptionsBuilder<Service.Statistics.ViewingSessionContext>()
+                .UseSqlite(connectionString)
+                .Options;
+
+            return new TvHeadendHealthService(
+                sp.GetRequiredService<IApiClient>(),
+                sp.GetRequiredService<IUrlBuilder>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TvHeadendHealthService>>(),
+                sp.GetRequiredService<PluginConfigurationProvider>(),
+                contextOptions);
+        });
         serviceCollection.AddSingleton<IStatusService, StatusService>();
         serviceCollection.AddSingleton<IInputMonitorService, InputMonitorService>();
         serviceCollection.AddSingleton<ISubscriptionService, SubscriptionService>();
         serviceCollection.AddSingleton<IDashboardService, DashboardService>();
         serviceCollection.AddSingleton<IRelayService, RelayService>();
         serviceCollection.AddSingleton<IRelayUrlBuilder>(sp =>
-            new RelayUrlBuilder(sp.GetRequiredService<IServerApplicationHost>()));
+            new RelayUrlBuilder(sp.GetRequiredService<IServerApplicationHost>(), sp.GetRequiredService<PluginConfigurationProvider>()));
+
+        // Relay metrics — shared activity tracker, EF Core context, and hosted service.
+        serviceCollection.AddSingleton<RelayActivityTracker>();
+        serviceCollection.AddSingleton<RelayMetricsService>(sp =>
+        {
+            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
+            var folder = pathProvider.Path ?? string.Empty;
+            var dbPath = System.IO.Path.Combine(folder, "viewing-statistics.db");
+
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = dbPath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Shared,
+                Pooling = false,
+            }.ToString();
+
+            var contextOptions = new DbContextOptionsBuilder<RelayMetricsContext>()
+                .UseSqlite(connectionString)
+                .Options;
+
+            return new RelayMetricsService(
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RelayMetricsService>>(),
+                sp.GetRequiredService<PluginConfigurationProvider>(),
+                sp.GetRequiredService<RelayActivityTracker>(),
+                contextOptions,
+                dbPath);
+        });
+        serviceCollection.AddSingleton<IRelayMetricsService>(sp => sp.GetRequiredService<RelayMetricsService>());
+        serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<RelayMetricsService>());
+
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StatisticsService>());
-        serviceCollection.AddSingleton<CometService>();
+        serviceCollection.AddSingleton<CometService>(sp =>
+        {
+            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
+            var folder = pathProvider.Path ?? string.Empty;
+            var dbPath = System.IO.Path.Combine(folder, "viewing-statistics.db");
+
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = dbPath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Shared,
+                Pooling = false,
+            }.ToString();
+
+            var contextOptions = new DbContextOptionsBuilder<Service.Statistics.ViewingSessionContext>()
+                .UseSqlite(connectionString)
+                .Options;
+
+            return new CometService(
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CometService>>(),
+                sp.GetRequiredService<IApiClient>(),
+                sp.GetRequiredService<IUrlBuilder>(),
+                sp.GetRequiredService<PluginConfigurationProvider>(),
+                contextOptions);
+        });
         serviceCollection.AddSingleton<ICometSnapshotReader>(sp => sp.GetRequiredService<CometService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<CometService>());
 

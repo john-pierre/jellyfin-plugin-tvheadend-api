@@ -54,6 +54,24 @@ public class PluginConfiguration : BasePluginConfiguration
         // Statistics
         this.StatisticsRetentionPeriod = StatisticsRetentionPeriod.ThirtyDays;
 
+        // Relay
+        this.RelayEnabled = true;
+        this.RelayHostOverride = string.Empty;
+
+        // Resilience
+        this.HealthTimeoutSeconds = 3;
+        this.ImageTimeoutSeconds = 5;
+        this.MetadataTimeoutSeconds = 10;
+        this.StreamStartupTimeoutSeconds = 8;
+        this.BackgroundRefreshTimeoutSeconds = 15;
+        this.CircuitBreakerThreshold = 5;
+        this.CircuitBreakerDurationSeconds = 30;
+        this.CometReconnectBaseDelaySeconds = 2;
+        this.CometReconnectMaxDelaySeconds = 120;
+
+        // Streaming profile selection
+        this.StreamingProfileSettings = new StreamingProfileSettings();
+
         // Expert
         this.AuthTokenMaxAttempts = 5;
         this.ProfileCacheTtlMinutes = 5;
@@ -264,6 +282,22 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public string RecordingProfile { get; set; }
 
+    // ── Relay ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the relay service is enabled.
+    /// When enabled, images and streams are proxied through Jellyfin instead of exposing TVHeadend URLs directly.
+    /// Default: true.
+    /// </summary>
+    public bool RelayEnabled { get; set; }
+
+    /// <summary>
+    /// Gets or sets a custom Jellyfin host URL override for relay URL generation.
+    /// When empty, the plugin auto-detects the Jellyfin URL via <c>IServerApplicationHost</c>.
+    /// Example: <c>http://192.168.1.10:8096</c> or <c>https://jellyfin.example.com</c>.
+    /// </summary>
+    public string RelayHostOverride { get; set; }
+
     // ── Statistics ─────────────────────────────────────────────────────
 
     /// <summary>
@@ -271,6 +305,53 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Default: 30 days.
     /// </summary>
     public StatisticsRetentionPeriod StatisticsRetentionPeriod { get; set; }
+
+    // ── Resilience ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Gets or sets the timeout in seconds for health check / ping operations. Default: 3.
+    /// </summary>
+    public int HealthTimeoutSeconds { get; set; }
+
+    /// <summary>
+    /// Gets or sets the timeout in seconds for image/logo fetch operations. Default: 5.
+    /// </summary>
+    public int ImageTimeoutSeconds { get; set; }
+
+    /// <summary>
+    /// Gets or sets the timeout in seconds for metadata operations (channels, EPG, profiles). Default: 10.
+    /// </summary>
+    public int MetadataTimeoutSeconds { get; set; }
+
+    /// <summary>
+    /// Gets or sets the timeout in seconds for stream startup (headers). Default: 8.
+    /// </summary>
+    public int StreamStartupTimeoutSeconds { get; set; }
+
+    /// <summary>
+    /// Gets or sets the timeout in seconds for background refresh tasks. Default: 15.
+    /// </summary>
+    public int BackgroundRefreshTimeoutSeconds { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of consecutive failures before the circuit breaker opens. Default: 5.
+    /// </summary>
+    public int CircuitBreakerThreshold { get; set; }
+
+    /// <summary>
+    /// Gets or sets the duration in seconds the circuit breaker stays open before half-open. Default: 30.
+    /// </summary>
+    public int CircuitBreakerDurationSeconds { get; set; }
+
+    /// <summary>
+    /// Gets or sets the base delay in seconds for CometService WebSocket reconnect backoff. Default: 2.
+    /// </summary>
+    public int CometReconnectBaseDelaySeconds { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum delay in seconds for CometService WebSocket reconnect backoff. Default: 120.
+    /// </summary>
+    public int CometReconnectMaxDelaySeconds { get; set; }
 
     // ── Expert ────────────────────────────────────────────────────────
 
@@ -283,4 +364,13 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the TTL in minutes for the cached streaming profile metadata. Default: 5.
     /// </summary>
     public int ProfileCacheTtlMinutes { get; set; }
+
+    // ── Streaming Profile Selection ─────────────────────────────────────
+
+    /// <summary>
+    /// Gets or sets the streaming profile selection settings.
+    /// Controls hierarchical profile resolution with global defaults, per-channel overrides,
+    /// per-channel-group overrides, and client/user rules.
+    /// </summary>
+    public StreamingProfileSettings StreamingProfileSettings { get; set; }
 }

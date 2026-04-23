@@ -48,7 +48,7 @@ public class PluginControllerEndpointTests
             new Mock<IStatisticsService>().Object,
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object);
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
 
         // Act
         var result = await controller.Diagnose(CancellationToken.None);
@@ -80,7 +80,7 @@ public class PluginControllerEndpointTests
             new Mock<IStatisticsService>().Object,
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object);
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
 
         // Act
         await controller.Diagnose(CancellationToken.None);
@@ -117,7 +117,7 @@ public class PluginControllerEndpointTests
             new Mock<IStatisticsService>().Object,
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object);
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
 
         // Act
         var result = await controller.CreateProfile(CancellationToken.None);
@@ -155,7 +155,7 @@ public class PluginControllerEndpointTests
             new Mock<IStatisticsService>().Object,
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object);
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
 
         // Act
         var result = await controller.CreateProfile(CancellationToken.None);
@@ -192,7 +192,7 @@ public class PluginControllerEndpointTests
             new Mock<IStatisticsService>().Object,
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object);
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
 
         // Act
         var result = await controller.GenerateAuthToken(CancellationToken.None);
@@ -220,7 +220,7 @@ public class PluginControllerEndpointTests
             new Mock<IStatisticsService>().Object,
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object);
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
 
         // Act
         var result = controller.ResetToDefaults();

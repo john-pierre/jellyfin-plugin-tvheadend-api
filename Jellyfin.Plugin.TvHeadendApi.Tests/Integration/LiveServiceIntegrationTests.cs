@@ -86,7 +86,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetChannelsAsync_ReturnsEmptyList_WhenNoChannelsConfigured()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, CreateStubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, CreateStubRelay(), NullHealthService.Instance);
 
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
 
@@ -98,7 +98,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetProgramsAsync_ReturnsEmptyList_WhenNoEpgData()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, CreateStubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, CreateStubRelay(), NullHealthService.Instance);
         var now = DateTime.UtcNow;
 
         // Use a dummy channel UUID — no channels exist, so no programs either.
@@ -115,7 +115,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetContentTypesAsync_ReturnsDictionary()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, CreateStubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, CreateStubRelay(), NullHealthService.Instance);
 
         var types = await sut.GetContentTypesAsync(CancellationToken.None);
 
@@ -126,7 +126,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     [Fact]
     public async Task GuideService_GetChannelTagsAsync_ReturnsDictionary()
     {
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, CreateStubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, CreateStubRelay(), NullHealthService.Instance);
 
         var tags = await sut.GetChannelTagsAsync(CancellationToken.None);
 
@@ -204,7 +204,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     [Fact]
     public async Task StatusService_GetActivityStatusAsync_ReturnsStatus()
     {
-        var sut = new StatusService(NullLogger<StatusService>.Instance, _apiClient, _urlBuilder);
+        var sut = new StatusService(NullLogger<StatusService>.Instance, _apiClient, _urlBuilder, NullHealthService.Instance);
 
         var status = await sut.GetActivityStatusAsync(CancellationToken.None);
 
@@ -215,7 +215,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     [Fact]
     public async Task StatusService_GetConnectionsAsync_ReturnsConnectionList()
     {
-        var sut = new StatusService(NullLogger<StatusService>.Instance, _apiClient, _urlBuilder);
+        var sut = new StatusService(NullLogger<StatusService>.Instance, _apiClient, _urlBuilder, NullHealthService.Instance);
 
         var connections = await sut.GetConnectionsAsync(CancellationToken.None);
 
@@ -228,7 +228,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     [Fact]
     public async Task InputMonitorService_GetInputStatusAsync_ReturnsListWithoutError()
     {
-        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, _apiClient, _urlBuilder);
+        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, _apiClient, _urlBuilder, NullHealthService.Instance);
 
         var inputs = await sut.GetInputStatusAsync(CancellationToken.None);
 
@@ -242,7 +242,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     [Fact]
     public async Task SubscriptionService_GetActiveSubscriptionsAsync_ReturnsEmptyList()
     {
-        var sut = new SubscriptionService(NullLogger<SubscriptionService>.Instance, _apiClient, _urlBuilder);
+        var sut = new SubscriptionService(NullLogger<SubscriptionService>.Instance, _apiClient, _urlBuilder, NullHealthService.Instance);
 
         var subscriptions = await sut.GetActiveSubscriptionsAsync(CancellationToken.None);
 

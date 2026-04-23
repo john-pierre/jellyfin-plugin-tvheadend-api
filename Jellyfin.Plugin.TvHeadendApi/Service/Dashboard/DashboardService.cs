@@ -27,6 +27,7 @@ internal sealed class DashboardService : IDashboardService
     private readonly ISubscriptionService _subscriptionService;
     private readonly IUrlBuilder _urlBuilder;
     private readonly IApiClient _apiClient;
+    private readonly ITvHeadendHealthService _healthService;
     private readonly ILogger<DashboardService> _logger;
 
     /// <summary>
@@ -38,6 +39,7 @@ internal sealed class DashboardService : IDashboardService
     /// <param name="subscriptionService">Service for TVHeadend subscription monitoring.</param>
     /// <param name="urlBuilder">URL builder for TVHeadend API URLs.</param>
     /// <param name="apiClient">API client for TVHeadend configuration access.</param>
+    /// <param name="healthService">TVHeadend health tracking service.</param>
     /// <param name="logger">Logger for diagnostics.</param>
     public DashboardService(
         IDiagnosticService diagnosticService,
@@ -46,6 +48,7 @@ internal sealed class DashboardService : IDashboardService
         ISubscriptionService subscriptionService,
         IUrlBuilder urlBuilder,
         IApiClient apiClient,
+        ITvHeadendHealthService healthService,
         ILogger<DashboardService> logger)
     {
         _diagnosticService = diagnosticService ?? throw new ArgumentNullException(nameof(diagnosticService));
@@ -54,6 +57,7 @@ internal sealed class DashboardService : IDashboardService
         _subscriptionService = subscriptionService ?? throw new ArgumentNullException(nameof(subscriptionService));
         _urlBuilder = urlBuilder ?? throw new ArgumentNullException(nameof(urlBuilder));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        _healthService = healthService ?? throw new ArgumentNullException(nameof(healthService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -73,6 +77,9 @@ internal sealed class DashboardService : IDashboardService
         await PopulateInputsAsync(dashboard, cancellationToken).ConfigureAwait(false);
         await PopulateSubscriptionsAsync(dashboard, cancellationToken).ConfigureAwait(false);
         await PopulateConnectionsAsync(dashboard, cancellationToken).ConfigureAwait(false);
+
+        // Attach upstream health snapshot
+        dashboard.UpstreamHealth = _healthService.GetSnapshot();
 
         if (dashboard.Activity == null)
         {

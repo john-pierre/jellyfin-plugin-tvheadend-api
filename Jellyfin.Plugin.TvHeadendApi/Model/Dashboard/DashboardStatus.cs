@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Input;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Model.Subscription;
+using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
 
@@ -123,4 +124,11 @@ public sealed class DashboardStatus
     /// Gets or sets any warnings from the diagnostic check.
     /// </summary>
     public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+
+    // ── TVHeadend Health ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Gets or sets the TVHeadend upstream health snapshot.
+    /// </summary>
+    public TvHeadendHealthSnapshot? UpstreamHealth { get; set; }
 }

@@ -16,19 +16,19 @@ public class StatusServiceTests
     private static StatusService CreateSut(Mock<IApiClient>? apiClient = null)
     {
         var api = apiClient ?? new Mock<IApiClient>();
-        return new StatusService(NullLogger<StatusService>.Instance, api.Object, new Mock<IUrlBuilder>().Object);
+        return new StatusService(NullLogger<StatusService>.Instance, api.Object, new Mock<IUrlBuilder>().Object, NullHealthService.Instance);
     }
 
     [Fact]
     public void Constructor_WithNullLogger_Throws()
     {
-        Assert.Throws<ArgumentNullException>(() => new StatusService(null!, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object));
+        Assert.Throws<ArgumentNullException>(() => new StatusService(null!, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object, NullHealthService.Instance));
     }
 
     [Fact]
     public void Constructor_WithNullApiClient_Throws()
     {
-        Assert.Throws<ArgumentNullException>(() => new StatusService(NullLogger<StatusService>.Instance, null!, new Mock<IUrlBuilder>().Object));
+        Assert.Throws<ArgumentNullException>(() => new StatusService(NullLogger<StatusService>.Instance, null!, new Mock<IUrlBuilder>().Object, NullHealthService.Instance));
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public class StatusServiceTests
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://localhost:9981/api/status/connections", It.IsAny<CancellationToken>()))
             .ReturnsAsync("{\"entries\":[{\"id\":1},{\"id\":2},{\"id\":3},{\"id\":4},{\"id\":5}],\"totalCount\":5}");
 
-        var sut = new StatusService(NullLogger<StatusService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new StatusService(NullLogger<StatusService>.Instance, api.Object, urlBuilder.Object, NullHealthService.Instance);
         var result = await sut.GetActivityStatusAsync(CancellationToken.None);
 
         Assert.NotNull(result);
@@ -92,7 +92,7 @@ public class StatusServiceTests
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://localhost:9981/api/status/connections", It.IsAny<CancellationToken>()))
             .ReturnsAsync("{\"entries\":[{\"id\":1,\"server\":\"192.168.1.1\",\"server_port\":9981,\"peer\":\"192.168.1.2\",\"peer_port\":54321,\"started\":1700000000,\"streaming\":1,\"type\":\"HTTP\",\"user\":\"admin\"}],\"totalCount\":1}");
 
-        var sut = new StatusService(NullLogger<StatusService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new StatusService(NullLogger<StatusService>.Instance, api.Object, urlBuilder.Object, NullHealthService.Instance);
         var result = await sut.GetConnectionsAsync(CancellationToken.None);
 
         Assert.Single(result);

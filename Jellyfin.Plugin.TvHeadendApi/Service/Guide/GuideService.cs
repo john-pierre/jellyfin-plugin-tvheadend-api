@@ -103,21 +103,30 @@ internal sealed class GuideService : IGuideService
     private readonly IApiClient _tvheadendApiClient;
     private readonly IUrlBuilder _tvheadendUrlBuilder;
     private readonly Relay.IRelayUrlBuilder _relayUrlBuilder;
+    private readonly ITvHeadendHealthService _healthService;
 
     public GuideService(
         ILogger<GuideService> logger,
         IApiClient tvheadendApiClient,
         IUrlBuilder tvheadendUrlBuilder,
-        Relay.IRelayUrlBuilder relayUrlBuilder)
+        Relay.IRelayUrlBuilder relayUrlBuilder,
+        ITvHeadendHealthService healthService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
         _tvheadendUrlBuilder = tvheadendUrlBuilder ?? throw new ArgumentNullException(nameof(tvheadendUrlBuilder));
         _relayUrlBuilder = relayUrlBuilder ?? throw new ArgumentNullException(nameof(relayUrlBuilder));
+        _healthService = healthService ?? throw new ArgumentNullException(nameof(healthService));
     }
 
     public async Task<IEnumerable<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken)
     {
+        if (_healthService.ShouldBlockRequest())
+        {
+            _logger.LogWarning("Circuit breaker open — skipping channel fetch");
+            return Enumerable.Empty<ChannelInfo>();
+        }
+
         try
         {
             var config = GetConfig();
@@ -180,6 +189,12 @@ internal sealed class GuideService : IGuideService
     public async Task<IEnumerable<ProgramInfo>> GetProgramsAsync(string channelId, DateTime startDateUtc, DateTime endDateUtc, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(channelId);
+
+        if (_healthService.ShouldBlockRequest())
+        {
+            _logger.LogWarning("Circuit breaker open — skipping EPG fetch for channel {ChannelId}", channelId);
+            return Enumerable.Empty<ProgramInfo>();
+        }
 
         try
         {
@@ -290,6 +305,12 @@ internal sealed class GuideService : IGuideService
 
     public async Task<Dictionary<int, string>> GetContentTypesAsync(CancellationToken cancellationToken)
     {
+        if (_healthService.ShouldBlockRequest())
+        {
+            _logger.LogWarning("Circuit breaker open — skipping content types fetch");
+            return new Dictionary<int, string>();
+        }
+
         try
         {
             var config = GetConfig();
@@ -314,6 +335,12 @@ internal sealed class GuideService : IGuideService
 
     public async Task<Dictionary<string, string>> GetChannelTagsAsync(CancellationToken cancellationToken)
     {
+        if (_healthService.ShouldBlockRequest())
+        {
+            _logger.LogWarning("Circuit breaker open — skipping channel tags fetch");
+            return new Dictionary<string, string>();
+        }
+
         try
         {
             var config = GetConfig();

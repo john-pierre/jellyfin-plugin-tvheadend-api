@@ -167,6 +167,7 @@
                 <nav class="tvh-toc" id="TvhToc">
                     <a data-scroll="sec-connection">Connection</a>
                     <a data-scroll="sec-auth">Authentication</a>
+                    <a data-scroll="sec-relay">Relay</a>
                     <a data-scroll="sec-streaming">Streaming</a>
                     <a data-scroll="sec-playback">Playback</a>
                     <a data-scroll="sec-recording">Recording</a>
@@ -251,6 +252,30 @@
                 </div>
 
                 <!-- ── C. Streaming ────────────────────────────── -->
+                <div class="tvh-section" id="sec-relay">
+                    <h2 class="tvh-section-title">Relay Service</h2>
+                    <p class="tvh-section-desc">The relay proxies images and streams through Jellyfin so TVHeadend credentials and internal URLs stay hidden from clients.</p>
+                    <div class="tvh-card">
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="RelayEnabled" name="RelayEnabled" type="checkbox" is="emby-checkbox" />
+                                <span>Enable Relay Service</span>
+                            </label>
+                            <div class="fieldDescription">When enabled, all image and stream URLs point to Jellyfin's relay endpoints instead of TVHeadend directly. Recommended for security.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="RelayHostOverride">Jellyfin Host Override</label>
+                            <input id="RelayHostOverride" name="RelayHostOverride" type="text" is="emby-input" placeholder="e.g. http://192.168.1.10:8096" />
+                            <div class="fieldDescription">
+                                Override the Jellyfin base URL used in relay URLs. Leave empty to use the auto-detected host.
+                            </div>
+                            <div id="RelayAutoDetectedHost" style="margin-top:0.4em; font-size:0.85em; opacity:0.6;"></div>
+                        </div>
+                        <div id="RelayStatusMsg" class="tvh-msg" style="margin-top:0.5em;"></div>
+                    </div>
+                </div>
+
+                <!-- ── D. Streaming ────────────────────────────── -->
                 <div class="tvh-section" id="sec-streaming">
                     <h2 class="tvh-section-title">Streaming</h2>
                     <p class="tvh-section-desc">Controls how live TV streams are requested from TvHeadend.</p>
@@ -562,6 +587,20 @@
                 });
             }
 
+            function loadRelayStatus() {
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('api/tvheadend/status'), dataType: 'json' }).then(function (r) {
+                    $('#RelayAutoDetectedHost').textContent = 'Auto-detected host: ' + (r.EffectiveHost || '(unknown)');
+                    var msg = $('#RelayStatusMsg');
+                    msg.style.color = '#a5d6a7';
+                    msg.textContent = '✅ Relay endpoint reachable — ' + (r.ActiveStreams || 0) + ' active stream(s)';
+                }).catch(function () {
+                    $('#RelayAutoDetectedHost').textContent = 'Auto-detected host: (could not determine)';
+                    var msg = $('#RelayStatusMsg');
+                    msg.style.color = '#ef9a9a';
+                    msg.textContent = '❌ Relay endpoint not reachable';
+                });
+            }
+
             // ── Save config ─────────────────────────────────────
             function saveCurrentFormToConfig() {
                 return ApiClient.getPluginConfiguration(pluginId).then(function (config) {
@@ -574,6 +613,9 @@
                     config.Username = $('#Username').value;
                     config.Password = $('#Password').value;
                     config.AuthToken = $('#AuthToken').value;
+
+                    config.RelayEnabled = $('#RelayEnabled').checked;
+                    config.RelayHostOverride = $('#RelayHostOverride').value;
 
                     var sp = $('#StreamingProfile').value;
                     if (sp) config.StreamingProfile = sp;
@@ -615,6 +657,8 @@
                 $('#Username').value = config.Username || '';
                 $('#Password').value = config.Password || '';
                 $('#AuthToken').value = config.AuthToken || '';
+                $('#RelayEnabled').checked = config.RelayEnabled !== false;
+                $('#RelayHostOverride').value = config.RelayHostOverride || '';
                 $('#StreamingProfile').value = config.StreamingProfile || '';
                 $('#FallbackMaxStreamingBitrate').value = config.FallbackMaxStreamingBitrate || '';
                 $('#IsInfiniteStream').checked = config.IsInfiniteStream !== false;
@@ -876,6 +920,7 @@
             // ── Page init ────────────────────────────────────────
             $('#TvHeadendApiConfigPage').addEventListener('pageshow', function () {
                 loadPluginInfo();
+                loadRelayStatus();
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                     loadFormFromConfig(config);

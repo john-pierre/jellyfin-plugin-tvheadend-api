@@ -16,13 +16,13 @@ public class InputMonitorServiceTests
     [Fact]
     public void Constructor_WithNullLogger_Throws()
     {
-        Assert.Throws<ArgumentNullException>(() => new InputMonitorService(null!, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object));
+        Assert.Throws<ArgumentNullException>(() => new InputMonitorService(null!, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object, NullHealthService.Instance));
     }
 
     [Fact]
     public void Constructor_WithNullApiClient_Throws()
     {
-        Assert.Throws<ArgumentNullException>(() => new InputMonitorService(NullLogger<InputMonitorService>.Instance, null!, new Mock<IUrlBuilder>().Object));
+        Assert.Throws<ArgumentNullException>(() => new InputMonitorService(NullLogger<InputMonitorService>.Instance, null!, new Mock<IUrlBuilder>().Object, NullHealthService.Instance));
     }
 
     [Fact]
@@ -30,7 +30,7 @@ public class InputMonitorServiceTests
     {
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
-        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, api.Object, new Mock<IUrlBuilder>().Object);
+        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, api.Object, new Mock<IUrlBuilder>().Object, NullHealthService.Instance);
 
         var result = await sut.GetInputStatusAsync(CancellationToken.None);
 
@@ -49,7 +49,7 @@ public class InputMonitorServiceTests
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://localhost:9981/api/status/inputs", It.IsAny<CancellationToken>()))
             .ReturnsAsync("{\"entries\":[{\"uuid\":\"abc123\",\"input\":\"DVB-T #1\",\"stream\":\"690MHz\",\"subs\":1,\"weight\":100,\"signal\":-450,\"signal_scale\":2,\"ber\":0,\"snr\":280,\"snr_scale\":2,\"unc\":0,\"bps\":12000000,\"te\":0,\"cc\":0,\"ec_bit\":0,\"tc_bit\":1000,\"ec_block\":0,\"tc_block\":50}],\"totalCount\":1}");
 
-        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, api.Object, urlBuilder.Object, NullHealthService.Instance);
         var result = await sut.GetInputStatusAsync(CancellationToken.None);
 
         Assert.Single(result);
@@ -72,7 +72,7 @@ public class InputMonitorServiceTests
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), "http://localhost:9981/api/status/inputs", It.IsAny<CancellationToken>()))
             .ReturnsAsync("{\"entries\":[],\"totalCount\":0}");
 
-        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, api.Object, urlBuilder.Object);
+        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, api.Object, urlBuilder.Object, NullHealthService.Instance);
         var result = await sut.GetInputStatusAsync(CancellationToken.None);
 
         Assert.Empty(result);

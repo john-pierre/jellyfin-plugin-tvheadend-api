@@ -32,7 +32,7 @@ public class PluginControllerTests
             new FakeStatisticsService(),
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object));
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance));
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public class PluginControllerTests
             new FakeStatisticsService(),
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object));
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance));
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public class PluginControllerTests
             new FakeStatisticsService(),
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object));
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance));
     }
 
     [Fact]
@@ -71,7 +71,7 @@ public class PluginControllerTests
             null!,
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object));
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance));
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class PluginControllerTests
             new FakeStatisticsService(),
             null!,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object));
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance));
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public class PluginControllerTests
             new FakeStatisticsService(),
             new Mock<IStatusService>().Object,
             null!,
-            new Mock<ISubscriptionService>().Object));
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance));
     }
 
     [Fact]
@@ -110,7 +110,8 @@ public class PluginControllerTests
             new FakeStatisticsService(),
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            null!));
+            null!,
+            NullHealthService.Instance));
     }
 
     [Fact]
@@ -124,7 +125,7 @@ public class PluginControllerTests
             new FakeStatisticsService(),
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object);
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
 
         var result = await sut.Diagnose(CancellationToken.None);
 
@@ -143,7 +144,7 @@ public class PluginControllerTests
             new FakeStatisticsService(),
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object);
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
 
         var result = await sut.CreateProfile(CancellationToken.None);
 
@@ -167,7 +168,7 @@ public class PluginControllerTests
             new FakeStatisticsService(),
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object);
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
 
         var result = await sut.GetProfileOptions(CancellationToken.None);
 
@@ -188,7 +189,7 @@ public class PluginControllerTests
             new FakeStatisticsService(),
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object);
+            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
 
         var result = sut.ResetToDefaults();
 

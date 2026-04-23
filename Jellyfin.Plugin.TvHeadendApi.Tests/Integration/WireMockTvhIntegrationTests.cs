@@ -135,7 +135,7 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
                 .WithStatusCode(200)
                 .WithHeader("Content-Type", "application/json")
                 .WithBody("""{ "entries": [] }"""));
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, StubRelay(), NullHealthService.Instance);
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
 
         Assert.Single(channels); // only enabled channels
@@ -168,7 +168,7 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
                 .WithStatusCode(200)
                 .WithHeader("Content-Type", "application/json")
                 .WithBody("""{ "entries": [{ "key": "tag-sports", "val": "Sports" }] }"""));
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, StubRelay(), NullHealthService.Instance);
         var channels = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
 
         Assert.Single(channels);
@@ -206,7 +206,7 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
                       "totalCount": 1
                     }
                 """));
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, StubRelay(), NullHealthService.Instance);
         var programs = (await sut.GetProgramsAsync("ch-001", startUtc, endUtc, CancellationToken.None)).ToList();
 
         Assert.Single(programs);
@@ -229,7 +229,7 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
                 .WithBody("""
                     { "entries": [{ "key": 64, "val": "Sports" }, { "key": 32, "val": "News" }] }
                 """));
-        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, StubRelay());
+        var sut = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, StubRelay(), NullHealthService.Instance);
         var types = await sut.GetContentTypesAsync(CancellationToken.None);
 
         Assert.Equal(2, types.Count);

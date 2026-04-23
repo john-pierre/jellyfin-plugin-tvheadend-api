@@ -107,6 +107,11 @@ public class LogsControllerTests
             LastRequestedCount = count;
             return LogMessages.Take(count).ToList();
         }
+
+        public IReadOnlyList<Model.Statistics.TvhLogEntry> GetLogHistory(int count = 500, DateTime? sinceUtc = null)
+        {
+            return Array.Empty<Model.Statistics.TvhLogEntry>();
+        }
     }
 }
 

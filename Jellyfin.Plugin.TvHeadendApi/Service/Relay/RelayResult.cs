@@ -2,6 +2,7 @@
 
 using System;
 using System.Net.Http;
+using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 
@@ -50,6 +51,11 @@ public sealed class RelayResult : IDisposable
     /// Gets or sets the underlying HTTP response message for proper disposal.
     /// </summary>
     internal HttpResponseMessage? ResponseMessage { get; set; }
+
+    /// <summary>
+    /// Gets or sets the timing context for metrics collection. Populated by the relay service.
+    /// </summary>
+    internal RelayTimingContext? TimingContext { get; set; }
 
     /// <inheritdoc />
     public void Dispose()

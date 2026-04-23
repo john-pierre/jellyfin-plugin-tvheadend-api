@@ -7,6 +7,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
@@ -87,10 +88,13 @@ public class ServiceRegistratorTests
         Assert.NotNull(provider.GetRequiredService<ICometSnapshotReader>());
         Assert.NotNull(provider.GetRequiredService<ILiveTvService>());
         Assert.NotNull(provider.GetRequiredService<IEncodingOptionsReader>());
+        Assert.NotNull(provider.GetRequiredService<IRelayMetricsService>());
+        Assert.NotNull(provider.GetRequiredService<RelayActivityTracker>());
 
         // StatisticsService is also registered as IHostedService
         var hostedServices = provider.GetServices<IHostedService>();
         Assert.Contains(hostedServices, s => s is StatisticsService);
         Assert.Contains(hostedServices, s => s is CometService);
+        Assert.Contains(hostedServices, s => s is RelayMetricsService);
     }
 }

@@ -23,6 +23,16 @@ internal sealed class ViewingSessionContext : DbContext
     public DbSet<ViewingSession> ViewingSessions { get; set; }
 
     /// <summary>
+    /// Gets or sets the health transition history table.
+    /// </summary>
+    public DbSet<HealthTransition> HealthTransitions { get; set; }
+
+    /// <summary>
+    /// Gets or sets the TVHeadend log entries table.
+    /// </summary>
+    public DbSet<TvhLogEntry> TvhLogEntries { get; set; }
+
+    /// <summary>
     /// Configures the model for the context.
     /// </summary>
     /// <param name="modelBuilder">Model builder.</param>
@@ -52,5 +62,19 @@ internal sealed class ViewingSessionContext : DbContext
         sessionEntity.Property(s => s.ChannelId).IsRequired().HasMaxLength(256);
         sessionEntity.Property(s => s.PlaySessionId).IsRequired().HasMaxLength(256);
         sessionEntity.Property(s => s.PlayMethod).IsRequired().HasMaxLength(64);
+
+        // Health transition history
+        var healthEntity = modelBuilder.Entity<HealthTransition>();
+        healthEntity.HasKey(h => h.Id);
+        healthEntity.HasIndex(h => h.TimestampUtc);
+        healthEntity.Property(h => h.FromStatus).IsRequired().HasMaxLength(64);
+        healthEntity.Property(h => h.ToStatus).IsRequired().HasMaxLength(64);
+        healthEntity.Property(h => h.FailureReason).HasMaxLength(64);
+
+        // TVHeadend log entries
+        var logEntity = modelBuilder.Entity<TvhLogEntry>();
+        logEntity.HasKey(l => l.Id);
+        logEntity.HasIndex(l => l.TimestampUtc);
+        logEntity.Property(l => l.Text).IsRequired().HasMaxLength(2048);
     }
 }

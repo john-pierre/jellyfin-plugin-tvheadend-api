@@ -7,7 +7,10 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -15,23 +18,26 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Comet;
 
 /// <summary>
 /// Manages the TVHeadend Comet WebSocket connection and buffers operational snapshots for the admin UI.
+/// Implements exponential backoff reconnect and persists TVHeadend logs to SQLite.
 /// </summary>
 internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisposable
 {
     private const int MaxBufferSize = 200;
+    private const int MaxLogTextLength = 2048;
     internal const string WebSocketSubProtocol = "tvheadend-comet";
 
     private readonly ILogger<CometService> _logger;
     private readonly IApiClient _apiClient;
     private readonly IUrlBuilder _urlBuilder;
     private readonly PluginConfigurationProvider _configProvider;
+    private readonly DbContextOptions<ViewingSessionContext>? _dbContextOptions;
     private readonly List<LogMessage> _logBuffer = new();
     private readonly object _logLock = new();
     private readonly object _diskLock = new();
 
-    private ClientWebSocket? _socket;
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _receiveLoopTask;
+    private int _reconnectAttempt;
 
     // Buffers (thread-safe, bounded)
     private DiskSpaceUpdate? _lastDiskSpaceUpdate;
@@ -40,12 +46,14 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         ILogger<CometService> logger,
         IApiClient apiClient,
         IUrlBuilder urlBuilder,
-        PluginConfigurationProvider configProvider)
+        PluginConfigurationProvider configProvider,
+        DbContextOptions<ViewingSessionContext>? dbContextOptions = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _urlBuilder = urlBuilder ?? throw new ArgumentNullException(nameof(urlBuilder));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
+        _dbContextOptions = dbContextOptions;
     }
 
     /// <summary>
@@ -58,6 +66,41 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         lock (_logLock)
         {
             return _logBuffer.TakeLast(count).ToList();
+        }
+    }
+
+    /// <summary>
+    /// Gets historical log entries from SQLite persistence.
+    /// </summary>
+    /// <param name="count">Maximum number of entries. Default: 500.</param>
+    /// <param name="sinceUtc">Optional: only return entries after this timestamp.</param>
+    /// <returns>Log entries in reverse chronological order.</returns>
+    public IReadOnlyList<TvhLogEntry> GetLogHistory(int count = 500, DateTime? sinceUtc = null)
+    {
+        if (_dbContextOptions == null)
+        {
+            return Array.Empty<TvhLogEntry>();
+        }
+
+        try
+        {
+            using var db = new ViewingSessionContext(_dbContextOptions);
+            IQueryable<TvhLogEntry> query = db.TvhLogEntries.AsNoTracking();
+            if (sinceUtc.HasValue)
+            {
+                query = query.Where(l => l.TimestampUtc >= sinceUtc.Value);
+            }
+
+            return query
+                .OrderByDescending(l => l.TimestampUtc)
+                .Take(count)
+                .ToList()
+                .AsReadOnly();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to read TVHeadend log history from SQLite");
+            return Array.Empty<TvhLogEntry>();
         }
     }
 
@@ -79,24 +122,18 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     /// </summary>
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
     /// <returns>A task representing the asynchronous startup operation.</returns>
-    async Task IHostedService.StartAsync(CancellationToken cancellationToken)
+    Task IHostedService.StartAsync(CancellationToken cancellationToken)
     {
         var config = _configProvider.Configuration;
         if (config == null || string.IsNullOrWhiteSpace(config.Host))
         {
             _logger.LogDebug("Comet service startup skipped: no TvHeadend host configured");
-            return;
+            return Task.CompletedTask;
         }
 
-        try
-        {
-            await StartAsync(config, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            // Log but don't rethrow — service should still start even if Comet fails
-            _logger.LogWarning(ex, "Failed to start Comet service on plugin startup");
-        }
+        _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _receiveLoopTask = RunWithReconnectAsync(_cancellationTokenSource.Token);
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -104,45 +141,94 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     /// </summary>
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
     /// <returns>A task representing the asynchronous shutdown operation.</returns>
-    async Task IHostedService.StopAsync(CancellationToken cancellationToken)
+    Task IHostedService.StopAsync(CancellationToken cancellationToken)
     {
-        await StopAsync().ConfigureAwait(false);
+        return StopAsync();
     }
 
     /// <summary>
-    /// Starts the background receive loop for the WebSocket.
+    /// Runs the WebSocket connection loop with exponential backoff reconnection.
     /// </summary>
-    private async Task StartAsync(PluginConfiguration config, CancellationToken cancellationToken)
+    private async Task RunWithReconnectAsync(CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(config);
-
-        if (_socket != null)
+        while (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning("Comet service already started");
-            return;
+            try
+            {
+                var config = _configProvider.Configuration;
+                if (config == null || string.IsNullOrWhiteSpace(config.Host))
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                await ConnectAndReceiveAsync(config, cancellationToken).ConfigureAwait(false);
+
+                // Normal close — reset backoff
+                _reconnectAttempt = 0;
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _reconnectAttempt++;
+                var delay = CalculateBackoffDelay();
+                _logger.LogWarning(
+                    ex,
+                    "Comet WebSocket connection failed (attempt {Attempt}). Reconnecting in {Delay}s",
+                    _reconnectAttempt,
+                    delay.TotalSeconds);
+
+                try
+                {
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
         }
+    }
 
-        try
-        {
-            var wsUri = BuildWebSocketUri(config, _urlBuilder);
-            _socket = new ClientWebSocket();
-            _socket.Options.AddSubProtocol(WebSocketSubProtocol);
+    private TimeSpan CalculateBackoffDelay()
+    {
+        var config = _configProvider.Configuration;
+        var baseDelay = config?.CometReconnectBaseDelaySeconds > 0
+            ? config.CometReconnectBaseDelaySeconds
+            : 2;
+        var maxDelay = config?.CometReconnectMaxDelaySeconds > 0
+            ? config.CometReconnectMaxDelaySeconds
+            : 120;
 
-            using var httpClient = _apiClient.CreateApiHttpClient(config);
-            await _socket.ConnectAsync(wsUri, httpClient, cancellationToken).ConfigureAwait(false);
+        // Exponential backoff with jitter: base * 2^attempt + random jitter
+        var exponentialSeconds = baseDelay * Math.Pow(2, Math.Min(_reconnectAttempt - 1, 6));
+        var jitter = Random.Shared.NextDouble() * baseDelay;
+        var totalSeconds = Math.Min(exponentialSeconds + jitter, maxDelay);
 
-            _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            _receiveLoopTask = ReceiveLoopAsync(_cancellationTokenSource.Token);
+        return TimeSpan.FromSeconds(totalSeconds);
+    }
 
-            _logger.LogInformation(
-                "TVHeadend Comet service started, listening on {WebSocketUrl}",
-                _urlBuilder.MaskSensitiveData(wsUri.ToString(), config));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to start Comet service");
-            throw;
-        }
+    /// <summary>
+    /// Connects and runs the receive loop. Returns on disconnect/error.
+    /// </summary>
+    private async Task ConnectAndReceiveAsync(PluginConfiguration config, CancellationToken cancellationToken)
+    {
+        var wsUri = BuildWebSocketUri(config, _urlBuilder);
+        using var socket = new ClientWebSocket();
+        socket.Options.AddSubProtocol(WebSocketSubProtocol);
+
+        using var httpClient = _apiClient.CreateApiHttpClient(config);
+        await socket.ConnectAsync(wsUri, httpClient, cancellationToken).ConfigureAwait(false);
+
+        _reconnectAttempt = 0;
+        _logger.LogInformation(
+            "TVHeadend Comet service connected to {WebSocketUrl}",
+            _urlBuilder.MaskSensitiveData(wsUri.ToString(), config));
+
+        await ReceiveLoopAsync(socket, cancellationToken).ConfigureAwait(false);
     }
 
     internal static Uri BuildWebSocketUri(PluginConfiguration config, IUrlBuilder urlBuilder)
@@ -189,20 +275,6 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
                 }
             }
 
-            if (_socket != null)
-            {
-                if (_socket.State == WebSocketState.Open)
-                {
-                    await _socket.CloseAsync(
-                        WebSocketCloseStatus.NormalClosure,
-                        "Service stopped",
-                        CancellationToken.None).ConfigureAwait(false);
-                }
-
-                _socket.Dispose();
-                _socket = null;
-            }
-
             _cancellationTokenSource?.Dispose();
             _cancellationTokenSource = null;
 
@@ -217,62 +289,50 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     /// <summary>
     /// Receives and processes messages from the WebSocket in a background loop.
     /// </summary>
+    /// <param name="socket">The connected WebSocket.</param>
     /// <param name="cancellationToken">Cancellation token to stop the receive loop.</param>
     /// <returns>A task representing the background receive operation.</returns>
-    private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
+    private async Task ReceiveLoopAsync(ClientWebSocket socket, CancellationToken cancellationToken)
     {
-        if (_socket == null)
-        {
-            return;
-        }
-
         var buffer = new byte[4096];
         var stringBuilder = new StringBuilder();
 
-        try
+        while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
         {
-            while (_socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
+            stringBuilder.Clear();
+
+            // Read message (may be chunked)
+            WebSocketReceiveResult? result = null;
+            do
             {
-                stringBuilder.Clear();
+                result = await socket.ReceiveAsync(
+                    new ArraySegment<byte>(buffer),
+                    cancellationToken).ConfigureAwait(false);
 
-                // Read message (may be chunked)
-                WebSocketReceiveResult? result = null;
-                do
+                if (result.MessageType == WebSocketMessageType.Text)
                 {
-                    result = await _socket.ReceiveAsync(
-                        new ArraySegment<byte>(buffer),
-                        cancellationToken).ConfigureAwait(false);
-
-                    if (result.MessageType == WebSocketMessageType.Text)
+                    stringBuilder.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                }
+                else if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    _logger.LogInformation("WebSocket close frame received");
+                    if (socket.State == WebSocketState.Open || socket.State == WebSocketState.CloseReceived)
                     {
-                        stringBuilder.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
-                    }
-                    else if (result.MessageType == WebSocketMessageType.Close)
-                    {
-                        _logger.LogInformation("WebSocket close frame received");
-                        await _socket.CloseAsync(
+                        await socket.CloseAsync(
                             WebSocketCloseStatus.NormalClosure,
                             "Closing",
                             CancellationToken.None).ConfigureAwait(false);
-                        return;
                     }
-                }
-                while (result != null && !result.EndOfMessage);
 
-                if (stringBuilder.Length > 0)
-                {
-                    ProcessMessage(stringBuilder.ToString());
+                    return;
                 }
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected when stopping
-            _logger.LogDebug("Comet receive loop cancelled");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in Comet receive loop");
+            while (result != null && !result.EndOfMessage);
+
+            if (stringBuilder.Length > 0)
+            {
+                ProcessMessage(stringBuilder.ToString());
+            }
         }
     }
 
@@ -327,13 +387,14 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     }
 
     /// <summary>
-    /// Adds a log message to the buffer.
+    /// Adds a log message to the in-memory buffer and persists to SQLite.
     /// </summary>
     private void AddLog(string text)
     {
+        var now = DateTime.UtcNow;
         var msg = new LogMessage
         {
-            Timestamp = DateTime.UtcNow,
+            Timestamp = now,
             Text = text,
         };
 
@@ -345,6 +406,38 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
                 _logBuffer.RemoveRange(0, _logBuffer.Count - MaxBufferSize);
             }
         }
+
+        // Persist to SQLite asynchronously
+        PersistLogEntry(now, text);
+    }
+
+    /// <summary>
+    /// Persists a log entry to SQLite in a fire-and-forget manner.
+    /// </summary>
+    private void PersistLogEntry(DateTime timestampUtc, string text)
+    {
+        if (_dbContextOptions == null)
+        {
+            return;
+        }
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                using var db = new ViewingSessionContext(_dbContextOptions);
+                db.TvhLogEntries.Add(new TvhLogEntry
+                {
+                    TimestampUtc = timestampUtc,
+                    Text = text.Length > MaxLogTextLength ? text[..MaxLogTextLength] : text,
+                });
+                db.SaveChanges();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to persist TVHeadend log entry to SQLite");
+            }
+        });
     }
 
     /// <summary>

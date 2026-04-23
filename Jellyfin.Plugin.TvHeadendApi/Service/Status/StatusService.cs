@@ -18,6 +18,7 @@ internal sealed class StatusService : IStatusService
     private readonly ILogger<StatusService> _logger;
     private readonly IApiClient _apiClient;
     private readonly IUrlBuilder _urlBuilder;
+    private readonly ITvHeadendHealthService _healthService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StatusService"/> class.
@@ -25,11 +26,13 @@ internal sealed class StatusService : IStatusService
     /// <param name="logger">Logger instance.</param>
     /// <param name="apiClient">TVHeadend API client.</param>
     /// <param name="urlBuilder">TVHeadend URL builder.</param>
-    public StatusService(ILogger<StatusService> logger, IApiClient apiClient, IUrlBuilder urlBuilder)
+    /// <param name="healthService">TVHeadend health tracking service.</param>
+    public StatusService(ILogger<StatusService> logger, IApiClient apiClient, IUrlBuilder urlBuilder, ITvHeadendHealthService healthService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _urlBuilder = urlBuilder ?? throw new ArgumentNullException(nameof(urlBuilder));
+        _healthService = healthService ?? throw new ArgumentNullException(nameof(healthService));
     }
 
     /// <summary>
@@ -39,6 +42,12 @@ internal sealed class StatusService : IStatusService
     /// <returns>The activity status summary, or <c>null</c> if the configuration is unavailable.</returns>
     public async Task<ActivityStatus?> GetActivityStatusAsync(CancellationToken cancellationToken)
     {
+        if (_healthService.ShouldBlockRequest())
+        {
+            _logger.LogDebug("StatusService: circuit open, returning null activity status");
+            return null;
+        }
+
         var config = _apiClient.GetCurrentConfiguration();
         if (config == null)
         {
@@ -46,13 +55,16 @@ internal sealed class StatusService : IStatusService
             return null;
         }
 
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(OperationTimeouts.Metadata);
+
         using var httpClient = _apiClient.CreateApiHttpClient(config);
         var subscriptionsUrl = _urlBuilder.BuildApiUrl(config, "api/status/subscriptions");
-        var subscriptionsJson = await _apiClient.GetStringAsync(httpClient, subscriptionsUrl, cancellationToken).ConfigureAwait(false);
+        var subscriptionsJson = await _apiClient.GetStringAsync(httpClient, subscriptionsUrl, cts.Token).ConfigureAwait(false);
         var subscriptionsGrid = JsonSerializer.Deserialize<SubscriptionGridResponse>(subscriptionsJson, JsonDefaults.Api);
 
         var connectionsUrl = _urlBuilder.BuildApiUrl(config, "api/status/connections");
-        var connectionsJson = await _apiClient.GetStringAsync(httpClient, connectionsUrl, cancellationToken).ConfigureAwait(false);
+        var connectionsJson = await _apiClient.GetStringAsync(httpClient, connectionsUrl, cts.Token).ConfigureAwait(false);
         var connectionsGrid = JsonSerializer.Deserialize<ConnectionGridResponse>(connectionsJson, JsonDefaults.Api);
 
         return new ActivityStatus
@@ -71,6 +83,12 @@ internal sealed class StatusService : IStatusService
     /// <returns>Active connections.</returns>
     public async Task<IReadOnlyList<ConnectionEntry>> GetConnectionsAsync(CancellationToken cancellationToken)
     {
+        if (_healthService.ShouldBlockRequest())
+        {
+            _logger.LogDebug("StatusService: circuit open, returning empty connections");
+            return [];
+        }
+
         var config = _apiClient.GetCurrentConfiguration();
         if (config == null)
         {
@@ -78,9 +96,12 @@ internal sealed class StatusService : IStatusService
             return [];
         }
 
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(OperationTimeouts.Metadata);
+
         using var httpClient = _apiClient.CreateApiHttpClient(config);
         var url = _urlBuilder.BuildApiUrl(config, "api/status/connections");
-        var json = await _apiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
+        var json = await _apiClient.GetStringAsync(httpClient, url, cts.Token).ConfigureAwait(false);
         var grid = JsonSerializer.Deserialize<ConnectionGridResponse>(json, JsonDefaults.Api);
         return grid?.Entries ?? [];
     }

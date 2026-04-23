@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
@@ -23,14 +24,41 @@ public class RelayController : ControllerBase
 {
     private const int StreamCopyBufferSize = 81920; // 80 KB — optimal for network I/O
     private readonly IRelayService _relay;
+    private readonly IRelayMetricsService _metrics;
+    private readonly RelayActivityTracker _activityTracker;
+    private readonly IRelayUrlBuilder _relayUrlBuilder;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RelayController"/> class.
     /// </summary>
     /// <param name="relay">The relay service for proxying TVHeadend requests.</param>
-    public RelayController(IRelayService relay)
+    /// <param name="metrics">The relay metrics persistence service.</param>
+    /// <param name="activityTracker">Live stream activity tracker.</param>
+    /// <param name="relayUrlBuilder">Relay URL builder for host resolution.</param>
+    public RelayController(IRelayService relay, IRelayMetricsService metrics, RelayActivityTracker activityTracker, IRelayUrlBuilder relayUrlBuilder)
     {
         _relay = relay ?? throw new ArgumentNullException(nameof(relay));
+        _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
+        _activityTracker = activityTracker ?? throw new ArgumentNullException(nameof(activityTracker));
+        _relayUrlBuilder = relayUrlBuilder ?? throw new ArgumentNullException(nameof(relayUrlBuilder));
+    }
+
+    /// <summary>
+    /// Returns the relay service status — confirms the relay endpoints are reachable and reports the effective host.
+    /// </summary>
+    /// <returns>Relay status object.</returns>
+    [HttpGet("status")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<object> GetRelayStatus()
+    {
+        return Ok(new
+        {
+            Status = "ok",
+            Enabled = true,
+            ActiveStreams = _activityTracker.ActiveStreams,
+            EffectiveHost = _relayUrlBuilder.GetEffectiveBaseUrl(),
+        });
     }
 
     /// <summary>
@@ -51,24 +79,36 @@ public class RelayController : ControllerBase
             return BadRequest("Image path is required.");
         }
 
-        var result = await _relay.RelayImageAsync(path, cancellationToken).ConfigureAwait(false);
-
-        if (result.Body == null)
+        RelayResult? result = null;
+        try
         {
-            result.Dispose();
-            return StatusCode(result.StatusCode);
+            result = await _relay.RelayImageAsync(path, cancellationToken).ConfigureAwait(false);
+
+            if (result.Body == null)
+            {
+                RecordAndDispose(result);
+                return StatusCode(result.StatusCode);
+            }
+
+            result.TimingContext?.MarkFirstByteToClient();
+
+            var wrappedStream = new MetricsRelayStreamWrapper(result.Body, result, _metrics);
+            SetPassthroughHeaders(result);
+            return new FileStreamResult(wrappedStream, result.ContentType ?? "application/octet-stream")
+            {
+                EnableRangeProcessing = true,
+            };
         }
-
-        // FileStreamResult takes ownership of result.Body and disposes it.
-        // We must also ensure the underlying HttpResponseMessage is disposed when the stream completes.
-        // Wrap body in a stream that disposes the result on close.
-        var wrappedStream = new RelayStreamWrapper(result.Body, result);
-
-        SetPassthroughHeaders(result);
-        return new FileStreamResult(wrappedStream, result.ContentType ?? "application/octet-stream")
+        catch (OperationCanceledException)
         {
-            EnableRangeProcessing = true,
-        };
+            RecordAndDispose(result);
+            throw;
+        }
+        catch (Exception)
+        {
+            RecordAndDispose(result);
+            throw;
+        }
     }
 
     /// <summary>
@@ -78,7 +118,7 @@ public class RelayController : ControllerBase
     /// <param name="channelId">TVHeadend channel UUID.</param>
     /// <param name="profile">Optional streaming profile override.</param>
     /// <param name="cancellationToken">Cancellation token — triggers upstream cancellation on disconnect.</param>
-    /// <returns>The proxied stream with original Content-Type.</returns>
+    /// <returns>A <see cref="Task"/> representing the streaming operation.</returns>
     [HttpGet("stream/{channelId}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
@@ -98,6 +138,7 @@ public class RelayController : ControllerBase
             if (result.Body == null)
             {
                 Response.StatusCode = result.StatusCode;
+                RecordAndDispose(result);
                 return;
             }
 
@@ -109,13 +150,83 @@ public class RelayController : ControllerBase
                 Response.ContentLength = result.ContentLength;
             }
 
+            result.TimingContext?.MarkFirstByteToClient();
+
             // Stream directly from TVHeadend to client — zero intermediate buffering.
-            await result.Body.CopyToAsync(Response.Body, StreamCopyBufferSize, cancellationToken).ConfigureAwait(false);
+            // Track bytes transferred for metrics.
+            var buffer = new byte[StreamCopyBufferSize];
+            long totalBytes = 0;
+            bool firstByteMarked = false;
+            int bytesRead;
+            while ((bytesRead = await result.Body.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+            {
+                await Response.Body.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
+                totalBytes += bytesRead;
+
+                if (!firstByteMarked)
+                {
+                    result.TimingContext?.MarkFirstByteFromUpstream();
+                    firstByteMarked = true;
+                }
+            }
+
+            if (result.TimingContext != null)
+            {
+                result.TimingContext.BytesSent = totalBytes;
+                result.TimingContext.EndedBy = StreamEndedBy.Completed;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (result.TimingContext != null)
+            {
+                result.TimingContext.ClientCancelled = true;
+                result.TimingContext.FailureReason = RelayFailureReason.ClientCancelled;
+                result.TimingContext.EndedBy = StreamEndedBy.ClientCancelled;
+            }
+        }
+        catch (IOException)
+        {
+            if (result.TimingContext != null)
+            {
+                result.TimingContext.FailureReason = RelayFailureReason.DownstreamWriteFailed;
+                result.TimingContext.EndedBy = StreamEndedBy.DownstreamError;
+            }
+        }
+        catch (Exception)
+        {
+            if (result.TimingContext != null)
+            {
+                result.TimingContext.FailureReason = RelayFailureReason.UnexpectedException;
+                result.TimingContext.EndedBy = StreamEndedBy.Unknown;
+            }
         }
         finally
         {
-            result.Dispose();
+            if (result.TimingContext?.RelayType == RelayType.Stream)
+            {
+                _activityTracker.DecrementStreams();
+            }
+
+            RecordAndDispose(result);
         }
+    }
+
+    private void RecordAndDispose(RelayResult? result)
+    {
+        if (result?.TimingContext != null)
+        {
+            try
+            {
+                _metrics.RecordMetric(result.TimingContext.ToMetric());
+            }
+            catch (Exception)
+            {
+                // Best-effort — never let metrics recording break the relay.
+            }
+        }
+
+        result?.Dispose();
     }
 
     /// <summary>
@@ -139,24 +250,27 @@ public class RelayController : ControllerBase
         }
         else
         {
-            // Sane default for images — cache for 1 hour, allow stale for 1 day.
             Response.Headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400";
         }
     }
 
     /// <summary>
-    /// A stream wrapper that disposes an associated <see cref="RelayResult"/> when the stream is closed.
-    /// This ensures the upstream HTTP response is cleaned up after the response body is fully sent.
+    /// Stream wrapper that tracks bytes read and records metrics on disposal.
+    /// Used for image relay where ASP.NET Core owns the stream lifecycle.
     /// </summary>
-    private sealed class RelayStreamWrapper : Stream
+    private sealed class MetricsRelayStreamWrapper : Stream
     {
         private readonly Stream _inner;
-        private readonly IDisposable _owner;
+        private readonly RelayResult _result;
+        private readonly IRelayMetricsService _metrics;
+        private long _totalBytes;
+        private bool _firstByte;
 
-        public RelayStreamWrapper(Stream inner, IDisposable owner)
+        public MetricsRelayStreamWrapper(Stream inner, RelayResult result, IRelayMetricsService metrics)
         {
             _inner = inner;
-            _owner = owner;
+            _result = result;
+            _metrics = metrics;
         }
 
         public override bool CanRead => _inner.CanRead;
@@ -167,19 +281,41 @@ public class RelayController : ControllerBase
 
         public override long Length => _inner.Length;
 
-        public override long Position
+        public override long Position { get => _inner.Position; set => _inner.Position = value; }
+
+        public override int Read(byte[] buffer, int offset, int count)
         {
-            get => _inner.Position;
-            set => _inner.Position = value;
+            var read = _inner.Read(buffer, offset, count);
+            TrackBytes(read);
+            return read;
         }
 
-        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            var read = await _inner.ReadAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
+            TrackBytes(read);
+            return read;
+        }
 
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            _inner.ReadAsync(buffer, offset, count, cancellationToken);
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            TrackBytes(read);
+            return read;
+        }
 
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
-            _inner.ReadAsync(buffer, cancellationToken);
+        private void TrackBytes(int read)
+        {
+            if (read > 0)
+            {
+                _totalBytes += read;
+                if (!_firstByte)
+                {
+                    _firstByte = true;
+                    _result.TimingContext?.MarkFirstByteFromUpstream();
+                }
+            }
+        }
 
         public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
 
@@ -193,8 +329,25 @@ public class RelayController : ControllerBase
         {
             if (disposing)
             {
+                if (_result.TimingContext != null)
+                {
+                    _result.TimingContext.BytesSent = _totalBytes;
+                }
+
+                try
+                {
+                    if (_result.TimingContext != null)
+                    {
+                        _metrics.RecordMetric(_result.TimingContext.ToMetric());
+                    }
+                }
+                catch (Exception)
+                {
+                    // Best-effort metrics recording.
+                }
+
                 _inner.Dispose();
-                _owner.Dispose();
+                _result.Dispose();
             }
 
             base.Dispose(disposing);

@@ -42,7 +42,8 @@ public class PluginControllerCoverageTests
             stats ?? new Mock<IStatisticsService>().Object,
             status ?? new Mock<IStatusService>().Object,
             input ?? new Mock<IInputMonitorService>().Object,
-            sub ?? new Mock<ISubscriptionService>().Object);
+            sub ?? new Mock<ISubscriptionService>().Object,
+            NullHealthService.Instance);
     }
 
     // --- GetPluginInfo ---
@@ -172,7 +173,8 @@ public class PluginControllerCoverageTests
             new Mock<IStatisticsService>().Object,
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object));
+            new Mock<ISubscriptionService>().Object,
+            NullHealthService.Instance));
     }
 
     [Fact]
@@ -185,7 +187,8 @@ public class PluginControllerCoverageTests
             new Mock<IStatisticsService>().Object,
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object));
+            new Mock<ISubscriptionService>().Object,
+            NullHealthService.Instance));
     }
 
     [Fact]
@@ -198,7 +201,8 @@ public class PluginControllerCoverageTests
             new Mock<IStatisticsService>().Object,
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object));
+            new Mock<ISubscriptionService>().Object,
+            NullHealthService.Instance));
     }
 
     [Fact]
@@ -211,7 +215,8 @@ public class PluginControllerCoverageTests
             null!,
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object));
+            new Mock<ISubscriptionService>().Object,
+            NullHealthService.Instance));
     }
 
     [Fact]
@@ -224,7 +229,8 @@ public class PluginControllerCoverageTests
             new Mock<IStatisticsService>().Object,
             null!,
             new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object));
+            new Mock<ISubscriptionService>().Object,
+            NullHealthService.Instance));
     }
 
     [Fact]
@@ -237,7 +243,8 @@ public class PluginControllerCoverageTests
             new Mock<IStatisticsService>().Object,
             new Mock<IStatusService>().Object,
             null!,
-            new Mock<ISubscriptionService>().Object));
+            new Mock<ISubscriptionService>().Object,
+            NullHealthService.Instance));
     }
 
     [Fact]
@@ -250,7 +257,7 @@ public class PluginControllerCoverageTests
             new Mock<IStatisticsService>().Object,
             new Mock<IStatusService>().Object,
             new Mock<IInputMonitorService>().Object,
-            null!));
+            null!,
+            NullHealthService.Instance));
     }
 }
-

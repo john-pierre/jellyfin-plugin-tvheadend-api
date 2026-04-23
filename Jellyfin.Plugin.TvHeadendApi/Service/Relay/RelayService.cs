@@ -9,6 +9,7 @@ using System.Net.Security;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Microsoft.Extensions.Logging;
 
@@ -54,6 +55,9 @@ internal sealed class RelayService : IRelayService, IDisposable
     private readonly IUrlBuilder _urlBuilder;
     private readonly PluginConfigurationProvider _configProvider;
     private readonly ILogger<RelayService> _logger;
+    private readonly IRelayMetricsService _metricsService;
+    private readonly RelayActivityTracker _activityTracker;
+    private readonly ITvHeadendHealthService _healthService;
 
     /// <summary>
     /// Fingerprint of socket-level config (host, port, SSL, cert errors, webroot).
@@ -78,32 +82,50 @@ internal sealed class RelayService : IRelayService, IDisposable
     /// <param name="urlBuilder">URL builder for constructing TVHeadend URLs.</param>
     /// <param name="configProvider">Provider for the current plugin configuration.</param>
     /// <param name="logger">Logger instance.</param>
+    /// <param name="metricsService">Relay metrics persistence service.</param>
+    /// <param name="activityTracker">Live stream activity tracker.</param>
+    /// <param name="healthService">TVHeadend health tracking service.</param>
     public RelayService(
         IUrlBuilder urlBuilder,
         PluginConfigurationProvider configProvider,
-        ILogger<RelayService> logger)
+        ILogger<RelayService> logger,
+        IRelayMetricsService metricsService,
+        RelayActivityTracker activityTracker,
+        ITvHeadendHealthService healthService)
     {
         ArgumentNullException.ThrowIfNull(urlBuilder);
         ArgumentNullException.ThrowIfNull(configProvider);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(metricsService);
+        ArgumentNullException.ThrowIfNull(activityTracker);
+        ArgumentNullException.ThrowIfNull(healthService);
 
         _urlBuilder = urlBuilder;
         _configProvider = configProvider;
         _logger = logger;
+        _metricsService = metricsService;
+        _activityTracker = activityTracker;
+        _healthService = healthService;
     }
 
     /// <inheritdoc />
     public async Task<RelayResult> RelayImageAsync(string upstreamPath, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(upstreamPath);
+        var timing = new RelayTimingContext { RelayType = RelayType.Image, MediaKind = InferMediaKind(upstreamPath), ImageSourceType = InferImageSourceType(upstreamPath) };
         var (imageClient, _) = GetOrRebuildClients();
-        return await RelayRequestAsync(imageClient, upstreamPath, "image", cancellationToken).ConfigureAwait(false);
+        var result = await RelayRequestAsync(imageClient, upstreamPath, "image", timing, cancellationToken).ConfigureAwait(false);
+        result.TimingContext = timing;
+        return result;
     }
 
     /// <inheritdoc />
     public async Task<RelayResult> RelayStreamAsync(string channelId, string? profile, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(channelId);
+
+        var timing = new RelayTimingContext { RelayType = RelayType.Stream, MediaKind = MediaKind.LiveTvStream, ChannelId = channelId };
+        timing.ParallelActiveStreamCountAtStart = _activityTracker.IncrementStreams();
 
         var config = GetConfigOrThrow();
         var endpoint = $"stream/channel/{Uri.EscapeDataString(channelId)}";
@@ -117,7 +139,9 @@ internal sealed class RelayService : IRelayService, IDisposable
         }
 
         var (_, streamClient) = GetOrRebuildClients();
-        return await RelayRequestAsync(streamClient, endpoint, "stream", cancellationToken).ConfigureAwait(false);
+        var result = await RelayRequestAsync(streamClient, endpoint, "stream", timing, cancellationToken).ConfigureAwait(false);
+        result.TimingContext = timing;
+        return result;
     }
 
     /// <inheritdoc cref="IDisposable.Dispose"/>
@@ -290,8 +314,18 @@ internal sealed class RelayService : IRelayService, IDisposable
         HttpClient client,
         string relativeEndpoint,
         string kind,
+        RelayTimingContext timing,
         CancellationToken cancellationToken)
     {
+        // Fail fast when TVHeadend is known to be unreachable
+        if (_healthService.ShouldBlockRequest())
+        {
+            _logger.LogDebug("Relay {Kind} blocked by circuit breaker", kind);
+            timing.FailureReason = RelayFailureReason.UpstreamConnectFailed;
+            timing.ClientStatusCode = 502;
+            return new RelayResult { StatusCode = 502 };
+        }
+
         var config = GetConfigOrThrow();
         var url = _urlBuilder.BuildResourceUrl(config, relativeEndpoint);
         var safeUrl = _urlBuilder.MaskSensitiveData(url, config);
@@ -306,6 +340,15 @@ internal sealed class RelayService : IRelayService, IDisposable
 
             response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             sw.Stop();
+            timing.MarkUpstreamHeaders();
+
+            timing.UpstreamStatusCode = (int)response.StatusCode;
+            timing.HadEtag = response.Headers.ETag != null;
+            timing.HadLastModified = response.Content.Headers.LastModified.HasValue;
+            timing.HasContentLength = response.Content.Headers.ContentLength.HasValue;
+            timing.ContentLength = response.Content.Headers.ContentLength;
+            timing.ContentType = response.Content.Headers.ContentType?.ToString();
+            timing.WasNotModified304 = response.StatusCode == HttpStatusCode.NotModified;
 
             _logger.LogDebug(
                 "Relay {Kind} upstream responded {StatusCode} in {ElapsedMs}ms: {Url}",
@@ -317,10 +360,15 @@ internal sealed class RelayService : IRelayService, IDisposable
             if (!response.IsSuccessStatusCode)
             {
                 var statusCode = MapUpstreamStatus(response.StatusCode);
+                timing.ClientStatusCode = statusCode;
+                timing.FailureReason = ClassifyUpstreamFailure(response.StatusCode);
+                _healthService.RecordFailure(FailureClassifier.ClassifyStatusCode(response.StatusCode));
                 response.Dispose();
                 return new RelayResult { StatusCode = statusCode };
             }
 
+            timing.ClientStatusCode = (int)response.StatusCode;
+            _healthService.RecordSuccess((int?)sw.ElapsedMilliseconds);
             var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 
             return new RelayResult
@@ -338,21 +386,69 @@ internal sealed class RelayService : IRelayService, IDisposable
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             _logger.LogDebug("Relay {Kind} cancelled by client: {Url}", kind, safeUrl);
+            timing.ClientCancelled = true;
+            timing.FailureReason = RelayFailureReason.ClientCancelled;
+            timing.ClientStatusCode = 499; // nginx-style client-closed
             response?.Dispose();
             throw;
         }
         catch (TaskCanceledException)
         {
             _logger.LogWarning("Relay {Kind} timed out: {Url}", kind, safeUrl);
+            timing.UpstreamTimedOut = true;
+            timing.FailureReason = RelayFailureReason.UpstreamTimeout;
+            timing.ClientStatusCode = 504;
+            _healthService.RecordFailure(FailureReason.Timeout);
             response?.Dispose();
             return new RelayResult { StatusCode = 504 };
         }
         catch (HttpRequestException ex)
         {
             _logger.LogWarning(ex, "Relay {Kind} upstream unreachable: {Url}", kind, safeUrl);
+            timing.FailureReason = RelayFailureReason.UpstreamConnectFailed;
+            timing.ClientStatusCode = 502;
+            _healthService.RecordFailure(FailureClassifier.Classify(ex));
             response?.Dispose();
             return new RelayResult { StatusCode = 502 };
         }
+    }
+
+    /// <summary>
+    /// Classifies upstream HTTP failure status codes to structured failure reasons.
+    /// </summary>
+    private static RelayFailureReason ClassifyUpstreamFailure(HttpStatusCode statusCode) => statusCode switch
+    {
+        HttpStatusCode.Unauthorized => RelayFailureReason.Upstream401,
+        HttpStatusCode.Forbidden => RelayFailureReason.Upstream403,
+        HttpStatusCode.NotFound => RelayFailureReason.Upstream404,
+        _ when (int)statusCode >= 500 => RelayFailureReason.Upstream5xx,
+        _ => RelayFailureReason.Unknown,
+    };
+
+    /// <summary>
+    /// Infers the <see cref="MediaKind"/> from the upstream path.
+    /// </summary>
+    private static MediaKind InferMediaKind(string path)
+    {
+        if (path.Contains("imagecache", StringComparison.OrdinalIgnoreCase))
+        {
+            return MediaKind.Logo;
+        }
+
+        return MediaKind.Unknown;
+    }
+
+    /// <summary>
+    /// Infers the <see cref="Model.Relay.ImageSourceType"/> from the upstream path.
+    /// </summary>
+    private static ImageSourceType InferImageSourceType(string path)
+    {
+        if (path.Contains("imagecache", StringComparison.OrdinalIgnoreCase))
+        {
+            return ImageSourceType.ChannelLogo;
+        }
+
+        return ImageSourceType.Unknown;
     }
 
     /// <summary>
