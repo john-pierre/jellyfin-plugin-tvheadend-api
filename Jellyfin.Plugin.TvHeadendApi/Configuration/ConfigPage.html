@@ -590,6 +590,55 @@
                     </div>
                 </div>
 
+                <!-- ── H. Logging Settings ──────────────────────── -->
+                <div class="tvh-section" id="sec-logging">
+                    <h2 class="tvh-section-title">Logging</h2>
+                    <p class="tvh-section-desc">Controls plugin and TVHeadend log persistence and verbosity.</p>
+                    <div class="tvh-card">
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="PluginLogLevelOverride">Plugin Log Level Override</label>
+                            <select id="PluginLogLevelOverride" name="PluginLogLevelOverride" is="emby-select">
+                                <option value="0">Jellyfin Default</option>
+                                <option value="1">Trace</option>
+                                <option value="2">Debug</option>
+                                <option value="3">Information</option>
+                                <option value="4">Warning</option>
+                                <option value="5">Error</option>
+                                <option value="6">Critical</option>
+                                <option value="7">None</option>
+                            </select>
+                            <div class="fieldDescription">Controls log verbosity for this plugin only. By default the plugin follows Jellyfin's global logging configuration.</div>
+                            <div id="LogLevelWarning" style="display:none; color:#f0ad4e; font-size:0.88em; margin-top:0.3em;">⚠️ Trace/Debug level will produce verbose output. Use only for troubleshooting.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label><input id="StorePluginLogsInSqlite" type="checkbox" is="emby-checkbox" /> Store plugin logs in SQLite</label>
+                            <div class="fieldDescription">Persist plugin log entries to the database for dashboard viewing.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label><input id="StoreTvHeadendLogsInSqlite" type="checkbox" is="emby-checkbox" /> Store TVHeadend logs in SQLite</label>
+                            <div class="fieldDescription">Persist TVHeadend log entries to the database for dashboard viewing.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label><input id="TvHeadendLogImportEnabled" type="checkbox" is="emby-checkbox" /> TVHeadend log import enabled</label>
+                            <div class="fieldDescription">Enable ingestion of TVHeadend log lines via the Comet WebSocket connection.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label><input id="EnableDebugLogSanitization" type="checkbox" is="emby-checkbox" /> Enable debug log sanitization</label>
+                            <div class="fieldDescription">Mask tokens, passwords, and Authorization headers in log messages before storage.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="MaxDashboardLogEntries">Max Dashboard Log Entries</label>
+                            <input id="MaxDashboardLogEntries" name="MaxDashboardLogEntries" type="number" is="emby-input" min="1" max="5000" placeholder="500" />
+                            <div class="fieldDescription">Maximum number of log entries shown in the dashboard. Default: 500.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="LogRetentionDays">Log Retention (days)</label>
+                            <input id="LogRetentionDays" name="LogRetentionDays" type="number" is="emby-input" min="1" max="90" placeholder="7" />
+                            <div class="fieldDescription">Log entries older than this are automatically pruned. Default: 7 days.</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- ── Save ─────────────────────────────────────── -->
                 <div class="tvh-save-area">
                     <button is="emby-button" type="submit" class="raised button-submit block emby-button">
@@ -623,6 +672,16 @@
             }
 
             // ── Relay token security warnings ─────────────────────
+            function updateLogLevelWarning() {
+                var val = parseInt($('#PluginLogLevelOverride').value, 10);
+                var warn = document.getElementById('LogLevelWarning');
+                if (warn) warn.style.display = (val === 1 || val === 2) ? 'block' : 'none';
+            }
+            document.addEventListener('DOMContentLoaded', function() {
+                var el = document.getElementById('PluginLogLevelOverride');
+                if (el) { el.addEventListener('change', updateLogLevelWarning); }
+            });
+
             function updateRelayTokenWarnings() {
                 var secEnabled = $('#EnableRelayTokenSecurity').checked;
                 var warningBox = document.getElementById('RelayTokenSecurityWarning');
@@ -748,6 +807,15 @@
                     config.PrePaddingSeconds = minutesToSeconds('#PrePaddingSeconds', config.PrePaddingSeconds);
                     config.PostPaddingSeconds = minutesToSeconds('#PostPaddingSeconds', config.PostPaddingSeconds);
 
+                    // Logging
+                    config.PluginLogLevelOverride = parseInt_('#PluginLogLevelOverride', config.PluginLogLevelOverride);
+                    config.StorePluginLogsInSqlite = $('#StorePluginLogsInSqlite').checked;
+                    config.StoreTvHeadendLogsInSqlite = $('#StoreTvHeadendLogsInSqlite').checked;
+                    config.TvHeadendLogImportEnabled = $('#TvHeadendLogImportEnabled').checked;
+                    config.EnableDebugLogSanitization = $('#EnableDebugLogSanitization').checked;
+                    config.MaxDashboardLogEntries = parseInt_('#MaxDashboardLogEntries', config.MaxDashboardLogEntries);
+                    config.LogRetentionDays = parseInt_('#LogRetentionDays', config.LogRetentionDays);
+
                     var rp = $('#RecordingProfile').value;
                     if (rp) config.RecordingProfile = rp;
 
@@ -800,6 +868,17 @@
                 $('#PrePaddingSeconds').value = secondsToMinutes(config.PrePaddingSeconds);
                 $('#PostPaddingSeconds').value = secondsToMinutes(config.PostPaddingSeconds);
                 $('#RecordingProfile').value = config.RecordingProfile || '';
+
+                // Logging
+                $('#PluginLogLevelOverride').value = String(config.PluginLogLevelOverride != null ? config.PluginLogLevelOverride : 0);
+                $('#StorePluginLogsInSqlite').checked = config.StorePluginLogsInSqlite !== false;
+                $('#StoreTvHeadendLogsInSqlite').checked = config.StoreTvHeadendLogsInSqlite !== false;
+                $('#TvHeadendLogImportEnabled').checked = config.TvHeadendLogImportEnabled !== false;
+                $('#EnableDebugLogSanitization').checked = config.EnableDebugLogSanitization !== false;
+                $('#MaxDashboardLogEntries').value = config.MaxDashboardLogEntries || 500;
+                $('#LogRetentionDays').value = config.LogRetentionDays || 7;
+                updateLogLevelWarning();
+
                 updateAuthRequiredState();
                 updateAuthTokenButtonLabel();
             }

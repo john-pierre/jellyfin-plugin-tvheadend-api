@@ -463,26 +463,54 @@
                 </div>
             </div>
 
-            <!-- ── G. TVHeadend Logs ────────────────────────── -->
+            <!-- ── G. Plugin & TVHeadend Logs ────────────────── -->
             <div class="tvh-section" id="sec-logs">
-                <h2 class="tvh-section-title">TVHeadend Logs</h2>
-                <p class="tvh-section-desc">Real-time log messages from TVHeadend streamed via WebSocket.</p>
+                <h2 class="tvh-section-title">Plugin &amp; TVHeadend Logs</h2>
+                <p class="tvh-section-desc">Combined log entries from the plugin and TVHeadend, newest first.</p>
 
                 <div class="tvh-card">
-                    <div style="margin-bottom:1em; display:flex; flex-wrap:wrap; gap:0.5em; align-items:center;">
-                        <label for="tvhLogFilter" style="font-size:0.9em;">Filter:</label>
-                        <input id="tvhLogFilter" type="text" placeholder="Search logs…" style="flex:1 1 200px; min-width:120px; padding:0.35em 0.6em; border:1px solid #555; border-radius:4px; background:rgba(255,255,255,0.06); color:inherit; font-size:0.88em;" />
-                        <button id="tvhClearLogsBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" style="font-size:0.85em; background:#444; color:#fff;" title="Clear logs">
-                            <span style="font-size:1.3em;">🗑️</span>
+                    <div class="tvh-table-toolbar">
+                        <input id="tvhLogSearch" type="text" placeholder="Search messages…" />
+                        <select id="tvhLogSourceFilter">
+                            <option value="">All Sources</option>
+                            <option value="plugin">Plugin</option>
+                            <option value="tvheadend">TVHeadend</option>
+                        </select>
+                        <select id="tvhLogLevelFilter">
+                            <option value="">All Levels</option>
+                            <option value="Trace">Trace</option>
+                            <option value="Debug">Debug</option>
+                            <option value="Information">Information</option>
+                            <option value="Warning">Warning</option>
+                            <option value="Error">Error</option>
+                            <option value="Critical">Critical</option>
+                        </select>
+                        <button id="tvhRefreshLogsBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" title="Refresh logs">
+                            <span style="font-size:1.3em;">⟳</span>
                         </button>
                         <label style="display:flex; align-items:center; gap:0.35em; font-size:0.88em;">
-                            <input id="tvhLogsAutoRefresh" type="checkbox" checked /> Auto-scroll
+                            <input id="tvhLogsAutoRefresh" type="checkbox" checked /> Auto-refresh (5 s)
                         </label>
                         <span id="tvhLogsStatus" class="tvh-meta">Loading…</span>
                     </div>
 
-                    <div class="tvh-logs-panel">
-                        <ul class="tvh-logs-list" id="tvhLogsList"></ul>
+                    <div class="tvh-table-wrap">
+                        <table id="tvhLogsTable">
+                            <thead>
+                                <tr>
+                                    <th class="tvh-sortable" data-sort="created_at_utc">Date/Time <span class="tvh-sort-arrow">▾</span></th>
+                                    <th class="tvh-sortable" data-sort="source">Source <span class="tvh-sort-arrow">▾</span></th>
+                                    <th class="tvh-sortable" data-sort="level">Level <span class="tvh-sort-arrow">▾</span></th>
+                                    <th class="tvh-sortable" data-sort="category">Category <span class="tvh-sort-arrow">▾</span></th>
+                                    <th>Message</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tvhLogsBody"></tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top:0.6em; display:flex; justify-content:space-between; align-items:center; font-size:0.82em; opacity:0.6;">
+                        <span id="tvhLogsTotalCount"></span>
+                        <span id="tvhLogsLastUpdated"></span>
                     </div>
                 </div>
             </div>
@@ -1239,14 +1267,32 @@
 
             // ── Logs ────────────────────────────────────────────
             var logsRefreshTimer = null;
-            var allLogs = [];
+            var logsSortField = 'created_at_utc';
+            var logsSortDir = 'desc';
+
+            function formatTs(isoString) {
+                if (!isoString) return '—';
+                return formatDateWithTimezone(isoString);
+            }
+
+            function buildLogsUrl() {
+                var params = ['sortField=' + logsSortField, 'sortDirection=' + logsSortDir];
+                var src = document.getElementById('tvhLogSourceFilter').value;
+                var lvl = document.getElementById('tvhLogLevelFilter').value;
+                var search = (document.getElementById('tvhLogSearch').value || '').trim();
+                if (src) params.push('source=' + encodeURIComponent(src));
+                if (lvl) params.push('level=' + encodeURIComponent(lvl));
+                if (search) params.push('search=' + encodeURIComponent(search));
+                return 'TvHeadendApi/Dashboard/Logs?' + params.join('&');
+            }
 
             function loadLogs() {
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Logs?count=100'), dataType: 'json' })
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(buildLogsUrl()), dataType: 'json' })
                     .then(function (data) {
-                        allLogs = data.LogEntries || [];
-                        renderLogs();
-                        document.getElementById('tvhLogsStatus').textContent = allLogs.length + ' messages';
+                        renderLogsTable(data);
+                        document.getElementById('tvhLogsStatus').textContent = (data.Entries || []).length + ' of ' + (data.TotalCount || 0) + ' entries';
+                        document.getElementById('tvhLogsTotalCount').textContent = 'Total: ' + (data.TotalCount || 0);
+                        document.getElementById('tvhLogsLastUpdated').textContent = 'Last updated: ' + new Date(data.LastUpdatedUtc).toLocaleTimeString();
                     })
                     .catch(function (err) {
                         document.getElementById('tvhLogsStatus').textContent = 'Failed to load logs';
@@ -1254,27 +1300,44 @@
                     });
             }
 
-            function renderLogs() {
-                var filterText = (document.getElementById('tvhLogFilter').value || '').toLowerCase();
-                var filtered = allLogs.filter(function (log) {
-                    return log.Message.toLowerCase().indexOf(filterText) !== -1;
-                });
+            function renderLogsTable(data) {
+                var entries = data.Entries || [];
+                var tbody = document.getElementById('tvhLogsBody');
 
-                var listEl = document.getElementById('tvhLogsList');
-                if (filtered.length === 0) {
-                    listEl.innerHTML = '<li class="tvh-logs-empty">No logs to display</li>';
+                if (entries.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="tvh-empty">No log entries to display</td></tr>';
                     return;
                 }
 
                 var html = '';
-                filtered.forEach(function (log) {
-                    var time = new Date(log.Timestamp).toLocaleTimeString();
-                    html += '<li class="tvh-logs-item"><span class="tvh-logs-time">' + esc(time) + '</span><span class="tvh-logs-text">' + esc(log.Message) + '</span></li>';
+                entries.forEach(function (e) {
+                    var time = formatTs(e.CreatedAtUtc);
+                    var levelBadge = logLevelBadge(e.Level);
+                    var srcBadge = e.Source === 'tvheadend' ? badge('active', 'TVH') : badge('idle', 'Plugin');
+                    var msgHtml = esc(e.Message || '');
+                    if (e.Exception) {
+                        msgHtml += ' <details style="display:inline"><summary style="cursor:pointer;font-size:0.8em;opacity:0.7;">[exception]</summary><pre style="white-space:pre-wrap;font-size:0.8em;opacity:0.8;margin:0.3em 0;">' + esc(e.Exception) + '</pre></details>';
+                    }
+                    html += '<tr>'
+                        + '<td style="white-space:nowrap;">' + esc(time) + '</td>'
+                        + '<td>' + srcBadge + '</td>'
+                        + '<td>' + levelBadge + '</td>'
+                        + '<td>' + esc(e.Category || '') + '</td>'
+                        + '<td style="word-break:break-word;max-width:500px;">' + msgHtml + '</td>'
+                        + '</tr>';
                 });
-                listEl.innerHTML = html;
+                tbody.innerHTML = html;
+            }
 
-                if (document.getElementById('tvhLogsAutoRefresh').checked) {
-                    listEl.scrollTop = listEl.scrollHeight;
+            function logLevelBadge(level) {
+                switch ((level || '').toLowerCase()) {
+                    case 'critical': return badge('err', 'CRIT');
+                    case 'error': return badge('err', 'ERR');
+                    case 'warning': return badge('warn', 'WARN');
+                    case 'information': return badge('ok', 'INFO');
+                    case 'debug': return badge('idle', 'DBG');
+                    case 'trace': return badge('idle', 'TRACE');
+                    default: return badge('idle', level || '?');
                 }
             }
 
@@ -1284,6 +1347,20 @@
                     logsRefreshTimer = setInterval(loadLogs, 5000);
                 }
             }
+
+            // Logs sort click handler
+            document.querySelectorAll('#tvhLogsTable th.tvh-sortable').forEach(function (th) {
+                th.addEventListener('click', function () {
+                    var field = th.getAttribute('data-sort');
+                    if (logsSortField === field) {
+                        logsSortDir = logsSortDir === 'desc' ? 'asc' : 'desc';
+                    } else {
+                        logsSortField = field;
+                        logsSortDir = 'desc';
+                    }
+                    loadLogs();
+                });
+            });
 
             // ── Event listeners ────────────────────────────────
             document.getElementById('tvhRefreshBtn').addEventListener('click', function () {
@@ -1308,13 +1385,15 @@
                     loadStatistics();
                 });
             });
-            document.getElementById('tvhLogFilter').addEventListener('input', renderLogs);
-            document.getElementById('tvhLogsAutoRefresh').addEventListener('change', toggleLogsAutoRefresh);
-            document.getElementById('tvhClearLogsBtn').addEventListener('click', function () {
-                allLogs = [];
-                renderLogs();
-                document.getElementById('tvhLogsStatus').textContent = '0 messages';
+            document.getElementById('tvhLogSearch').addEventListener('input', function () {
+                if (logsRefreshTimer) { clearInterval(logsRefreshTimer); logsRefreshTimer = null; }
+                clearTimeout(window._logSearchDebounce);
+                window._logSearchDebounce = setTimeout(function () { loadLogs(); toggleLogsAutoRefresh(); }, 400);
             });
+            document.getElementById('tvhLogSourceFilter').addEventListener('change', loadLogs);
+            document.getElementById('tvhLogLevelFilter').addEventListener('change', loadLogs);
+            document.getElementById('tvhLogsAutoRefresh').addEventListener('change', toggleLogsAutoRefresh);
+            document.getElementById('tvhRefreshLogsBtn').addEventListener('click', loadLogs);
 
             // ── Relay Observability ──────────────────────────────
             function formatBytes(bytes) {

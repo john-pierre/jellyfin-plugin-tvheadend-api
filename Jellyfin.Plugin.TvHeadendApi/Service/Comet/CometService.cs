@@ -31,6 +31,7 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     private readonly IUrlBuilder _urlBuilder;
     private readonly PluginConfigurationProvider _configProvider;
     private readonly DbContextOptions<ViewingSessionContext>? _dbContextOptions;
+    private readonly PluginLogService? _pluginLogService;
     private readonly List<LogMessage> _logBuffer = new();
     private readonly object _logLock = new();
     private readonly object _diskLock = new();
@@ -47,13 +48,15 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         IApiClient apiClient,
         IUrlBuilder urlBuilder,
         PluginConfigurationProvider configProvider,
-        DbContextOptions<ViewingSessionContext>? dbContextOptions = null)
+        DbContextOptions<ViewingSessionContext>? dbContextOptions = null,
+        PluginLogService? pluginLogService = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _urlBuilder = urlBuilder ?? throw new ArgumentNullException(nameof(urlBuilder));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _dbContextOptions = dbContextOptions;
+        _pluginLogService = pluginLogService;
     }
 
     /// <summary>
@@ -407,8 +410,11 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
             }
         }
 
-        // Persist to SQLite asynchronously
+        // Persist to legacy SQLite table asynchronously
         PersistLogEntry(now, text);
+
+        // Feed parsed TVHeadend log to the unified PluginLogService
+        _pluginLogService?.EnqueueTvHeadendLog(text);
     }
 
     /// <summary>

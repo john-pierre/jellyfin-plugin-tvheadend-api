@@ -86,6 +86,15 @@ public class PluginConfiguration : BasePluginConfiguration
         // Expert
         this.AuthTokenMaxAttempts = 5;
         this.ProfileCacheTtlMinutes = 5;
+
+        // Logging
+        this.PluginLogLevelOverride = PluginLogLevel.JellyfinDefault;
+        this.StorePluginLogsInSqlite = true;
+        this.StoreTvHeadendLogsInSqlite = true;
+        this.MaxDashboardLogEntries = 500;
+        this.LogRetentionDays = 7;
+        this.EnableDebugLogSanitization = true;
+        this.TvHeadendLogImportEnabled = true;
     }
 
     // ── Connection ─────────────────────────────────────────────────────
@@ -443,6 +452,46 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the TTL in minutes for the cached streaming profile metadata. Default: 5.
     /// </summary>
     public int ProfileCacheTtlMinutes { get; set; }
+
+    // ── Logging ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Gets or sets the plugin-specific log level override.
+    /// <c>JellyfinDefault</c> follows the global Jellyfin logging configuration.
+    /// Other values override log verbosity for this plugin only.
+    /// </summary>
+    public PluginLogLevel PluginLogLevelOverride { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether plugin log entries are persisted to SQLite. Default: true.
+    /// </summary>
+    public bool StorePluginLogsInSqlite { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether TVHeadend log entries are persisted to SQLite. Default: true.
+    /// </summary>
+    public bool StoreTvHeadendLogsInSqlite { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum number of log entries returned by the dashboard API. Default: 500.
+    /// </summary>
+    public int MaxDashboardLogEntries { get; set; }
+
+    /// <summary>
+    /// Gets or sets the log retention in days. Entries older than this are pruned automatically. Default: 7.
+    /// </summary>
+    public int LogRetentionDays { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether debug-level log messages are sanitized
+    /// to remove potential secrets before storage. Default: true.
+    /// </summary>
+    public bool EnableDebugLogSanitization { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether TVHeadend log ingestion is enabled. Default: true.
+    /// </summary>
+    public bool TvHeadendLogImportEnabled { get; set; }
 
     // ── Streaming Profile Selection ─────────────────────────────────────
 

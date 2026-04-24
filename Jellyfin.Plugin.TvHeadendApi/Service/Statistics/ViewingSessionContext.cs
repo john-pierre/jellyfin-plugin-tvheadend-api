@@ -28,9 +28,14 @@ internal sealed class ViewingSessionContext : DbContext
     public DbSet<HealthTransition> HealthTransitions { get; set; }
 
     /// <summary>
-    /// Gets or sets the TVHeadend log entries table.
+    /// Gets or sets the TVHeadend log entries table (legacy).
     /// </summary>
     public DbSet<TvhLogEntry> TvhLogEntries { get; set; }
+
+    /// <summary>
+    /// Gets or sets the unified plugin log entries table.
+    /// </summary>
+    public DbSet<PluginLogEntry> PluginLogEntries { get; set; }
 
     /// <summary>
     /// Configures the model for the context.
@@ -71,10 +76,37 @@ internal sealed class ViewingSessionContext : DbContext
         healthEntity.Property(h => h.ToStatus).IsRequired().HasMaxLength(64);
         healthEntity.Property(h => h.FailureReason).HasMaxLength(64);
 
-        // TVHeadend log entries
+        // TVHeadend log entries (legacy)
         var logEntity = modelBuilder.Entity<TvhLogEntry>();
         logEntity.HasKey(l => l.Id);
         logEntity.HasIndex(l => l.TimestampUtc);
         logEntity.Property(l => l.Text).IsRequired().HasMaxLength(2048);
+
+        // Unified plugin log entries
+        var pluginLogEntity = modelBuilder.Entity<PluginLogEntry>();
+        pluginLogEntity.ToTable("plugin_log_entries");
+        pluginLogEntity.HasKey(e => e.Id);
+
+        // Indexes for efficient dashboard queries
+        pluginLogEntity.HasIndex(e => e.CreatedAtUtc).HasDatabaseName("IX_plugin_log_created_at");
+        pluginLogEntity.HasIndex(e => e.Source).HasDatabaseName("IX_plugin_log_source");
+        pluginLogEntity.HasIndex(e => e.Level).HasDatabaseName("IX_plugin_log_level");
+        pluginLogEntity.HasIndex(e => e.LogType).HasDatabaseName("IX_plugin_log_type");
+        pluginLogEntity.HasIndex(e => e.Category).HasDatabaseName("IX_plugin_log_category");
+        pluginLogEntity.HasIndex(e => new { e.Source, e.CreatedAtUtc }).HasDatabaseName("IX_plugin_log_source_created");
+        pluginLogEntity.HasIndex(e => new { e.Level, e.CreatedAtUtc }).HasDatabaseName("IX_plugin_log_level_created");
+        pluginLogEntity.HasIndex(e => e.RawLineHash).HasDatabaseName("IX_plugin_log_raw_hash");
+
+        pluginLogEntity.Property(e => e.Source).IsRequired().HasMaxLength(16);
+        pluginLogEntity.Property(e => e.LogType).IsRequired().HasMaxLength(32);
+        pluginLogEntity.Property(e => e.Level).IsRequired().HasMaxLength(16);
+        pluginLogEntity.Property(e => e.Category).HasMaxLength(256);
+        pluginLogEntity.Property(e => e.Message).IsRequired().HasMaxLength(4096);
+        pluginLogEntity.Property(e => e.Exception).HasMaxLength(8192);
+        pluginLogEntity.Property(e => e.EventId).HasMaxLength(64);
+        pluginLogEntity.Property(e => e.CorrelationId).HasMaxLength(64);
+        pluginLogEntity.Property(e => e.ChannelId).HasMaxLength(256);
+        pluginLogEntity.Property(e => e.RawSource).HasMaxLength(4096);
+        pluginLogEntity.Property(e => e.RawLineHash).HasMaxLength(64);
     }
 }

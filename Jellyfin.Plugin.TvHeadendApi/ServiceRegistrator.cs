@@ -83,6 +83,41 @@ public class ServiceRegistrator : IPluginServiceRegistrator
 
         // Register EF Core DbContext + StatisticsService with resolved DB path.
         // Both use the same lazy factory so Plugin.Instance is available at resolve time.
+
+        // ── PluginLogService — unified log persistence + query ──
+        serviceCollection.AddSingleton<PluginLogService>(sp =>
+        {
+            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
+            var folder = pathProvider.Path ?? string.Empty;
+            var dbPath = System.IO.Path.Combine(folder, "viewing-statistics.db");
+
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = dbPath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Shared,
+                Pooling = false,
+            }.ToString();
+
+            var contextOptions = new DbContextOptionsBuilder<Service.Statistics.ViewingSessionContext>()
+                .UseSqlite(connectionString)
+                .Options;
+
+            return new PluginLogService(
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PluginLogService>>(),
+                sp.GetRequiredService<PluginConfigurationProvider>(),
+                contextOptions);
+        });
+        serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PluginLogService>());
+        serviceCollection.AddSingleton<IPluginLogQueryService>(sp => sp.GetRequiredService<PluginLogService>());
+
+        // ── PluginLoggerFactory — plugin-specific log level override ──
+        serviceCollection.AddSingleton<IPluginLoggerFactory>(sp =>
+            new PluginLoggerFactory(
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>(),
+                sp.GetRequiredService<PluginConfigurationProvider>(),
+                sp.GetRequiredService<PluginLogService>()));
+
         serviceCollection.AddSingleton<StatisticsService>(sp =>
         {
             var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
@@ -256,7 +291,8 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 sp.GetRequiredService<IApiClient>(),
                 sp.GetRequiredService<IUrlBuilder>(),
                 sp.GetRequiredService<PluginConfigurationProvider>(),
-                contextOptions);
+                contextOptions,
+                sp.GetRequiredService<PluginLogService>());
         });
         serviceCollection.AddSingleton<ICometSnapshotReader>(sp => sp.GetRequiredService<CometService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<CometService>());

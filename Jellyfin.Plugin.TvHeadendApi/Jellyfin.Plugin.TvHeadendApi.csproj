@@ -14,6 +14,12 @@
     <InformationalVersion>$(AssemblyVersion)</InformationalVersion>
   </PropertyGroup>
 
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Jellyfin.Plugin.TvHeadendApi.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 
   <ItemGroup>
     <PackageReference Include="Jellyfin.Controller" Version="[10.10.7,)" />
