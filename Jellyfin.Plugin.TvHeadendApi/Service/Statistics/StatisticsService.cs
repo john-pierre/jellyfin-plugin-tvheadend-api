@@ -248,27 +248,6 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         {
             using var dbContext = CreateDbContext();
             EnsureSchemaLocked(dbContext);
-
-            // Guard against duplicate PlaybackStart events for the same session.
-            var existing = dbContext.ViewingSessions.FirstOrDefault(s =>
-                s.UserName == session.UserName &&
-                s.DeviceName == session.DeviceName &&
-                s.ClientName == session.ClientName &&
-                s.ChannelId == session.ChannelId &&
-                s.PlaySessionId == session.PlaySessionId);
-
-            if (existing != null)
-            {
-                _logger.LogDebug(
-                    "Duplicate PlaybackStart ignored: User={User}, Device={Device}, Client={Client}, Channel={Channel}, PlaySessionId={PlaySessionId}",
-                    session.UserName,
-                    session.DeviceName,
-                    session.ClientName,
-                    session.ChannelName,
-                    sessionId);
-                return;
-            }
-
             dbContext.ViewingSessions.Add(session);
             dbContext.SaveChanges();
         }
