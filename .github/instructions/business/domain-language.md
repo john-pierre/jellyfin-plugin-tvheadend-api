@@ -1,6 +1,6 @@
 # jellyfin-plugin-tvheadend-api — Domain Language
 
-> **Version:** 1.0 | **Date:** 2026-04-18
+> **Version:** 1.1 | **Date:** 2026-04-23
 >
 > This file defines the canonical domain language for jellyfin-plugin-tvheadend-api.
 > Always use these terms consistently in code, comments, documentation, and issues.
@@ -50,6 +50,25 @@
 | **MediaSourceInfo** | `MediaBrowser.Model.MediaInfo` | Jellyfin's stream descriptor containing URL, container, codec hints. |
 | **MediaInfo Cache** | `Service.Stream.MediaSourceService` | Pre-created `cache/mediainfo/*.json` files matching Jellyfin's internal hash to skip FFmpeg probing. |
 | **Streaming Profile** | `Model.Profile.ProfileEntry` | TVHeadend profile (e.g., `pass`, `matroska`, `jellyfin`) determining codec/container output. |
+
+---
+
+## 4a — Streaming Profile Selection
+
+| Term | Class / Package | Description |
+|------|----------------|-------------|
+| **PlaybackMode** | `Configuration.PlaybackMode` | Enum controlling how streams are delivered: Auto, PassThrough, TvHeadendTranscode, JellyfinTranscode. |
+| **StreamingProfileSettings** | `Configuration.StreamingProfileSettings` | Configuration section for hierarchical profile selection with global defaults, overrides, and rules. |
+| **StreamingProfileRule** | `Configuration.StreamingProfileRule` | A configurable rule matching client, device, or user to a specific playback mode and TVHeadend profile. |
+| **StreamingProfileRuleMatchType** | `Configuration.StreamingProfileRuleMatchType` | Enum specifying how a rule matches: ClientNameExact, ClientNameContains, DeviceNameExact, DeviceNameContains, UserIdExact. |
+| **ChannelProfileOverride** | `Configuration.ChannelProfileOverride` | Per-channel streaming profile override (highest precedence in the resolution hierarchy). |
+| **ChannelGroupProfileOverride** | `Configuration.ChannelGroupProfileOverride` | Per-channel-group streaming profile override. |
+| **StreamingProfileContext** | `Service.StreamingProfile.StreamingProfileContext` | Input record describing the playback request context (channel, client, device, user). |
+| **StreamingProfileResolutionResult** | `Service.StreamingProfile.StreamingProfileResolutionResult` | Output of profile resolution with effective mode, profile, matched rule, and debug reasons. |
+| **ResolutionSource** | `Service.StreamingProfile.ResolutionSource` | Enum identifying which hierarchy level produced the resolution result. |
+| **StreamingProfileResolver** | `Service.StreamingProfile.StreamingProfileResolver` | Central resolver implementing deterministic hierarchical profile resolution. |
+| **ProfileDiscoveryService** | `Service.StreamingProfile.ProfileDiscoveryService` | Discovers available TVHeadend profiles with TTL-based caching and validates configured profile names. |
+| **DiscoveredProfile** | `Service.StreamingProfile.DiscoveredProfile` | Public DTO representing a discovered TVHeadend streaming profile (Key, Name). |
 
 ---
 

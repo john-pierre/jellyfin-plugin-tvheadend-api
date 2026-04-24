@@ -120,6 +120,7 @@ public class RelayController : ControllerBase
     /// <param name="cancellationToken">Cancellation token — triggers upstream cancellation on disconnect.</param>
     /// <returns>A <see cref="Task"/> representing the streaming operation.</returns>
     [HttpGet("stream/{channelId}")]
+    [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]

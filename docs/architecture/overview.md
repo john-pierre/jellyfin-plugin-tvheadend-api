@@ -46,6 +46,8 @@ The plugin integrates TVHeadend with Jellyfin's Live TV subsystem using TVHeaden
 | `DiagnosticService` | Compatibility checks and configuration validation | Admin UI |
 | `DefaultProfileService` | Creates recommended TVHeadend streaming profiles | Admin UI |
 | `ProfileResolver` / `ProfileContainerResolver` | Resolves active streaming profile metadata for cache/container decisions | Stream services |
+| `StreamingProfileResolver` | Hierarchical rule-based profile selection (channel → group → client → user → global → fallback) | Stream services |
+| `ProfileDiscoveryService` | Discovers available TVHeadend profiles with TTL caching; validates configured profile names | Admin UI, StreamingProfileResolver |
 | `StatisticsService` | Tracks live TV viewing sessions via Jellyfin playback events | Background (`IHostedService`) |
 | `DashboardService` | Aggregates diagnostics, status, input, and subscription data for the admin dashboard | Admin UI |
  r| `CometService` | Buffers TVHeadend Comet log and disk-space updates for dashboard endpoints | Background (`IHostedService`) |
@@ -61,6 +63,10 @@ The plugin integrates TVHeadend with Jellyfin's Live TV subsystem using TVHeaden
 - `POST /CreateProfile` — create TVHeadend profiles
 - `POST /GenerateAuthToken` — generate auth token
 - `GET /ProfileOptions` — available profiles
+- `GET /StreamingProfiles/Resolve` — test profile resolution with context
+- `GET /StreamingProfiles/Discovered` — discovered TVHeadend profiles
+- `GET /StreamingProfiles/Validate` — validate configured profile names
+- `POST /StreamingProfiles/RefreshCache` — invalidate profile discovery cache
 - `GET /Statistics` — viewing stats
 - `DELETE /Statistics` — clear stats
 
@@ -80,6 +86,7 @@ All endpoints require Jellyfin admin elevation.
 | `Service/Stream/` | Stream URL construction, media source info, stream lifecycle |
 | `Service/Auth/` | Auth token generation, validation, TVHeadend user management |
 | `Service/Profile/` | Profile resolution, container mapping, default profile creation |
+| `Service/StreamingProfile/` | Hierarchical streaming profile selection, discovery, validation |
 | `Service/Diagnostic/` | Compatibility checks, configuration analysis |
 | `Service/Statistics/` | Viewing session tracking, persistence, retention |
 | `Service/Helper/` | Low-level HTTP, URL building, grid pagination, idnode helpers |
