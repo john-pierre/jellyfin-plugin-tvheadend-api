@@ -58,6 +58,17 @@ public class PluginConfiguration : BasePluginConfiguration
         this.RelayEnabled = true;
         this.RelayHostOverride = string.Empty;
 
+        // Relay token security
+        this.EnableRelayTokenSecurity = true;
+        this.StreamTokenTtlSeconds = 120;
+        this.StreamTokenMaxUses = 5;
+        this.ImageTokenTtlMinutes = 30;
+        this.ImageTokenMaxUses = 0;
+        this.EnableTokenReuse = true;
+        this.StrictScopeValidation = true;
+        this.CleanupExpiredTokensIntervalMinutes = 60;
+        this.TokenValidationClockSkewSeconds = 5;
+
         // Resilience
         this.HealthTimeoutSeconds = 3;
         this.ImageTimeoutSeconds = 5;
@@ -297,6 +308,74 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Example: <c>http://192.168.1.10:8096</c> or <c>https://jellyfin.example.com</c>.
     /// </summary>
     public string RelayHostOverride { get; set; }
+
+    // ── Relay Token Security ────────────────────────────────────────────
+
+    /// <summary>
+    /// Gets or sets a value indicating whether relay token security is enabled.
+    /// When enabled, public relay endpoints require a plugin-issued scoped token.
+    /// Default: true.
+    /// </summary>
+    public bool EnableRelayTokenSecurity { get; set; }
+
+    /// <summary>
+    /// Gets or sets the time-to-live in seconds for stream relay tokens.
+    /// Controls how long a token may be used to start a new stream relay request.
+    /// Active streams are not interrupted when the token expires.
+    /// Default: 120.
+    /// </summary>
+    public int StreamTokenTtlSeconds { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum number of times a stream relay token may be used.
+    /// Supports Jellyfin/FFmpeg probing, retries, and the final playback request.
+    /// A value of 5 is recommended for compatibility. Set to 0 for unlimited.
+    /// Default: 5.
+    /// </summary>
+    public int StreamTokenMaxUses { get; set; }
+
+    /// <summary>
+    /// Gets or sets the time-to-live in minutes for image relay tokens.
+    /// Image tokens typically need a longer TTL than stream tokens to support
+    /// caching-friendly behavior and prevent channel logos from breaking.
+    /// Default: 30.
+    /// </summary>
+    public int ImageTokenTtlMinutes { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum number of times an image relay token may be used.
+    /// Set to 0 for unlimited uses. Default: 0 (unlimited).
+    /// </summary>
+    public int ImageTokenMaxUses { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether token reuse is enabled.
+    /// When enabled, the same token can be used multiple times within its TTL and max-uses limits.
+    /// Default: true.
+    /// </summary>
+    public bool EnableTokenReuse { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether strict scope validation is enabled.
+    /// When enabled, a stream token for channel A cannot be used for channel B,
+    /// and an image token cannot be used as a stream token.
+    /// Default: true.
+    /// </summary>
+    public bool StrictScopeValidation { get; set; }
+
+    /// <summary>
+    /// Gets or sets the interval in minutes for cleaning up expired and revoked relay tokens.
+    /// Prevents the SQLite database from growing unbounded.
+    /// Default: 60.
+    /// </summary>
+    public int CleanupExpiredTokensIntervalMinutes { get; set; }
+
+    /// <summary>
+    /// Gets or sets the clock skew tolerance in seconds for token expiration checks.
+    /// Accounts for minor clock differences between token issuance and validation.
+    /// Default: 5.
+    /// </summary>
+    public int TokenValidationClockSkewSeconds { get; set; }
 
     // ── Statistics ─────────────────────────────────────────────────────
 

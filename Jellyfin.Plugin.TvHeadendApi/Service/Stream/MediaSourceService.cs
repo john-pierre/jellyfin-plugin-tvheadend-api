@@ -116,7 +116,9 @@ internal sealed class MediaSourceService : IMediaSourceService
 
         // Route stream through the plugin's relay endpoint so TVHeadend credentials
         // stay server-side and internal URLs are never exposed to clients.
-        var streamUrl = _relayUrlBuilder.BuildStreamRelayUrl(channelId, effectiveProfile);
+        // When relay token security is enabled, issue a scoped token embedded in the URL.
+        var streamUrl = await _relayUrlBuilder.BuildTokenizedStreamRelayUrlAsync(
+            channelId, effectiveProfile, null, null, null, cancellationToken).ConfigureAwait(false);
         var container = await _streamProfileContainerResolver.ResolveContainerAsync(config, cancellationToken).ConfigureAwait(false);
         var mediaSource = new MediaSourceInfo
         {

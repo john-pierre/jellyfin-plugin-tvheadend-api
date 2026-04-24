@@ -27,6 +27,8 @@ public class RelayController : ControllerBase
     private readonly IRelayMetricsService _metrics;
     private readonly RelayActivityTracker _activityTracker;
     private readonly IRelayUrlBuilder _relayUrlBuilder;
+    private readonly IRelayTokenValidator _tokenValidator;
+    private readonly RelayTokenOptions _tokenOptions;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RelayController"/> class.
@@ -35,12 +37,22 @@ public class RelayController : ControllerBase
     /// <param name="metrics">The relay metrics persistence service.</param>
     /// <param name="activityTracker">Live stream activity tracker.</param>
     /// <param name="relayUrlBuilder">Relay URL builder for host resolution.</param>
-    public RelayController(IRelayService relay, IRelayMetricsService metrics, RelayActivityTracker activityTracker, IRelayUrlBuilder relayUrlBuilder)
+    /// <param name="tokenValidator">Relay token validator for public endpoints.</param>
+    /// <param name="tokenOptions">Relay token policy options.</param>
+    public RelayController(
+        IRelayService relay,
+        IRelayMetricsService metrics,
+        RelayActivityTracker activityTracker,
+        IRelayUrlBuilder relayUrlBuilder,
+        IRelayTokenValidator tokenValidator,
+        RelayTokenOptions tokenOptions)
     {
         _relay = relay ?? throw new ArgumentNullException(nameof(relay));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _activityTracker = activityTracker ?? throw new ArgumentNullException(nameof(activityTracker));
         _relayUrlBuilder = relayUrlBuilder ?? throw new ArgumentNullException(nameof(relayUrlBuilder));
+        _tokenValidator = tokenValidator ?? throw new ArgumentNullException(nameof(tokenValidator));
+        _tokenOptions = tokenOptions ?? throw new ArgumentNullException(nameof(tokenOptions));
     }
 
     /// <summary>
@@ -211,6 +223,84 @@ public class RelayController : ControllerBase
 
             RecordAndDispose(result);
         }
+    }
+
+    /// <summary>
+    /// Public token-secured relay endpoint for live TV streams.
+    /// Validates the plugin-issued relay token before proxying to TVHeadend.
+    /// Token is checked only at request start — active streams are not killed by token expiry.
+    /// </summary>
+    /// <param name="channelId">TVHeadend channel UUID.</param>
+    /// <param name="profile">Optional streaming profile override.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A <see cref="Task"/> representing the streaming operation.</returns>
+    [HttpGet("relay/stream/{channelId}")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task GetTokenSecuredStream(string channelId, [FromQuery] string? profile, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(channelId))
+        {
+            Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        // Validate relay token at request start only
+        var tokenValidation = await _tokenValidator.ValidateAsync(
+            RelayAuthorizationHelper.ExtractToken(Request),
+            RelayType.Stream,
+            channelId,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!tokenValidation.IsValid)
+        {
+            Response.StatusCode = RelayAuthorizationHelper.MapToStatusCode(tokenValidation.FailureReason);
+            return;
+        }
+
+        // Delegate to existing stream relay logic
+        await GetStream(channelId, profile, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Public token-secured relay endpoint for images (channel logos, EPG images, thumbnails).
+    /// Validates the plugin-issued relay token before proxying to TVHeadend.
+    /// </summary>
+    /// <param name="path">Relative TVHeadend image path.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The proxied image with original headers.</returns>
+    [HttpGet("relay/images/{**path}")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetTokenSecuredImage(string path, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return BadRequest("Image path is required.");
+        }
+
+        // Validate relay token
+        var tokenValidation = await _tokenValidator.ValidateAsync(
+            RelayAuthorizationHelper.ExtractToken(Request),
+            RelayType.Image,
+            path,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!tokenValidation.IsValid)
+        {
+            return StatusCode(RelayAuthorizationHelper.MapToStatusCode(tokenValidation.FailureReason));
+        }
+
+        // Delegate to existing image relay logic
+        return await GetImage(path, cancellationToken).ConfigureAwait(false);
     }
 
     private void RecordAndDispose(RelayResult? result)

@@ -275,6 +275,72 @@
                     </div>
                 </div>
 
+                <!-- ── Relay Token Security ──────────────────── -->
+                <div class="tvh-section" id="sec-relay-token">
+                    <h2 class="tvh-section-title">Relay Token Security</h2>
+                    <p class="tvh-section-desc">Protects public relay endpoints with plugin-issued, scoped, short-lived tokens. Required because Jellyfin/FFmpeg does not reliably send auth headers to plugin endpoints.</p>
+                    <div class="tvh-card">
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="EnableRelayTokenSecurity" name="EnableRelayTokenSecurity" type="checkbox" is="emby-checkbox" />
+                                <span>Enable Relay Token Security</span>
+                            </label>
+                            <div class="fieldDescription">When enabled, public relay endpoints require a plugin-issued token. Disable only for debugging. <strong>Strongly recommended: enabled.</strong></div>
+                        </div>
+                        <div id="RelayTokenSecurityWarning" style="display:none; padding:0.6em; margin-bottom:1em; background:rgba(231,76,60,0.15); border-radius:6px; font-size:0.9em; color:#e74c3c;">
+                            ⚠️ Relay token security is disabled — public relay endpoints are unprotected.
+                        </div>
+                        <h3>Stream Tokens</h3>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="StreamTokenTtlSeconds">Stream Token TTL (seconds)</label>
+                            <input id="StreamTokenTtlSeconds" name="StreamTokenTtlSeconds" type="number" min="10" is="emby-input" placeholder="120" />
+                            <div class="fieldDescription">Controls how long a token may be used to start a new relay request. Active streams are <strong>not</strong> interrupted after expiry. Minimum: 10 seconds.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="StreamTokenMaxUses">Stream Token Max Uses</label>
+                            <input id="StreamTokenMaxUses" name="StreamTokenMaxUses" type="number" min="0" is="emby-input" placeholder="5" />
+                            <div class="fieldDescription">Allows probing, retries, and the final playback request. A value of 5 is recommended for Jellyfin/FFmpeg compatibility. Set to 0 for unlimited.</div>
+                        </div>
+                        <div id="StreamTokenWarnings" style="display:none; padding:0.6em; margin-bottom:1em; background:rgba(241,196,15,0.15); border-radius:6px; font-size:0.85em; color:#f1c40f;"></div>
+                        <h3>Image Tokens</h3>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="ImageTokenTtlMinutes">Image Token TTL (minutes)</label>
+                            <input id="ImageTokenTtlMinutes" name="ImageTokenTtlMinutes" type="number" min="1" is="emby-input" placeholder="30" />
+                            <div class="fieldDescription">Image tokens need a longer TTL to support caching-friendly behavior and prevent channel logos from breaking. Minimum: 1 minute.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="ImageTokenMaxUses">Image Token Max Uses</label>
+                            <input id="ImageTokenMaxUses" name="ImageTokenMaxUses" type="number" min="0" is="emby-input" placeholder="0" />
+                            <div class="fieldDescription">Maximum uses for image relay tokens. Set to 0 for unlimited (recommended for images).</div>
+                        </div>
+                        <h3>Advanced</h3>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="EnableTokenReuse" name="EnableTokenReuse" type="checkbox" is="emby-checkbox" />
+                                <span>Enable Token Reuse</span>
+                            </label>
+                            <div class="fieldDescription">Allow the same token to be used multiple times within its TTL and max-uses limits.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="StrictScopeValidation" name="StrictScopeValidation" type="checkbox" is="emby-checkbox" />
+                                <span>Strict Scope Validation</span>
+                            </label>
+                            <div class="fieldDescription">A stream token for channel A cannot be used for channel B. An image token cannot access a stream endpoint.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="CleanupExpiredTokensIntervalMinutes">Cleanup Interval (minutes)</label>
+                            <input id="CleanupExpiredTokensIntervalMinutes" name="CleanupExpiredTokensIntervalMinutes" type="number" min="1" is="emby-input" placeholder="60" />
+                            <div class="fieldDescription">How often expired and revoked tokens are cleaned up from the database. Minimum: 1 minute.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="TokenValidationClockSkewSeconds">Clock Skew Tolerance (seconds)</label>
+                            <input id="TokenValidationClockSkewSeconds" name="TokenValidationClockSkewSeconds" type="number" min="0" is="emby-input" placeholder="5" />
+                            <div class="fieldDescription">Tolerance for minor clock differences between token issuance and validation.</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- ── D. Streaming ────────────────────────────── -->
                 <div class="tvh-section" id="sec-streaming">
                     <h2 class="tvh-section-title">Streaming</h2>
@@ -556,6 +622,38 @@
                 return Math.max(0, mins) * 60;
             }
 
+            // ── Relay token security warnings ─────────────────────
+            function updateRelayTokenWarnings() {
+                var secEnabled = $('#EnableRelayTokenSecurity').checked;
+                var warningBox = document.getElementById('RelayTokenSecurityWarning');
+                if (warningBox) warningBox.style.display = secEnabled ? 'none' : 'block';
+
+                var warnings = [];
+                var ttl = parseInt($('#StreamTokenTtlSeconds').value, 10) || 120;
+                var maxUses = parseInt($('#StreamTokenMaxUses').value, 10);
+                if (isNaN(maxUses)) maxUses = 5;
+
+                if (ttl < 30) warnings.push('Stream TTL below 30 seconds may cause playback failures.');
+                if (ttl > 3600) warnings.push('Stream TTL above 1 hour is unusually long — tokens should be short-lived.');
+                if (maxUses > 0 && maxUses < 3) warnings.push('Stream max uses below 3 may prevent FFmpeg probing from completing.');
+
+                var streamWarnBox = document.getElementById('StreamTokenWarnings');
+                if (streamWarnBox) {
+                    streamWarnBox.style.display = warnings.length > 0 ? 'block' : 'none';
+                    streamWarnBox.innerHTML = warnings.map(function(w) { return '⚠️ ' + w; }).join('<br>');
+                }
+            }
+
+            // Attach change handlers for live warnings
+            document.addEventListener('DOMContentLoaded', function() {
+                var fields = ['EnableRelayTokenSecurity', 'StreamTokenTtlSeconds', 'StreamTokenMaxUses'];
+                fields.forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (el) el.addEventListener('change', updateRelayTokenWarnings);
+                    if (el) el.addEventListener('input', updateRelayTokenWarnings);
+                });
+            });
+
             function secondsToMinutes(sec) {
                 return (!Number.isFinite(sec) || sec <= 0) ? 0 : Math.round(sec / 60);
             }
@@ -617,6 +715,17 @@
                     config.RelayEnabled = $('#RelayEnabled').checked;
                     config.RelayHostOverride = $('#RelayHostOverride').value;
 
+                    // Relay token security
+                    config.EnableRelayTokenSecurity = $('#EnableRelayTokenSecurity').checked;
+                    config.StreamTokenTtlSeconds = parseInt_('#StreamTokenTtlSeconds', config.StreamTokenTtlSeconds);
+                    config.StreamTokenMaxUses = parseInt_('#StreamTokenMaxUses', config.StreamTokenMaxUses);
+                    config.ImageTokenTtlMinutes = parseInt_('#ImageTokenTtlMinutes', config.ImageTokenTtlMinutes);
+                    config.ImageTokenMaxUses = parseInt_('#ImageTokenMaxUses', config.ImageTokenMaxUses);
+                    config.EnableTokenReuse = $('#EnableTokenReuse').checked;
+                    config.StrictScopeValidation = $('#StrictScopeValidation').checked;
+                    config.CleanupExpiredTokensIntervalMinutes = parseInt_('#CleanupExpiredTokensIntervalMinutes', config.CleanupExpiredTokensIntervalMinutes);
+                    config.TokenValidationClockSkewSeconds = parseInt_('#TokenValidationClockSkewSeconds', config.TokenValidationClockSkewSeconds);
+
                     var sp = $('#StreamingProfile').value;
                     if (sp) config.StreamingProfile = sp;
 
@@ -659,6 +768,18 @@
                 $('#AuthToken').value = config.AuthToken || '';
                 $('#RelayEnabled').checked = config.RelayEnabled !== false;
                 $('#RelayHostOverride').value = config.RelayHostOverride || '';
+
+                // Relay token security
+                $('#EnableRelayTokenSecurity').checked = config.EnableRelayTokenSecurity !== false;
+                $('#StreamTokenTtlSeconds').value = config.StreamTokenTtlSeconds || 120;
+                $('#StreamTokenMaxUses').value = config.StreamTokenMaxUses != null ? config.StreamTokenMaxUses : 5;
+                $('#ImageTokenTtlMinutes').value = config.ImageTokenTtlMinutes || 30;
+                $('#ImageTokenMaxUses').value = config.ImageTokenMaxUses != null ? config.ImageTokenMaxUses : 0;
+                $('#EnableTokenReuse').checked = config.EnableTokenReuse !== false;
+                $('#StrictScopeValidation').checked = config.StrictScopeValidation !== false;
+                $('#CleanupExpiredTokensIntervalMinutes').value = config.CleanupExpiredTokensIntervalMinutes || 60;
+                $('#TokenValidationClockSkewSeconds').value = config.TokenValidationClockSkewSeconds != null ? config.TokenValidationClockSkewSeconds : 5;
+                updateRelayTokenWarnings();
                 $('#StreamingProfile').value = config.StreamingProfile || '';
                 $('#FallbackMaxStreamingBitrate').value = config.FallbackMaxStreamingBitrate || '';
                 $('#IsInfiniteStream').checked = config.IsInfiniteStream !== false;

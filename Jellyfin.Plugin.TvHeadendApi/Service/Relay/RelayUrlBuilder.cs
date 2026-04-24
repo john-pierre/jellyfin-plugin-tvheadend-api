@@ -1,7 +1,10 @@
 // Builds Jellyfin-local relay URLs that point clients to the plugin's relay endpoints instead of TVHeadend.
 
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using MediaBrowser.Controller;
 
@@ -34,6 +37,40 @@ public interface IRelayUrlBuilder
     /// </summary>
     /// <returns>Base URL string.</returns>
     string GetEffectiveBaseUrl();
+
+    /// <summary>
+    /// Builds a tokenized relay URL for a live TV stream.
+    /// Issues a scoped short-lived token and appends it to the URL.
+    /// </summary>
+    /// <param name="channelId">TVHeadend channel UUID.</param>
+    /// <param name="profile">Optional streaming profile name.</param>
+    /// <param name="userId">Optional Jellyfin user ID.</param>
+    /// <param name="deviceId">Optional device/client identifier.</param>
+    /// <param name="playbackMode">Optional playback mode.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Relay URL with embedded token.</returns>
+    Task<string> BuildTokenizedStreamRelayUrlAsync(
+        string channelId,
+        string? profile,
+        string? userId,
+        string? deviceId,
+        string? playbackMode,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Builds a tokenized relay URL for an image resource.
+    /// Issues a scoped token and appends it to the URL.
+    /// </summary>
+    /// <param name="imageId">Image resource identifier.</param>
+    /// <param name="mediaKind">Optional media kind.</param>
+    /// <param name="userId">Optional Jellyfin user ID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Relay URL with embedded token.</returns>
+    Task<string> BuildTokenizedImageRelayUrlAsync(
+        string imageId,
+        MediaKind? mediaKind,
+        string? userId,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -45,16 +82,26 @@ internal sealed class RelayUrlBuilder : IRelayUrlBuilder
 {
     private readonly IServerApplicationHost _appHost;
     private readonly PluginConfigurationProvider _configProvider;
+    private readonly IRelayTokenService? _tokenService;
+    private readonly RelayTokenOptions? _tokenOptions;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RelayUrlBuilder"/> class.
     /// </summary>
     /// <param name="appHost">Jellyfin application host for URL resolution.</param>
     /// <param name="configProvider">Plugin configuration provider.</param>
-    public RelayUrlBuilder(IServerApplicationHost appHost, PluginConfigurationProvider configProvider)
+    /// <param name="tokenService">Relay token service for issuing tokens (optional for backward compatibility).</param>
+    /// <param name="tokenOptions">Relay token policy options (optional for backward compatibility).</param>
+    public RelayUrlBuilder(
+        IServerApplicationHost appHost,
+        PluginConfigurationProvider configProvider,
+        IRelayTokenService? tokenService = null,
+        RelayTokenOptions? tokenOptions = null)
     {
         _appHost = appHost ?? throw new ArgumentNullException(nameof(appHost));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
+        _tokenService = tokenService;
+        _tokenOptions = tokenOptions;
     }
 
     /// <inheritdoc />
@@ -90,6 +137,57 @@ internal sealed class RelayUrlBuilder : IRelayUrlBuilder
         }
 
         return GetAutoDetectedBaseUrl();
+    }
+
+    /// <inheritdoc />
+    public async Task<string> BuildTokenizedStreamRelayUrlAsync(
+        string channelId,
+        string? profile,
+        string? userId,
+        string? deviceId,
+        string? playbackMode,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(channelId);
+
+        if (_tokenService == null || _tokenOptions == null || !_tokenOptions.Enabled)
+        {
+            return BuildStreamRelayUrl(channelId, profile);
+        }
+
+        var rawToken = await _tokenService.IssueStreamTokenAsync(channelId, userId, deviceId, profile, playbackMode, cancellationToken).ConfigureAwait(false);
+        var baseUrl = GetEffectiveBaseUrl();
+        var url = $"{baseUrl}/api/tvheadend/relay/stream/{Uri.EscapeDataString(channelId)}";
+        var separator = '?';
+
+        if (!string.IsNullOrWhiteSpace(profile))
+        {
+            url += $"?profile={Uri.EscapeDataString(profile)}";
+            separator = '&';
+        }
+
+        url += $"{separator}token={Uri.EscapeDataString(rawToken)}";
+        return url;
+    }
+
+    /// <inheritdoc />
+    public async Task<string> BuildTokenizedImageRelayUrlAsync(
+        string imageId,
+        MediaKind? mediaKind,
+        string? userId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(imageId);
+
+        if (_tokenService == null || _tokenOptions == null || !_tokenOptions.Enabled)
+        {
+            return BuildImageRelayUrl(imageId);
+        }
+
+        var rawToken = await _tokenService.IssueImageTokenAsync(imageId, mediaKind, userId, cancellationToken).ConfigureAwait(false);
+        var baseUrl = GetEffectiveBaseUrl();
+        var normalizedPath = imageId.TrimStart('/');
+        return $"{baseUrl}/api/tvheadend/relay/images/{Uri.EscapeDataString(normalizedPath)}?token={Uri.EscapeDataString(rawToken)}";
     }
 
     /// <summary>

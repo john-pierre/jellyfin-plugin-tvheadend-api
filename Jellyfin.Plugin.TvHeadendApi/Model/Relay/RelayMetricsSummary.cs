@@ -114,6 +114,26 @@ public sealed class RelayMetricsSummary
 
     /// <summary>Gets or sets hourly trend buckets.</summary>
     public IReadOnlyList<RelayTrendBucket> HourlyTrend { get; set; } = Array.Empty<RelayTrendBucket>();
+
+    // ── Token Security ───────────────────────────────────────────────
+
+    /// <summary>Gets or sets total relay tokens issued.</summary>
+    public long TokensIssuedTotal { get; set; }
+
+    /// <summary>Gets or sets stream tokens issued.</summary>
+    public long StreamTokensIssued { get; set; }
+
+    /// <summary>Gets or sets image tokens issued.</summary>
+    public long ImageTokensIssued { get; set; }
+
+    /// <summary>Gets or sets total token validations.</summary>
+    public long TokenValidationsTotal { get; set; }
+
+    /// <summary>Gets or sets total token validation failures.</summary>
+    public long TokenValidationFailures { get; set; }
+
+    /// <summary>Gets or sets token failures grouped by reason.</summary>
+    public Dictionary<string, long> TokenFailuresByReason { get; set; } = new();
 }
 
 /// <summary>

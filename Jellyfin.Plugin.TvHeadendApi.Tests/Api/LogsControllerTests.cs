@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.TvHeadendApi.Api.Endpoints;
 using Jellyfin.Plugin.TvHeadendApi.Api.Models;
+using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Comet;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
@@ -108,9 +109,9 @@ public class LogsControllerTests
             return LogMessages.Take(count).ToList();
         }
 
-        public IReadOnlyList<Model.Statistics.TvhLogEntry> GetLogHistory(int count = 500, DateTime? sinceUtc = null)
+        public IReadOnlyList<TvhLogEntry> GetLogHistory(int count = 500, DateTime? sinceUtc = null)
         {
-            return Array.Empty<Model.Statistics.TvhLogEntry>();
+            return Array.Empty<TvhLogEntry>();
         }
     }
 }

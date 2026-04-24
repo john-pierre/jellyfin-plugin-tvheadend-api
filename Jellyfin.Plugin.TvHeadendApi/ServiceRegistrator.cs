@@ -155,7 +155,11 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IDashboardService, DashboardService>();
         serviceCollection.AddSingleton<IRelayService, RelayService>();
         serviceCollection.AddSingleton<IRelayUrlBuilder>(sp =>
-            new RelayUrlBuilder(sp.GetRequiredService<IServerApplicationHost>(), sp.GetRequiredService<PluginConfigurationProvider>()));
+            new RelayUrlBuilder(
+                sp.GetRequiredService<IServerApplicationHost>(),
+                sp.GetRequiredService<PluginConfigurationProvider>(),
+                sp.GetRequiredService<IRelayTokenService>(),
+                sp.GetRequiredService<RelayTokenOptions>()));
 
         // Relay metrics — shared activity tracker, EF Core context, and hosted service.
         serviceCollection.AddSingleton<RelayActivityTracker>();
@@ -186,6 +190,47 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         });
         serviceCollection.AddSingleton<IRelayMetricsService>(sp => sp.GetRequiredService<RelayMetricsService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<RelayMetricsService>());
+
+        // Relay token security — hasher, options, repository.
+        serviceCollection.AddSingleton<RelayTokenOptions>();
+        serviceCollection.AddSingleton<RelayTokenHasher>(sp =>
+        {
+            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
+            var folder = pathProvider.Path ?? "jellyfin-tvheadend-default";
+            var secretBytes = System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes("relay-token-pepper:" + folder));
+            return new RelayTokenHasher(secretBytes);
+        });
+        serviceCollection.AddSingleton<RelayTokenRepository>(sp =>
+        {
+            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
+            var folder = pathProvider.Path ?? string.Empty;
+            var dbPath = System.IO.Path.Combine(folder, "viewing-statistics.db");
+
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = dbPath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Shared,
+                Pooling = false,
+            }.ToString();
+
+            var contextOptions = new DbContextOptionsBuilder<RelayTokenDbContext>()
+                .UseSqlite(connectionString)
+                .Options;
+
+            return new RelayTokenRepository(
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RelayTokenRepository>>(),
+                contextOptions,
+                dbPath);
+        });
+        serviceCollection.AddSingleton<IRelayTokenRepository>(sp => sp.GetRequiredService<RelayTokenRepository>());
+
+        // Relay token security — service, validator, cleanup.
+        serviceCollection.AddSingleton<IRelayTokenService, RelayTokenService>();
+        serviceCollection.AddSingleton<IRelayTokenValidator, RelayTokenValidatorService>();
+        serviceCollection.AddSingleton<RelayTokenCleanupService>();
+        serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<RelayTokenCleanupService>());
 
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StatisticsService>());
         serviceCollection.AddSingleton<CometService>(sp =>
