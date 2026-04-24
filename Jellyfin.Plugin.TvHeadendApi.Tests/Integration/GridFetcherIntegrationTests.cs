@@ -6,6 +6,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
+using Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Moq;
 using Moq.Protected;
@@ -61,7 +63,7 @@ public class GridFetcherIntegrationTests
         using var httpClient = CreateFakeHttpClient(json);
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
-        var result = await GridFetcher.FetchAllAsync<Model.Guide.ChannelGridResponse>(
+        var result = await GridFetcher.FetchAllAsync<ChannelGridResponse>(
             httpClient,
             "http://tvh.local:9981/api/channel/grid",
             r => r.Total,
@@ -81,7 +83,7 @@ public class GridFetcherIntegrationTests
         using var httpClient = CreateFakeHttpClient("null");
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
-        var result = await GridFetcher.FetchAllAsync<Model.Guide.ChannelGridResponse>(
+        var result = await GridFetcher.FetchAllAsync<ChannelGridResponse>(
             httpClient,
             "http://tvh.local:9981/api/channel/grid",
             r => r.Total,
@@ -98,7 +100,7 @@ public class GridFetcherIntegrationTests
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
         await Assert.ThrowsAsync<HttpRequestException>(async () =>
-            await GridFetcher.FetchAllAsync<Model.Guide.ChannelGridResponse>(
+            await GridFetcher.FetchAllAsync<ChannelGridResponse>(
                 httpClient,
                 "http://tvh.local:9981/api/channel/grid",
                 r => r.Total,
@@ -234,7 +236,7 @@ public class GridFetcherIntegrationTests
         using var httpClient = CreateFakeHttpClient(json);
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
-        var result = await GridFetcher.FetchAllAsync<Model.Dvr.DvrEntryGridResponse>(
+        var result = await GridFetcher.FetchAllAsync<DvrEntryGridResponse>(
             httpClient,
             "http://tvh.local:9981/api/dvr/entry/grid",
             r => r.Total,
@@ -306,7 +308,7 @@ public class GridFetcherIntegrationTests
         using var httpClient = CreateFakeHttpClient(json);
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
-        var result = await GridFetcher.FetchAllAsync<Model.Dvr.DvrAutoRecGridResponse>(
+        var result = await GridFetcher.FetchAllAsync<DvrAutoRecGridResponse>(
             httpClient,
             "http://tvh.local:9981/api/dvr/autorec/grid",
             r => r.Total,

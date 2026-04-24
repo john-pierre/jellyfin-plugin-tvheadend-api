@@ -16,6 +16,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
@@ -421,7 +422,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
         resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("mpegts");
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Model.Profile.ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
+            .ReturnsAsync(new ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
         library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(Guid.NewGuid());
@@ -469,7 +470,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
         resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("mpegts");
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Model.Profile.ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
+            .ReturnsAsync(new ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
         library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(Guid.NewGuid());
@@ -513,7 +514,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
         resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("mpegts");
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Model.Profile.ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
+            .ReturnsAsync(new ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
         library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(Guid.NewGuid());
@@ -1054,7 +1055,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
         streamResolver
             .Setup(x => x.GetProfilesAsync(
                 It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Model.Profile.ProfileReference>
+            .ReturnsAsync(new List<ProfileReference>
             {
                 new("test-uuid", "test-pass"),
                 new("pass-uuid", "pass"),
@@ -1082,7 +1083,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
         streamResolver
             .Setup(x => x.GetProfilesAsync(
                 It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Model.Profile.ProfileReference> { new("test-uuid", "test-pass") });
+            .ReturnsAsync(new List<ProfileReference> { new("test-uuid", "test-pass") });
 
         var sut = new DiagnosticService(
             NullLogger<DiagnosticService>.Instance,
@@ -1104,7 +1105,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
         streamResolver
             .Setup(x => x.GetProfilesAsync(
                 It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Model.Profile.ProfileReference>());
+            .ReturnsAsync(new List<ProfileReference>());
 
         var sut = new DiagnosticService(
             NullLogger<DiagnosticService>.Instance,

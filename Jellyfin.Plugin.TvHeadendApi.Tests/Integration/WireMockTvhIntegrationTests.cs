@@ -9,7 +9,6 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
-using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;

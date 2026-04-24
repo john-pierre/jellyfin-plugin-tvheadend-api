@@ -100,7 +100,7 @@ public class RelayTokenHasherTests
     {
         using var hasher = new RelayTokenHasher(CreateTestSecret());
 
-        Assert.Throws<ArgumentException>(() => hasher.HashToken(null!));
+        Assert.Throws<ArgumentNullException>(() => hasher.HashToken(null!));
         Assert.Throws<ArgumentException>(() => hasher.HashToken(string.Empty));
         Assert.Throws<ArgumentException>(() => hasher.HashToken("   "));
     }

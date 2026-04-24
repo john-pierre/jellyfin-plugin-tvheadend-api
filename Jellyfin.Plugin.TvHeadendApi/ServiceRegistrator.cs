@@ -18,8 +18,6 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Plugins;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -81,32 +79,17 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             }
         }));
 
-        // Register EF Core DbContext + StatisticsService with resolved DB path.
-        // Both use the same lazy factory so Plugin.Instance is available at resolve time.
+        // Centralized database provider — eliminates repeated SQLite connection string construction.
+        serviceCollection.AddSingleton(sp => new PluginDatabaseProvider(sp.GetRequiredService<DataFolderPathProvider>()));
 
         // ── PluginLogService — unified log persistence + query ──
         serviceCollection.AddSingleton<PluginLogService>(sp =>
         {
-            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
-            var folder = pathProvider.Path ?? string.Empty;
-            var dbPath = System.IO.Path.Combine(folder, "viewing-statistics.db");
-
-            var connectionString = new SqliteConnectionStringBuilder
-            {
-                DataSource = dbPath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared,
-                Pooling = false,
-            }.ToString();
-
-            var contextOptions = new DbContextOptionsBuilder<Service.Statistics.ViewingSessionContext>()
-                .UseSqlite(connectionString)
-                .Options;
-
+            var db = sp.GetRequiredService<PluginDatabaseProvider>();
             return new PluginLogService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PluginLogService>>(),
                 sp.GetRequiredService<PluginConfigurationProvider>(),
-                contextOptions);
+                db.CreateContextOptions<Service.Statistics.ViewingSessionContext>());
         });
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PluginLogService>());
         serviceCollection.AddSingleton<IPluginLogQueryService>(sp => sp.GetRequiredService<PluginLogService>());
@@ -120,28 +103,13 @@ public class ServiceRegistrator : IPluginServiceRegistrator
 
         serviceCollection.AddSingleton<StatisticsService>(sp =>
         {
-            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
-            var folder = pathProvider.Path ?? string.Empty;
-            var dbPath = System.IO.Path.Combine(folder, "viewing-statistics.db");
-
-            var connectionString = new SqliteConnectionStringBuilder
-            {
-                DataSource = dbPath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared,
-                Pooling = false,
-            }.ToString();
-
-            var contextOptions = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<ViewingSessionContext>()
-                .UseSqlite(connectionString)
-                .Options;
-
+            var db = sp.GetRequiredService<PluginDatabaseProvider>();
             return new StatisticsService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<StatisticsService>>(),
                 sp.GetRequiredService<MediaBrowser.Controller.Session.ISessionManager>(),
                 sp.GetRequiredService<PluginConfigurationProvider>(),
-                contextOptions,
-                dbPath);
+                db.CreateContextOptions<ViewingSessionContext>(),
+                db.DatabasePath);
         });
         serviceCollection.AddSingleton<IStatisticsService>(sp => sp.GetRequiredService<StatisticsService>());
 
@@ -161,28 +129,13 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IApiClient, ApiClient>();
         serviceCollection.AddSingleton<ITvHeadendHealthService>(sp =>
         {
-            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
-            var folder = pathProvider.Path ?? string.Empty;
-            var dbPath = System.IO.Path.Combine(folder, "viewing-statistics.db");
-
-            var connectionString = new SqliteConnectionStringBuilder
-            {
-                DataSource = dbPath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared,
-                Pooling = false,
-            }.ToString();
-
-            var contextOptions = new DbContextOptionsBuilder<Service.Statistics.ViewingSessionContext>()
-                .UseSqlite(connectionString)
-                .Options;
-
+            var db = sp.GetRequiredService<PluginDatabaseProvider>();
             return new TvHeadendHealthService(
                 sp.GetRequiredService<IApiClient>(),
                 sp.GetRequiredService<IUrlBuilder>(),
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TvHeadendHealthService>>(),
                 sp.GetRequiredService<PluginConfigurationProvider>(),
-                contextOptions);
+                db.CreateContextOptions<Service.Statistics.ViewingSessionContext>());
         });
         serviceCollection.AddSingleton<IStatusService, StatusService>();
         serviceCollection.AddSingleton<IInputMonitorService, InputMonitorService>();
@@ -200,28 +153,13 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<RelayActivityTracker>();
         serviceCollection.AddSingleton<RelayMetricsService>(sp =>
         {
-            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
-            var folder = pathProvider.Path ?? string.Empty;
-            var dbPath = System.IO.Path.Combine(folder, "viewing-statistics.db");
-
-            var connectionString = new SqliteConnectionStringBuilder
-            {
-                DataSource = dbPath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared,
-                Pooling = false,
-            }.ToString();
-
-            var contextOptions = new DbContextOptionsBuilder<RelayMetricsContext>()
-                .UseSqlite(connectionString)
-                .Options;
-
+            var db = sp.GetRequiredService<PluginDatabaseProvider>();
             return new RelayMetricsService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RelayMetricsService>>(),
                 sp.GetRequiredService<PluginConfigurationProvider>(),
                 sp.GetRequiredService<RelayActivityTracker>(),
-                contextOptions,
-                dbPath);
+                db.CreateContextOptions<RelayMetricsContext>(),
+                db.DatabasePath);
         });
         serviceCollection.AddSingleton<IRelayMetricsService>(sp => sp.GetRequiredService<RelayMetricsService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<RelayMetricsService>());
@@ -238,26 +176,11 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         });
         serviceCollection.AddSingleton<RelayTokenRepository>(sp =>
         {
-            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
-            var folder = pathProvider.Path ?? string.Empty;
-            var dbPath = System.IO.Path.Combine(folder, "viewing-statistics.db");
-
-            var connectionString = new SqliteConnectionStringBuilder
-            {
-                DataSource = dbPath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared,
-                Pooling = false,
-            }.ToString();
-
-            var contextOptions = new DbContextOptionsBuilder<RelayTokenDbContext>()
-                .UseSqlite(connectionString)
-                .Options;
-
+            var db = sp.GetRequiredService<PluginDatabaseProvider>();
             return new RelayTokenRepository(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RelayTokenRepository>>(),
-                contextOptions,
-                dbPath);
+                db.CreateContextOptions<RelayTokenDbContext>(),
+                db.DatabasePath);
         });
         serviceCollection.AddSingleton<IRelayTokenRepository>(sp => sp.GetRequiredService<RelayTokenRepository>());
 
@@ -270,28 +193,13 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StatisticsService>());
         serviceCollection.AddSingleton<CometService>(sp =>
         {
-            var pathProvider = sp.GetRequiredService<DataFolderPathProvider>();
-            var folder = pathProvider.Path ?? string.Empty;
-            var dbPath = System.IO.Path.Combine(folder, "viewing-statistics.db");
-
-            var connectionString = new SqliteConnectionStringBuilder
-            {
-                DataSource = dbPath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared,
-                Pooling = false,
-            }.ToString();
-
-            var contextOptions = new DbContextOptionsBuilder<Service.Statistics.ViewingSessionContext>()
-                .UseSqlite(connectionString)
-                .Options;
-
+            var db = sp.GetRequiredService<PluginDatabaseProvider>();
             return new CometService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CometService>>(),
                 sp.GetRequiredService<IApiClient>(),
                 sp.GetRequiredService<IUrlBuilder>(),
                 sp.GetRequiredService<PluginConfigurationProvider>(),
-                contextOptions,
+                db.CreateContextOptions<Service.Statistics.ViewingSessionContext>(),
                 sp.GetRequiredService<PluginLogService>());
         });
         serviceCollection.AddSingleton<ICometSnapshotReader>(sp => sp.GetRequiredService<CometService>());

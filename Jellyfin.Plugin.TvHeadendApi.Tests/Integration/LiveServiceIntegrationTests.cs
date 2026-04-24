@@ -9,9 +9,9 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
-using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
@@ -178,7 +178,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
         streamResolver
             .Setup(x => x.GetProfilesAsync(
                 It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Model.Profile.ProfileReference> { new("default-uuid", "pass") });
+            .ReturnsAsync(new List<ProfileReference> { new("default-uuid", "pass") });
 
         var sut = new DiagnosticService(
             NullLogger<DiagnosticService>.Instance,
