@@ -1,11 +1,11 @@
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Logging;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service;
+namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Logging;
 
 /// <summary>
 /// Tests for <see cref="PluginScopedLogger"/> and log level override behavior.

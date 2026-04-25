@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Logging;
 
 /// <summary>
 /// Manages plugin log persistence to SQLite and provides query capabilities for the dashboard.
@@ -36,6 +36,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
     private Task? _writerTask;
     private Task? _cleanupTask;
     private volatile bool _dbLoggingFailed;
+    private volatile bool _databaseReady;
 
     public PluginLogService(
         ILogger<PluginLogService> logger,
@@ -151,6 +152,11 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
         string sortField = "created_at_utc",
         string sortDirection = "desc")
     {
+        if (!_databaseReady)
+        {
+            return Array.Empty<PluginLogEntry>();
+        }
+
         try
         {
             using var db = new ViewingSessionContext(_dbContextOptions);
@@ -192,6 +198,11 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
     /// <inheritdoc />
     public int GetTotalCount(string? source = null, string? level = null, string? logType = null, string? search = null)
     {
+        if (!_databaseReady)
+        {
+            return 0;
+        }
+
         try
         {
             using var db = new ViewingSessionContext(_dbContextOptions);
@@ -282,12 +293,73 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
         try
         {
             using var db = new ViewingSessionContext(_dbContextOptions);
+
+            // EnsureCreated is all-or-nothing: if the DB file already exists
+            // (e.g. from an earlier schema without plugin_log_entries), it does nothing.
+            // We call it first for fresh installs, then explicitly create the table
+            // if it is still missing after an upgrade.
             db.Database.EnsureCreated();
+            EnsurePluginLogTable(db);
+            _databaseReady = true;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to ensure plugin log database schema");
         }
+    }
+
+    /// <summary>
+    /// Creates the <c>plugin_log_entries</c> table and its indexes via raw SQL
+    /// when the table does not yet exist. This handles the case where the SQLite
+    /// database was created by an earlier plugin version that did not include
+    /// the unified log table.
+    /// </summary>
+    private void EnsurePluginLogTable(ViewingSessionContext db)
+    {
+        const string checkSql =
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='plugin_log_entries';";
+
+        using var cmd = db.Database.GetDbConnection().CreateCommand();
+        db.Database.OpenConnection();
+        cmd.CommandText = checkSql;
+        var exists = Convert.ToInt64(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) > 0;
+
+        if (exists)
+        {
+            return;
+        }
+
+        _logger.LogInformation("Creating missing plugin_log_entries table in existing database");
+
+        const string createTableSql = """
+            CREATE TABLE plugin_log_entries (
+                Id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                CreatedAtUtc    TEXT    NOT NULL,
+                Source          TEXT    NOT NULL,
+                LogType         TEXT    NOT NULL,
+                Level           TEXT    NOT NULL,
+                Category        TEXT,
+                Message         TEXT    NOT NULL,
+                Exception       TEXT,
+                EventId         TEXT,
+                CorrelationId   TEXT,
+                ChannelId       TEXT,
+                RawSource       TEXT,
+                RawLineHash     TEXT,
+                ImportedAtUtc   TEXT
+            );
+
+            CREATE INDEX IX_plugin_log_created_at     ON plugin_log_entries (CreatedAtUtc);
+            CREATE INDEX IX_plugin_log_source          ON plugin_log_entries (Source);
+            CREATE INDEX IX_plugin_log_level            ON plugin_log_entries (Level);
+            CREATE INDEX IX_plugin_log_type             ON plugin_log_entries (LogType);
+            CREATE INDEX IX_plugin_log_category         ON plugin_log_entries (Category);
+            CREATE INDEX IX_plugin_log_source_created   ON plugin_log_entries (Source, CreatedAtUtc);
+            CREATE INDEX IX_plugin_log_level_created    ON plugin_log_entries (Level, CreatedAtUtc);
+            CREATE INDEX IX_plugin_log_raw_hash         ON plugin_log_entries (RawLineHash);
+            """;
+
+        db.Database.ExecuteSqlRaw(createTableSql);
     }
 
     private async Task WriteLoopAsync(CancellationToken ct)

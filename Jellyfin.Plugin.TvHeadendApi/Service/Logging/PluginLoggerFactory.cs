@@ -3,7 +3,7 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
 using Microsoft.Extensions.Logging;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Logging;
 
 /// <summary>
 /// An <see cref="ILogger"/> wrapper that applies a plugin-specific log level override.

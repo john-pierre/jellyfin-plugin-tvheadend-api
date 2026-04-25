@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Logging;
 
 /// <summary>
 /// Abstraction for creating plugin-scoped loggers with configurable level override.

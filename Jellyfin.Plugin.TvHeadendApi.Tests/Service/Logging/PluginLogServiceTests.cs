@@ -6,15 +6,15 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
-using Jellyfin.Plugin.TvHeadendApi.Service;
 using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Logging;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service;
+namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Logging;
 
 public class PluginLogServiceTests : IDisposable
 {

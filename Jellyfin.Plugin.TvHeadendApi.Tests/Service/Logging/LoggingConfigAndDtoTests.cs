@@ -3,7 +3,7 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
 using Xunit;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service;
+namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Logging;
 
 /// <summary>
 /// Tests for logging-related configuration and DTO mapping.

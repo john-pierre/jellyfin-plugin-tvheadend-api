@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Logging;
 
 /// <summary>
 /// Public contract for querying persisted plugin and TVHeadend log entries.
