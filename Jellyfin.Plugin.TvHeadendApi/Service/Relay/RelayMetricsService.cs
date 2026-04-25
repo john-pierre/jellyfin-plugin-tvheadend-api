@@ -2,7 +2,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,34 +21,31 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 /// <summary>
 /// Persists relay request metrics to SQLite and provides aggregated dashboard queries.
 /// Schema creation is owned by <see cref="DatabaseMigrationService"/> — this service assumes migrations have run.
-/// Thread-safe: all DB access is serialized via a <see cref="SemaphoreSlim"/>.
-/// Runs as a hosted service to prune old data periodically.
+/// Thread-safe: all DB writes are serialized via <see cref="DatabaseWriteCoordinator"/>.
 /// </summary>
 internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService, IDisposable
 {
     private readonly ILogger<RelayMetricsService> _logger;
     private readonly ConfigurationProvider _configProvider;
     private readonly DatabaseHealthService _dbHealthService;
+    private readonly DatabaseWriteCoordinator _writeCoordinator;
     private readonly RelayActivityTracker _activityTracker;
     private readonly DbContextOptions<RelayMetricsContext> _dbContextOptions;
-    private readonly string _dbPath;
-    private readonly SemaphoreSlim _dbLock = new(1, 1);
-    private Timer? _pruneTimer;
 
     public RelayMetricsService(
         ILogger<RelayMetricsService> logger,
         ConfigurationProvider configProvider,
         DatabaseHealthService dbHealthService,
+        DatabaseWriteCoordinator writeCoordinator,
         RelayActivityTracker activityTracker,
-        DbContextOptions<RelayMetricsContext> dbContextOptions,
-        string dbPath)
+        DbContextOptions<RelayMetricsContext> dbContextOptions)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _dbHealthService = dbHealthService ?? throw new ArgumentNullException(nameof(dbHealthService));
+        _writeCoordinator = writeCoordinator ?? throw new ArgumentNullException(nameof(writeCoordinator));
         _activityTracker = activityTracker ?? throw new ArgumentNullException(nameof(activityTracker));
         _dbContextOptions = dbContextOptions ?? throw new ArgumentNullException(nameof(dbContextOptions));
-        _dbPath = dbPath;
     }
 
     /// <inheritdoc />
@@ -59,29 +55,24 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        // Schema is initialized centrally by DatabaseHealthService before services start.
         if (!_dbHealthService.IsAvailable)
         {
             _logger.LogWarning("Relay metrics database unavailable; metrics will not be persisted.");
         }
 
-        // Prune every 24 hours, first run after 1 hour.
-        _pruneTimer = new Timer(_ => PruneOldMetrics(), null, TimeSpan.FromHours(1), TimeSpan.FromHours(24));
         _logger.LogInformation("RelayMetricsService started.");
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        _pruneTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         _logger.LogInformation("RelayMetricsService stopped.");
         return Task.CompletedTask;
     }
 
     public void Dispose()
     {
-        _pruneTimer?.Dispose();
-        _dbLock.Dispose();
+        // No local resources to dispose — write coordination and cleanup are centralized.
     }
 
     // ── IRelayMetricsService — Write ────────────────────────────────────
@@ -108,30 +99,22 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
             return new RelayMetricsSummary { TimeRange = FormatTimeRange(hours) };
         }
 
-        _dbLock.Wait();
-        try
-        {
-            using var db = CreateContext();
+        using var db = CreateContext();
 
-            var cutoff = hours > 0 ? DateTime.UtcNow.AddHours(-hours) : DateTime.MinValue;
-            var rows = db.RelayRequestMetrics
-                .AsNoTracking()
-                .Where(r => r.CreatedAtUtc >= cutoff)
-                .ToList();
+        var cutoff = hours > 0 ? DateTime.UtcNow.AddHours(-hours) : DateTime.MinValue;
+        var rows = db.RelayRequestMetrics
+            .AsNoTracking()
+            .Where(r => r.CreatedAtUtc >= cutoff)
+            .ToList();
 
-            return BuildSummary(rows, hours);
-        }
-        finally
-        {
-            _dbLock.Release();
-        }
+        return BuildSummary(rows, hours);
     }
 
     // ── Private — Persistence ───────────────────────────────────────
 
     private void PersistMetricSync(RelayRequestMetric metric)
     {
-        _dbLock.Wait();
+        using var writeLock = _writeCoordinator.AcquireWrite();
         try
         {
             using var db = CreateContext();
@@ -141,10 +124,6 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to persist relay metric.");
-        }
-        finally
-        {
-            _dbLock.Release();
         }
     }
 
@@ -333,44 +312,7 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         _ => $"last {hours} hours",
     };
 
-    // ── Private — Context / Pruning ─────────────────────────────────
+    // ── Private — Context ────────────────────────────────────────────
 
     private RelayMetricsContext CreateContext() => new(_dbContextOptions);
-
-    private void PruneOldMetrics()
-    {
-        if (!_dbHealthService.IsAvailable)
-        {
-            return;
-        }
-
-        var retention = _configProvider.Configuration?.StatisticsRetentionPeriod ?? StatisticsRetentionPeriod.ThirtyDays;
-        if (retention == StatisticsRetentionPeriod.Forever)
-        {
-            return;
-        }
-
-        var cutoff = DateTime.UtcNow.AddDays(-(int)retention);
-
-        _dbLock.Wait();
-        try
-        {
-            using var db = CreateContext();
-            var old = db.RelayRequestMetrics.Where(r => r.CreatedAtUtc < cutoff).ToList();
-            if (old.Count > 0)
-            {
-                db.RelayRequestMetrics.RemoveRange(old);
-                db.SaveChanges();
-                _logger.LogInformation("Pruned {Count} relay metrics older than {Days} days.", old.Count, (int)retention);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to prune relay metrics.");
-        }
-        finally
-        {
-            _dbLock.Release();
-        }
-    }
 }

@@ -12,6 +12,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
@@ -979,9 +980,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             NullLogger<StatisticsService>.Instance,
             sessionManager.Object,
             new Jellyfin.Plugin.TvHeadendApi.Service.Configuration.ConfigurationProvider(() => null),
-            dbHealth,
-            options,
-            string.Empty);
+            dbHealth, new DatabaseWriteCoordinator(), options);
 
         await sut.StartAsync(CancellationToken.None);
 

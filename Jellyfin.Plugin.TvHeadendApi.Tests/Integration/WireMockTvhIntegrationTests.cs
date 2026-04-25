@@ -454,8 +454,8 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
                 sm.Object,
                 new Jellyfin.Plugin.TvHeadendApi.Service.Configuration.ConfigurationProvider(() => null),
                 dbHlth,
-                options,
-                string.Empty);
+                new Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseWriteCoordinator(),
+                options);
 
             await sut1.StartAsync(CancellationToken.None);
 
@@ -485,8 +485,8 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
                 sm.Object,
                 new Jellyfin.Plugin.TvHeadendApi.Service.Configuration.ConfigurationProvider(() => null),
                 dbHlth,
-                options,
-                string.Empty);
+                new Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseWriteCoordinator(),
+                options);
             await sut2.StartAsync(CancellationToken.None);
 
             Assert.NotEmpty(sut2.AllSessions);

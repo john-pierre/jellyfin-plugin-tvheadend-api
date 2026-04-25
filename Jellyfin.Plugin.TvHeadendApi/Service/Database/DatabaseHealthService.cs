@@ -86,8 +86,7 @@ internal sealed class DatabaseHealthService
     }
 
     /// <summary>
-    /// Initializes the database: migrates old DB file name, runs integrity check,
-    /// runs migrations, and sets initial health state.
+    /// Initializes the database: runs integrity check, runs migrations, and sets initial health state.
     /// Must be called once during startup before any service accesses the database.
     /// </summary>
     public void Initialize()
@@ -102,7 +101,6 @@ internal sealed class DatabaseHealthService
             try
             {
                 EnsureDirectoryExists();
-                MigrateOldDatabaseFile();
                 InitializeAndCheck();
                 _initialized = true;
             }
@@ -336,9 +334,6 @@ internal sealed class DatabaseHealthService
         // Run migrations
         RunMigrationsInternal(connection);
 
-        // Migrate legacy data
-        _migrationService.MigrateLegacyDataIfNeeded(connection);
-
         _status = DatabaseHealthStatus.Healthy;
     }
 
@@ -354,52 +349,6 @@ internal sealed class DatabaseHealthService
                 "Applied {Count} database migrations. Current schema version: {Version}.",
                 applied,
                 _currentSchemaVersion);
-        }
-    }
-
-    private void MigrateOldDatabaseFile()
-    {
-        var newPath = _provider.DatabasePath;
-        var dir = Path.GetDirectoryName(newPath);
-        if (string.IsNullOrEmpty(dir))
-        {
-            return;
-        }
-
-        var oldPath = Path.Combine(dir, "viewing-statistics.db");
-        if (File.Exists(oldPath) && !File.Exists(newPath))
-        {
-            try
-            {
-                File.Move(oldPath, newPath);
-                _logger.LogInformation(
-                    "Migrated database file from {OldPath} to {NewPath}.",
-                    "viewing-statistics.db",
-                    Path.GetFileName(newPath));
-
-                // Also move WAL and SHM if present
-                MoveCompanionFile(oldPath + "-wal", newPath + "-wal");
-                MoveCompanionFile(oldPath + "-shm", newPath + "-shm");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to migrate old database file. Will create new database.");
-            }
-        }
-    }
-
-    private static void MoveCompanionFile(string oldFile, string newFile)
-    {
-        if (File.Exists(oldFile) && !File.Exists(newFile))
-        {
-            try
-            {
-                File.Move(oldFile, newFile);
-            }
-            catch
-            {
-                // Non-critical — WAL/SHM will be recreated
-            }
         }
     }
 

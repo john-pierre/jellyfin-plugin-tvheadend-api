@@ -249,7 +249,7 @@ internal sealed class DatabaseMigrationService
             """,
         }),
 
-        // 002 — Viewing sessions (new lowercase_with_underscore table)
+        // 002 — Viewing sessions
         new(2, "create_viewing_session", new[]
         {
             """
@@ -273,7 +273,7 @@ internal sealed class DatabaseMigrationService
             """CREATE INDEX IF NOT EXISTS "ix_viewing_session_end_time_utc" ON "viewing_session" ("end_time_utc")""",
         }),
 
-        // 003 — Health transitions (new lowercase table)
+        // 003 — Health transitions
         new(3, "create_health_transition", new[]
         {
             """
@@ -290,7 +290,7 @@ internal sealed class DatabaseMigrationService
             """CREATE INDEX IF NOT EXISTS "ix_health_transition_timestamp_utc" ON "health_transition" ("timestamp_utc")""",
         }),
 
-        // 004 — TVHeadend log entries (renamed from TvhLogEntries)
+        // 004 — TVHeadend log entries
         new(4, "create_tvheadend_log_entry", new[]
         {
             """
@@ -303,7 +303,7 @@ internal sealed class DatabaseMigrationService
             """CREATE INDEX IF NOT EXISTS "ix_tvheadend_log_entry_timestamp_utc" ON "tvheadend_log_entry" ("timestamp_utc")""",
         }),
 
-        // 005 — Plugin log entries (new lowercase table, was plugin_log_entries)
+        // 005 — Plugin log entries
         new(5, "create_plugin_log_entry", new[]
         {
             """
@@ -334,7 +334,7 @@ internal sealed class DatabaseMigrationService
             """CREATE INDEX IF NOT EXISTS "ix_plugin_log_entry_raw_line_hash" ON "plugin_log_entry" ("raw_line_hash")""",
         }),
 
-        // 006 — Relay request metrics (lowercase singular)
+        // 006 — Relay request metrics
         new(6, "create_relay_request_metric", new[]
         {
             """
@@ -385,7 +385,7 @@ internal sealed class DatabaseMigrationService
             """CREATE INDEX IF NOT EXISTS "ix_relay_request_metric_created_failure" ON "relay_request_metric" ("created_at_utc", "failure_reason")""",
         }),
 
-        // 007 — Relay tokens (lowercase singular)
+        // 007 — Relay tokens
         new(7, "create_relay_token", new[]
         {
             """
@@ -434,158 +434,7 @@ internal sealed class DatabaseMigrationService
             """,
             """CREATE INDEX IF NOT EXISTS "ix_database_health_event_timestamp_utc" ON "database_health_event" ("timestamp_utc")""",
         }),
-
-        // 009 — Migrate data from old CamelCase tables if they exist
-        new(9, "migrate_legacy_camel_case_tables", new[]
-        {
-            // These are executed as individual statements. The MigrateLegacyData method
-            // handles the conditional logic. Here we use a simpler approach: attempt
-            // inserts from old tables wrapped in error-tolerant patterns.
-            // SQLite doesn't support IF EXISTS in INSERT...SELECT, but we check in code.
-            "SELECT 1", // placeholder — real migration is done by MigrateLegacyDataIfNeeded
-        }),
-
-        // 010 — Migrate data from old relay_request_metrics (plural) and relay_tokens (plural)
-        new(10, "migrate_legacy_plural_relay_tables", new[]
-        {
-            "SELECT 1", // placeholder — real migration done by MigrateLegacyDataIfNeeded
-        }),
     };
-
-    /// <summary>
-    /// Migrates data from legacy CamelCase and plural tables to the new lowercase_with_underscore tables.
-    /// Called after RunMigrations to handle data transfer from old schema.
-    /// </summary>
-    /// <param name="connection">An open SQLite connection.</param>
-    public void MigrateLegacyDataIfNeeded(SqliteConnection connection)
-    {
-        // ViewingSessions -> viewing_session
-        MigrateLegacyTable(
-            connection,
-            "ViewingSessions",
-            "viewing_session",
-            """
-            INSERT OR IGNORE INTO "viewing_session" ("id", "user_name", "device_name", "client_name", "channel_name", "channel_id", "play_method", "play_session_id", "start_time_utc", "end_time_utc")
-            SELECT "Id", "UserName", "DeviceName", "ClientName", "ChannelName", "ChannelId", "PlayMethod", "PlaySessionId", "StartTimeUtc", "EndTimeUtc"
-            FROM "ViewingSessions"
-            """);
-
-        // HealthTransitions -> health_transition
-        MigrateLegacyTable(
-            connection,
-            "HealthTransitions",
-            "health_transition",
-            """
-            INSERT OR IGNORE INTO "health_transition" ("id", "timestamp_utc", "from_status", "to_status", "failure_reason", "response_time_ms", "consecutive_failures")
-            SELECT "Id", "TimestampUtc", "FromStatus", "ToStatus", "FailureReason", "ResponseTimeMs", "ConsecutiveFailures"
-            FROM "HealthTransitions"
-            """);
-
-        // TvhLogEntries -> tvheadend_log_entry
-        MigrateLegacyTable(
-            connection,
-            "TvhLogEntries",
-            "tvheadend_log_entry",
-            """
-            INSERT OR IGNORE INTO "tvheadend_log_entry" ("id", "timestamp_utc", "text")
-            SELECT "Id", "TimestampUtc", "Text"
-            FROM "TvhLogEntries"
-            """);
-
-        // plugin_log_entries -> plugin_log_entry
-        MigrateLegacyTable(
-            connection,
-            "plugin_log_entries",
-            "plugin_log_entry",
-            """
-            INSERT OR IGNORE INTO "plugin_log_entry" ("id", "created_at_utc", "source", "log_type", "level", "category", "message", "exception", "event_id", "correlation_id", "channel_id", "raw_source", "raw_line_hash", "imported_at_utc")
-            SELECT "Id", "CreatedAtUtc", "Source", "LogType", "Level", "Category", "Message", "Exception", "EventId", "CorrelationId", "ChannelId", "RawSource", "RawLineHash", "ImportedAtUtc"
-            FROM "plugin_log_entries"
-            """);
-
-        // relay_request_metrics -> relay_request_metric (plural to singular)
-        MigrateLegacyTable(
-            connection,
-            "relay_request_metrics",
-            "relay_request_metric",
-            """
-            INSERT OR IGNORE INTO "relay_request_metric" ("id", "created_at_utc", "relay_type", "media_kind", "image_source_type", "channel_id",
-                "total_duration_ms", "upstream_connect_duration_ms", "upstream_headers_duration_ms",
-                "first_byte_from_upstream_duration_ms", "first_byte_to_client_duration_ms",
-                "startup_latency_ms", "session_duration_ms", "bytes_sent", "average_bytes_per_second",
-                "upstream_status_code", "client_status_code", "final_outcome", "failure_reason",
-                "client_cancelled", "upstream_timed_out", "cache_status", "cache_lookup_duration_ms",
-                "had_etag", "had_last_modified", "was_not_modified_304", "was_range_request",
-                "has_content_length", "content_length", "content_type", "request_method",
-                "ended_by", "startup_failed_within_5_seconds", "parallel_active_stream_count_at_start")
-            SELECT "Id", "CreatedAtUtc", "RelayType", "MediaKind", "ImageSourceType", "ChannelId",
-                "TotalDurationMs", "UpstreamConnectDurationMs", "UpstreamHeadersDurationMs",
-                "FirstByteFromUpstreamDurationMs", "FirstByteToClientDurationMs",
-                "StartupLatencyMs", "SessionDurationMs", "BytesSent", "AverageBytesPerSecond",
-                "UpstreamStatusCode", "ClientStatusCode", "FinalOutcome", "FailureReason",
-                "ClientCancelled", "UpstreamTimedOut", "CacheStatus", "CacheLookupDurationMs",
-                "HadEtag", "HadLastModified", "WasNotModified304", "WasRangeRequest",
-                "HasContentLength", "ContentLength", "ContentType", "RequestMethod",
-                "EndedBy", "StartupFailedWithin5Seconds", "ParallelActiveStreamCountAtStart"
-            FROM "relay_request_metrics"
-            """);
-
-        // relay_tokens -> relay_token (plural to singular)
-        MigrateLegacyTable(
-            connection,
-            "relay_tokens",
-            "relay_token",
-            """
-            INSERT OR IGNORE INTO "relay_token" ("id", "token_hash", "relay_type", "channel_id", "image_id",
-                "media_kind", "user_id", "device_id", "playback_mode", "selected_profile",
-                "created_at_utc", "expires_at_utc", "first_used_at_utc", "last_used_at_utc",
-                "use_count", "max_uses", "revoked", "revoked_at_utc", "revoked_reason",
-                "last_validation_result", "last_validation_failure_reason")
-            SELECT "Id", "TokenHash", "RelayType", "ChannelId", "ImageId",
-                "MediaKind", "UserId", "DeviceId", "PlaybackMode", "SelectedProfile",
-                "CreatedAtUtc", "ExpiresAtUtc", "FirstUsedAtUtc", "LastUsedAtUtc",
-                "UseCount", "MaxUses", "Revoked", "RevokedAtUtc", "RevokedReason",
-                "LastValidationResult", "LastValidationFailureReason"
-            FROM "relay_tokens"
-            """);
-    }
-
-    private void MigrateLegacyTable(SqliteConnection connection, string oldTable, string newTable, string migrationSql)
-    {
-        if (!TableExists(connection, oldTable))
-        {
-            return;
-        }
-
-        if (!TableExists(connection, newTable))
-        {
-            _logger.LogWarning(
-                "Legacy table {OldTable} exists but target {NewTable} not created yet — skipping data migration.",
-                oldTable,
-                newTable);
-            return;
-        }
-
-        try
-        {
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = migrationSql;
-            var rowsMigrated = cmd.ExecuteNonQuery();
-            _logger.LogInformation(
-                "Migrated {Rows} rows from legacy table {OldTable} to {NewTable}.",
-                rowsMigrated,
-                oldTable,
-                newTable);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "Failed to migrate data from {OldTable} to {NewTable}. Old data preserved in legacy table.",
-                oldTable,
-                newTable);
-        }
-    }
 }
 
 /// <summary>

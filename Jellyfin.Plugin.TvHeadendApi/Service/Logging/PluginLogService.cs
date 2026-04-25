@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
@@ -30,6 +31,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
 
     private readonly ILogger<PluginLogService> _logger;
     private readonly ConfigurationProvider _configProvider;
+    private readonly DatabaseHealthService _dbHealthService;
     private readonly DbContextOptions<ViewingSessionContext> _dbContextOptions;
 
     private readonly BlockingCollection<PluginLogEntry> _queue =
@@ -37,17 +39,17 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
 
     private CancellationTokenSource? _cts;
     private Task? _writerTask;
-    private Task? _cleanupTask;
     private volatile bool _dbLoggingFailed;
-    private volatile bool _databaseReady;
 
     public PluginLogService(
         ILogger<PluginLogService> logger,
         ConfigurationProvider configProvider,
+        DatabaseHealthService dbHealthService,
         DbContextOptions<ViewingSessionContext> dbContextOptions)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
+        _dbHealthService = dbHealthService ?? throw new ArgumentNullException(nameof(dbHealthService));
         _dbContextOptions = dbContextOptions;
     }
 
@@ -155,7 +157,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
         string sortField = "created_at_utc",
         string sortDirection = "desc")
     {
-        if (!_databaseReady)
+        if (!_dbHealthService.IsAvailable)
         {
             return Array.Empty<PluginLogEntry>();
         }
@@ -201,7 +203,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
     /// <inheritdoc />
     public int GetTotalCount(string? source = null, string? level = null, string? logType = null, string? search = null)
     {
-        if (!_databaseReady)
+        if (!_dbHealthService.IsAvailable)
         {
             return 0;
         }
@@ -243,10 +245,8 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
 
     Task IHostedService.StartAsync(CancellationToken cancellationToken)
     {
-        EnsureDatabase();
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _writerTask = Task.Run(() => WriteLoopAsync(_cts.Token), _cts.Token);
-        _cleanupTask = Task.Run(() => CleanupLoopAsync(_cts.Token), _cts.Token);
         return Task.CompletedTask;
     }
 
@@ -270,18 +270,6 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
             }
         }
 
-        if (_cleanupTask != null)
-        {
-            try
-            {
-                await _cleanupTask.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // expected
-            }
-        }
-
         _cts?.Dispose();
     }
 
@@ -289,28 +277,6 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
     {
         _queue.Dispose();
         _cts?.Dispose();
-    }
-
-    private void EnsureDatabase()
-    {
-        try
-        {
-            // Schema creation is now owned by DatabaseMigrationService.
-            // We just verify we can open a connection to the database.
-            using var db = new ViewingSessionContext(_dbContextOptions);
-
-            // For in-memory test provider, still call EnsureCreated
-            if (!db.Database.IsRelational())
-            {
-                db.Database.EnsureCreated();
-            }
-
-            _databaseReady = true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to verify plugin log database readiness");
-        }
     }
 
     private async Task WriteLoopAsync(CancellationToken ct)
@@ -366,7 +332,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
 
     private async Task FlushBatchAsync(List<PluginLogEntry> batch)
     {
-        if (_dbLoggingFailed)
+        if (_dbLoggingFailed || !_dbHealthService.IsAvailable)
         {
             return;
         }
@@ -383,46 +349,6 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
             // to prevent recursion or repeated failures
             _dbLoggingFailed = true;
             _logger.LogWarning(ex, "Failed to persist plugin log batch to SQLite — DB logging disabled for this session");
-        }
-    }
-
-    private async Task CleanupLoopAsync(CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(TimeSpan.FromHours(1), ct).ConfigureAwait(false);
-                RunRetentionCleanup();
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-        }
-    }
-
-    private void RunRetentionCleanup()
-    {
-        try
-        {
-            var config = _configProvider.Configuration;
-            var retentionDays = config?.LogRetentionDays > 0 ? config.LogRetentionDays : 7;
-            var cutoff = DateTime.UtcNow.AddDays(-retentionDays);
-
-            using var db = new ViewingSessionContext(_dbContextOptions);
-            var oldEntries = db.PluginLogEntries.Where(e => e.CreatedAtUtc < cutoff);
-            db.PluginLogEntries.RemoveRange(oldEntries);
-            var deleted = db.SaveChanges();
-
-            if (deleted > 0)
-            {
-                _logger.LogInformation("Plugin log cleanup: removed {Count} entries older than {Days} days", deleted, retentionDays);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Plugin log retention cleanup failed");
         }
     }
 

@@ -4,7 +4,9 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -15,29 +17,45 @@ public class RelayTokenRepositoryTests : IDisposable
 {
     private readonly DbContextOptions<RelayTokenDbContext> _options;
     private readonly RelayTokenRepository _repo;
+    private readonly DatabaseWriteCoordinator _writeCoordinator;
 
     public RelayTokenRepositoryTests()
     {
-        _options = new DbContextOptionsBuilder<RelayTokenDbContext>()
-            .UseSqlite("DataSource=:memory:")
-            .Options;
-
-        // EnsureCreated needs a persistent connection for in-memory SQLite,
-        // so we use a shared file-based temp DB instead.
         var dbPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"relay-test-{Guid.NewGuid():N}.db");
         var fileOptions = new DbContextOptionsBuilder<RelayTokenDbContext>()
             .UseSqlite($"DataSource={dbPath}")
             .Options;
+        _options = fileOptions;
+
+        // Create a real DatabaseHealthService so tokens can persist
+        var dir = System.IO.Path.GetDirectoryName(dbPath)!;
+        var pathProvider = new DataFolderPathProvider(() => System.IO.Path.GetDirectoryName(dbPath));
+        var provider = new DatabaseProvider(pathProvider);
+        var factory = new DatabaseConnectionFactory(provider);
+        var migration = new DatabaseMigrationService(factory, NullLogger<DatabaseMigrationService>.Instance);
+        var recovery = new DatabaseRecoveryService(provider, migration, factory, NullLogger<DatabaseRecoveryService>.Instance);
+        var dbHealth = new DatabaseHealthService(provider, factory, migration, recovery, NullLogger<DatabaseHealthService>.Instance);
+        dbHealth.Initialize();
+
+        _writeCoordinator = new DatabaseWriteCoordinator();
+
+        // Also EnsureCreated for the separate test file
+        using (var ctx = new RelayTokenDbContext(fileOptions))
+        {
+            ctx.Database.EnsureCreated();
+        }
 
         _repo = new RelayTokenRepository(
             NullLogger<RelayTokenRepository>.Instance,
-            fileOptions,
-            dbPath);
+            dbHealth,
+            _writeCoordinator,
+            fileOptions);
     }
 
     public void Dispose()
     {
         _repo.Dispose();
+        _writeCoordinator.Dispose();
     }
 
     private static RelayTokenRecord CreateStreamRecord(string hash = "abc123", string channelId = "ch-1", int ttlMinutes = 30)

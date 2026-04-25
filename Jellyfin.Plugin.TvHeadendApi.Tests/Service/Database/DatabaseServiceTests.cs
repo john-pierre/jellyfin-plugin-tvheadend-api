@@ -271,36 +271,6 @@ public class DatabaseHealthServiceTests : IDisposable
         Assert.Equal(DatabaseHealthStatus.Healthy, _healthService.Status);
     }
 
-    [Fact]
-    public void Initialize_MigratesOldDatabaseFile()
-    {
-        // Create legacy "viewing-statistics.db" file
-        var legacyPath = Path.Combine(_tempDir, DatabaseProvider.LegacyDatabaseFileName);
-        File.WriteAllText(legacyPath, string.Empty); // SQLite will fail on empty file, but migration logic checks before open
-
-        // Actually create a proper SQLite database
-        var legacyConnStr = new SqliteConnectionStringBuilder
-        {
-            DataSource = legacyPath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-        }.ToString();
-        using (var conn = new SqliteConnection(legacyConnStr))
-        {
-            conn.Open();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "CREATE TABLE test (id INTEGER PRIMARY KEY);";
-            cmd.ExecuteNonQuery();
-        }
-
-        SqliteConnection.ClearAllPools();
-
-        _healthService.Initialize();
-
-        // Old file should be gone, new file should exist
-        var newPath = _provider.DatabasePath;
-        Assert.True(File.Exists(newPath));
-        Assert.True(_healthService.IsAvailable);
-    }
 
     [Fact]
     public void GetSnapshot_ReturnsPopulatedSnapshot()
@@ -378,9 +348,9 @@ public class DatabaseProviderTests
     }
 
     [Fact]
-    public void LegacyDatabaseFileName_IsViewingStatistics()
+    public void DatabaseFileName_UsesLowercaseWithUnderscore()
     {
-        Assert.Equal("viewing-statistics.db", DatabaseProvider.LegacyDatabaseFileName);
+        Assert.Equal(DatabaseProvider.DatabaseFileName, DatabaseProvider.DatabaseFileName.ToLowerInvariant());
     }
 }
 

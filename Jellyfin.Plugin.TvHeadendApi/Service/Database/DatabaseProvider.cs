@@ -7,14 +7,12 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Database;
 
 /// <summary>
 /// Centralizes SQLite database path, file naming, and connection string construction.
-/// The database file has been renamed from <c>viewing-statistics.db</c> to
-/// <c>tvheadend_plugin.db</c> because the DB now stores much more than viewing statistics.
-/// Migration from the old file name is handled by <see cref="DatabaseHealthService"/>.
+/// The database file is <c>tvheadend_plugin.db</c> and stores all plugin operational data.
 /// </summary>
 /// <remarks>
-/// Pooling is disabled because each service uses its own <see cref="System.Threading.SemaphoreSlim"/>
-/// for write serialization and the plugin only creates a few concurrent connections.
-/// This avoids pooling overhead and ensures WAL checkpoint behavior is predictable.
+/// Pooling is disabled because write operations are serialized via <see cref="DatabaseWriteCoordinator"/>
+/// and the plugin creates very few concurrent connections. This avoids pooling overhead
+/// and ensures WAL checkpoint behavior is predictable.
 /// </remarks>
 internal sealed class DatabaseProvider
 {
@@ -22,11 +20,6 @@ internal sealed class DatabaseProvider
     /// The canonical database file name used by the plugin.
     /// </summary>
     internal const string DatabaseFileName = "tvheadend_plugin.db";
-
-    /// <summary>
-    /// The legacy database file name from versions that only tracked viewing statistics.
-    /// </summary>
-    internal const string LegacyDatabaseFileName = "viewing-statistics.db";
 
     private readonly DataFolderPathProvider _pathProvider;
 

@@ -123,6 +123,20 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             return svc;
         });
 
+        // DatabaseCleanupService — central retention cleanup for all tables.
+        serviceCollection.AddSingleton(sp => new DatabaseCleanupService(
+            sp.GetRequiredService<DatabaseHealthService>(),
+            sp.GetRequiredService<DatabaseConnectionFactory>(),
+            sp.GetRequiredService<DatabaseWriteCoordinator>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DatabaseCleanupService>>()));
+
+        // DatabaseCleanupHostedService — periodic background cleanup.
+        serviceCollection.AddSingleton<DatabaseCleanupHostedService>(sp => new DatabaseCleanupHostedService(
+            sp.GetRequiredService<DatabaseCleanupService>(),
+            sp.GetRequiredService<ConfigurationProvider>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DatabaseCleanupHostedService>>()));
+        serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<DatabaseCleanupHostedService>());
+
         // ── PluginLogService — unified log persistence + query ──
         serviceCollection.AddSingleton<PluginLogService>(sp =>
         {
@@ -130,6 +144,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             return new PluginLogService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PluginLogService>>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
+                sp.GetRequiredService<DatabaseHealthService>(),
                 db.CreateContextOptions<Service.Statistic.ViewingSessionContext>());
         });
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PluginLogService>());
@@ -150,8 +165,8 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 sp.GetRequiredService<MediaBrowser.Controller.Session.ISessionManager>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
                 sp.GetRequiredService<DatabaseHealthService>(),
-                db.CreateContextOptions<ViewingSessionContext>(),
-                db.DatabasePath);
+                sp.GetRequiredService<DatabaseWriteCoordinator>(),
+                db.CreateContextOptions<ViewingSessionContext>());
         });
         serviceCollection.AddSingleton<IStatisticsService>(sp => sp.GetRequiredService<StatisticsService>());
 
@@ -200,9 +215,9 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RelayMetricsService>>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
                 sp.GetRequiredService<DatabaseHealthService>(),
+                sp.GetRequiredService<DatabaseWriteCoordinator>(),
                 sp.GetRequiredService<RelayActivityTracker>(),
-                db.CreateContextOptions<RelayMetricsContext>(),
-                db.DatabasePath);
+                db.CreateContextOptions<RelayMetricsContext>());
         });
         serviceCollection.AddSingleton<IRelayMetricsService>(sp => sp.GetRequiredService<RelayMetricsService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<RelayMetricsService>());
@@ -222,8 +237,9 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             var db = sp.GetRequiredService<DatabaseProvider>();
             return new RelayTokenRepository(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RelayTokenRepository>>(),
-                db.CreateContextOptions<RelayTokenDbContext>(),
-                db.DatabasePath);
+                sp.GetRequiredService<DatabaseHealthService>(),
+                sp.GetRequiredService<DatabaseWriteCoordinator>(),
+                db.CreateContextOptions<RelayTokenDbContext>());
         });
         serviceCollection.AddSingleton<IRelayTokenRepository>(sp => sp.GetRequiredService<RelayTokenRepository>());
 

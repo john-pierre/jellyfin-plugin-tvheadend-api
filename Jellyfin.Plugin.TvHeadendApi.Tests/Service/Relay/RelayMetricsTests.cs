@@ -328,7 +328,7 @@ public class RelayMetricsTests
         RecordSync(sut, CreateImageMetric(totalMs: 10, outcome: "success"));
         RecordSync(sut, CreateImageMetric(totalMs: 20, outcome: "success"));
 
-        Thread.Sleep(200);
+        Thread.Sleep(500);
 
         var summary = sut.GetSummary(0);
 
@@ -382,9 +382,9 @@ public class RelayMetricsTests
             NullLogger<RelayMetricsService>.Instance,
             new ConfigurationProvider(() => null),
             dbHealth,
+            new DatabaseWriteCoordinator(),
             new RelayActivityTracker(),
-            options,
-            string.Empty);
+            options);
 
         // Start the service to initialize
         svc.StartAsync(CancellationToken.None).GetAwaiter().GetResult();

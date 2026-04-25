@@ -47,8 +47,8 @@ public class StatisticsServiceTests
             sm.Object,
             new ConfigurationProvider(() => null),
             CreateTestDbHealth(),
-            options,
-            string.Empty);
+            new DatabaseWriteCoordinator(),
+            options);
     }
 
     // ── Constructor ───────────────────────────────────────────────────
@@ -63,7 +63,7 @@ public class StatisticsServiceTests
         var dbContext = new ViewingSessionContext(options);
 
         Assert.Throws<ArgumentNullException>(() =>
-            new StatisticsService(null!, sm.Object, new ConfigurationProvider(() => null), CreateTestDbHealth(), options, string.Empty));
+            new StatisticsService(null!, sm.Object, new ConfigurationProvider(() => null), CreateTestDbHealth(), new DatabaseWriteCoordinator(), options));
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public class StatisticsServiceTests
         var dbContext = new ViewingSessionContext(options);
 
         Assert.Throws<ArgumentNullException>(() =>
-            new StatisticsService(NullLogger<StatisticsService>.Instance, null!, new ConfigurationProvider(() => null), CreateTestDbHealth(), options, string.Empty));
+            new StatisticsService(NullLogger<StatisticsService>.Instance, null!, new ConfigurationProvider(() => null), CreateTestDbHealth(), new DatabaseWriteCoordinator(), options));
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class StatisticsServiceTests
         var sm = new Mock<ISessionManager>();
 
         Assert.Throws<ArgumentNullException>(() =>
-            new StatisticsService(NullLogger<StatisticsService>.Instance, sm.Object, new ConfigurationProvider(() => null), CreateTestDbHealth(), null!, string.Empty));
+            new StatisticsService(NullLogger<StatisticsService>.Instance, sm.Object, new ConfigurationProvider(() => null), CreateTestDbHealth(), new DatabaseWriteCoordinator(), null!));
     }
 
     // ── GetStatistics ────────────────────────────────────────────────
@@ -325,8 +325,8 @@ public class StatisticsServiceTests
                 sm.Object,
                 new ConfigurationProvider(() => null),
                 CreateTestDbHealth(),
-                options,
-                dbPath);
+                new DatabaseWriteCoordinator(),
+                options);
 
             await sut.StartAsync(CancellationToken.None);
 
@@ -517,8 +517,8 @@ public class StatisticsServiceTests
             sm.Object,
             new ConfigurationProvider(() => null),
             unavailableHealth,
-            invalidOptions,
-            string.Empty);
+            new DatabaseWriteCoordinator(),
+            invalidOptions);
 
         await sut.StartAsync(CancellationToken.None);
 

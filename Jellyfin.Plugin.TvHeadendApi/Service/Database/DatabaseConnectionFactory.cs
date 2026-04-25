@@ -10,7 +10,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Database;
 /// All database access must go through this factory — no ad-hoc connection strings in services.
 /// </summary>
 /// <remarks>
-/// Pooling is disabled because each service uses SemaphoreSlim for write serialization
+/// Pooling is disabled because write operations are serialized via <see cref="DatabaseWriteCoordinator"/>
 /// and the plugin creates very few concurrent connections. This avoids pooling overhead
 /// and ensures WAL checkpoint behavior is predictable.
 /// </remarks>

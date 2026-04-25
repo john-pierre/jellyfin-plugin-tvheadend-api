@@ -8,10 +8,12 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Logging;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -24,6 +26,7 @@ public class PluginLogServiceTests : IDisposable
     private readonly DbContextOptions<ViewingSessionContext> _dbOptions;
     private readonly PluginLogService _sut;
     private readonly PluginConfiguration _config;
+    private readonly DatabaseHealthService _dbHealth;
 
     public PluginLogServiceTests()
     {
@@ -38,12 +41,23 @@ public class PluginLogServiceTests : IDisposable
             EnableDebugLogSanitization = false,
         };
 
+        // Create a real health service
+        var dir = System.IO.Path.GetDirectoryName(dbPath)!;
+        var pathProvider = new DataFolderPathProvider(() => dir);
+        var provider = new DatabaseProvider(pathProvider);
+        var factory = new DatabaseConnectionFactory(provider);
+        var migration = new DatabaseMigrationService(factory, NullLogger<DatabaseMigrationService>.Instance);
+        var recovery = new DatabaseRecoveryService(provider, migration, factory, NullLogger<DatabaseRecoveryService>.Instance);
+        _dbHealth = new DatabaseHealthService(provider, factory, migration, recovery, NullLogger<DatabaseHealthService>.Instance);
+        _dbHealth.Initialize();
+
         _sut = new PluginLogService(
             NullLogger<PluginLogService>.Instance,
             new ConfigurationProvider(() => _config),
+            _dbHealth,
             _dbOptions);
 
-        // Ensure schema is created
+        // Ensure schema is created for direct test queries
         using var db = new ViewingSessionContext(_dbOptions);
         db.Database.EnsureCreated();
     }
@@ -183,6 +197,7 @@ public class PluginLogServiceTests : IDisposable
         Assert.Throws<ArgumentNullException>(() => new PluginLogService(
             null!,
             new ConfigurationProvider(() => new PluginConfiguration()),
+            _dbHealth,
             _dbOptions));
     }
 
@@ -192,6 +207,7 @@ public class PluginLogServiceTests : IDisposable
         Assert.Throws<ArgumentNullException>(() => new PluginLogService(
             NullLogger<PluginLogService>.Instance,
             null!,
+            _dbHealth,
             _dbOptions));
     }
 
