@@ -2,15 +2,18 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
+using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -365,9 +368,20 @@ public class RelayMetricsTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
+        var dir = Path.Combine(Path.GetTempPath(), "test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var pathProvider = new DataFolderPathProvider(() => dir);
+        var provider = new DatabaseProvider(pathProvider);
+        var factory = new DatabaseConnectionFactory(provider);
+        var migration = new DatabaseMigrationService(factory, NullLogger<DatabaseMigrationService>.Instance);
+        var recovery = new DatabaseRecoveryService(provider, migration, factory, NullLogger<DatabaseRecoveryService>.Instance);
+        var dbHealth = new DatabaseHealthService(provider, factory, migration, recovery, NullLogger<DatabaseHealthService>.Instance);
+        dbHealth.Initialize();
+
         var svc = new RelayMetricsService(
             NullLogger<RelayMetricsService>.Instance,
             new ConfigurationProvider(() => null),
+            dbHealth,
             new RelayActivityTracker(),
             options,
             string.Empty);

@@ -10,9 +10,9 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -21,30 +21,32 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 
 /// <summary>
 /// Persists relay request metrics to SQLite and provides aggregated dashboard queries.
+/// Schema creation is owned by <see cref="DatabaseMigrationService"/> — this service assumes migrations have run.
 /// Thread-safe: all DB access is serialized via a <see cref="SemaphoreSlim"/>.
-/// Runs as a hosted service to initialize the database on startup and prune old data periodically.
+/// Runs as a hosted service to prune old data periodically.
 /// </summary>
 internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService, IDisposable
 {
     private readonly ILogger<RelayMetricsService> _logger;
     private readonly ConfigurationProvider _configProvider;
+    private readonly DatabaseHealthService _dbHealthService;
     private readonly RelayActivityTracker _activityTracker;
     private readonly DbContextOptions<RelayMetricsContext> _dbContextOptions;
     private readonly string _dbPath;
     private readonly SemaphoreSlim _dbLock = new(1, 1);
     private Timer? _pruneTimer;
-    private bool _databaseAvailable = true;
-    private bool _schemaInitialized;
 
     public RelayMetricsService(
         ILogger<RelayMetricsService> logger,
         ConfigurationProvider configProvider,
+        DatabaseHealthService dbHealthService,
         RelayActivityTracker activityTracker,
         DbContextOptions<RelayMetricsContext> dbContextOptions,
         string dbPath)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
+        _dbHealthService = dbHealthService ?? throw new ArgumentNullException(nameof(dbHealthService));
         _activityTracker = activityTracker ?? throw new ArgumentNullException(nameof(activityTracker));
         _dbContextOptions = dbContextOptions ?? throw new ArgumentNullException(nameof(dbContextOptions));
         _dbPath = dbPath;
@@ -55,30 +57,18 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
 
     // ── IHostedService ──────────────────────────────────────────────
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(CancellationToken cancellationToken)
     {
-        await _dbLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        // Schema is initialized centrally by DatabaseHealthService before services start.
+        if (!_dbHealthService.IsAvailable)
         {
-            _databaseAvailable = await InitializeDatabaseAsync(cancellationToken).ConfigureAwait(false);
-            if (!_databaseAvailable)
-            {
-                _logger.LogWarning("Relay metrics database unavailable; metrics will not be persisted.");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to initialize relay metrics database at {Path}.", _dbPath);
-            _databaseAvailable = false;
-        }
-        finally
-        {
-            _dbLock.Release();
+            _logger.LogWarning("Relay metrics database unavailable; metrics will not be persisted.");
         }
 
         // Prune every 24 hours, first run after 1 hour.
         _pruneTimer = new Timer(_ => PruneOldMetrics(), null, TimeSpan.FromHours(1), TimeSpan.FromHours(24));
         _logger.LogInformation("RelayMetricsService started.");
+        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
@@ -99,13 +89,13 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
     /// <inheritdoc />
     public void RecordMetric(RelayRequestMetric metric)
     {
-        if (!_databaseAvailable || metric == null)
+        if (!_dbHealthService.IsAvailable || metric == null)
         {
             return;
         }
 
         // Fire-and-forget on ThreadPool to keep relay hot path non-blocking.
-        ThreadPool.QueueUserWorkItem(_ => PersistMetricSync(metric));
+        ThreadPool.QueueUserWorkItem(_ => PersistMetricSync(metric!));
     }
 
     // ── IRelayMetricsService — Read / Aggregation ───────────────────
@@ -113,7 +103,7 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
     /// <inheritdoc />
     public RelayMetricsSummary GetSummary(int hours)
     {
-        if (!_databaseAvailable)
+        if (!_dbHealthService.IsAvailable)
         {
             return new RelayMetricsSummary { TimeRange = FormatTimeRange(hours) };
         }
@@ -122,7 +112,6 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         try
         {
             using var db = CreateContext();
-            EnsureSchemaLocked(db);
 
             var cutoff = hours > 0 ? DateTime.UtcNow.AddHours(-hours) : DateTime.MinValue;
             var rows = db.RelayRequestMetrics
@@ -146,7 +135,6 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         try
         {
             using var db = CreateContext();
-            EnsureSchemaLocked(db);
             db.RelayRequestMetrics.Add(metric);
             db.SaveChanges();
         }
@@ -345,129 +333,13 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         _ => $"last {hours} hours",
     };
 
-    // ── Private — Schema / Init ─────────────────────────────────────
+    // ── Private — Context / Pruning ─────────────────────────────────
 
     private RelayMetricsContext CreateContext() => new(_dbContextOptions);
 
-    private void EnsureSchemaLocked(RelayMetricsContext db)
-    {
-        if (!_databaseAvailable)
-        {
-            return;
-        }
-
-        if (_schemaInitialized && !string.IsNullOrWhiteSpace(_dbPath) && !File.Exists(_dbPath))
-        {
-            _logger.LogWarning("Relay metrics DB file deleted at runtime. Recreating at {Path}.", _dbPath);
-            _schemaInitialized = false;
-        }
-
-        if (_schemaInitialized)
-        {
-            return;
-        }
-
-        EnsureDirectoryExists();
-        db.Database.EnsureCreated();
-        if (db.Database.IsRelational())
-        {
-            ApplySchemaIfMissing(db);
-        }
-
-        _schemaInitialized = true;
-    }
-
-    private static void ApplySchemaIfMissing(RelayMetricsContext db)
-    {
-        db.Database.ExecuteSqlRaw("""
-            CREATE TABLE IF NOT EXISTS "relay_request_metrics" (
-                "Id"                              INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                "CreatedAtUtc"                    TEXT NOT NULL,
-                "RelayType"                       TEXT NOT NULL,
-                "MediaKind"                       TEXT NOT NULL,
-                "ImageSourceType"                 TEXT NULL,
-                "ChannelId"                       TEXT NULL,
-                "TotalDurationMs"                 REAL NOT NULL,
-                "UpstreamConnectDurationMs"       REAL NULL,
-                "UpstreamHeadersDurationMs"       REAL NULL,
-                "FirstByteFromUpstreamDurationMs" REAL NULL,
-                "FirstByteToClientDurationMs"     REAL NULL,
-                "StartupLatencyMs"                REAL NULL,
-                "SessionDurationMs"               REAL NULL,
-                "BytesSent"                       INTEGER NOT NULL,
-                "AverageBytesPerSecond"           REAL NULL,
-                "UpstreamStatusCode"              INTEGER NULL,
-                "ClientStatusCode"                INTEGER NOT NULL,
-                "FinalOutcome"                    TEXT NOT NULL,
-                "FailureReason"                   TEXT NOT NULL,
-                "ClientCancelled"                 INTEGER NOT NULL,
-                "UpstreamTimedOut"                INTEGER NOT NULL,
-                "CacheStatus"                     TEXT NOT NULL,
-                "CacheLookupDurationMs"           REAL NULL,
-                "HadEtag"                         INTEGER NOT NULL,
-                "HadLastModified"                 INTEGER NOT NULL,
-                "WasNotModified304"               INTEGER NOT NULL,
-                "WasRangeRequest"                 INTEGER NOT NULL,
-                "HasContentLength"                INTEGER NOT NULL,
-                "ContentLength"                   INTEGER NULL,
-                "ContentType"                     TEXT NULL,
-                "RequestMethod"                   TEXT NOT NULL,
-                "EndedBy"                         TEXT NULL,
-                "StartupFailedWithin5Seconds"     INTEGER NOT NULL,
-                "ParallelActiveStreamCountAtStart" INTEGER NULL
-            )
-            """);
-
-        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_relay_metrics_created_at" ON "relay_request_metrics" ("CreatedAtUtc")""");
-        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_relay_metrics_relay_type" ON "relay_request_metrics" ("RelayType")""");
-        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_relay_metrics_media_kind" ON "relay_request_metrics" ("MediaKind")""");
-        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_relay_metrics_failure_reason" ON "relay_request_metrics" ("FailureReason")""");
-        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_relay_metrics_final_outcome" ON "relay_request_metrics" ("FinalOutcome")""");
-        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_relay_metrics_channel_id" ON "relay_request_metrics" ("ChannelId")""");
-        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_relay_metrics_created_type" ON "relay_request_metrics" ("CreatedAtUtc", "RelayType")""");
-        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_relay_metrics_created_failure" ON "relay_request_metrics" ("CreatedAtUtc", "FailureReason")""");
-    }
-
-    private async Task<bool> InitializeDatabaseAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            EnsureDirectoryExists();
-            using var db = CreateContext();
-            await db.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
-            if (db.Database.IsRelational())
-            {
-                ApplySchemaIfMissing(db);
-            }
-
-            _schemaInitialized = true;
-            _logger.LogInformation("Relay metrics database initialized at {Path}.", _dbPath);
-            return true;
-        }
-        catch (SqliteException ex)
-        {
-            _logger.LogError(ex, "Failed to initialize relay metrics database at {Path}.", _dbPath);
-            return false;
-        }
-    }
-
-    private void EnsureDirectoryExists()
-    {
-        if (string.IsNullOrWhiteSpace(_dbPath))
-        {
-            return;
-        }
-
-        var dir = Path.GetDirectoryName(_dbPath);
-        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-        {
-            Directory.CreateDirectory(dir);
-        }
-    }
-
     private void PruneOldMetrics()
     {
-        if (!_databaseAvailable)
+        if (!_dbHealthService.IsAvailable)
         {
             return;
         }
@@ -484,7 +356,6 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         try
         {
             using var db = CreateContext();
-            EnsureSchemaLocked(db);
             var old = db.RelayRequestMetrics.Where(r => r.CreatedAtUtc < cutoff).ToList();
             if (old.Count > 0)
             {

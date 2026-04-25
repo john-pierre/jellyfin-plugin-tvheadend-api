@@ -5,7 +5,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 /// <summary>
 /// Represents a TVHeadend log message persisted to SQLite for historical dashboard viewing.
 /// </summary>
-public sealed class TvhLogEntry
+public sealed class TvheadendLogEntry
 {
     /// <summary>Gets or sets the database ID (primary key).</summary>
     public int Id { get; set; }

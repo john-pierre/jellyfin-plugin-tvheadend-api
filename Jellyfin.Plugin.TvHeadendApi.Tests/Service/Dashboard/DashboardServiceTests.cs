@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
@@ -9,11 +10,13 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Model.Subscription;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dashboard;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
+using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
 using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -30,6 +33,20 @@ public class DashboardServiceTests
     private readonly Mock<IUrlBuilder> _urlBuilderMock = new();
     private readonly Mock<IApiClient> _apiClientMock = new();
 
+    private static DatabaseHealthService CreateTestDbHealth()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var pathProvider = new DataFolderPathProvider(() => dir);
+        var provider = new DatabaseProvider(pathProvider);
+        var factory = new DatabaseConnectionFactory(provider);
+        var migration = new DatabaseMigrationService(factory, NullLogger<DatabaseMigrationService>.Instance);
+        var recovery = new DatabaseRecoveryService(provider, migration, factory, NullLogger<DatabaseRecoveryService>.Instance);
+        var health = new DatabaseHealthService(provider, factory, migration, recovery, NullLogger<DatabaseHealthService>.Instance);
+        health.Initialize();
+        return health;
+    }
+
     private DashboardService CreateSut()
     {
         return new DashboardService(
@@ -40,6 +57,7 @@ public class DashboardServiceTests
             _urlBuilderMock.Object,
             _apiClientMock.Object,
             NullHealthService.Instance,
+            CreateTestDbHealth(),
             NullLogger<DashboardService>.Instance);
     }
 
@@ -47,35 +65,35 @@ public class DashboardServiceTests
     public void Constructor_NullDiagnostic_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            null!, _statusMock.Object, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, NullLogger<DashboardService>.Instance));
+            null!, _statusMock.Object, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), NullLogger<DashboardService>.Instance));
     }
 
     [Fact]
     public void Constructor_NullStatus_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            _diagMock.Object, null!, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, NullLogger<DashboardService>.Instance));
+            _diagMock.Object, null!, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), NullLogger<DashboardService>.Instance));
     }
 
     [Fact]
     public void Constructor_NullInput_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            _diagMock.Object, _statusMock.Object, null!, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, NullLogger<DashboardService>.Instance));
+            _diagMock.Object, _statusMock.Object, null!, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), NullLogger<DashboardService>.Instance));
     }
 
     [Fact]
     public void Constructor_NullSubscription_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            _diagMock.Object, _statusMock.Object, _inputMock.Object, null!, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, NullLogger<DashboardService>.Instance));
+            _diagMock.Object, _statusMock.Object, _inputMock.Object, null!, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), NullLogger<DashboardService>.Instance));
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            _diagMock.Object, _statusMock.Object, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, null!));
+            _diagMock.Object, _statusMock.Object, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), null!));
     }
 
     [Fact]

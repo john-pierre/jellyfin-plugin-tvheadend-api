@@ -1,0 +1,421 @@
+// Tests for central database migration, health, recovery, and error classification services.
+
+using System;
+using System.IO;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
+using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
+
+namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Database;
+
+public class DatabaseMigrationServiceTests : IDisposable
+{
+    private readonly string _tempDir;
+    private readonly string _dbPath;
+    private readonly DatabaseProvider _provider;
+    private readonly DatabaseConnectionFactory _connectionFactory;
+    private readonly DatabaseMigrationService _migrationService;
+
+    public DatabaseMigrationServiceTests()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), "tvh_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_tempDir);
+        _dbPath = Path.Combine(_tempDir, DatabaseProvider.DatabaseFileName);
+
+        var pathProvider = new DataFolderPathProvider(() => _tempDir);
+        _provider = new DatabaseProvider(pathProvider);
+        _connectionFactory = new DatabaseConnectionFactory(_provider);
+        _migrationService = new DatabaseMigrationService(
+            _connectionFactory,
+            NullLogger<DatabaseMigrationService>.Instance);
+    }
+
+    public void Dispose()
+    {
+        SqliteConnection.ClearAllPools();
+        try { Directory.Delete(_tempDir, true); } catch { /* cleanup */ }
+    }
+
+    [Fact]
+    public void RunMigrations_CreatesAllTables_OnNewDatabase()
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        var applied = _migrationService.RunMigrations(conn);
+
+        Assert.True(applied > 0);
+        Assert.True(DatabaseMigrationService.TableExists(conn, "schema_version"));
+        Assert.True(DatabaseMigrationService.TableExists(conn, "viewing_session"));
+        Assert.True(DatabaseMigrationService.TableExists(conn, "health_transition"));
+        Assert.True(DatabaseMigrationService.TableExists(conn, "tvheadend_log_entry"));
+        Assert.True(DatabaseMigrationService.TableExists(conn, "plugin_log_entry"));
+        Assert.True(DatabaseMigrationService.TableExists(conn, "relay_request_metric"));
+        Assert.True(DatabaseMigrationService.TableExists(conn, "relay_token"));
+        Assert.True(DatabaseMigrationService.TableExists(conn, "database_health_event"));
+    }
+
+    [Fact]
+    public void RunMigrations_IsIdempotent()
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        var first = _migrationService.RunMigrations(conn);
+        var second = _migrationService.RunMigrations(conn);
+
+        Assert.True(first > 0);
+        Assert.Equal(0, second);
+    }
+
+    [Fact]
+    public void GetCurrentVersion_ReturnsCorrectVersion()
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        Assert.Equal(0, _migrationService.GetCurrentVersion(conn));
+
+        _migrationService.RunMigrations(conn);
+        var version = _migrationService.GetCurrentVersion(conn);
+
+        Assert.True(version > 0);
+        Assert.Equal(DatabaseMigrationService.Migrations.Count, version);
+    }
+
+    [Fact]
+    public void GetPendingMigrationCount_ReturnsZeroAfterMigrations()
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        _migrationService.RunMigrations(conn);
+
+        Assert.Equal(0, _migrationService.GetPendingMigrationCount(conn));
+    }
+
+    [Fact]
+    public void SchemaVersion_RecordsAllMigrations()
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        _migrationService.RunMigrations(conn);
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM schema_version;";
+        var count = Convert.ToInt64(cmd.ExecuteScalar());
+
+        Assert.Equal(DatabaseMigrationService.Migrations.Count, count);
+    }
+
+    [Fact]
+    public void TableExists_ReturnsFalseForNonExistent()
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        Assert.False(DatabaseMigrationService.TableExists(conn, "nonexistent_table"));
+    }
+
+    [Fact]
+    public void ColumnExists_ReturnsTrueForExistingColumn()
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        _migrationService.RunMigrations(conn);
+
+        Assert.True(DatabaseMigrationService.ColumnExists(conn, "viewing_session", "user_name"));
+        Assert.False(DatabaseMigrationService.ColumnExists(conn, "viewing_session", "nonexistent_col"));
+    }
+
+    [Fact]
+    public void AddColumnIfMissing_AddsOnlyWhenMissing()
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        _migrationService.RunMigrations(conn);
+
+        Assert.False(DatabaseMigrationService.ColumnExists(conn, "viewing_session", "test_column"));
+        DatabaseMigrationService.AddColumnIfMissing(conn, "viewing_session", "test_column", "TEXT NULL");
+        Assert.True(DatabaseMigrationService.ColumnExists(conn, "viewing_session", "test_column"));
+
+        // Call again — should not throw
+        DatabaseMigrationService.AddColumnIfMissing(conn, "viewing_session", "test_column", "TEXT NULL");
+    }
+
+    [Fact]
+    public void AllTableNames_AreLowerCaseWithUnderscore()
+    {
+        foreach (var migration in DatabaseMigrationService.Migrations)
+        {
+            foreach (var sql in migration.Statements)
+            {
+                // Skip placeholder statements
+                if (sql.Trim().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                // Check that CREATE TABLE uses lowercase_with_underscore names
+                if (sql.Contains("CREATE TABLE", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Table name should not contain uppercase letters
+                    var afterTable = sql.Split("EXISTS", StringSplitOptions.None);
+                    if (afterTable.Length > 1)
+                    {
+                        var tablePart = afterTable[1].Trim().TrimStart('"').Split('"')[0];
+                        Assert.Equal(tablePart.ToLowerInvariant(), tablePart);
+                        Assert.DoesNotContain("Tvh", tablePart, StringComparison.Ordinal);
+                    }
+                }
+            }
+        }
+    }
+}
+
+public class DatabaseErrorClassifierTests
+{
+    [Fact]
+    public void Classify_CorruptionException()
+    {
+        var ex = new SqliteException("database disk image is malformed", 11);
+        Assert.True(DatabaseErrorClassifier.IsCorruption(ex));
+        Assert.Equal("Corruption", DatabaseErrorClassifier.Classify(ex));
+    }
+
+    [Fact]
+    public void Classify_LockedDatabase()
+    {
+        var ex = new SqliteException("database is locked", 5);
+        Assert.True(DatabaseErrorClassifier.IsLocked(ex));
+        Assert.Equal("Locked", DatabaseErrorClassifier.Classify(ex));
+    }
+
+    [Fact]
+    public void Classify_IoError()
+    {
+        var ex = new SqliteException("disk I/O error", 10);
+        Assert.True(DatabaseErrorClassifier.IsIoError(ex));
+        Assert.Equal("IoError", DatabaseErrorClassifier.Classify(ex));
+    }
+
+    [Fact]
+    public void Classify_GenericException_ReturnsUnknown()
+    {
+        var ex = new InvalidOperationException("test error");
+        Assert.Equal("Unknown", DatabaseErrorClassifier.Classify(ex));
+    }
+}
+
+public class DatabaseHealthSnapshotTests
+{
+    [Fact]
+    public void DefaultSnapshot_HasUnknownStatus()
+    {
+        var snapshot = new DatabaseHealthSnapshot();
+        Assert.Equal(DatabaseHealthStatus.Unknown, snapshot.Status);
+        Assert.False(snapshot.IsAvailable);
+        Assert.False(snapshot.IsDegraded);
+    }
+
+    [Fact]
+    public void Snapshot_WarningMessage_SetForDegraded()
+    {
+        var snapshot = new DatabaseHealthSnapshot
+        {
+            Status = DatabaseHealthStatus.Degraded,
+            IsDegraded = true,
+            WarningMessage = "test warning",
+        };
+
+        Assert.NotNull(snapshot.WarningMessage);
+        Assert.True(snapshot.IsDegraded);
+    }
+}
+
+public class DatabaseHealthServiceTests : IDisposable
+{
+    private readonly string _tempDir;
+    private readonly DatabaseProvider _provider;
+    private readonly DatabaseConnectionFactory _connectionFactory;
+    private readonly DatabaseMigrationService _migrationService;
+    private readonly DatabaseRecoveryService _recoveryService;
+    private readonly DatabaseHealthService _healthService;
+
+    public DatabaseHealthServiceTests()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), "tvh_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_tempDir);
+
+        var pathProvider = new DataFolderPathProvider(() => _tempDir);
+        _provider = new DatabaseProvider(pathProvider);
+        _connectionFactory = new DatabaseConnectionFactory(_provider);
+        _migrationService = new DatabaseMigrationService(
+            _connectionFactory,
+            NullLogger<DatabaseMigrationService>.Instance);
+        _recoveryService = new DatabaseRecoveryService(
+            _provider,
+            _migrationService,
+            _connectionFactory,
+            NullLogger<DatabaseRecoveryService>.Instance);
+        _healthService = new DatabaseHealthService(
+            _provider,
+            _connectionFactory,
+            _migrationService,
+            _recoveryService,
+            NullLogger<DatabaseHealthService>.Instance);
+    }
+
+    public void Dispose()
+    {
+        SqliteConnection.ClearAllPools();
+        try { Directory.Delete(_tempDir, true); } catch { /* cleanup */ }
+    }
+
+    [Fact]
+    public void Initialize_SetsHealthyStatus()
+    {
+        _healthService.Initialize();
+
+        Assert.True(_healthService.IsAvailable);
+        Assert.Equal(DatabaseHealthStatus.Healthy, _healthService.Status);
+    }
+
+    [Fact]
+    public void Initialize_MigratesOldDatabaseFile()
+    {
+        // Create legacy "viewing-statistics.db" file
+        var legacyPath = Path.Combine(_tempDir, DatabaseProvider.LegacyDatabaseFileName);
+        File.WriteAllText(legacyPath, string.Empty); // SQLite will fail on empty file, but migration logic checks before open
+
+        // Actually create a proper SQLite database
+        var legacyConnStr = new SqliteConnectionStringBuilder
+        {
+            DataSource = legacyPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+        }.ToString();
+        using (var conn = new SqliteConnection(legacyConnStr))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "CREATE TABLE test (id INTEGER PRIMARY KEY);";
+            cmd.ExecuteNonQuery();
+        }
+
+        SqliteConnection.ClearAllPools();
+
+        _healthService.Initialize();
+
+        // Old file should be gone, new file should exist
+        var newPath = _provider.DatabasePath;
+        Assert.True(File.Exists(newPath));
+        Assert.True(_healthService.IsAvailable);
+    }
+
+    [Fact]
+    public void GetSnapshot_ReturnsPopulatedSnapshot()
+    {
+        _healthService.Initialize();
+        var snapshot = _healthService.GetSnapshot();
+
+        Assert.Equal(DatabaseHealthStatus.Healthy, snapshot.Status);
+        Assert.True(snapshot.IsAvailable);
+        Assert.False(snapshot.IsDegraded);
+        Assert.True(snapshot.SchemaVersion > 0);
+        Assert.Equal(0, snapshot.PendingMigrationCount);
+        Assert.NotNull(snapshot.DatabaseName);
+        Assert.Contains("tvheadend_plugin.db", snapshot.DatabaseName);
+        Assert.Null(snapshot.WarningMessage);
+    }
+
+    [Fact]
+    public void GetSnapshot_IncludesTableCounts()
+    {
+        _healthService.Initialize();
+        var snapshot = _healthService.GetSnapshot();
+
+        Assert.NotNull(snapshot.ViewingSessionCount);
+        Assert.Equal(0, snapshot.ViewingSessionCount);
+        Assert.NotNull(snapshot.TotalTables);
+        Assert.True(snapshot.TotalTables >= 8);
+    }
+
+    [Fact]
+    public void RecordError_SetsDegradedStatus()
+    {
+        _healthService.Initialize();
+        _healthService.RecordError(new InvalidOperationException("test"));
+
+        Assert.Equal(DatabaseHealthStatus.Degraded, _healthService.Status);
+        Assert.True(_healthService.IsAvailable); // Degraded is still available
+    }
+
+    [Fact]
+    public void RecordSuccess_ReturnsToHealthyAfterDegraded()
+    {
+        _healthService.Initialize();
+        _healthService.RecordError(new InvalidOperationException("test"));
+        Assert.Equal(DatabaseHealthStatus.Degraded, _healthService.Status);
+
+        _healthService.RecordSuccess();
+        Assert.Equal(DatabaseHealthStatus.Healthy, _healthService.Status);
+    }
+
+    [Fact]
+    public void GetSnapshot_ShowsWarning_WhenDegraded()
+    {
+        _healthService.Initialize();
+        _healthService.RecordError(new InvalidOperationException("test error"));
+
+        var snapshot = _healthService.GetSnapshot();
+        Assert.NotNull(snapshot.WarningMessage);
+        Assert.Contains("degraded", snapshot.WarningMessage, StringComparison.OrdinalIgnoreCase);
+    }
+}
+
+public class DatabaseProviderTests
+{
+    [Fact]
+    public void DatabaseFileName_IsTvheadendPlugin()
+    {
+        Assert.Equal("tvheadend_plugin.db", DatabaseProvider.DatabaseFileName);
+    }
+
+    [Fact]
+    public void DatabaseFileName_DoesNotContainTvh()
+    {
+        Assert.DoesNotContain("tvh_", DatabaseProvider.DatabaseFileName);
+    }
+
+    [Fact]
+    public void LegacyDatabaseFileName_IsViewingStatistics()
+    {
+        Assert.Equal("viewing-statistics.db", DatabaseProvider.LegacyDatabaseFileName);
+    }
+}
+
+public class DatabaseWriteCoordinatorTests : IDisposable
+{
+    private readonly DatabaseWriteCoordinator _coordinator = new();
+
+    public void Dispose() => _coordinator.Dispose();
+
+    [Fact]
+    public void AcquireWrite_CanBeReleasedAndReacquired()
+    {
+        using (var lock1 = _coordinator.AcquireWrite())
+        {
+            // Lock acquired
+        }
+
+        using (var lock2 = _coordinator.AcquireWrite())
+        {
+            // Can re-acquire after release
+        }
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task AcquireWriteAsync_CanBeReleasedAndReacquired()
+    {
+        using (var lock1 = await _coordinator.AcquireWriteAsync())
+        {
+            // Lock acquired
+        }
+
+        using (var lock2 = await _coordinator.AcquireWriteAsync())
+        {
+            // Can re-acquire
+        }
+    }
+}
+

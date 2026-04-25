@@ -189,10 +189,11 @@ internal sealed class RelayTokenRepository : IRelayTokenRepository, IDisposable
     }
 
     /// <summary>
-    /// Initializes the database schema on first access.
-    /// Caller must hold <see cref="_dbLock"/>.
+    /// Ensures the database schema exists. Must be called while holding <see cref="_dbLock"/>.
+    /// Schema creation is handled centrally by <see cref="Database.DatabaseMigrationService"/>;
+    /// this method only handles runtime file deletion recovery.
     /// </summary>
-    /// <param name="db">The context to initialize.</param>
+    /// <param name="db">The context to check.</param>
     internal void EnsureSchema(RelayTokenDbContext db)
     {
         if (_schemaInitialized && !string.IsNullOrWhiteSpace(_dbPath) && !File.Exists(_dbPath))
@@ -208,11 +209,6 @@ internal sealed class RelayTokenRepository : IRelayTokenRepository, IDisposable
 
         EnsureDirectoryExists();
         db.Database.EnsureCreated();
-        if (db.Database.IsRelational())
-        {
-            RelayTokenDbContext.ApplySchemaIfMissing(db);
-        }
-
         _schemaInitialized = true;
     }
 

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,12 +7,12 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Session;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -23,6 +22,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
 /// <summary>
 /// Tracks live TV viewing sessions by listening to Jellyfin playback events.
 /// Persists data to SQLite database in the plugin data directory.
+/// Schema creation is owned by <see cref="DatabaseMigrationService"/> — this service assumes migrations have run.
 /// Thread-safe: all DB access is serialized via a SemaphoreSlim.
 /// </summary>
 internal sealed class StatisticsService : IStatisticsService, IHostedService, IDisposable
@@ -30,24 +30,25 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
     private readonly ILogger<StatisticsService> _logger;
     private readonly ISessionManager _sessionManager;
     private readonly ConfigurationProvider _configProvider;
+    private readonly DatabaseHealthService _dbHealthService;
     private readonly DbContextOptions<ViewingSessionContext> _dbContextOptions;
     private readonly string _dbPath;
     private readonly SemaphoreSlim _dbLock = new(1, 1);
     private Timer? _pruneTimer;
     private Timer? _stuckSessionTimer;
-    private bool _databaseAvailable = true;
-    private bool _schemaInitialized;
 
     public StatisticsService(
         ILogger<StatisticsService> logger,
         ISessionManager sessionManager,
         ConfigurationProvider configProvider,
+        DatabaseHealthService dbHealthService,
         DbContextOptions<ViewingSessionContext> dbContextOptions,
         string dbPath)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
+        _dbHealthService = dbHealthService ?? throw new ArgumentNullException(nameof(dbHealthService));
         _dbContextOptions = dbContextOptions ?? throw new ArgumentNullException(nameof(dbContextOptions));
         _dbPath = dbPath;
     }
@@ -57,7 +58,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
     {
         get
         {
-            if (!_databaseAvailable)
+            if (!_dbHealthService.IsAvailable)
             {
                 return Array.Empty<ViewingSession>();
             }
@@ -66,7 +67,6 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
             try
             {
                 using var dbContext = CreateDbContext();
-                EnsureSchemaLocked(dbContext);
                 return dbContext.ViewingSessions
                     .AsNoTracking()
                     .OrderByDescending(s => s.StartTimeUtc)
@@ -83,7 +83,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
     /// <inheritdoc />
     public ViewingStatisticsResult GetStatistics(int days)
     {
-        if (!_databaseAvailable)
+        if (!_dbHealthService.IsAvailable)
         {
             return new ViewingStatisticsResult();
         }
@@ -92,7 +92,6 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         try
         {
             using var dbContext = CreateDbContext();
-            EnsureSchemaLocked(dbContext);
             var cutoff = days > 0 ? DateTime.UtcNow.AddDays(-days) : DateTime.MinValue;
             var completedSessions = dbContext.ViewingSessions
                 .Where(s => s.StartTimeUtc >= cutoff && s.EndTimeUtc.HasValue)
@@ -122,7 +121,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
     /// <inheritdoc />
     public void ClearStatistics()
     {
-        if (!_databaseAvailable)
+        if (!_dbHealthService.IsAvailable)
         {
             _logger.LogWarning("Statistics storage is unavailable; clear operation was skipped.");
             return;
@@ -132,7 +131,6 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         try
         {
             using var dbContext = CreateDbContext();
-            EnsureSchemaLocked(dbContext);
             dbContext.ViewingSessions.RemoveRange(dbContext.ViewingSessions);
             dbContext.SaveChanges();
         }
@@ -145,25 +143,12 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
     }
 
     /// <inheritdoc />
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(CancellationToken cancellationToken)
     {
-        await _dbLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        // Schema is initialized centrally by DatabaseHealthService before services start.
+        if (!_dbHealthService.IsAvailable)
         {
-            _databaseAvailable = await InitializeDatabaseAsync(cancellationToken).ConfigureAwait(false);
-            if (!_databaseAvailable)
-            {
-                _logger.LogWarning("Statistics database is unavailable; tracking continues without persistence.");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to initialize statistics database at {Path}.", _dbPath);
-            _databaseAvailable = false;
-        }
-        finally
-        {
-            _dbLock.Release();
+            _logger.LogWarning("Statistics database is unavailable; tracking continues without persistence.");
         }
 
         _sessionManager.PlaybackStart += OnPlaybackStart;
@@ -173,6 +158,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         _stuckSessionTimer = new Timer(_ => CloseOrphanedSessions(), null, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
 
         _logger.LogInformation("StatisticsService started — tracking live TV viewing sessions.");
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
@@ -183,7 +169,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         _pruneTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         _stuckSessionTimer?.Change(Timeout.Infinite, Timeout.Infinite);
 
-        if (!_databaseAvailable)
+        if (!_dbHealthService.IsAvailable)
         {
             _logger.LogInformation("StatisticsService stopped.");
             return;
@@ -193,7 +179,6 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         try
         {
             using var dbContext = CreateDbContext();
-            EnsureSchemaLocked(dbContext);
             var activeSessions = dbContext.ViewingSessions.Where(s => !s.EndTimeUtc.HasValue).ToList();
             foreach (var session in activeSessions)
             {
@@ -220,7 +205,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
 
     private void OnPlaybackStart(object? sender, PlaybackProgressEventArgs e)
     {
-        if (!_databaseAvailable)
+        if (!_dbHealthService.IsAvailable)
         {
             return;
         }
@@ -250,7 +235,6 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         try
         {
             using var dbContext = CreateDbContext();
-            EnsureSchemaLocked(dbContext);
             dbContext.ViewingSessions.Add(session);
             dbContext.SaveChanges();
         }
@@ -271,7 +255,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
 
     private void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
     {
-        if (!_databaseAvailable)
+        if (!_dbHealthService.IsAvailable)
         {
             return;
         }
@@ -300,7 +284,6 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         try
         {
             using var dbContext = CreateDbContext();
-            EnsureSchemaLocked(dbContext);
 
             // Tier 1: exact match User+Device+Client+ChannelId+PlaySessionId
             session = dbContext.ViewingSessions.FirstOrDefault(s =>
@@ -384,7 +367,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
 
     private void PruneOldSessions()
     {
-        if (!_databaseAvailable)
+        if (!_dbHealthService.IsAvailable)
         {
             return;
         }
@@ -401,7 +384,6 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         try
         {
             using var dbContext = CreateDbContext();
-            EnsureSchemaLocked(dbContext);
             var old = dbContext.ViewingSessions.Where(s => s.StartTimeUtc < cutoff).ToList();
             if (old.Count > 0)
             {
@@ -410,7 +392,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
                 _logger.LogInformation("Pruned {Count} viewing sessions older than {Days} days.", old.Count, (int)retention);
             }
 
-            // Prune old health transitions and TVH log entries with the same retention
+            // Prune old health transitions and TVHeadend log entries with the same retention
             var oldTransitions = dbContext.HealthTransitions.Where(h => h.TimestampUtc < cutoff).ToList();
             if (oldTransitions.Count > 0)
             {
@@ -419,12 +401,12 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
                 _logger.LogInformation("Pruned {Count} health transitions older than {Days} days.", oldTransitions.Count, (int)retention);
             }
 
-            var oldLogs = dbContext.TvhLogEntries.Where(l => l.TimestampUtc < cutoff).ToList();
+            var oldLogs = dbContext.TvheadendLogEntries.Where(l => l.TimestampUtc < cutoff).ToList();
             if (oldLogs.Count > 0)
             {
-                dbContext.TvhLogEntries.RemoveRange(oldLogs);
+                dbContext.TvheadendLogEntries.RemoveRange(oldLogs);
                 dbContext.SaveChanges();
-                _logger.LogInformation("Pruned {Count} TVH log entries older than {Days} days.", oldLogs.Count, (int)retention);
+                _logger.LogInformation("Pruned {Count} TVHeadend log entries older than {Days} days.", oldLogs.Count, (int)retention);
             }
         }
         finally
@@ -435,7 +417,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
 
     private void CloseOrphanedSessions()
     {
-        if (!_databaseAvailable)
+        if (!_dbHealthService.IsAvailable)
         {
             return;
         }
@@ -444,7 +426,6 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         try
         {
             using var dbContext = CreateDbContext();
-            EnsureSchemaLocked(dbContext);
             var openSessions = dbContext.ViewingSessions.Where(s => !s.EndTimeUtc.HasValue).ToList();
             if (openSessions.Count == 0)
             {
@@ -487,219 +468,8 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         }
     }
 
-    /// <summary>
-    /// Ensures the schema exists. Must be called while holding <see cref="_dbLock"/>.
-    /// Resets the flag if the DB file was deleted at runtime.
-    /// </summary>
-    private void EnsureSchemaLocked(ViewingSessionContext dbContext)
-    {
-        ArgumentNullException.ThrowIfNull(dbContext);
-
-        if (!_databaseAvailable)
-        {
-            return;
-        }
-
-        // If the file was deleted at runtime, recreate it.
-        if (_schemaInitialized && !string.IsNullOrWhiteSpace(_dbPath) && !File.Exists(_dbPath))
-        {
-            _logger.LogWarning("Statistics DB file deleted at runtime. Recreating at {Path}.", _dbPath);
-            _schemaInitialized = false;
-        }
-
-        if (_schemaInitialized)
-        {
-            return;
-        }
-
-        EnsureDirectoryExists();
-
-        // EnsureCreated() only creates tables when the database file is brand-new.
-        // For pre-existing database files that are missing tables (e.g. from a previous
-        // failed or incomplete startup), EF Core silently skips schema creation.
-        // We therefore always apply the DDL via CREATE TABLE IF NOT EXISTS so that the
-        // schema is guaranteed regardless of whether the file already existed.
-        dbContext.Database.EnsureCreated();
-
-        // ExecuteSqlRaw is only supported by relational providers (SQLite).
-        // Skip for in-memory provider used in tests.
-        if (dbContext.Database.IsRelational())
-        {
-            ApplySchemaIfMissing(dbContext);
-        }
-
-        _schemaInitialized = true;
-        _logger.LogDebug("Statistics database schema verified at {Path}.", _dbPath);
-    }
-
-    /// <summary>
-    /// Executes idempotent DDL to create missing tables and indexes.
-    /// Safe to call on both new and pre-existing databases.
-    /// </summary>
-    private void ApplySchemaIfMissing(ViewingSessionContext dbContext)
-    {
-        ArgumentNullException.ThrowIfNull(dbContext);
-
-        dbContext.Database.ExecuteSqlRaw("""
-            CREATE TABLE IF NOT EXISTS "ViewingSessions" (
-                "Id"            INTEGER NOT NULL CONSTRAINT "PK_ViewingSessions" PRIMARY KEY AUTOINCREMENT,
-                "UserName"      TEXT    NOT NULL,
-                "DeviceName"    TEXT    NOT NULL,
-                "ClientName"    TEXT    NOT NULL,
-                "ChannelName"   TEXT    NOT NULL,
-                "ChannelId"     TEXT    NOT NULL,
-                "PlayMethod"    TEXT    NOT NULL,
-                "PlaySessionId" TEXT    NOT NULL,
-                "StartTimeUtc"  TEXT    NOT NULL,
-                "EndTimeUtc"    TEXT    NULL
-            )
-            """);
-
-        dbContext.Database.ExecuteSqlRaw("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_ViewingSession_Composite"
-                ON "ViewingSessions" ("UserName", "DeviceName", "ClientName", "ChannelId", "PlaySessionId")
-            """);
-
-        dbContext.Database.ExecuteSqlRaw("""
-            CREATE INDEX IF NOT EXISTS "IX_ViewingSessions_UserName"    ON "ViewingSessions" ("UserName")
-            """);
-
-        dbContext.Database.ExecuteSqlRaw("""
-            CREATE INDEX IF NOT EXISTS "IX_ViewingSessions_DeviceName"  ON "ViewingSessions" ("DeviceName")
-            """);
-
-        dbContext.Database.ExecuteSqlRaw("""
-            CREATE INDEX IF NOT EXISTS "IX_ViewingSessions_StartTimeUtc" ON "ViewingSessions" ("StartTimeUtc")
-            """);
-
-        dbContext.Database.ExecuteSqlRaw("""
-            CREATE INDEX IF NOT EXISTS "IX_ViewingSessions_EndTimeUtc"  ON "ViewingSessions" ("EndTimeUtc")
-            """);
-
-        dbContext.Database.ExecuteSqlRaw("""
-            CREATE TABLE IF NOT EXISTS "HealthTransitions" (
-                "Id"                  INTEGER NOT NULL CONSTRAINT "PK_HealthTransitions" PRIMARY KEY AUTOINCREMENT,
-                "TimestampUtc"        TEXT    NOT NULL,
-                "FromStatus"          TEXT    NOT NULL,
-                "ToStatus"            TEXT    NOT NULL,
-                "FailureReason"       TEXT    NULL,
-                "ResponseTimeMs"      INTEGER NULL,
-                "ConsecutiveFailures" INTEGER NOT NULL DEFAULT 0
-            )
-            """);
-
-        dbContext.Database.ExecuteSqlRaw("""
-            CREATE INDEX IF NOT EXISTS "IX_HealthTransitions_TimestampUtc" ON "HealthTransitions" ("TimestampUtc")
-            """);
-
-        dbContext.Database.ExecuteSqlRaw("""
-            CREATE TABLE IF NOT EXISTS "TvhLogEntries" (
-                "Id"            INTEGER NOT NULL CONSTRAINT "PK_TvhLogEntries" PRIMARY KEY AUTOINCREMENT,
-                "TimestampUtc"  TEXT    NOT NULL,
-                "Text"          TEXT    NOT NULL
-            )
-            """);
-
-        dbContext.Database.ExecuteSqlRaw("""
-            CREATE INDEX IF NOT EXISTS "IX_TvhLogEntries_TimestampUtc" ON "TvhLogEntries" ("TimestampUtc")
-            """);
-    }
-
     private ViewingSessionContext CreateDbContext()
     {
         return new ViewingSessionContext(_dbContextOptions);
-    }
-
-    private void EnsureDirectoryExists()
-    {
-        if (string.IsNullOrWhiteSpace(_dbPath))
-        {
-            return;
-        }
-
-        var dir = Path.GetDirectoryName(_dbPath);
-        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-        {
-            Directory.CreateDirectory(dir);
-            _logger.LogInformation("Created statistics database directory: {Dir}", dir);
-        }
-    }
-
-    private async Task<bool> InitializeDatabaseAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            await InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("Statistics database initialized at {Path}.", _dbPath);
-            return true;
-        }
-        catch (SqliteException ex)
-        {
-            _logger.LogError(ex, "Failed to initialize statistics database at {Path}.", _dbPath);
-            if (!await TryRecoverDatabaseAsync(cancellationToken).ConfigureAwait(false))
-            {
-                return false;
-            }
-
-            _logger.LogInformation("Statistics database recovered at {Path}.", _dbPath);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to initialize statistics database at {Path}.", _dbPath);
-            return false;
-        }
-    }
-
-    private async Task InitializeSchemaAsync(CancellationToken cancellationToken)
-    {
-        EnsureDirectoryExists();
-        using var dbContext = CreateDbContext();
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
-        if (dbContext.Database.IsRelational())
-        {
-            ApplySchemaIfMissing(dbContext);
-        }
-
-        _schemaInitialized = true;
-    }
-
-    private async Task<bool> TryRecoverDatabaseAsync(CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(_dbPath))
-        {
-            return false;
-        }
-
-        try
-        {
-            EnsureDirectoryExists();
-            if (File.Exists(_dbPath))
-            {
-                var backupPath = _dbPath + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture);
-                File.Move(_dbPath, backupPath, true);
-                _logger.LogWarning("Moved unreadable statistics database to {BackupPath}.", backupPath);
-            }
-
-            DeleteIfExists(_dbPath + "-wal");
-            DeleteIfExists(_dbPath + "-shm");
-            _schemaInitialized = false;
-
-            await InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Statistics database recovery failed at {Path}.", _dbPath);
-            return false;
-        }
-    }
-
-    private static void DeleteIfExists(string filePath)
-    {
-        if (File.Exists(filePath))
-        {
-            File.Delete(filePath);
-        }
     }
 }

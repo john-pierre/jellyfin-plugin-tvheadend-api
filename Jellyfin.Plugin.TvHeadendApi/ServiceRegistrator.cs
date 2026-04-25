@@ -86,8 +86,42 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             }
         }));
 
-        // Centralized database provider — eliminates repeated SQLite connection string construction.
+        // ── Central Database Infrastructure ──
+        // DatabaseProvider owns the file path and connection string.
         serviceCollection.AddSingleton(sp => new DatabaseProvider(sp.GetRequiredService<DataFolderPathProvider>()));
+
+        // DatabaseConnectionFactory creates connections with consistent PRAGMA settings.
+        serviceCollection.AddSingleton(sp => new DatabaseConnectionFactory(sp.GetRequiredService<DatabaseProvider>()));
+
+        // DatabaseWriteCoordinator serializes write operations across services.
+        serviceCollection.AddSingleton<DatabaseWriteCoordinator>();
+
+        // DatabaseMigrationService owns all schema creation and versioning.
+        serviceCollection.AddSingleton(sp => new DatabaseMigrationService(
+            sp.GetRequiredService<DatabaseConnectionFactory>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DatabaseMigrationService>>()));
+
+        // DatabaseRecoveryService handles corruption detection and recovery.
+        serviceCollection.AddSingleton(sp => new DatabaseRecoveryService(
+            sp.GetRequiredService<DatabaseProvider>(),
+            sp.GetRequiredService<DatabaseMigrationService>(),
+            sp.GetRequiredService<DatabaseConnectionFactory>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DatabaseRecoveryService>>()));
+
+        // DatabaseHealthService — central health monitoring, initialization, and migration.
+        serviceCollection.AddSingleton(sp =>
+        {
+            var svc = new DatabaseHealthService(
+                sp.GetRequiredService<DatabaseProvider>(),
+                sp.GetRequiredService<DatabaseConnectionFactory>(),
+                sp.GetRequiredService<DatabaseMigrationService>(),
+                sp.GetRequiredService<DatabaseRecoveryService>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DatabaseHealthService>>());
+
+            // Initialize eagerly so migrations run before any service touches the DB.
+            svc.Initialize();
+            return svc;
+        });
 
         // ── PluginLogService — unified log persistence + query ──
         serviceCollection.AddSingleton<PluginLogService>(sp =>
@@ -115,6 +149,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<StatisticsService>>(),
                 sp.GetRequiredService<MediaBrowser.Controller.Session.ISessionManager>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
+                sp.GetRequiredService<DatabaseHealthService>(),
                 db.CreateContextOptions<ViewingSessionContext>(),
                 db.DatabasePath);
         });
@@ -164,6 +199,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             return new RelayMetricsService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RelayMetricsService>>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
+                sp.GetRequiredService<DatabaseHealthService>(),
                 sp.GetRequiredService<RelayActivityTracker>(),
                 db.CreateContextOptions<RelayMetricsContext>(),
                 db.DatabasePath);

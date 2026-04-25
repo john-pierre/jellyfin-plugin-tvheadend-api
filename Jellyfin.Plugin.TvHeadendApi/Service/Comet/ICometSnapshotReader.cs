@@ -22,7 +22,7 @@ public interface ICometSnapshotReader
     /// <param name="count">Maximum number of entries. Default: 500.</param>
     /// <param name="sinceUtc">Optional: only return entries after this timestamp.</param>
     /// <returns>Log entries in reverse chronological order.</returns>
-    IReadOnlyList<TvhLogEntry> GetLogHistory(int count = 500, DateTime? sinceUtc = null);
+    IReadOnlyList<TvheadendLogEntry> GetLogHistory(int count = 500, DateTime? sinceUtc = null);
 
     /// <summary>
     /// Gets the latest buffered disk-space notification.

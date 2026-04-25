@@ -5,9 +5,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Session;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +21,20 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Statistics;
 
 public class StatisticsServiceTests
 {
+    private static DatabaseHealthService CreateTestDbHealth()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var pathProvider = new DataFolderPathProvider(() => dir);
+        var provider = new DatabaseProvider(pathProvider);
+        var factory = new DatabaseConnectionFactory(provider);
+        var migration = new DatabaseMigrationService(factory, NullLogger<DatabaseMigrationService>.Instance);
+        var recovery = new DatabaseRecoveryService(provider, migration, factory, NullLogger<DatabaseRecoveryService>.Instance);
+        var health = new DatabaseHealthService(provider, factory, migration, recovery, NullLogger<DatabaseHealthService>.Instance);
+        health.Initialize();
+        return health;
+    }
+
     private static StatisticsService CreateSut(Mock<ISessionManager>? sessionManager = null)
     {
         var sm = sessionManager ?? new Mock<ISessionManager>();
@@ -30,6 +46,7 @@ public class StatisticsServiceTests
             NullLogger<StatisticsService>.Instance,
             sm.Object,
             new ConfigurationProvider(() => null),
+            CreateTestDbHealth(),
             options,
             string.Empty);
     }
@@ -46,7 +63,7 @@ public class StatisticsServiceTests
         var dbContext = new ViewingSessionContext(options);
 
         Assert.Throws<ArgumentNullException>(() =>
-            new StatisticsService(null!, sm.Object, new ConfigurationProvider(() => null), options, string.Empty));
+            new StatisticsService(null!, sm.Object, new ConfigurationProvider(() => null), CreateTestDbHealth(), options, string.Empty));
     }
 
     [Fact]
@@ -58,7 +75,7 @@ public class StatisticsServiceTests
         var dbContext = new ViewingSessionContext(options);
 
         Assert.Throws<ArgumentNullException>(() =>
-            new StatisticsService(NullLogger<StatisticsService>.Instance, null!, new ConfigurationProvider(() => null), options, string.Empty));
+            new StatisticsService(NullLogger<StatisticsService>.Instance, null!, new ConfigurationProvider(() => null), CreateTestDbHealth(), options, string.Empty));
     }
 
     [Fact]
@@ -67,7 +84,7 @@ public class StatisticsServiceTests
         var sm = new Mock<ISessionManager>();
 
         Assert.Throws<ArgumentNullException>(() =>
-            new StatisticsService(NullLogger<StatisticsService>.Instance, sm.Object, new ConfigurationProvider(() => null), null!, string.Empty));
+            new StatisticsService(NullLogger<StatisticsService>.Instance, sm.Object, new ConfigurationProvider(() => null), CreateTestDbHealth(), null!, string.Empty));
     }
 
     // ── GetStatistics ────────────────────────────────────────────────
@@ -295,10 +312,19 @@ public class StatisticsServiceTests
             var options = new DbContextOptionsBuilder<ViewingSessionContext>()
                 .UseSqlite($"Data Source={dbPath}")
                 .Options;
+
+            // Schema creation is normally done by DatabaseMigrationService on the main DB.
+            // For this test's separate file, we need to ensure schema manually.
+            using (var ctx = new ViewingSessionContext(options))
+            {
+                ctx.Database.EnsureCreated();
+            }
+
             var sut = new StatisticsService(
                 NullLogger<StatisticsService>.Instance,
                 sm.Object,
                 new ConfigurationProvider(() => null),
+                CreateTestDbHealth(),
                 options,
                 dbPath);
 
@@ -470,14 +496,27 @@ public class StatisticsServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_WhenDatabaseInitializationFails_DegradesGracefully()
+    public async Task StartAsync_WhenDatabaseUnavailable_DegradesGracefully()
     {
         var sm = new Mock<ISessionManager>();
         var invalidOptions = new DbContextOptionsBuilder<ViewingSessionContext>().Options;
+
+        // Create an uninitialized (unavailable) DatabaseHealthService
+        var dir = Path.Combine(Path.GetTempPath(), "test_unavail_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var pathProvider = new DataFolderPathProvider(() => dir);
+        var provider = new DatabaseProvider(pathProvider);
+        var factory = new DatabaseConnectionFactory(provider);
+        var migration = new DatabaseMigrationService(factory, NullLogger<DatabaseMigrationService>.Instance);
+        var recovery = new DatabaseRecoveryService(provider, migration, factory, NullLogger<DatabaseRecoveryService>.Instance);
+        var unavailableHealth = new DatabaseHealthService(provider, factory, migration, recovery, NullLogger<DatabaseHealthService>.Instance);
+        // Do NOT call Initialize() — health service stays Unknown/unavailable
+
         var sut = new StatisticsService(
             NullLogger<StatisticsService>.Instance,
             sm.Object,
             new ConfigurationProvider(() => null),
+            unavailableHealth,
             invalidOptions,
             string.Empty);
 

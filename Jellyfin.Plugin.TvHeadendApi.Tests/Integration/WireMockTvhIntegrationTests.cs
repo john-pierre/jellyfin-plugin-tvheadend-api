@@ -439,10 +439,21 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
             var dbContext = new Jellyfin.Plugin.TvHeadendApi.Service.Statistic.ViewingSessionContext(options);
             dbContext.Database.EnsureCreated();
 
+            var tmpDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "test_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(tmpDir);
+            var pathProv = new Jellyfin.Plugin.TvHeadendApi.Service.Storage.DataFolderPathProvider(() => tmpDir);
+            var dbProv = new Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseProvider(pathProv);
+            var dbFact = new Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseConnectionFactory(dbProv);
+            var dbMig = new Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseMigrationService(dbFact, NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseMigrationService>.Instance);
+            var dbRec = new Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseRecoveryService(dbProv, dbMig, dbFact, NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseRecoveryService>.Instance);
+            var dbHlth = new Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseHealthService(dbProv, dbFact, dbMig, dbRec, NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseHealthService>.Instance);
+            dbHlth.Initialize();
+
             var sut1 = new Jellyfin.Plugin.TvHeadendApi.Service.Statistic.StatisticsService(
                 NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Statistic.StatisticsService>.Instance,
                 sm.Object,
                 new Jellyfin.Plugin.TvHeadendApi.Service.Configuration.ConfigurationProvider(() => null),
+                dbHlth,
                 options,
                 string.Empty);
 
@@ -473,6 +484,7 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
                 NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Statistic.StatisticsService>.Instance,
                 sm.Object,
                 new Jellyfin.Plugin.TvHeadendApi.Service.Configuration.ConfigurationProvider(() => null),
+                dbHlth,
                 options,
                 string.Empty);
             await sut2.StartAsync(CancellationToken.None);

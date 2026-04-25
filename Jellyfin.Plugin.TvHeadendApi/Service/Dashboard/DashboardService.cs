@@ -6,6 +6,7 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
@@ -30,6 +31,7 @@ internal sealed class DashboardService : IDashboardService
     private readonly IUrlBuilder _urlBuilder;
     private readonly IApiClient _apiClient;
     private readonly IHealthService _healthService;
+    private readonly DatabaseHealthService _dbHealthService;
     private readonly ILogger<DashboardService> _logger;
 
     /// <summary>
@@ -42,6 +44,7 @@ internal sealed class DashboardService : IDashboardService
     /// <param name="urlBuilder">URL builder for TVHeadend API URLs.</param>
     /// <param name="apiClient">API client for TVHeadend configuration access.</param>
     /// <param name="healthService">TVHeadend health tracking service.</param>
+    /// <param name="dbHealthService">Database health monitoring service.</param>
     /// <param name="logger">Logger for diagnostics.</param>
     public DashboardService(
         IDiagnosticService diagnosticService,
@@ -51,6 +54,7 @@ internal sealed class DashboardService : IDashboardService
         IUrlBuilder urlBuilder,
         IApiClient apiClient,
         IHealthService healthService,
+        DatabaseHealthService dbHealthService,
         ILogger<DashboardService> logger)
     {
         _diagnosticService = diagnosticService ?? throw new ArgumentNullException(nameof(diagnosticService));
@@ -60,6 +64,7 @@ internal sealed class DashboardService : IDashboardService
         _urlBuilder = urlBuilder ?? throw new ArgumentNullException(nameof(urlBuilder));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _healthService = healthService ?? throw new ArgumentNullException(nameof(healthService));
+        _dbHealthService = dbHealthService ?? throw new ArgumentNullException(nameof(dbHealthService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -82,6 +87,9 @@ internal sealed class DashboardService : IDashboardService
 
         // Attach upstream health snapshot
         dashboard.UpstreamHealth = _healthService.GetSnapshot();
+
+        // Attach database health snapshot
+        dashboard.DatabaseHealth = _dbHealthService.GetSnapshot();
 
         if (dashboard.Activity == null)
         {

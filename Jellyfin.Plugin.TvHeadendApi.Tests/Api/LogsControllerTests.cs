@@ -109,9 +109,9 @@ public class LogsControllerTests
             return LogMessages.Take(count).ToList();
         }
 
-        public IReadOnlyList<TvhLogEntry> GetLogHistory(int count = 500, DateTime? sinceUtc = null)
+        public IReadOnlyList<TvheadendLogEntry> GetLogHistory(int count = 500, DateTime? sinceUtc = null)
         {
-            return Array.Empty<TvhLogEntry>();
+            return Array.Empty<TvheadendLogEntry>();
         }
     }
 }

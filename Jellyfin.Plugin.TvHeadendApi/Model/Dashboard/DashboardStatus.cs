@@ -4,6 +4,7 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Input;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Model.Subscription;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 
@@ -133,4 +134,11 @@ public sealed class DashboardStatus
     /// Gets or sets the TVHeadend upstream health snapshot.
     /// </summary>
     public HealthSnapshot? UpstreamHealth { get; set; }
+
+    // ── Database Health ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Gets or sets the plugin database health snapshot.
+    /// </summary>
+    public DatabaseHealthSnapshot? DatabaseHealth { get; set; }
 }

@@ -965,10 +965,21 @@ public sealed class EndToEndIntegrationTests : IDisposable
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
+        var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "test_" + Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(tempDir);
+        var pathProvider = new Jellyfin.Plugin.TvHeadendApi.Service.Storage.DataFolderPathProvider(() => tempDir);
+        var dbProvider = new Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseProvider(pathProvider);
+        var dbFactory = new Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseConnectionFactory(dbProvider);
+        var dbMigration = new Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseMigrationService(dbFactory, NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseMigrationService>.Instance);
+        var dbRecovery = new Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseRecoveryService(dbProvider, dbMigration, dbFactory, NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseRecoveryService>.Instance);
+        var dbHealth = new Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseHealthService(dbProvider, dbFactory, dbMigration, dbRecovery, NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseHealthService>.Instance);
+        dbHealth.Initialize();
+
         var sut = new StatisticsService(
             NullLogger<StatisticsService>.Instance,
             sessionManager.Object,
             new Jellyfin.Plugin.TvHeadendApi.Service.Configuration.ConfigurationProvider(() => null),
+            dbHealth,
             options,
             string.Empty);
 

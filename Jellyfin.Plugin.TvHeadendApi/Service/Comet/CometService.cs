@@ -82,17 +82,17 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     /// <param name="count">Maximum number of entries. Default: 500.</param>
     /// <param name="sinceUtc">Optional: only return entries after this timestamp.</param>
     /// <returns>Log entries in reverse chronological order.</returns>
-    public IReadOnlyList<TvhLogEntry> GetLogHistory(int count = 500, DateTime? sinceUtc = null)
+    public IReadOnlyList<TvheadendLogEntry> GetLogHistory(int count = 500, DateTime? sinceUtc = null)
     {
         if (_dbContextOptions == null)
         {
-            return Array.Empty<TvhLogEntry>();
+            return Array.Empty<TvheadendLogEntry>();
         }
 
         try
         {
             using var db = new ViewingSessionContext(_dbContextOptions);
-            IQueryable<TvhLogEntry> query = db.TvhLogEntries.AsNoTracking();
+            IQueryable<TvheadendLogEntry> query = db.TvheadendLogEntries.AsNoTracking();
             if (sinceUtc.HasValue)
             {
                 query = query.Where(l => l.TimestampUtc >= sinceUtc.Value);
@@ -107,7 +107,7 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to read TVHeadend log history from SQLite");
-            return Array.Empty<TvhLogEntry>();
+            return Array.Empty<TvheadendLogEntry>();
         }
     }
 
@@ -436,7 +436,7 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
             try
             {
                 using var db = new ViewingSessionContext(_dbContextOptions);
-                db.TvhLogEntries.Add(new TvhLogEntry
+                db.TvheadendLogEntries.Add(new TvheadendLogEntry
                 {
                     TimestampUtc = timestampUtc,
                     Text = text.Length > MaxLogTextLength ? text[..MaxLogTextLength] : text,
