@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Jellyfin.Plugin.TvHeadendApi.Api.Endpoints;
-using Jellyfin.Plugin.TvHeadendApi.Api.Models;
-using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Api.Endpoint;
+using Jellyfin.Plugin.TvHeadendApi.Api.Model;
+using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Comet;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
@@ -115,4 +115,3 @@ public class LogsControllerTests
         }
     }
 }
-

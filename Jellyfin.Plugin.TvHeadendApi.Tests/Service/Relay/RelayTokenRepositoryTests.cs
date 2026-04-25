@@ -233,4 +233,3 @@ public class RelayTokenRepositoryTests : IDisposable
         Assert.Equal("imagecache/1", found.ImageId);
     }
 }
-

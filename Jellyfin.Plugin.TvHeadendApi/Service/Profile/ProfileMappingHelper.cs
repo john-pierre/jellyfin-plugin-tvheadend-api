@@ -4,7 +4,10 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Common;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 

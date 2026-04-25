@@ -7,24 +7,28 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
-using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
+using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
-using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
-using Microsoft.EntityFrameworkCore;
+using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.LiveTv;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -79,7 +83,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             .Setup(f => f.CreateClient(It.IsAny<string>()))
             .Returns(() => new HttpClient { BaseAddress = new Uri(BaseUrl), Timeout = TimeSpan.FromSeconds(15) });
 
-        var configProvider = new PluginConfigurationProvider(() => _config);
+        var configProvider = new ConfigurationProvider(() => _config);
         _apiClient = new ApiClient(httpClientFactory.Object, configProvider);
         _urlBuilder = new UrlBuilder();
         _rawClient = new HttpClient(
@@ -237,9 +241,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task TokenService_GenerateValidTokenAsync_ReturnsSuccessResult()
     {
-        var authConfigProvider = new PluginConfigurationProvider(() => _config);
+        var authConfigProvider = new ConfigurationProvider(() => _config);
         var authApiClient = CreateApiClient(authConfigProvider);
-        var configSaver = new PluginConfigurationSaver(_ => { });
+        var configSaver = new ConfigurationSaver(_ => { });
 
         var sut = new TokenService(NullLogger<TokenService>.Instance, authApiClient, _urlBuilder, configSaver);
 
@@ -265,9 +269,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
             AuthToken = string.Empty,
         };
 
-        var badConfigProvider = new PluginConfigurationProvider(() => badConfig);
+        var badConfigProvider = new ConfigurationProvider(() => badConfig);
         var badApiClient = CreateApiClient(badConfigProvider);
-        var configSaver = new PluginConfigurationSaver(_ => { });
+        var configSaver = new ConfigurationSaver(_ => { });
 
         var sut = new TokenService(NullLogger<TokenService>.Instance, badApiClient, _urlBuilder, configSaver);
 
@@ -280,9 +284,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
     [Fact]
     public async Task TokenService_ValidateTokenAsync_ReturnsTrueForGeneratedToken()
     {
-        var authConfigProvider = new PluginConfigurationProvider(() => _config);
+        var authConfigProvider = new ConfigurationProvider(() => _config);
         var authApiClient = CreateApiClient(authConfigProvider);
-        var configSaver = new PluginConfigurationSaver(_ => { });
+        var configSaver = new ConfigurationSaver(_ => { });
 
         var sut = new TokenService(NullLogger<TokenService>.Instance, authApiClient, _urlBuilder, configSaver);
 
@@ -305,9 +309,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
         // GenerateAndStoreTokenAsync creates/refreshes the TVHeadend auth token
         // and retries until it contains only URL-safe characters (A-Za-z0-9.-).
         string? savedToken = null;
-        var authConfigProvider = new PluginConfigurationProvider(() => _config);
+        var authConfigProvider = new ConfigurationProvider(() => _config);
         var authApiClient = CreateApiClient(authConfigProvider);
-        var configSaver = new PluginConfigurationSaver(mutate =>
+        var configSaver = new ConfigurationSaver(mutate =>
         {
             // Apply mutation to a scratch config to capture the saved token.
             var scratch = new PluginConfiguration();
@@ -433,7 +437,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             resolver.Object,
             new StreamingProfileResolver(
                 NullLogger<StreamingProfileResolver>.Instance,
-                new PluginConfigurationProvider(() => _config)),
+                new ConfigurationProvider(() => _config)),
             _apiClient,
             _urlBuilder,
             _relayUrlBuilder,
@@ -453,9 +457,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
     public async Task MediaSourceService_StreamUrl_ContainsAuthToken()
     {
         // Generate a token first.
-        var authConfigProvider = new PluginConfigurationProvider(() => _config);
+        var authConfigProvider = new ConfigurationProvider(() => _config);
         var authApiClient = CreateApiClient(authConfigProvider);
-        var configSaver = new PluginConfigurationSaver(mutate =>
+        var configSaver = new ConfigurationSaver(mutate =>
         {
             mutate(_config); // apply token to live config
         });
@@ -476,7 +480,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
         library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(Guid.NewGuid());
 
         // Use a config-provider that returns our token-enriched config.
-        var tokenApiClient = CreateApiClient(new PluginConfigurationProvider(() => _config));
+        var tokenApiClient = CreateApiClient(new ConfigurationProvider(() => _config));
 
         var sut = new MediaSourceService(
             NullLogger<MediaSourceService>.Instance,
@@ -484,7 +488,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             resolver.Object,
             new StreamingProfileResolver(
                 NullLogger<StreamingProfileResolver>.Instance,
-                new PluginConfigurationProvider(() => _config)),
+                new ConfigurationProvider(() => _config)),
             tokenApiClient,
             _urlBuilder,
             _relayUrlBuilder,
@@ -525,7 +529,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             resolver.Object,
             new StreamingProfileResolver(
                 NullLogger<StreamingProfileResolver>.Instance,
-                new PluginConfigurationProvider(() => _config)),
+                new ConfigurationProvider(() => _config)),
             _apiClient,
             _urlBuilder,
             _relayUrlBuilder,
@@ -964,7 +968,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
         var sut = new StatisticsService(
             NullLogger<StatisticsService>.Instance,
             sessionManager.Object,
-            new Jellyfin.Plugin.TvHeadendApi.Service.Helper.PluginConfigurationProvider(() => null),
+            new Jellyfin.Plugin.TvHeadendApi.Service.Configuration.ConfigurationProvider(() => null),
             options,
             string.Empty);
 
@@ -1133,7 +1137,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
         return mock.Object;
     }
 
-    private IApiClient CreateApiClient(PluginConfigurationProvider configProvider)
+    private IApiClient CreateApiClient(ConfigurationProvider configProvider)
     {
         var httpClientFactory = new Mock<IHttpClientFactory>();
         httpClientFactory
@@ -1153,4 +1157,3 @@ public sealed class EndToEndIntegrationTests : IDisposable
         return mock.Object;
     }
 }
-

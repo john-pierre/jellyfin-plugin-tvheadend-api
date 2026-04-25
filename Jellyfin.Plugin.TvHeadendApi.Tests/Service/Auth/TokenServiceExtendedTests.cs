@@ -7,7 +7,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -62,7 +65,7 @@ public class TokenServiceExtendedTests
     private static string UserLoad(string authCode) =>
         $$"""{"entries":[{"enabled":true,"username":"admin","password":"pass","comment":"","authcode":"{{authCode}}"}]}""";
 
-    private static PluginConfigurationSaver NoopSaver() => new(_ => { });
+    private static ConfigurationSaver NoopSaver() => new(_ => { });
 
     [Fact]
     public async Task GenerateValidTokenAsync_NullConfig_ReturnsFailure()
@@ -257,7 +260,7 @@ public class TokenServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var saver = new PluginConfigurationSaver(mutate =>
+        var saver = new ConfigurationSaver(mutate =>
         {
             var cfg = new PluginConfiguration();
             mutate(cfg);
@@ -410,7 +413,7 @@ public class TokenServiceExtendedTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
             });
 
-        var saver = new PluginConfigurationSaver(_ => throw new InvalidOperationException("save failed"));
+        var saver = new ConfigurationSaver(_ => throw new InvalidOperationException("save failed"));
         var sut = new TokenService(NullLogger<TokenService>.Instance, api.Object, CreateUrlBuilder().Object, saver);
         var result = await sut.GenerateAndStoreTokenAsync(CancellationToken.None);
 

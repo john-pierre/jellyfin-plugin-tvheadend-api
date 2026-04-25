@@ -8,7 +8,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Common;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.LiveTv;
 using Microsoft.Extensions.Logging;
@@ -103,14 +106,14 @@ internal sealed class GuideService : IGuideService
     private readonly IApiClient _tvheadendApiClient;
     private readonly IUrlBuilder _tvheadendUrlBuilder;
     private readonly Relay.IRelayUrlBuilder _relayUrlBuilder;
-    private readonly ITvHeadendHealthService _healthService;
+    private readonly IHealthService _healthService;
 
     public GuideService(
         ILogger<GuideService> logger,
         IApiClient tvheadendApiClient,
         IUrlBuilder tvheadendUrlBuilder,
         Relay.IRelayUrlBuilder relayUrlBuilder,
-        ITvHeadendHealthService healthService)
+        IHealthService healthService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));

@@ -3,19 +3,22 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Input;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Model.Subscription;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
+using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using MediaBrowser.Common.Api;
@@ -39,7 +42,7 @@ public class PluginController : ControllerBase
     private readonly IStatusService _statusService;
     private readonly IInputMonitorService _inputMonitorService;
     private readonly ISubscriptionService _subscriptionService;
-    private readonly ITvHeadendHealthService _healthService;
+    private readonly IHealthService _healthService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginController"/> class.
@@ -60,7 +63,7 @@ public class PluginController : ControllerBase
         IStatusService statusService,
         IInputMonitorService inputMonitorService,
         ISubscriptionService subscriptionService,
-        ITvHeadendHealthService healthService)
+        IHealthService healthService)
     {
         _diagnoseService = diagnoseService ?? throw new ArgumentNullException(nameof(diagnoseService));
         _defaultProfileService = defaultProfileService ?? throw new ArgumentNullException(nameof(defaultProfileService));
@@ -250,7 +253,7 @@ public class PluginController : ControllerBase
     /// </summary>
     /// <returns>Health snapshot with status, circuit breaker state, and failure details.</returns>
     [HttpGet("Health")]
-    public ActionResult<TvHeadendHealthSnapshot> GetHealth()
+    public ActionResult<HealthSnapshot> GetHealth()
     {
         return Ok(_healthService.GetSnapshot());
     }
@@ -261,7 +264,7 @@ public class PluginController : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Updated health snapshot after the check.</returns>
     [HttpPost("Health/Check")]
-    public async Task<ActionResult<TvHeadendHealthSnapshot>> CheckHealth(CancellationToken cancellationToken)
+    public async Task<ActionResult<HealthSnapshot>> CheckHealth(CancellationToken cancellationToken)
     {
         return Ok(await _healthService.CheckHealthAsync(cancellationToken).ConfigureAwait(false));
     }

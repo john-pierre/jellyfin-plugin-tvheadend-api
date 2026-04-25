@@ -5,9 +5,9 @@ using Jellyfin.Plugin.TvHeadendApi.Api;
 using Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dashboard;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests.Api;
 
@@ -52,4 +52,3 @@ public class DashboardControllerTests
         mockService.Verify(x => x.GetDashboardStatusAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 }
-

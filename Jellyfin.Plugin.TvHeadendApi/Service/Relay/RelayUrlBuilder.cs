@@ -5,7 +5,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using MediaBrowser.Controller;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Relay;
@@ -81,7 +84,7 @@ public interface IRelayUrlBuilder
 internal sealed class RelayUrlBuilder : IRelayUrlBuilder
 {
     private readonly IServerApplicationHost _appHost;
-    private readonly PluginConfigurationProvider _configProvider;
+    private readonly ConfigurationProvider _configProvider;
     private readonly IRelayTokenService? _tokenService;
     private readonly RelayTokenOptions? _tokenOptions;
 
@@ -94,7 +97,7 @@ internal sealed class RelayUrlBuilder : IRelayUrlBuilder
     /// <param name="tokenOptions">Relay token policy options (optional for backward compatibility).</param>
     public RelayUrlBuilder(
         IServerApplicationHost appHost,
-        PluginConfigurationProvider configProvider,
+        ConfigurationProvider configProvider,
         IRelayTokenService? tokenService = null,
         RelayTokenOptions? tokenOptions = null)
     {

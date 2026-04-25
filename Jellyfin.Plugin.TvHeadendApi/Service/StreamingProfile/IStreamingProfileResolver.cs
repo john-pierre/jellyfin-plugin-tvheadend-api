@@ -17,7 +17,7 @@ public interface IStreamingProfileResolver
     /// 3. Client/device rule (sorted by priority)
     /// 4. User rule (sorted by priority)
     /// 5. Global default mode/profile
-    /// 6. Legacy <see cref="Configuration.PluginConfiguration.StreamingProfile"/> fallback
+    /// 6. Legacy <see cref="Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration.StreamingProfile"/> fallback
     /// 7. Safe hardcoded fallback ("pass").
     /// </para>
     /// </summary>

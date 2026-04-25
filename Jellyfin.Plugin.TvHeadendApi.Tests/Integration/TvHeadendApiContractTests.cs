@@ -4,7 +4,10 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Common;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests.Integration;
@@ -508,4 +511,3 @@ public class TvHeadendApiContractTests
         Assert.Equal("7a5edfbe189851e5b1d1df19c93962f0", result.Entries[0].Uuid);
     }
 }
-

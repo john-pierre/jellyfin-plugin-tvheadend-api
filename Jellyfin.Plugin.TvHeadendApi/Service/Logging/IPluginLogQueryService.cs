@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Logging;
 

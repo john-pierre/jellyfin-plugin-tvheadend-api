@@ -11,8 +11,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Metric;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
+using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
 using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -160,7 +164,7 @@ internal sealed class MediaSourceService : IMediaSourceService
             var cacheSnapshot = await TryGetMediainfoCacheSnapshotAsync(channelId, cancellationToken).ConfigureAwait(false);
             if (cacheSnapshot == null)
             {
-                PluginMetrics.CacheMissCount.Add(1);
+                MetricService.CacheMissCount.Add(1);
                 if (proactiveCacheEnabled)
                 {
                     await TryWriteMediaInfoCacheAsync(channelId, streamUrl, profileSnapshot, cancellationToken).ConfigureAwait(false);
@@ -169,7 +173,7 @@ internal sealed class MediaSourceService : IMediaSourceService
                 return;
             }
 
-            PluginMetrics.CacheHitCount.Add(1);
+            MetricService.CacheHitCount.Add(1);
 
             if (!validationEnabled)
             {
@@ -201,7 +205,7 @@ internal sealed class MediaSourceService : IMediaSourceService
                 if (!string.IsNullOrWhiteSpace(cacheSnapshot.CacheFilePath) && File.Exists(cacheSnapshot.CacheFilePath))
                 {
                     File.Delete(cacheSnapshot.CacheFilePath);
-                    PluginMetrics.CacheInvalidationCount.Add(1);
+                    MetricService.CacheInvalidationCount.Add(1);
                     _logger.LogInformation("Deleted mismatching mediainfo cache file for channel {ChannelId}: {CacheFile}", channelId, cacheSnapshot.CacheFilePath);
                 }
 

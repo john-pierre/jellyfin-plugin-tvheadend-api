@@ -6,8 +6,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -364,7 +367,7 @@ public class RelayMetricsTests
 
         var svc = new RelayMetricsService(
             NullLogger<RelayMetricsService>.Instance,
-            new PluginConfigurationProvider(() => null),
+            new ConfigurationProvider(() => null),
             new RelayActivityTracker(),
             options,
             string.Empty);
@@ -425,4 +428,3 @@ public class RelayMetricsTests
         };
     }
 }
-

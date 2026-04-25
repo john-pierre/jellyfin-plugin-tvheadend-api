@@ -6,8 +6,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
@@ -23,7 +26,7 @@ internal sealed class ProfileDiscoveryService : IProfileDiscoveryService, IDispo
     private readonly IProfileResolver _profileResolver;
     private readonly IApiClient _apiClient;
     private readonly IUrlBuilder _urlBuilder;
-    private readonly PluginConfigurationProvider _configProvider;
+    private readonly ConfigurationProvider _configProvider;
 
     private volatile DiscoveryCache? _cache;
 
@@ -40,7 +43,7 @@ internal sealed class ProfileDiscoveryService : IProfileDiscoveryService, IDispo
         IProfileResolver profileResolver,
         IApiClient apiClient,
         IUrlBuilder urlBuilder,
-        PluginConfigurationProvider configProvider)
+        ConfigurationProvider configProvider)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _profileResolver = profileResolver ?? throw new ArgumentNullException(nameof(profileResolver));

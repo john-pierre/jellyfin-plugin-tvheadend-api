@@ -124,4 +124,3 @@ public class StatusModelContractTests
         Assert.Equal(string.Empty, result.Input);
     }
 }
-

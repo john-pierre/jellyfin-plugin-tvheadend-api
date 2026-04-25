@@ -8,7 +8,9 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Model.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Moq;
 using Moq.Protected;
 using Xunit;
@@ -324,4 +326,3 @@ public class GridFetcherIntegrationTests
         Assert.Equal(7, rule.Weekdays.Count);
     }
 }
-

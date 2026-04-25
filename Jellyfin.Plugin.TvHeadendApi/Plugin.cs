@@ -77,7 +77,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             {
                 Name = "TvHeadendDashboard",
                 DisplayName = "TvHeadend",
-                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Pages.DashboardPage.html", ns),
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Page.DashboardPage.html", ns),
                 EnableInMainMenu = true,
                 MenuSection = "Live TV",
                 MenuIcon = "live_tv",

@@ -2,8 +2,11 @@
 
 using System;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Logging;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -18,7 +21,7 @@ public class PluginLoggerFactoryTests
     {
         var factory = new PluginLoggerFactory(
             NullLoggerFactory.Instance,
-            new PluginConfigurationProvider(() => new PluginConfiguration()));
+            new ConfigurationProvider(() => new PluginConfiguration()));
 
         var logger = factory.CreateLogger("TestCategory");
         Assert.NotNull(logger);
@@ -29,7 +32,7 @@ public class PluginLoggerFactoryTests
     {
         var factory = new PluginLoggerFactory(
             NullLoggerFactory.Instance,
-            new PluginConfigurationProvider(() => new PluginConfiguration()));
+            new ConfigurationProvider(() => new PluginConfiguration()));
 
         var logger = factory.CreateLogger<PluginLoggerFactoryTests>();
         Assert.NotNull(logger);
@@ -40,7 +43,7 @@ public class PluginLoggerFactoryTests
     {
         Assert.Throws<ArgumentNullException>(() => new PluginLoggerFactory(
             null!,
-            new PluginConfigurationProvider(() => new PluginConfiguration())));
+            new ConfigurationProvider(() => new PluginConfiguration())));
     }
 
     [Fact]
@@ -57,7 +60,7 @@ public class PluginLoggerFactoryTests
         var config = new PluginConfiguration { PluginLogLevelOverride = PluginLogLevel.JellyfinDefault };
         var factory = new PluginLoggerFactory(
             NullLoggerFactory.Instance,
-            new PluginConfigurationProvider(() => config));
+            new ConfigurationProvider(() => config));
 
         var logger = factory.CreateLogger("Test");
         // NullLogger is always disabled for Trace but enabled for None behavior
@@ -71,7 +74,7 @@ public class PluginLoggerFactoryTests
         var config = new PluginConfiguration { PluginLogLevelOverride = PluginLogLevel.Debug };
         var factory = new PluginLoggerFactory(
             NullLoggerFactory.Instance,
-            new PluginConfigurationProvider(() => config));
+            new ConfigurationProvider(() => config));
 
         var logger = factory.CreateLogger("Test");
         Assert.False(logger.IsEnabled(LogLevel.Trace));
@@ -87,7 +90,7 @@ public class PluginLoggerFactoryTests
         var config = new PluginConfiguration { PluginLogLevelOverride = PluginLogLevel.Error };
         var factory = new PluginLoggerFactory(
             NullLoggerFactory.Instance,
-            new PluginConfigurationProvider(() => config));
+            new ConfigurationProvider(() => config));
 
         var logger = factory.CreateLogger("Test");
         Assert.False(logger.IsEnabled(LogLevel.Trace));
@@ -110,7 +113,7 @@ public class PluginLoggerFactoryTests
 
         var factory = new PluginLoggerFactory(
             innerFactory.Object,
-            new PluginConfigurationProvider(() => config));
+            new ConfigurationProvider(() => config));
 
         var logger = factory.CreateLogger("Test");
         logger.LogDebug("Should not be logged");
@@ -138,7 +141,7 @@ public class PluginLoggerFactoryTests
 
         var factory = new PluginLoggerFactory(
             innerFactory.Object,
-            new PluginConfigurationProvider(() => config));
+            new ConfigurationProvider(() => config));
 
         var logger = factory.CreateLogger("Test");
         logger.LogError("Should be logged");
@@ -158,7 +161,7 @@ public class PluginLoggerFactoryTests
     {
         var factory = new PluginLoggerFactory(
             NullLoggerFactory.Instance,
-            new PluginConfigurationProvider(() => new PluginConfiguration()));
+            new ConfigurationProvider(() => new PluginConfiguration()));
 
         var logger = factory.CreateLogger("Test");
         var scope = logger.BeginScope("test-scope");
@@ -172,11 +175,10 @@ public class PluginLoggerFactoryTests
         var config = new PluginConfiguration { PluginLogLevelOverride = PluginLogLevel.Warning };
         var factory = new PluginLoggerFactory(
             NullLoggerFactory.Instance,
-            new PluginConfigurationProvider(() => config));
+            new ConfigurationProvider(() => config));
 
         var logger = factory.CreateLogger<PluginLoggerFactoryTests>();
         Assert.False(logger.IsEnabled(LogLevel.Debug));
         Assert.True(logger.IsEnabled(LogLevel.Warning));
     }
 }
-

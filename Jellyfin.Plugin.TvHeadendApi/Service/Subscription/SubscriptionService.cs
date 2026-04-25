@@ -4,7 +4,10 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Subscription;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Common;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
@@ -17,7 +20,7 @@ internal sealed class SubscriptionService : ISubscriptionService
     private readonly ILogger<SubscriptionService> _logger;
     private readonly IApiClient _apiClient;
     private readonly IUrlBuilder _urlBuilder;
-    private readonly ITvHeadendHealthService _healthService;
+    private readonly IHealthService _healthService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SubscriptionService"/> class.
@@ -26,7 +29,7 @@ internal sealed class SubscriptionService : ISubscriptionService
     /// <param name="apiClient">TVHeadend API client.</param>
     /// <param name="urlBuilder">TVHeadend URL builder.</param>
     /// <param name="healthService">TVHeadend health tracking service.</param>
-    public SubscriptionService(ILogger<SubscriptionService> logger, IApiClient apiClient, IUrlBuilder urlBuilder, ITvHeadendHealthService healthService)
+    public SubscriptionService(ILogger<SubscriptionService> logger, IApiClient apiClient, IUrlBuilder urlBuilder, IHealthService healthService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));

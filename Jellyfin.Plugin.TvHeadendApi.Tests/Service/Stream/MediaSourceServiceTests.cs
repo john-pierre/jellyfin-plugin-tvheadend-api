@@ -7,9 +7,12 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using MediaBrowser.Controller.Library;
@@ -48,7 +51,7 @@ public class MediaSourceServiceTests
     private static IStreamingProfileResolver StubProfileResolver(PluginConfiguration? config = null)
     {
         var cfg = config ?? new PluginConfiguration();
-        var provider = new PluginConfigurationProvider(() => cfg);
+        var provider = new ConfigurationProvider(() => cfg);
         return new StreamingProfileResolver(
             NullLogger<StreamingProfileResolver>.Instance,
             provider);

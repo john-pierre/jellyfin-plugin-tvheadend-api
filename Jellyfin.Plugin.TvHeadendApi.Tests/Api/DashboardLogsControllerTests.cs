@@ -1,13 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Jellyfin.Plugin.TvHeadendApi.Api.Endpoints;
-using Jellyfin.Plugin.TvHeadendApi.Api.Models;
+using Jellyfin.Plugin.TvHeadendApi.Api.Endpoint;
+using Jellyfin.Plugin.TvHeadendApi.Api.Model;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Logging;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
@@ -21,14 +24,14 @@ public class DashboardLogsControllerTests
 {
     private readonly Mock<IPluginLogQueryService> _logServiceMock;
     private readonly PluginConfiguration _config;
-    private readonly PluginConfigurationProvider _configProvider;
+    private readonly ConfigurationProvider _configProvider;
     private readonly DashboardLogsController _controller;
 
     public DashboardLogsControllerTests()
     {
         _logServiceMock = new Mock<IPluginLogQueryService>();
         _config = new PluginConfiguration();
-        _configProvider = new PluginConfigurationProvider(() => _config);
+        _configProvider = new ConfigurationProvider(() => _config);
         _controller = new DashboardLogsController(_logServiceMock.Object, _configProvider);
     }
 
@@ -239,4 +242,3 @@ public class DashboardLogsControllerTests
         Assert.Equal("plugin", response.Entries[2].Source);
     }
 }
-

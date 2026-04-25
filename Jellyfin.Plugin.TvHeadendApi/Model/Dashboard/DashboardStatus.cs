@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Input;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Model.Subscription;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
 
@@ -130,5 +132,5 @@ public sealed class DashboardStatus
     /// <summary>
     /// Gets or sets the TVHeadend upstream health snapshot.
     /// </summary>
-    public TvHeadendHealthSnapshot? UpstreamHealth { get; set; }
+    public HealthSnapshot? UpstreamHealth { get; set; }
 }

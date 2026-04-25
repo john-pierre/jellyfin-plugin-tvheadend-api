@@ -33,7 +33,7 @@ public enum ResolutionSource
     GlobalDefault = 4,
 
     /// <summary>
-    /// The legacy <see cref="Configuration.PluginConfiguration.StreamingProfile"/> was used
+    /// The legacy <see cref="Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration.StreamingProfile"/> was used
     /// because no streaming profile settings were configured.
     /// </summary>
     LegacyFallback = 5,

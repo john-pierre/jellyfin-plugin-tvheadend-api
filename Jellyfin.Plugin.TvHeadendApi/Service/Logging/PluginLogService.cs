@@ -4,9 +4,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
-using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
+using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -26,7 +29,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
     private const int MaxExceptionLength = 8192;
 
     private readonly ILogger<PluginLogService> _logger;
-    private readonly PluginConfigurationProvider _configProvider;
+    private readonly ConfigurationProvider _configProvider;
     private readonly DbContextOptions<ViewingSessionContext> _dbContextOptions;
 
     private readonly BlockingCollection<PluginLogEntry> _queue =
@@ -40,7 +43,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
 
     public PluginLogService(
         ILogger<PluginLogService> logger,
-        PluginConfigurationProvider configProvider,
+        ConfigurationProvider configProvider,
         DbContextOptions<ViewingSessionContext> dbContextOptions)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -120,7 +123,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
             return;
         }
 
-        var parsed = TvHeadendLogParser.Parse(rawLine);
+        var parsed = LogParser.Parse(rawLine);
 
         var sanitizedMessage = config.EnableDebugLogSanitization
             ? LogSanitizer.Sanitize(parsed.MessageWithoutTimestamp)

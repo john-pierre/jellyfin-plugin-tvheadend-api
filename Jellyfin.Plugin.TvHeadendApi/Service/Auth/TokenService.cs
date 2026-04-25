@@ -4,8 +4,13 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Common;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Auth;
@@ -18,7 +23,7 @@ internal sealed class TokenService : ITokenService
     private readonly ILogger<TokenService> _logger;
     private readonly IApiClient _apiClient;
     private readonly IUrlBuilder _urlBuilder;
-    private readonly PluginConfigurationSaver _configSaver;
+    private readonly ConfigurationSaver _configSaver;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TokenService"/> class.
@@ -31,7 +36,7 @@ internal sealed class TokenService : ITokenService
         ILogger<TokenService> logger,
         IApiClient apiClient,
         IUrlBuilder urlBuilder,
-        PluginConfigurationSaver configSaver)
+        ConfigurationSaver configSaver)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
@@ -189,7 +194,7 @@ internal sealed class TokenService : ITokenService
 
     private async Task<string?> ResolveUserUuidAsync(
         HttpClient httpClient,
-        Configuration.PluginConfiguration config,
+        Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config,
         string username,
         CancellationToken cancellationToken)
     {
@@ -223,7 +228,7 @@ internal sealed class TokenService : ITokenService
 
     private async Task<UserSnapshot?> LoadUserSnapshotAsync(
         HttpClient httpClient,
-        Configuration.PluginConfiguration config,
+        Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config,
         string userUuid,
         CancellationToken cancellationToken)
     {
@@ -261,7 +266,7 @@ internal sealed class TokenService : ITokenService
 
     private async Task SaveUserAuthTokenAsync(
         HttpClient httpClient,
-        Configuration.PluginConfiguration config,
+        Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config,
         UserSnapshot userSnapshot,
         bool resetToken,
         CancellationToken cancellationToken)

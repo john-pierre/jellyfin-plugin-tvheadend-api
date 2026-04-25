@@ -1,12 +1,16 @@
 // Provides effective relay token policy values with safe lower bounds from plugin configuration.
 
 using System;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 
 /// <summary>
-/// Reads relay token policy values from <see cref="Configuration.PluginConfiguration"/>
+/// Reads relay token policy values from <see cref="Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration"/>
 /// and applies safe minimum bounds to prevent misconfiguration.
 /// </summary>
 public sealed class RelayTokenOptions
@@ -23,13 +27,13 @@ public sealed class RelayTokenOptions
     /// <summary>Minimum allowed clock skew in seconds.</summary>
     internal const int MinClockSkewSeconds = 0;
 
-    private readonly PluginConfigurationProvider _configProvider;
+    private readonly ConfigurationProvider _configProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RelayTokenOptions"/> class.
     /// </summary>
     /// <param name="configProvider">Plugin configuration provider.</param>
-    public RelayTokenOptions(PluginConfigurationProvider configProvider)
+    public RelayTokenOptions(ConfigurationProvider configProvider)
     {
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
     }

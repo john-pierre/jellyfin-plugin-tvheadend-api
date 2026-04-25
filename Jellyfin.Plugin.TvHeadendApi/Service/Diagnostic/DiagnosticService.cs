@@ -6,13 +6,18 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Common;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
+using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller.Configuration;
 using Microsoft.Extensions.Logging;
@@ -127,7 +132,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         return report;
     }
 
-    private void AddPluginSettingsToReport(DiagnoseResult report, Configuration.PluginConfiguration config)
+    private void AddPluginSettingsToReport(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config)
     {
         report.PluginSettings.Add($"Streaming Profile: {(string.IsNullOrWhiteSpace(config.StreamingProfile) ? "(not set)" : config.StreamingProfile)}");
         report.PluginSettings.Add($"Direct Play: {config.SupportsDirectPlay}, Direct Stream: {config.SupportsDirectStream}, Transcoding: {config.SupportsTranscoding}");
@@ -151,7 +156,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         report.PluginSettings.Add($"Recording Profile: {config.RecordingProfile}");
     }
 
-    private static int CheckAuthToken(DiagnoseResult report, Configuration.PluginConfiguration config)
+    private static int CheckAuthToken(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config)
     {
         if (string.IsNullOrWhiteSpace(config.AuthToken))
         {
@@ -189,7 +194,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         return 0;
     }
 
-    private async Task<int> CheckServerConnectivityAsync(DiagnoseResult report, Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
+    private async Task<int> CheckServerConnectivityAsync(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
     {
         var scoreDeductions = 0;
         try
@@ -245,7 +250,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         return scoreDeductions;
     }
 
-    private async Task FetchChannelGridAsync(DiagnoseResult report, Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, HashSet<string> allChannelUuids, CancellationToken cancellationToken)
+    private async Task FetchChannelGridAsync(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, HashSet<string> allChannelUuids, CancellationToken cancellationToken)
     {
         try
         {
@@ -271,7 +276,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         }
     }
 
-    private async Task<int> CheckStreamingProfilesAsync(DiagnoseResult report, Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
+    private async Task<int> CheckStreamingProfilesAsync(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
     {
         var scoreDeductions = 0;
         try
@@ -318,7 +323,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         return scoreDeductions;
     }
 
-    private async Task<int> InspectStreamProfileDetailsAsync(DiagnoseResult report, Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, ProfileReference matchingStreamProfile, CancellationToken cancellationToken)
+    private async Task<int> InspectStreamProfileDetailsAsync(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, ProfileReference matchingStreamProfile, CancellationToken cancellationToken)
     {
         var scoreDeductions = 0;
         try
@@ -408,7 +413,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         return scoreDeductions;
     }
 
-    private async Task<int> CheckDvrProfilesAsync(DiagnoseResult report, Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
+    private async Task<int> CheckDvrProfilesAsync(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
     {
         var scoreDeductions = 0;
 
@@ -485,7 +490,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         return scoreDeductions;
     }
 
-    private static int CheckPlaybackSettings(DiagnoseResult report, Configuration.PluginConfiguration config)
+    private static int CheckPlaybackSettings(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config)
     {
         var scoreDeductions = 0;
 
@@ -546,7 +551,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         return scoreDeductions;
     }
 
-    private void CheckFfmpegSettings(DiagnoseResult report, Configuration.PluginConfiguration config)
+    private void CheckFfmpegSettings(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config)
     {
         var (_, jellyfinAnalyzeDuration) = _encodingOptionsReader.ReadFfmpegSettings(_serverConfigManager, _logger);
 
@@ -645,7 +650,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         }
     }
 
-    private async Task<bool?> GetCodecProfileBoolSettingAsync(HttpClient httpClient, Configuration.PluginConfiguration config, string baseUrl, string webRoot, string codecProfileRef, string settingName, CancellationToken cancellationToken)
+    private async Task<bool?> GetCodecProfileBoolSettingAsync(HttpClient httpClient, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, string baseUrl, string webRoot, string codecProfileRef, string settingName, CancellationToken cancellationToken)
     {
         var codecProfile = await Profile.ProfileMappingHelper.FindCodecProfileEntryByReferenceAsync(_tvheadendApiClient, httpClient, baseUrl, webRoot, codecProfileRef, cancellationToken).ConfigureAwait(false);
         if (codecProfile == null || string.IsNullOrWhiteSpace(codecProfile.Key))
@@ -664,7 +669,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         return ReadBoolOrParam(directValue, codecEntry.Params, settingName);
     }
 
-    private async Task<IdNodeLoadResponse?> LoadIdNodeByUuidAsync(HttpClient httpClient, Configuration.PluginConfiguration config, string uuid, CancellationToken cancellationToken)
+    private async Task<IdNodeLoadResponse?> LoadIdNodeByUuidAsync(HttpClient httpClient, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, string uuid, CancellationToken cancellationToken)
     {
         var url = _tvheadendUrlBuilder.BuildApiUrl(config, $"api/idnode/load?uuid={Uri.EscapeDataString(uuid)}");
         var body = await _tvheadendApiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
@@ -708,7 +713,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         return IdNodeValueHelper.ReadBoolOrParam(directValue, parameters, parameterName);
     }
 
-    private void CheckRelayService(DiagnoseResult report, Configuration.PluginConfiguration config)
+    private void CheckRelayService(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config)
     {
         if (!config.RelayEnabled)
         {

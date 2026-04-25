@@ -152,4 +152,3 @@ public class RelayTokenHasherTests
         Assert.False(RelayTokenHasher.IsWellFormed(tooLong));
     }
 }
-

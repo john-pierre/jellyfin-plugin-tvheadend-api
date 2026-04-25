@@ -23,7 +23,7 @@ public class EmbeddedPageTests
     [Fact]
     public void DashboardPage_DoesNotContainBrokenStatisticsSnippet()
     {
-        var content = ReadEmbeddedResource("Pages.DashboardPage.html");
+        var content = ReadEmbeddedResource("Page.DashboardPage.html");
 
         Assert.DoesNotContain("allSessions.forEach(function (s) {", content);
         Assert.Contains("document.getElementById('kpiWatchTime').textContent", content);
@@ -39,5 +39,3 @@ public class EmbeddedPageTests
         return reader.ReadToEnd();
     }
 }
-
-

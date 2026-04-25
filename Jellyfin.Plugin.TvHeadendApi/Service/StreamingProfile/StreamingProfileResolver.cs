@@ -4,7 +4,10 @@ using System;
 using System.Globalization;
 using System.Linq;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
@@ -19,7 +22,7 @@ internal sealed class StreamingProfileResolver : IStreamingProfileResolver
     private const string SafeFallbackProfile = "pass";
 
     private readonly ILogger<StreamingProfileResolver> _logger;
-    private readonly PluginConfigurationProvider _configProvider;
+    private readonly ConfigurationProvider _configProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StreamingProfileResolver"/> class.
@@ -28,7 +31,7 @@ internal sealed class StreamingProfileResolver : IStreamingProfileResolver
     /// <param name="configProvider">Plugin configuration provider.</param>
     public StreamingProfileResolver(
         ILogger<StreamingProfileResolver> logger,
-        PluginConfigurationProvider configProvider)
+        ConfigurationProvider configProvider)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));

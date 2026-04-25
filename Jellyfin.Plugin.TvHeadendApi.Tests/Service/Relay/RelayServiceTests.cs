@@ -6,8 +6,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using WireMock.RequestBuilders;
@@ -38,7 +41,7 @@ public sealed class RelayServiceTests : IDisposable
             AllowAnonymousAccess = true,
         };
 
-        var configProvider = new PluginConfigurationProvider(() => config);
+        var configProvider = new ConfigurationProvider(() => config);
         var urlBuilder = new UrlBuilder();
         var logger = NullLogger<RelayService>.Instance;
         var metricsService = new Mock<IRelayMetricsService>().Object;
@@ -123,7 +126,7 @@ public sealed class RelayServiceTests : IDisposable
             UseSSL = false,
             AllowAnonymousAccess = true,
         };
-        var configProvider = new PluginConfigurationProvider(() => config);
+        var configProvider = new ConfigurationProvider(() => config);
         using var sut = new RelayService(new UrlBuilder(), configProvider, NullLogger<RelayService>.Instance, new Mock<IRelayMetricsService>().Object, new RelayActivityTracker(), NullHealthService.Instance);
 
         using var result = await sut.RelayImageAsync("imagecache/999", CancellationToken.None);
@@ -206,7 +209,7 @@ public sealed class RelayServiceTests : IDisposable
             AllowAnonymousAccess = true,
         };
 
-        var configProvider = new PluginConfigurationProvider(() => config);
+        var configProvider = new ConfigurationProvider(() => config);
         using var sut = new RelayService(new UrlBuilder(), configProvider, NullLogger<RelayService>.Instance, new Mock<IRelayMetricsService>().Object, new RelayActivityTracker(), NullHealthService.Instance);
 
         // First request goes to server1.
@@ -241,7 +244,7 @@ public sealed class RelayServiceTests : IDisposable
             AllowAnonymousAccess = true,
         };
 
-        var configProvider = new PluginConfigurationProvider(() => config);
+        var configProvider = new ConfigurationProvider(() => config);
         using var sut = new RelayService(new UrlBuilder(), configProvider, NullLogger<RelayService>.Instance, new Mock<IRelayMetricsService>().Object, new RelayActivityTracker(), NullHealthService.Instance);
 
         // First request — anonymous.

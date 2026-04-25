@@ -8,7 +8,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
@@ -24,7 +27,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService, IDisposable
 {
     private readonly ILogger<RelayMetricsService> _logger;
-    private readonly PluginConfigurationProvider _configProvider;
+    private readonly ConfigurationProvider _configProvider;
     private readonly RelayActivityTracker _activityTracker;
     private readonly DbContextOptions<RelayMetricsContext> _dbContextOptions;
     private readonly string _dbPath;
@@ -35,7 +38,7 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
 
     public RelayMetricsService(
         ILogger<RelayMetricsService> logger,
-        PluginConfigurationProvider configProvider,
+        ConfigurationProvider configProvider,
         RelayActivityTracker activityTracker,
         DbContextOptions<RelayMetricsContext> dbContextOptions,
         string dbPath)

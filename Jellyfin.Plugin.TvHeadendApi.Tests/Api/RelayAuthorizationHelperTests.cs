@@ -66,4 +66,3 @@ public class RelayAuthorizationHelperTests
         Assert.Equal("token", RelayAuthorizationHelper.TokenQueryParam);
     }
 }
-

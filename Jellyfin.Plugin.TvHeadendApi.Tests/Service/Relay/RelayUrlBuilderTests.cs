@@ -5,8 +5,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using MediaBrowser.Controller;
 using Moq;
 using Xunit;
@@ -15,9 +18,9 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Relay;
 
 public class RelayUrlBuilderTests
 {
-    private static PluginConfigurationProvider CreateConfigProvider(PluginConfiguration? cfg = null)
+    private static ConfigurationProvider CreateConfigProvider(PluginConfiguration? cfg = null)
     {
-        return new PluginConfigurationProvider(() => cfg ?? new PluginConfiguration());
+        return new ConfigurationProvider(() => cfg ?? new PluginConfiguration());
     }
 
     private static IServerApplicationHost CreateAppHost(string url = "http://localhost:8096")
@@ -93,7 +96,7 @@ public class RelayUrlBuilderTests
     public async Task BuildTokenizedStreamRelayUrlAsync_WithTokenDisabled_FallsThroughToSync()
     {
         var tokenOptions = new RelayTokenOptions(
-            new PluginConfigurationProvider(() => new PluginConfiguration { EnableRelayTokenSecurity = false }));
+            new ConfigurationProvider(() => new PluginConfiguration { EnableRelayTokenSecurity = false }));
         var sut = new RelayUrlBuilder(CreateAppHost(), CreateConfigProvider(), null, tokenOptions);
 
         var url = await sut.BuildTokenizedStreamRelayUrlAsync("ch-1", "pass", null, null, null, CancellationToken.None);
@@ -106,7 +109,7 @@ public class RelayUrlBuilderTests
     public async Task BuildTokenizedStreamRelayUrlAsync_WithTokenEnabled_IncludesToken()
     {
         var config = new PluginConfiguration { EnableRelayTokenSecurity = true };
-        var tokenOptions = new RelayTokenOptions(new PluginConfigurationProvider(() => config));
+        var tokenOptions = new RelayTokenOptions(new ConfigurationProvider(() => config));
         var tokenService = new Mock<IRelayTokenService>();
         tokenService.Setup(x => x.IssueStreamTokenAsync(
                 It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
@@ -125,7 +128,7 @@ public class RelayUrlBuilderTests
     public async Task BuildTokenizedImageRelayUrlAsync_WithTokenEnabled_IncludesToken()
     {
         var config = new PluginConfiguration { EnableRelayTokenSecurity = true };
-        var tokenOptions = new RelayTokenOptions(new PluginConfigurationProvider(() => config));
+        var tokenOptions = new RelayTokenOptions(new ConfigurationProvider(() => config));
         var tokenService = new Mock<IRelayTokenService>();
         tokenService.Setup(x => x.IssueImageTokenAsync(
                 It.IsAny<string>(), It.IsAny<MediaKind?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
@@ -142,7 +145,7 @@ public class RelayUrlBuilderTests
     public async Task BuildTokenizedImageRelayUrlAsync_WithTokenDisabled_FallsThrough()
     {
         var config = new PluginConfiguration { EnableRelayTokenSecurity = false };
-        var tokenOptions = new RelayTokenOptions(new PluginConfigurationProvider(() => config));
+        var tokenOptions = new RelayTokenOptions(new ConfigurationProvider(() => config));
         var sut = new RelayUrlBuilder(CreateAppHost(), CreateConfigProvider(config), null, tokenOptions);
 
         var url = await sut.BuildTokenizedImageRelayUrlAsync("imagecache/1", null, null, CancellationToken.None);
@@ -151,5 +154,3 @@ public class RelayUrlBuilderTests
         Assert.DoesNotContain("token=", url);
     }
 }
-
-

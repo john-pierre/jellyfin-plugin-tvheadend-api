@@ -245,4 +245,3 @@ public class ModelExtendedTests
         Assert.False(r.VideoCodecDeinterlace);
     }
 }
-

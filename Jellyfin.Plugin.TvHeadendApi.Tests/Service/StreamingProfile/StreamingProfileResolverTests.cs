@@ -2,7 +2,10 @@
 
 using System.Collections.Generic;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -16,7 +19,7 @@ public class StreamingProfileResolverTests
 {
     private static StreamingProfileResolver CreateResolver(PluginConfiguration config)
     {
-        var provider = new PluginConfigurationProvider(() => config);
+        var provider = new ConfigurationProvider(() => config);
         return new StreamingProfileResolver(
             NullLogger<StreamingProfileResolver>.Instance,
             provider);
@@ -27,7 +30,7 @@ public class StreamingProfileResolverTests
     [Fact]
     public void Resolve_NullConfig_ReturnsSafeFallback()
     {
-        var provider = new PluginConfigurationProvider(() => null);
+        var provider = new ConfigurationProvider(() => null);
         var resolver = new StreamingProfileResolver(
             NullLogger<StreamingProfileResolver>.Instance,
             provider);
@@ -527,4 +530,3 @@ public class StreamingProfileResolverTests
         Assert.Equal(ResolutionSource.GlobalDefault, result.Source);
     }
 }
-

@@ -1,6 +1,9 @@
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Logging;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -13,14 +16,14 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Logging;
 public class PluginLogLevelOverrideTests
 {
     private readonly Mock<ILogger> _innerLogger;
-    private readonly PluginConfigurationProvider _configProvider;
+    private readonly ConfigurationProvider _configProvider;
     private readonly PluginConfiguration _config;
 
     public PluginLogLevelOverrideTests()
     {
         _innerLogger = new Mock<ILogger>();
         _config = new PluginConfiguration();
-        _configProvider = new PluginConfigurationProvider(() => _config);
+        _configProvider = new ConfigurationProvider(() => _config);
     }
 
     [Fact]
@@ -150,4 +153,3 @@ public class PluginLogLevelOverrideTests
         Assert.False(logger.IsEnabled(LogLevel.Debug));
     }
 }
-

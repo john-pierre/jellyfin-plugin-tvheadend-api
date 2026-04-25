@@ -1,18 +1,24 @@
 using System.Net.Http;
+using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Comet;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dashboard;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Logging;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
-using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
+using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
+using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
@@ -52,7 +58,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             })
             .AddHttpMessageHandler(sp => new ResilienceHandler
             {
-                HealthService = sp.GetService<ITvHeadendHealthService>(),
+                HealthService = sp.GetService<IHealthService>(),
             });
 
         serviceCollection.AddHttpClient(ApiClient.HttpClientUnsafeName)
@@ -63,14 +69,14 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             })
             .AddHttpMessageHandler(sp => new ResilienceHandler
             {
-                HealthService = sp.GetService<ITvHeadendHealthService>(),
+                HealthService = sp.GetService<IHealthService>(),
             });
 
         // Plugin path/config providers — decouple services from Plugin.Instance singleton.
-        serviceCollection.AddSingleton(new PluginConfigurationProvider(() => Plugin.Instance?.Configuration as Configuration.PluginConfiguration));
+        serviceCollection.AddSingleton(new ConfigurationProvider(() => Plugin.Instance?.Configuration as Configuration.PluginConfiguration));
         serviceCollection.AddSingleton(new CachePathProvider(() => Plugin.Instance?.CachePath));
         serviceCollection.AddSingleton(new DataFolderPathProvider(() => Plugin.Instance?.DataFolderPath));
-        serviceCollection.AddSingleton(new PluginConfigurationSaver(mutate =>
+        serviceCollection.AddSingleton(new ConfigurationSaver(mutate =>
         {
             var plugin = Plugin.Instance;
             if (plugin?.Configuration is Configuration.PluginConfiguration cfg)
@@ -81,16 +87,16 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         }));
 
         // Centralized database provider — eliminates repeated SQLite connection string construction.
-        serviceCollection.AddSingleton(sp => new PluginDatabaseProvider(sp.GetRequiredService<DataFolderPathProvider>()));
+        serviceCollection.AddSingleton(sp => new DatabaseProvider(sp.GetRequiredService<DataFolderPathProvider>()));
 
         // ── PluginLogService — unified log persistence + query ──
         serviceCollection.AddSingleton<PluginLogService>(sp =>
         {
-            var db = sp.GetRequiredService<PluginDatabaseProvider>();
+            var db = sp.GetRequiredService<DatabaseProvider>();
             return new PluginLogService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PluginLogService>>(),
-                sp.GetRequiredService<PluginConfigurationProvider>(),
-                db.CreateContextOptions<Service.Statistics.ViewingSessionContext>());
+                sp.GetRequiredService<ConfigurationProvider>(),
+                db.CreateContextOptions<Service.Statistic.ViewingSessionContext>());
         });
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PluginLogService>());
         serviceCollection.AddSingleton<IPluginLogQueryService>(sp => sp.GetRequiredService<PluginLogService>());
@@ -99,16 +105,16 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IPluginLoggerFactory>(sp =>
             new PluginLoggerFactory(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>(),
-                sp.GetRequiredService<PluginConfigurationProvider>(),
+                sp.GetRequiredService<ConfigurationProvider>(),
                 sp.GetRequiredService<PluginLogService>()));
 
         serviceCollection.AddSingleton<StatisticsService>(sp =>
         {
-            var db = sp.GetRequiredService<PluginDatabaseProvider>();
+            var db = sp.GetRequiredService<DatabaseProvider>();
             return new StatisticsService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<StatisticsService>>(),
                 sp.GetRequiredService<MediaBrowser.Controller.Session.ISessionManager>(),
-                sp.GetRequiredService<PluginConfigurationProvider>(),
+                sp.GetRequiredService<ConfigurationProvider>(),
                 db.CreateContextOptions<ViewingSessionContext>(),
                 db.DatabasePath);
         });
@@ -128,15 +134,15 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IStreamingProfileResolver, StreamingProfileResolver>();
         serviceCollection.AddSingleton<IProfileDiscoveryService, ProfileDiscoveryService>();
         serviceCollection.AddSingleton<IApiClient, ApiClient>();
-        serviceCollection.AddSingleton<ITvHeadendHealthService>(sp =>
+        serviceCollection.AddSingleton<IHealthService>(sp =>
         {
-            var db = sp.GetRequiredService<PluginDatabaseProvider>();
-            return new TvHeadendHealthService(
+            var db = sp.GetRequiredService<DatabaseProvider>();
+            return new HealthService(
                 sp.GetRequiredService<IApiClient>(),
                 sp.GetRequiredService<IUrlBuilder>(),
-                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TvHeadendHealthService>>(),
-                sp.GetRequiredService<PluginConfigurationProvider>(),
-                db.CreateContextOptions<Service.Statistics.ViewingSessionContext>());
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<HealthService>>(),
+                sp.GetRequiredService<ConfigurationProvider>(),
+                db.CreateContextOptions<Service.Statistic.ViewingSessionContext>());
         });
         serviceCollection.AddSingleton<IStatusService, StatusService>();
         serviceCollection.AddSingleton<IInputMonitorService, InputMonitorService>();
@@ -146,7 +152,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IRelayUrlBuilder>(sp =>
             new RelayUrlBuilder(
                 sp.GetRequiredService<IServerApplicationHost>(),
-                sp.GetRequiredService<PluginConfigurationProvider>(),
+                sp.GetRequiredService<ConfigurationProvider>(),
                 sp.GetRequiredService<IRelayTokenService>(),
                 sp.GetRequiredService<RelayTokenOptions>()));
 
@@ -154,10 +160,10 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<RelayActivityTracker>();
         serviceCollection.AddSingleton<RelayMetricsService>(sp =>
         {
-            var db = sp.GetRequiredService<PluginDatabaseProvider>();
+            var db = sp.GetRequiredService<DatabaseProvider>();
             return new RelayMetricsService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RelayMetricsService>>(),
-                sp.GetRequiredService<PluginConfigurationProvider>(),
+                sp.GetRequiredService<ConfigurationProvider>(),
                 sp.GetRequiredService<RelayActivityTracker>(),
                 db.CreateContextOptions<RelayMetricsContext>(),
                 db.DatabasePath);
@@ -177,7 +183,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         });
         serviceCollection.AddSingleton<RelayTokenRepository>(sp =>
         {
-            var db = sp.GetRequiredService<PluginDatabaseProvider>();
+            var db = sp.GetRequiredService<DatabaseProvider>();
             return new RelayTokenRepository(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RelayTokenRepository>>(),
                 db.CreateContextOptions<RelayTokenDbContext>(),
@@ -194,13 +200,13 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StatisticsService>());
         serviceCollection.AddSingleton<CometService>(sp =>
         {
-            var db = sp.GetRequiredService<PluginDatabaseProvider>();
+            var db = sp.GetRequiredService<DatabaseProvider>();
             return new CometService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CometService>>(),
                 sp.GetRequiredService<IApiClient>(),
                 sp.GetRequiredService<IUrlBuilder>(),
-                sp.GetRequiredService<PluginConfigurationProvider>(),
-                db.CreateContextOptions<Service.Statistics.ViewingSessionContext>(),
+                sp.GetRequiredService<ConfigurationProvider>(),
+                db.CreateContextOptions<Service.Statistic.ViewingSessionContext>(),
                 sp.GetRequiredService<PluginLogService>());
         });
         serviceCollection.AddSingleton<ICometSnapshotReader>(sp => sp.GetRequiredService<CometService>());

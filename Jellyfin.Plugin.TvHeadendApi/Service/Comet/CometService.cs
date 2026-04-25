@@ -7,10 +7,13 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Logging;
-using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
+using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -30,7 +33,7 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     private readonly ILogger<CometService> _logger;
     private readonly IApiClient _apiClient;
     private readonly IUrlBuilder _urlBuilder;
-    private readonly PluginConfigurationProvider _configProvider;
+    private readonly ConfigurationProvider _configProvider;
     private readonly DbContextOptions<ViewingSessionContext>? _dbContextOptions;
     private readonly PluginLogService? _pluginLogService;
     private readonly List<LogMessage> _logBuffer = new();
@@ -48,7 +51,7 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         ILogger<CometService> logger,
         IApiClient apiClient,
         IUrlBuilder urlBuilder,
-        PluginConfigurationProvider configProvider,
+        ConfigurationProvider configProvider,
         DbContextOptions<ViewingSessionContext>? dbContextOptions = null,
         PluginLogService? pluginLogService = null)
     {

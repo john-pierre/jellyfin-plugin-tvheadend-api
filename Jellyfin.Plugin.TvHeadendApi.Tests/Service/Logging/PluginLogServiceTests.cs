@@ -5,10 +5,13 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Logging;
-using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
+using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -37,7 +40,7 @@ public class PluginLogServiceTests : IDisposable
 
         _sut = new PluginLogService(
             NullLogger<PluginLogService>.Instance,
-            new PluginConfigurationProvider(() => _config),
+            new ConfigurationProvider(() => _config),
             _dbOptions);
 
         // Ensure schema is created
@@ -179,7 +182,7 @@ public class PluginLogServiceTests : IDisposable
     {
         Assert.Throws<ArgumentNullException>(() => new PluginLogService(
             null!,
-            new PluginConfigurationProvider(() => new PluginConfiguration()),
+            new ConfigurationProvider(() => new PluginConfiguration()),
             _dbOptions));
     }
 
@@ -288,4 +291,3 @@ public class PluginLogServiceTests : IDisposable
         await hosted.StopAsync(CancellationToken.None);
     }
 }
-

@@ -5,8 +5,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -18,7 +21,7 @@ public class RelayTokenServiceTests
     private static RelayTokenOptions CreateOptions(PluginConfiguration? config = null)
     {
         var cfg = config ?? new PluginConfiguration();
-        return new RelayTokenOptions(new PluginConfigurationProvider(() => cfg));
+        return new RelayTokenOptions(new ConfigurationProvider(() => cfg));
     }
 
     private static RelayTokenHasher CreateHasher()
@@ -178,4 +181,3 @@ public class RelayTokenServiceTests
             t.PlaybackMode == "Auto"), It.IsAny<CancellationToken>()));
     }
 }
-

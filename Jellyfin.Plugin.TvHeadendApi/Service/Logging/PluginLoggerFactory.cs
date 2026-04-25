@@ -1,6 +1,9 @@
 using System;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Logging;
@@ -14,13 +17,13 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Logging;
 internal sealed class PluginScopedLogger : ILogger
 {
     private readonly ILogger _inner;
-    private readonly PluginConfigurationProvider _configProvider;
+    private readonly ConfigurationProvider _configProvider;
     private readonly PluginLogService? _logService;
     private readonly string _categoryName;
 
     public PluginScopedLogger(
         ILogger inner,
-        PluginConfigurationProvider configProvider,
+        ConfigurationProvider configProvider,
         PluginLogService? logService,
         string categoryName)
     {
@@ -105,12 +108,12 @@ internal sealed class PluginScopedLogger : ILogger
 internal sealed class PluginLoggerFactory : IPluginLoggerFactory
 {
     private readonly ILoggerFactory _innerFactory;
-    private readonly PluginConfigurationProvider _configProvider;
+    private readonly ConfigurationProvider _configProvider;
     private readonly PluginLogService? _logService;
 
     public PluginLoggerFactory(
         ILoggerFactory innerFactory,
-        PluginConfigurationProvider configProvider,
+        ConfigurationProvider configProvider,
         PluginLogService? logService = null)
     {
         _innerFactory = innerFactory ?? throw new ArgumentNullException(nameof(innerFactory));

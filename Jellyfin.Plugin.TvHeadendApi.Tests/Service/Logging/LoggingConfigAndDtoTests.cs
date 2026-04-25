@@ -1,6 +1,6 @@
 using System;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Model.Statistics;
+using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Logging;
@@ -119,4 +119,3 @@ public class LoggingConfigAndDtoTests
         Assert.Equal(0, config.MaxDashboardLogEntries);
     }
 }
-

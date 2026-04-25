@@ -149,4 +149,3 @@ public class StreamingProfileSettingsTests
         Assert.Equal("pass", config.StreamingProfile);
     }
 }
-

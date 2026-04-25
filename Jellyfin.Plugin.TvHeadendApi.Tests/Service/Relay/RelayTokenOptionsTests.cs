@@ -2,8 +2,11 @@
 
 using System;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Relay;
@@ -16,7 +19,7 @@ public class RelayTokenOptionsTests
     private static RelayTokenOptions CreateOptions(PluginConfiguration? config = null)
     {
         config ??= new PluginConfiguration();
-        var provider = new PluginConfigurationProvider(() => config);
+        var provider = new ConfigurationProvider(() => config);
         return new RelayTokenOptions(provider);
     }
 
@@ -130,7 +133,7 @@ public class RelayTokenOptionsTests
     [Fact]
     public void NullConfig_FallsBackToDefaults()
     {
-        var provider = new PluginConfigurationProvider(() => null);
+        var provider = new ConfigurationProvider(() => null);
         var opts = new RelayTokenOptions(provider);
 
         Assert.True(opts.Enabled);
@@ -143,4 +146,3 @@ public class RelayTokenOptionsTests
         Assert.Throws<ArgumentNullException>(() => new RelayTokenOptions(null!));
     }
 }
-

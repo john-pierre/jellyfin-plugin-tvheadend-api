@@ -6,13 +6,17 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
+using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
+using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
-using Jellyfin.Plugin.TvHeadendApi.Service.Statistics;
 using MediaBrowser.Controller.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -429,16 +433,16 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
         try
         {
             var sm = new Mock<MediaBrowser.Controller.Session.ISessionManager>();
-            var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<Jellyfin.Plugin.TvHeadendApi.Service.Statistics.ViewingSessionContext>()
+            var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<Jellyfin.Plugin.TvHeadendApi.Service.Statistic.ViewingSessionContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
-            var dbContext = new Jellyfin.Plugin.TvHeadendApi.Service.Statistics.ViewingSessionContext(options);
+            var dbContext = new Jellyfin.Plugin.TvHeadendApi.Service.Statistic.ViewingSessionContext(options);
             dbContext.Database.EnsureCreated();
 
-            var sut1 = new Jellyfin.Plugin.TvHeadendApi.Service.Statistics.StatisticsService(
-                NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Statistics.StatisticsService>.Instance,
+            var sut1 = new Jellyfin.Plugin.TvHeadendApi.Service.Statistic.StatisticsService(
+                NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Statistic.StatisticsService>.Instance,
                 sm.Object,
-                new Jellyfin.Plugin.TvHeadendApi.Service.Helper.PluginConfigurationProvider(() => null),
+                new Jellyfin.Plugin.TvHeadendApi.Service.Configuration.ConfigurationProvider(() => null),
                 options,
                 string.Empty);
 
@@ -465,10 +469,10 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
             sut1.Dispose();
 
             // Create a new instance with the same in-memory database
-            var sut2 = new Jellyfin.Plugin.TvHeadendApi.Service.Statistics.StatisticsService(
-                NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Statistics.StatisticsService>.Instance,
+            var sut2 = new Jellyfin.Plugin.TvHeadendApi.Service.Statistic.StatisticsService(
+                NullLogger<Jellyfin.Plugin.TvHeadendApi.Service.Statistic.StatisticsService>.Instance,
                 sm.Object,
-                new Jellyfin.Plugin.TvHeadendApi.Service.Helper.PluginConfigurationProvider(() => null),
+                new Jellyfin.Plugin.TvHeadendApi.Service.Configuration.ConfigurationProvider(() => null),
                 options,
                 string.Empty);
             await sut2.StartAsync(CancellationToken.None);
@@ -540,5 +544,3 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
         return mock.Object;
     }
 }
-
-

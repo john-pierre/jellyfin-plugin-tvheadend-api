@@ -5,9 +5,11 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using Microsoft.Extensions.Logging;
@@ -27,7 +29,7 @@ internal sealed class DashboardService : IDashboardService
     private readonly ISubscriptionService _subscriptionService;
     private readonly IUrlBuilder _urlBuilder;
     private readonly IApiClient _apiClient;
-    private readonly ITvHeadendHealthService _healthService;
+    private readonly IHealthService _healthService;
     private readonly ILogger<DashboardService> _logger;
 
     /// <summary>
@@ -48,7 +50,7 @@ internal sealed class DashboardService : IDashboardService
         ISubscriptionService subscriptionService,
         IUrlBuilder urlBuilder,
         IApiClient apiClient,
-        ITvHeadendHealthService healthService,
+        IHealthService healthService,
         ILogger<DashboardService> logger)
     {
         _diagnosticService = diagnosticService ?? throw new ArgumentNullException(nameof(diagnosticService));

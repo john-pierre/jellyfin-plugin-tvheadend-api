@@ -5,16 +5,20 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
-using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Service.Status;
-using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
+using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
+using Jellyfin.Plugin.TvHeadendApi.Service.Status;
+using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
+using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using MediaBrowser.Controller.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -71,7 +75,7 @@ public sealed class LiveServiceIntegrationTests : IDisposable
             .Setup(f => f.CreateClient(It.IsAny<string>()))
             .Returns(() => new HttpClient { BaseAddress = new Uri(BaseUrl), Timeout = TimeSpan.FromSeconds(15) });
 
-        var configProvider = new PluginConfigurationProvider(() => _config);
+        var configProvider = new ConfigurationProvider(() => _config);
         _apiClient = new ApiClient(httpClientFactory.Object, configProvider);
         _urlBuilder = new UrlBuilder();
     }
@@ -307,5 +311,4 @@ public sealed class LiveServiceIntegrationTests : IDisposable
             .Returns<string, string?>((ch, _) => $"http://jellyfin:8096/api/tvheadend/stream/{ch}");
         return mock.Object;
     }
-    }
-
+}

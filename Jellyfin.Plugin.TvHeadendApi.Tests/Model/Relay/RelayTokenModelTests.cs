@@ -111,4 +111,3 @@ public class RelayTokenModelTests
         Assert.True(System.Enum.IsDefined(RelayTokenFailureReason.UnexpectedError));
     }
 }
-

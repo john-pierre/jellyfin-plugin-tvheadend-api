@@ -4,8 +4,11 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -17,7 +20,7 @@ public class RelayTokenCleanupServiceTests
     private static RelayTokenOptions CreateOptions()
     {
         var config = new PluginConfiguration { CleanupExpiredTokensIntervalMinutes = 60 };
-        return new RelayTokenOptions(new PluginConfigurationProvider(() => config));
+        return new RelayTokenOptions(new ConfigurationProvider(() => config));
     }
 
     [Fact]
@@ -78,4 +81,3 @@ public class RelayTokenCleanupServiceTests
             NullLogger<RelayTokenCleanupService>.Instance, Mock.Of<IRelayTokenService>(), null!));
     }
 }
-

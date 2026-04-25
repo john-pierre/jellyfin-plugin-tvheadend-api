@@ -10,7 +10,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Relay;
@@ -53,11 +57,11 @@ internal sealed class RelayService : IRelayService, IDisposable
 
     private readonly object _clientLock = new();
     private readonly IUrlBuilder _urlBuilder;
-    private readonly PluginConfigurationProvider _configProvider;
+    private readonly ConfigurationProvider _configProvider;
     private readonly ILogger<RelayService> _logger;
     private readonly IRelayMetricsService _metricsService;
     private readonly RelayActivityTracker _activityTracker;
-    private readonly ITvHeadendHealthService _healthService;
+    private readonly IHealthService _healthService;
 
     /// <summary>
     /// Fingerprint of socket-level config (host, port, SSL, cert errors, webroot).
@@ -87,11 +91,11 @@ internal sealed class RelayService : IRelayService, IDisposable
     /// <param name="healthService">TVHeadend health tracking service.</param>
     public RelayService(
         IUrlBuilder urlBuilder,
-        PluginConfigurationProvider configProvider,
+        ConfigurationProvider configProvider,
         ILogger<RelayService> logger,
         IRelayMetricsService metricsService,
         RelayActivityTracker activityTracker,
-        ITvHeadendHealthService healthService)
+        IHealthService healthService)
     {
         ArgumentNullException.ThrowIfNull(urlBuilder);
         ArgumentNullException.ThrowIfNull(configProvider);

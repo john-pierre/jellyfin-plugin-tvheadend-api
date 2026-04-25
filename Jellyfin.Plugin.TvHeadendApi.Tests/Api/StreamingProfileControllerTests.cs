@@ -4,9 +4,12 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Api.Endpoints;
+using Jellyfin.Plugin.TvHeadendApi.Api.Endpoint;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -25,7 +28,7 @@ public class StreamingProfileControllerTests
         var cfg = config ?? new PluginConfiguration();
         return new StreamingProfileResolver(
             NullLogger<StreamingProfileResolver>.Instance,
-            new PluginConfigurationProvider(() => cfg));
+            new ConfigurationProvider(() => cfg));
     }
 
     [Fact]
@@ -125,4 +128,3 @@ public class StreamingProfileControllerTests
         discovery.Verify(x => x.InvalidateCache(), Times.Once);
     }
 }
-
