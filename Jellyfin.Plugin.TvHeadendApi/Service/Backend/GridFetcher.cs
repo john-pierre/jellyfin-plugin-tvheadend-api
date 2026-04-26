@@ -18,6 +18,10 @@ internal static class GridFetcher
 {
     private const int ProbeLimit = 50;
 
+    // Cached UTF8Encoding instances to avoid allocating on every call (hot path for grid fetches).
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+    private static readonly UTF8Encoding LenientUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: false);
+
     /// <summary>
     /// Fetches all entries from a TVHeadend grid endpoint by first probing for the total count.
     /// </summary>
@@ -85,10 +89,9 @@ internal static class GridFetcher
     private static byte[] SanitizeUtf8(byte[] input)
     {
         // Fast path: if the input is valid UTF-8, return it as-is.
-        var utf8Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
         try
         {
-            utf8Encoding.GetCharCount(input);
+            StrictUtf8.GetCharCount(input);
             return input;
         }
         catch (DecoderFallbackException)
@@ -96,8 +99,7 @@ internal static class GridFetcher
             // Slow path: re-decode with replacement fallback and re-encode.
         }
 
-        var lenient = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: false);
-        var chars = lenient.GetChars(input);
-        return lenient.GetBytes(chars);
+        var chars = LenientUtf8.GetChars(input);
+        return LenientUtf8.GetBytes(chars);
     }
 }

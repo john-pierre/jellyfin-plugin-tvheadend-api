@@ -432,9 +432,10 @@ public sealed class EndToEndIntegrationTests : IDisposable
         var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
         library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(Guid.NewGuid());
 
+        var cacheService = new MediaInfoCacheService(NullLogger<MediaInfoCacheService>.Instance, library.Object, () => null);
+
         var sut = new MediaSourceService(
             NullLogger<MediaSourceService>.Instance,
-            library.Object,
             resolver.Object,
             new StreamingProfileResolver(
                 NullLogger<StreamingProfileResolver>.Instance,
@@ -442,13 +443,13 @@ public sealed class EndToEndIntegrationTests : IDisposable
             _apiClient,
             _urlBuilder,
             _relayUrlBuilder,
-            () => null);
+            cacheService);
 
         var mediaSource = await sut.GetChannelStreamAsync(channelId, CancellationToken.None);
 
         Assert.NotNull(mediaSource);
         Assert.Equal(channelId, mediaSource.Id);
-        Assert.Contains("stream/channel/", mediaSource.Path);
+        Assert.Contains("relay/stream/", mediaSource.Path);
         Assert.Contains("profile=", mediaSource.Path);
         Assert.Equal("mpegts", mediaSource.Container);
         Assert.True(mediaSource.IsRemote);
@@ -470,7 +471,8 @@ public sealed class EndToEndIntegrationTests : IDisposable
         Assert.True(tokenResult.Success, $"Token generation failed: {tokenResult.Message}");
         Assert.False(string.IsNullOrEmpty(_config.AuthToken), "AuthToken must be stored in config");
 
-        // Build MediaSourceService — the stream URL should include the auth token.
+        // Build MediaSourceService — the stream URL now routes through the relay,
+        // so the TVH auth token is used server-side and not exposed in the client-facing URL.
         var resolver = new Mock<IProfileContainerResolver>();
         resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("mpegts");
@@ -483,9 +485,10 @@ public sealed class EndToEndIntegrationTests : IDisposable
         // Use a config-provider that returns our token-enriched config.
         var tokenApiClient = CreateApiClient(new ConfigurationProvider(() => _config));
 
+        var cacheService2 = new MediaInfoCacheService(NullLogger<MediaInfoCacheService>.Instance, library.Object, () => null);
+
         var sut = new MediaSourceService(
             NullLogger<MediaSourceService>.Instance,
-            library.Object,
             resolver.Object,
             new StreamingProfileResolver(
                 NullLogger<StreamingProfileResolver>.Instance,
@@ -493,7 +496,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             tokenApiClient,
             _urlBuilder,
             _relayUrlBuilder,
-            () => null);
+            cacheService2);
 
         var guideService = new GuideService(NullLogger<GuideService>.Instance, _apiClient, _urlBuilder, _relayUrlBuilder, NullHealthService.Instance);
         var channels = (await guideService.GetChannelsAsync(CancellationToken.None)).ToList();
@@ -501,8 +504,10 @@ public sealed class EndToEndIntegrationTests : IDisposable
 
         var mediaSource = await sut.GetChannelStreamAsync(channels.First().Id, CancellationToken.None);
 
-        Assert.Contains("auth=", mediaSource.Path);
-        Assert.Contains(_config.AuthToken, mediaSource.Path);
+        // Relay URL should be well-formed with channel and profile info.
+        Assert.NotNull(mediaSource.Path);
+        Assert.Contains("relay/stream/", mediaSource.Path);
+        Assert.Contains("profile=", mediaSource.Path);
     }
 
     [Fact]
@@ -524,9 +529,10 @@ public sealed class EndToEndIntegrationTests : IDisposable
         var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
         library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(Guid.NewGuid());
 
+        var cacheService3 = new MediaInfoCacheService(NullLogger<MediaInfoCacheService>.Instance, library.Object, () => null);
+
         var mediaSourceService = new MediaSourceService(
             NullLogger<MediaSourceService>.Instance,
-            library.Object,
             resolver.Object,
             new StreamingProfileResolver(
                 NullLogger<StreamingProfileResolver>.Instance,
@@ -534,7 +540,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             _apiClient,
             _urlBuilder,
             _relayUrlBuilder,
-            () => null);
+            cacheService3);
 
         var lifecycleService = new Mock<ILifecycleService>();
         lifecycleService.Setup(x => x.CloseLiveStreamAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
@@ -553,7 +559,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
 
         Assert.NotNull(result);
         Assert.Equal(channelId, result.Id);
-        Assert.Contains("stream/channel/", result.Path);
+        Assert.Contains("relay/stream/", result.Path);
         Assert.Equal("mpegts", result.Container);
         Assert.True(result.IsRemote);
     }
@@ -1143,7 +1149,29 @@ public sealed class EndToEndIntegrationTests : IDisposable
         mock.Setup(x => x.BuildImageRelayUrl(It.IsAny<string>()))
             .Returns<string>(path => $"http://jellyfin:8096/api/tvheadend/images/{path}");
         mock.Setup(x => x.BuildStreamRelayUrl(It.IsAny<string>(), It.IsAny<string?>()))
-            .Returns<string, string?>((ch, _) => $"http://jellyfin:8096/api/tvheadend/stream/{ch}");
+            .Returns<string, string?>((ch, profile) =>
+            {
+                var url = $"http://jellyfin:8096/api/tvheadend/relay/stream/{ch}";
+                if (!string.IsNullOrEmpty(profile))
+                {
+                    url += $"?profile={Uri.EscapeDataString(profile)}";
+                }
+
+                return url;
+            });
+        mock.Setup(x => x.BuildTokenizedStreamRelayUrlAsync(
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string?, string?, string?, string?, CancellationToken>((ch, profile, _, _, _, _) =>
+            {
+                var url = $"http://jellyfin:8096/api/tvheadend/relay/stream/{ch}";
+                if (!string.IsNullOrEmpty(profile))
+                {
+                    url += $"?profile={Uri.EscapeDataString(profile)}";
+                }
+
+                return Task.FromResult(url);
+            });
         return mock.Object;
     }
 

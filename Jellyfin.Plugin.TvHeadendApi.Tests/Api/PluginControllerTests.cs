@@ -1,19 +1,13 @@
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Api;
 using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
-using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
-using Jellyfin.Plugin.TvHeadendApi.Service.Status;
-using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
@@ -28,11 +22,7 @@ public class PluginControllerTests
         Assert.Throws<ArgumentNullException>(() => new PluginController(
             null!,
             new FakeDefaultProfileService(),
-            new FakeTokenService(),
-            new FakeStatisticsService(),
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance));
+            new FakeTokenService()));
     }
 
     [Fact]
@@ -41,11 +31,7 @@ public class PluginControllerTests
         Assert.Throws<ArgumentNullException>(() => new PluginController(
             new FakeDiagnosticService(new DiagnoseResult()),
             null!,
-            new FakeTokenService(),
-            new FakeStatisticsService(),
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance));
+            new FakeTokenService()));
     }
 
     [Fact]
@@ -54,64 +40,7 @@ public class PluginControllerTests
         Assert.Throws<ArgumentNullException>(() => new PluginController(
             new FakeDiagnosticService(new DiagnoseResult()),
             new FakeDefaultProfileService(),
-            null!,
-            new FakeStatisticsService(),
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance));
-    }
-
-    [Fact]
-    public void Constructor_NullStatisticsService_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new PluginController(
-            new FakeDiagnosticService(new DiagnoseResult()),
-            new FakeDefaultProfileService(),
-            new FakeTokenService(),
-            null!,
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance));
-    }
-
-    [Fact]
-    public void Constructor_NullStatusService_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new PluginController(
-            new FakeDiagnosticService(new DiagnoseResult()),
-            new FakeDefaultProfileService(),
-            new FakeTokenService(),
-            new FakeStatisticsService(),
-            null!,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance));
-    }
-
-    [Fact]
-    public void Constructor_NullInputMonitorService_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new PluginController(
-            new FakeDiagnosticService(new DiagnoseResult()),
-            new FakeDefaultProfileService(),
-            new FakeTokenService(),
-            new FakeStatisticsService(),
-            new Mock<IStatusService>().Object,
-            null!,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance));
-    }
-
-    [Fact]
-    public void Constructor_NullSubscriptionService_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new PluginController(
-            new FakeDiagnosticService(new DiagnoseResult()),
-            new FakeDefaultProfileService(),
-            new FakeTokenService(),
-            new FakeStatisticsService(),
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            null!,
-            NullHealthService.Instance));
+            null!));
     }
 
     [Fact]
@@ -121,11 +50,7 @@ public class PluginControllerTests
         var sut = new PluginController(
             new FakeDiagnosticService(expected),
             new FakeDefaultProfileService(),
-            new FakeTokenService(),
-            new FakeStatisticsService(),
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
+            new FakeTokenService());
 
         var result = await sut.Diagnose(CancellationToken.None);
 
@@ -140,11 +65,7 @@ public class PluginControllerTests
         var sut = new PluginController(
             new FakeDiagnosticService(new DiagnoseResult()),
             new FakeDefaultProfileService(),
-            new FakeTokenService(),
-            new FakeStatisticsService(),
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
+            new FakeTokenService());
 
         var result = await sut.CreateProfile(CancellationToken.None);
 
@@ -164,11 +85,7 @@ public class PluginControllerTests
         var sut = new PluginController(
             new FakeDiagnosticService(diagnose),
             new FakeDefaultProfileService(),
-            new FakeTokenService(),
-            new FakeStatisticsService(),
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
+            new FakeTokenService());
 
         var result = await sut.GetProfileOptions(CancellationToken.None);
 
@@ -185,11 +102,7 @@ public class PluginControllerTests
         var sut = new PluginController(
             new FakeDiagnosticService(new DiagnoseResult()),
             new FakeDefaultProfileService(),
-            new FakeTokenService(),
-            new FakeStatisticsService(),
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
+            new FakeTokenService());
 
         var result = sut.ResetToDefaults();
 
@@ -244,17 +157,6 @@ public class PluginControllerTests
                 Message = "Token generated",
                 AuthToken = "test-token-abc123",
             });
-        }
-    }
-
-    private sealed class FakeStatisticsService : IStatisticsService
-    {
-        public IReadOnlyList<ViewingSession> AllSessions => [];
-
-        public ViewingStatisticsResult GetStatistics(int days) => new();
-
-        public void ClearStatistics()
-        {
         }
     }
 }

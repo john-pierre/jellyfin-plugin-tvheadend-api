@@ -4,8 +4,12 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -29,6 +33,8 @@ public class RelayController : ControllerBase
     private readonly IRelayUrlBuilder _relayUrlBuilder;
     private readonly IRelayTokenValidator _tokenValidator;
     private readonly RelayTokenOptions _tokenOptions;
+    private readonly IHealthService _healthService;
+    private readonly ConfigurationProvider _configProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RelayController"/> class.
@@ -39,13 +45,17 @@ public class RelayController : ControllerBase
     /// <param name="relayUrlBuilder">Relay URL builder for host resolution.</param>
     /// <param name="tokenValidator">Relay token validator for public endpoints.</param>
     /// <param name="tokenOptions">Relay token policy options.</param>
+    /// <param name="healthService">TVHeadend health tracking service.</param>
+    /// <param name="configProvider">Plugin configuration provider.</param>
     public RelayController(
         IRelayService relay,
         IRelayMetricsService metrics,
         RelayActivityTracker activityTracker,
         IRelayUrlBuilder relayUrlBuilder,
         IRelayTokenValidator tokenValidator,
-        RelayTokenOptions tokenOptions)
+        RelayTokenOptions tokenOptions,
+        IHealthService healthService,
+        ConfigurationProvider configProvider)
     {
         _relay = relay ?? throw new ArgumentNullException(nameof(relay));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
@@ -53,23 +63,84 @@ public class RelayController : ControllerBase
         _relayUrlBuilder = relayUrlBuilder ?? throw new ArgumentNullException(nameof(relayUrlBuilder));
         _tokenValidator = tokenValidator ?? throw new ArgumentNullException(nameof(tokenValidator));
         _tokenOptions = tokenOptions ?? throw new ArgumentNullException(nameof(tokenOptions));
+        _healthService = healthService ?? throw new ArgumentNullException(nameof(healthService));
+        _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
     }
 
     /// <summary>
-    /// Returns the relay service status — confirms the relay endpoints are reachable and reports the effective host.
+    /// Returns the relay service status including a real upstream connectivity check.
+    /// Verifies that the relay host resolves and that TVHeadend is reachable.
     /// </summary>
-    /// <returns>Relay status object.</returns>
+    /// <returns>Relay status with health information.</returns>
     [HttpGet("status")]
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<object> GetRelayStatus()
     {
+        var config = _configProvider.Configuration;
+        var relayEnabled = config?.RelayEnabled ?? false;
+        var effectiveHost = _relayUrlBuilder.GetEffectiveBaseUrl();
+        var healthSnapshot = _healthService.GetSnapshot();
+
+        var tvhConfigured = config != null
+            && !string.IsNullOrWhiteSpace(config.Host)
+            && config.Port > 0;
+
+        var tvhHealthy = healthSnapshot.Status == HealthStatus.Healthy;
+        var tvhDegraded = healthSnapshot.Status == HealthStatus.Degraded
+            || healthSnapshot.Status == HealthStatus.Recovering;
+        var tvhUnreachable = healthSnapshot.Status == HealthStatus.Unreachable
+            || healthSnapshot.Status == HealthStatus.CircuitOpen
+            || healthSnapshot.Status == HealthStatus.Timeout
+            || healthSnapshot.Status == HealthStatus.AuthFailed;
+
+        string status;
+        string? message = null;
+        if (!relayEnabled)
+        {
+            status = "disabled";
+            message = "Relay service is disabled in plugin configuration.";
+        }
+        else if (!tvhConfigured)
+        {
+            status = "error";
+            message = "TVHeadend connection is not configured (host/port missing).";
+        }
+        else if (tvhHealthy)
+        {
+            status = "ok";
+        }
+        else if (tvhDegraded)
+        {
+            status = "degraded";
+            message = $"TVHeadend is responding but with issues: {healthSnapshot.Status}";
+        }
+        else if (tvhUnreachable)
+        {
+            status = "error";
+            message = $"TVHeadend is not reachable: {healthSnapshot.Status}"
+                + (healthSnapshot.LastFailureReason != FailureReason.None
+                    ? $" ({healthSnapshot.LastFailureReason})"
+                    : string.Empty);
+        }
+        else
+        {
+            // Unknown — no health data yet. Report as "checking".
+            status = "unknown";
+            message = "No health data available yet. TVHeadend connectivity has not been verified.";
+        }
+
         return Ok(new
         {
-            Status = "ok",
-            Enabled = true,
+            Status = status,
+            Enabled = relayEnabled,
             ActiveStreams = _activityTracker.ActiveStreams,
-            EffectiveHost = _relayUrlBuilder.GetEffectiveBaseUrl(),
+            EffectiveHost = effectiveHost,
+            TvHeadendHealth = healthSnapshot.Status.ToString(),
+            LastSuccessUtc = healthSnapshot.LastSuccessUtc,
+            LastResponseTimeMs = healthSnapshot.LastResponseTimeMs,
+            ConsecutiveFailures = healthSnapshot.ConsecutiveFailures,
+            Message = message,
         });
     }
 

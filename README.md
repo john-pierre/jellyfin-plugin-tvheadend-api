@@ -361,13 +361,25 @@ When using the plugin's token generation endpoint, the plugin now retries token 
 
 If you are an AI coding assistant working in this repository:
 
-- Read `AGENTS.md` first.
-- Then read `.github/copilot-instructions.md`.
-- When validating Jellyfin core behavior, also reference the sibling core repository `../jellyfin` if it is present in your workspace.
+- Read `.github/AGENTS.md` first (behavioral principles).
+- Then read the instructions for your tool:
+  - **GitHub Copilot:** `.github/copilot-instructions.md`
+  - **OpenCode:** `.opencode/instructions.md`
 - Keep docs and comments in English.
 - Prefer minimal, focused diffs.
 - Preserve plugin behavior unless change is requested and documented.
-- Use portable paths only (`Jellyfin.Plugin.TvHeadendApi/...`, `docs/...`, `../jellyfin/...`); do not use machine-specific absolute paths.
+- Use portable paths only (`Jellyfin.Plugin.TvHeadendApi/...`, `docs/...`); do not use machine-specific absolute paths.
+
+### AI Documentation Structure
+
+| Location | Content |
+|----------|---------|
+| `.docs/ai/` | Core reference docs (overview, architecture, coding/testing/performance/security standards, domain knowledge) |
+| `.ai/prompts/` | Workflow prompts (refactor, bugfix, feature, test-generation, review, release) |
+| `.ai/skills/` | Domain-specific skills (database, relay, tvheadend, dashboard, logging, token-security, streaming-profile) |
+| `.ai/agents/` | Agent role definitions (architect, reviewer, performance, security, test-engineer, release-manager) |
+| `.github/copilot-instructions.md` | GitHub Copilot specific instructions |
+| `.opencode/instructions.md` | OpenCode specific instructions |
 
 Primary architecture files:
 
@@ -413,7 +425,7 @@ For cross-repo debugging and behavior checks, keep the Jellyfin core repository 
 
 In issues, docs, and review notes, prefer repository-relative paths so instructions remain portable for all contributors.
 
-For full contributor flow, see `CONTRIBUTING.md` and docs under `docs/ai/`.
+For full contributor flow, see `CONTRIBUTING.md` and docs under `docs/guides/`.
 
 ## License
 

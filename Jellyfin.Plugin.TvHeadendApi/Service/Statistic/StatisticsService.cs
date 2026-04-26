@@ -3,13 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
-using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Database;
-using Jellyfin.Plugin.TvHeadendApi.Service.Health;
-using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Session;
@@ -32,7 +28,8 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
     private readonly ConfigurationProvider _configProvider;
     private readonly DatabaseHealthService _dbHealthService;
     private readonly DatabaseWriteCoordinator _writeCoordinator;
-    private readonly DbContextOptions<ViewingSessionContext> _dbContextOptions;
+    private readonly DatabaseProvider _databaseProvider;
+    private DbContextOptions<ViewingSessionContext>? _lazyDbContextOptions;
     private Timer? _stuckSessionTimer;
 
     public StatisticsService(
@@ -41,14 +38,36 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         ConfigurationProvider configProvider,
         DatabaseHealthService dbHealthService,
         DatabaseWriteCoordinator writeCoordinator,
-        DbContextOptions<ViewingSessionContext> dbContextOptions)
+        DatabaseProvider databaseProvider)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _dbHealthService = dbHealthService ?? throw new ArgumentNullException(nameof(dbHealthService));
         _writeCoordinator = writeCoordinator ?? throw new ArgumentNullException(nameof(writeCoordinator));
-        _dbContextOptions = dbContextOptions ?? throw new ArgumentNullException(nameof(dbContextOptions));
+        _databaseProvider = databaseProvider ?? throw new ArgumentNullException(nameof(databaseProvider));
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="StatisticsService"/> class
+    /// with pre-built context options for unit testing.
+    /// </summary>
+    /// <param name="logger">Logger instance.</param>
+    /// <param name="sessionManager">Session manager instance.</param>
+    /// <param name="configProvider">Configuration provider.</param>
+    /// <param name="dbHealthService">Database health service.</param>
+    /// <param name="writeCoordinator">Write coordinator.</param>
+    /// <param name="dbContextOptions">Pre-built EF Core context options.</param>
+    internal StatisticsService(
+        ILogger<StatisticsService> logger,
+        ISessionManager sessionManager,
+        ConfigurationProvider configProvider,
+        DatabaseHealthService dbHealthService,
+        DatabaseWriteCoordinator writeCoordinator,
+        DbContextOptions<ViewingSessionContext> dbContextOptions)
+        : this(logger, sessionManager, configProvider, dbHealthService, writeCoordinator, CreateNullProvider())
+    {
+        _lazyDbContextOptions = dbContextOptions;
     }
 
     /// <inheritdoc />
@@ -61,12 +80,21 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
                 return Array.Empty<ViewingSession>();
             }
 
-            using var dbContext = CreateDbContext();
-            return dbContext.ViewingSessions
-                .AsNoTracking()
-                .OrderByDescending(s => s.StartTimeUtc)
-                .ToList()
-                .AsReadOnly();
+            try
+            {
+                using var dbContext = CreateDbContext();
+                return dbContext.ViewingSessions
+                    .AsNoTracking()
+                    .OrderByDescending(s => s.StartTimeUtc)
+                    .ToList()
+                    .AsReadOnly();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to read viewing sessions.");
+                _dbHealthService.RecordError(ex);
+                return Array.Empty<ViewingSession>();
+            }
         }
     }
 
@@ -78,26 +106,35 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
             return new ViewingStatisticsResult();
         }
 
-        using var dbContext = CreateDbContext();
-        var cutoff = days > 0 ? DateTime.UtcNow.AddDays(-days) : DateTime.MinValue;
-        var completedSessions = dbContext.ViewingSessions
-            .Where(s => s.StartTimeUtc >= cutoff && s.EndTimeUtc.HasValue)
-            .AsNoTracking()
-            .OrderByDescending(s => s.StartTimeUtc)
-            .ToList();
-        var activeSessions = dbContext.ViewingSessions
-            .Where(s => s.StartTimeUtc >= cutoff && !s.EndTimeUtc.HasValue)
-            .AsNoTracking()
-            .OrderByDescending(s => s.StartTimeUtc)
-            .ToList();
-
-        return new ViewingStatisticsResult
+        try
         {
-            Sessions = completedSessions,
-            ActiveSessions = activeSessions,
-            TotalCount = completedSessions.Count + activeSessions.Count,
-            ActiveCount = activeSessions.Count,
-        };
+            using var dbContext = CreateDbContext();
+            var cutoff = days > 0 ? DateTime.UtcNow.AddDays(-days) : DateTime.MinValue;
+            var completedSessions = dbContext.ViewingSessions
+                .Where(s => s.StartTimeUtc >= cutoff && s.EndTimeUtc.HasValue)
+                .AsNoTracking()
+                .OrderByDescending(s => s.StartTimeUtc)
+                .ToList();
+            var activeSessions = dbContext.ViewingSessions
+                .Where(s => s.StartTimeUtc >= cutoff && !s.EndTimeUtc.HasValue)
+                .AsNoTracking()
+                .OrderByDescending(s => s.StartTimeUtc)
+                .ToList();
+
+            return new ViewingStatisticsResult
+            {
+                Sessions = completedSessions,
+                ActiveSessions = activeSessions,
+                TotalCount = completedSessions.Count + activeSessions.Count,
+                ActiveCount = activeSessions.Count,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read viewing statistics.");
+            _dbHealthService.RecordError(ex);
+            return new ViewingStatisticsResult();
+        }
     }
 
     /// <inheritdoc />
@@ -147,15 +184,22 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
             return;
         }
 
-        using var writeLock = await _writeCoordinator.AcquireWriteAsync(cancellationToken).ConfigureAwait(false);
-        using var dbContext = CreateDbContext();
-        var activeSessions = dbContext.ViewingSessions.Where(s => !s.EndTimeUtc.HasValue).ToList();
-        foreach (var session in activeSessions)
+        try
         {
-            session.EndTimeUtc = DateTime.UtcNow;
-        }
+            using var writeLock = await _writeCoordinator.AcquireWriteAsync(cancellationToken).ConfigureAwait(false);
+            using var dbContext = CreateDbContext();
+            var activeSessions = dbContext.ViewingSessions.Where(s => !s.EndTimeUtc.HasValue).ToList();
+            foreach (var session in activeSessions)
+            {
+                session.EndTimeUtc = DateTime.UtcNow;
+            }
 
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to close active sessions during shutdown.");
+        }
 
         _logger.LogInformation("StatisticsService stopped.");
     }
@@ -316,52 +360,69 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
 
     private void CloseOrphanedSessions()
     {
-        if (!_dbHealthService.IsAvailable)
+        try
         {
-            return;
-        }
-
-        using var writeLock = _writeCoordinator.AcquireWrite();
-        using var dbContext = CreateDbContext();
-        var openSessions = dbContext.ViewingSessions.Where(s => !s.EndTimeUtc.HasValue).ToList();
-        if (openSessions.Count == 0)
-        {
-            return;
-        }
-
-        var activeKeys = _sessionManager.Sessions
-            .Where(s => s.NowPlayingItem != null)
-            .Select(s => (s.UserName ?? string.Empty, s.DeviceName ?? string.Empty, s.Client ?? string.Empty))
-            .ToHashSet();
-
-        var closedCount = 0;
-        foreach (var session in openSessions)
-        {
-            if (activeKeys.Contains((session.UserName, session.DeviceName, session.ClientName)))
+            if (!_dbHealthService.IsAvailable)
             {
-                continue;
+                return;
             }
 
-            session.EndTimeUtc = DateTime.UtcNow;
-            closedCount++;
-            _logger.LogWarning(
-                "Closed orphaned session not in Jellyfin: User={User}, Device={Device}, Client={Client}, Channel={Channel}, Duration={Duration:F1}min",
-                session.UserName,
-                session.DeviceName,
-                session.ClientName,
-                session.ChannelName,
-                session.DurationMinutes ?? 0);
-        }
+            using var writeLock = _writeCoordinator.AcquireWrite();
+            using var dbContext = CreateDbContext();
+            var openSessions = dbContext.ViewingSessions.Where(s => !s.EndTimeUtc.HasValue).ToList();
+            if (openSessions.Count == 0)
+            {
+                return;
+            }
 
-        if (closedCount > 0)
-        {
-            dbContext.SaveChanges();
-            _logger.LogInformation("Closed {Count} orphaned session(s).", closedCount);
+            var activeKeys = _sessionManager.Sessions
+                .Where(s => s.NowPlayingItem != null)
+                .Select(s => (s.UserName ?? string.Empty, s.DeviceName ?? string.Empty, s.Client ?? string.Empty))
+                .ToHashSet();
+
+            var closedCount = 0;
+            foreach (var session in openSessions)
+            {
+                if (activeKeys.Contains((session.UserName, session.DeviceName, session.ClientName)))
+                {
+                    continue;
+                }
+
+                session.EndTimeUtc = DateTime.UtcNow;
+                closedCount++;
+                _logger.LogWarning(
+                    "Closed orphaned session not in Jellyfin: User={User}, Device={Device}, Client={Client}, Channel={Channel}, Duration={Duration:F1}min",
+                    session.UserName,
+                    session.DeviceName,
+                    session.ClientName,
+                    session.ChannelName,
+                    session.DurationMinutes ?? 0);
+            }
+
+            if (closedCount > 0)
+            {
+                dbContext.SaveChanges();
+                _logger.LogInformation("Closed {Count} orphaned session(s).", closedCount);
+            }
         }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to close orphaned sessions — database may be temporarily unavailable.");
+        }
+    }
+
+    private static DatabaseProvider CreateNullProvider()
+    {
+        return new DatabaseProvider(new Storage.DataFolderPathProvider(() => null));
+    }
+
+    private DbContextOptions<ViewingSessionContext> GetDbContextOptions()
+    {
+        return _lazyDbContextOptions ??= _databaseProvider.CreateContextOptions<ViewingSessionContext>();
     }
 
     private ViewingSessionContext CreateDbContext()
     {
-        return new ViewingSessionContext(_dbContextOptions);
+        return new ViewingSessionContext(GetDbContextOptions());
     }
 }

@@ -57,27 +57,37 @@ public class MediaSourceServiceTests
             provider);
     }
 
+    private static IMediaInfoCacheService CreateCacheService(string? cachePath)
+    {
+        var library = new Mock<ILibraryManager>();
+        library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(FixedInternalChannelId);
+        return new MediaInfoCacheService(NullLogger<MediaInfoCacheService>.Instance, library.Object, () => cachePath);
+    }
+
+    private static IMediaInfoCacheService CreateNullCacheService()
+    {
+        return CreateCacheService(null);
+    }
+
     [Fact]
     public void Constructor_WithNullLogger_Throws()
     {
-        var library = new Mock<ILibraryManager>();
         var resolver = new Mock<IProfileContainerResolver>();
         var api = new Mock<IApiClient>();
         var urlBuilder = new UrlBuilder();
 
-        Assert.Throws<ArgumentNullException>(() => new MediaSourceService(null!, library.Object, resolver.Object, StubProfileResolver(), api.Object, urlBuilder, StubRelay(), () => null));
+        Assert.Throws<ArgumentNullException>(() => new MediaSourceService(null!, resolver.Object, StubProfileResolver(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService()));
     }
 
     [Fact]
     public async Task GetChannelStreamAsync_WithMissingConfig_ThrowsInvalidOperationException()
     {
-        var library = new Mock<ILibraryManager>();
         var resolver = new Mock<IProfileContainerResolver>();
         var api = new Mock<IApiClient>();
         var urlBuilder = new UrlBuilder();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, StubProfileResolver(), api.Object, urlBuilder, StubRelay(), () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetChannelStreamAsync("ch-1", CancellationToken.None));
     }
@@ -85,13 +95,12 @@ public class MediaSourceServiceTests
     [Fact]
     public async Task GetChannelStreamAsync_WithEmptyChannelId_ThrowsArgumentException()
     {
-        var library = new Mock<ILibraryManager>();
         var resolver = new Mock<IProfileContainerResolver>();
         var api = new Mock<IApiClient>();
         var urlBuilder = new UrlBuilder();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(new PluginConfiguration());
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, StubProfileResolver(), api.Object, urlBuilder, StubRelay(), () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
 
         await Assert.ThrowsAsync<ArgumentException>(() => sut.GetChannelStreamAsync(string.Empty, CancellationToken.None));
     }
@@ -116,7 +125,6 @@ public class MediaSourceServiceTests
             AllowAnonymousAccess = true,
         };
 
-        var library = new Mock<ILibraryManager>();
         var resolver = new Mock<IProfileContainerResolver>();
         var api = new Mock<IApiClient>();
         var urlBuilder = new UrlBuilder();
@@ -126,7 +134,7 @@ public class MediaSourceServiceTests
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
         var mediaSource = await sut.GetChannelStreamAsync("ch-42", CancellationToken.None);
 
         Assert.Equal("ch-42", mediaSource.Id);
@@ -149,7 +157,6 @@ public class MediaSourceServiceTests
             AllowAnonymousAccess = true,
         };
 
-        var library = new Mock<ILibraryManager>();
         var resolver = new Mock<IProfileContainerResolver>();
         var api = new Mock<IApiClient>();
         var urlBuilder = new UrlBuilder();
@@ -159,7 +166,7 @@ public class MediaSourceServiceTests
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
         var mediaSource = await sut.GetChannelStreamAsync("ch-1", CancellationToken.None);
 
         Assert.Equal(0, mediaSource.AnalyzeDurationMs);
@@ -177,8 +184,6 @@ public class MediaSourceServiceTests
             AllowAnonymousAccess = true,
         };
 
-        var library = new Mock<ILibraryManager>();
-        library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(Guid.NewGuid());
         var resolver = new Mock<IProfileContainerResolver>();
         var api = new Mock<IApiClient>();
         var urlBuilder = new UrlBuilder();
@@ -188,7 +193,7 @@ public class MediaSourceServiceTests
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
         var result = await sut.GetChannelStreamMediaSourcesAsync("ch-2", CancellationToken.None);
 
         Assert.Single(result);
@@ -208,7 +213,6 @@ public class MediaSourceServiceTests
             AllowAnonymousAccess = true,
         };
 
-        var library = new Mock<ILibraryManager>();
         var resolver = new Mock<IProfileContainerResolver>();
         var api = new Mock<IApiClient>();
         var urlBuilder = new UrlBuilder();
@@ -218,7 +222,7 @@ public class MediaSourceServiceTests
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
         var mediaSource = await sut.GetChannelStreamAsync("ch-99", CancellationToken.None);
 
         Assert.Equal(1234, mediaSource.BufferMs);
@@ -236,7 +240,6 @@ public class MediaSourceServiceTests
             AllowAnonymousAccess = true,
         };
 
-        var library = new Mock<ILibraryManager>();
         var resolver = new Mock<IProfileContainerResolver>();
         var api = new Mock<IApiClient>();
         var urlBuilder = new UrlBuilder();
@@ -246,7 +249,7 @@ public class MediaSourceServiceTests
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("jelly fin+fast", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
         var mediaSource = await sut.GetChannelStreamAsync("ch/1", CancellationToken.None);
 
         Assert.Contains("stream/ch%2F1", mediaSource.Path, StringComparison.Ordinal);
@@ -265,7 +268,6 @@ public class MediaSourceServiceTests
             AllowAnonymousAccess = true,
         };
 
-        var library = new Mock<ILibraryManager>();
         var resolver = new Mock<IProfileContainerResolver>();
         var api = new Mock<IApiClient>();
         var urlBuilder = new UrlBuilder();
@@ -275,7 +277,7 @@ public class MediaSourceServiceTests
         resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), () => null);
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
         var mediaSource = await sut.GetChannelStreamAsync("ch-cache", CancellationToken.None);
 
         Assert.NotNull(mediaSource);
@@ -305,9 +307,9 @@ public class MediaSourceServiceTests
         using var doc = JsonDocument.Parse(cacheJson);
         Assert.Equal("mp4", doc.RootElement.GetProperty("Container").GetString());
         Assert.True(doc.RootElement.GetProperty("IsInfiniteStream").GetBoolean());
-        Assert.Equal("jellyfin", MediaSourceService.ExtractQueryParameter(doc.RootElement.GetProperty("Path").GetString(), "profile"));
-        Assert.Equal("h264", MediaSourceService.ExtractCodecFromMediaStreams(doc.RootElement, "Video"));
-        Assert.Equal("aac", MediaSourceService.ExtractCodecFromMediaStreams(doc.RootElement, "Audio"));
+        Assert.Equal("jellyfin", MediaInfoCacheService.ExtractQueryParameter(doc.RootElement.GetProperty("Path").GetString(), "profile"));
+        Assert.Equal("h264", MediaInfoCacheService.ExtractCodecFromMediaStreams(doc.RootElement, "Video"));
+        Assert.Equal("aac", MediaInfoCacheService.ExtractCodecFromMediaStreams(doc.RootElement, "Audio"));
     }
 
     [Fact]
@@ -333,7 +335,7 @@ public class MediaSourceServiceTests
         await sut.GetChannelStreamAsync("ch-bad", CancellationToken.None);
 
         var rewrittenJson = await File.ReadAllTextAsync(cacheFilePath);
-        Assert.True(MediaSourceService.TryParseCacheSnapshot(rewrittenJson, cacheFilePath, out var parsed));
+        Assert.True(MediaInfoCacheService.TryParseCacheSnapshot(rewrittenJson, cacheFilePath, out var parsed));
         Assert.Equal("jellyfin", parsed!.ProfileName);
         Assert.Equal("mp4", parsed.Container);
     }
@@ -372,7 +374,7 @@ public class MediaSourceServiceTests
         await rewrittenSut.GetChannelStreamAsync("ch-rewrite", CancellationToken.None);
 
         var rewrittenJson = await ReadSingleCacheFileAsync(cacheDir.Path);
-        Assert.True(MediaSourceService.TryParseCacheSnapshot(rewrittenJson, GetCacheFilePath(cacheDir.Path, "ch-rewrite"), out var parsed));
+        Assert.True(MediaInfoCacheService.TryParseCacheSnapshot(rewrittenJson, GetCacheFilePath(cacheDir.Path, "ch-rewrite"), out var parsed));
         Assert.Equal("jellyfin", parsed!.ProfileName);
         Assert.Equal("h264", parsed.VideoCodec);
         Assert.Equal("aac", parsed.AudioCodec);
@@ -412,7 +414,7 @@ public class MediaSourceServiceTests
         await rewrittenSut.GetChannelStreamAsync("ch-preserve", CancellationToken.None);
 
         var finalJson = await ReadSingleCacheFileAsync(cacheDir.Path);
-        Assert.True(MediaSourceService.TryParseCacheSnapshot(finalJson, GetCacheFilePath(cacheDir.Path, "ch-preserve"), out var parsed));
+        Assert.True(MediaInfoCacheService.TryParseCacheSnapshot(finalJson, GetCacheFilePath(cacheDir.Path, "ch-preserve"), out var parsed));
         Assert.Equal("pass", parsed!.ProfileName);
         Assert.Equal("mpegts", parsed.Container);
     }
@@ -420,33 +422,33 @@ public class MediaSourceServiceTests
     [Fact]
     public void ExtractQueryParameter_WithProfileInUrl_ReturnsExpectedValue()
     {
-        var result = MediaSourceService.ExtractQueryParameter("http://tvh.local:9981/stream/channel/ch-1?profile=Pass&ticket=abc", "profile");
+        var result = MediaInfoCacheService.ExtractQueryParameter("http://tvh.local:9981/stream/channel/ch-1?profile=Pass&ticket=abc", "profile");
         Assert.Equal("Pass", result);
     }
 
     [Fact]
     public void ExtractQueryParameter_WithRelativeUrl_ReturnsNull()
     {
-        var result = MediaSourceService.ExtractQueryParameter("/stream/channel/ch-1?profile=Pass", "profile");
+        var result = MediaInfoCacheService.ExtractQueryParameter("/stream/channel/ch-1?profile=Pass", "profile");
         Assert.Null(result);
     }
 
     [Fact]
     public void ExtractQueryParameter_WithNullUrl_ReturnsNull()
     {
-        Assert.Null(MediaSourceService.ExtractQueryParameter(null, "profile"));
+        Assert.Null(MediaInfoCacheService.ExtractQueryParameter(null, "profile"));
     }
 
     [Fact]
     public void ExtractQueryParameter_WithEmptyParameterName_ReturnsNull()
     {
-        Assert.Null(MediaSourceService.ExtractQueryParameter("http://tvh:9981/stream?profile=pass", ""));
+        Assert.Null(MediaInfoCacheService.ExtractQueryParameter("http://tvh:9981/stream?profile=pass", ""));
     }
 
     [Fact]
     public void ExtractQueryParameter_WithNoQueryString_ReturnsNull()
     {
-        Assert.Null(MediaSourceService.ExtractQueryParameter("http://tvh:9981/stream/channel/ch-1", "profile"));
+        Assert.Null(MediaInfoCacheService.ExtractQueryParameter("http://tvh:9981/stream/channel/ch-1", "profile"));
     }
 
     [Fact]
@@ -455,8 +457,8 @@ public class MediaSourceServiceTests
         using var doc = JsonDocument.Parse("{\"MediaStreams\":[{\"Type\":\"Video\",\"Codec\":\"h264\"},{\"Type\":\"Audio\",\"Codec\":\"aac\"}]}");
         var root = doc.RootElement;
 
-        var video = MediaSourceService.ExtractCodecFromMediaStreams(root, "Video");
-        var audio = MediaSourceService.ExtractCodecFromMediaStreams(root, "Audio");
+        var video = MediaInfoCacheService.ExtractCodecFromMediaStreams(root, "Video");
+        var audio = MediaInfoCacheService.ExtractCodecFromMediaStreams(root, "Audio");
 
         Assert.Equal("h264", video);
         Assert.Equal("aac", audio);
@@ -466,7 +468,7 @@ public class MediaSourceServiceTests
     public void ExtractCodecFromMediaStreams_WithNoVideoStream_ReturnsNull()
     {
         using var doc = JsonDocument.Parse("{\"MediaStreams\":[{\"Type\":\"Audio\",\"Codec\":\"aac\"}]}");
-        var result = MediaSourceService.ExtractCodecFromMediaStreams(doc.RootElement, "Video");
+        var result = MediaInfoCacheService.ExtractCodecFromMediaStreams(doc.RootElement, "Video");
         Assert.Null(result);
     }
 
@@ -474,7 +476,7 @@ public class MediaSourceServiceTests
     public void ExtractCodecFromMediaStreams_WithNoMediaStreamsProperty_ReturnsNull()
     {
         using var doc = JsonDocument.Parse("{}");
-        var result = MediaSourceService.ExtractCodecFromMediaStreams(doc.RootElement, "Video");
+        var result = MediaInfoCacheService.ExtractCodecFromMediaStreams(doc.RootElement, "Video");
         Assert.Null(result);
     }
 
@@ -482,7 +484,7 @@ public class MediaSourceServiceTests
     public void ExtractCodecFromMediaStreams_WithNonArrayMediaStreams_ReturnsNull()
     {
         using var doc = JsonDocument.Parse("{\"MediaStreams\":\"not-an-array\"}");
-        var result = MediaSourceService.ExtractCodecFromMediaStreams(doc.RootElement, "Video");
+        var result = MediaInfoCacheService.ExtractCodecFromMediaStreams(doc.RootElement, "Video");
         Assert.Null(result);
     }
 
@@ -494,13 +496,13 @@ public class MediaSourceServiceTests
     [InlineData("matroska", "matroska")]
     public void NormalizeContainerForCache_ReturnsExpected(string? input, string expected)
     {
-        Assert.Equal(expected, MediaSourceService.NormalizeContainerForCache(input));
+        Assert.Equal(expected, MediaInfoCacheService.NormalizeContainerForCache(input));
     }
 
     [Fact]
     public void TryParseCacheSnapshot_WithMalformedJson_ReturnsFalse()
     {
-        var result = MediaSourceService.TryParseCacheSnapshot("{bad-json", "cache.json", out var snapshot);
+        var result = MediaInfoCacheService.TryParseCacheSnapshot("{bad-json", "cache.json", out var snapshot);
         Assert.False(result);
         Assert.Null(snapshot);
     }
@@ -508,13 +510,13 @@ public class MediaSourceServiceTests
     [Fact]
     public void TryParseCacheSnapshot_WithEmptyString_ReturnsFalse()
     {
-        Assert.False(MediaSourceService.TryParseCacheSnapshot("", "cache.json", out _));
+        Assert.False(MediaInfoCacheService.TryParseCacheSnapshot("", "cache.json", out _));
     }
 
     [Fact]
     public void TryParseCacheSnapshot_WithWhitespace_ReturnsFalse()
     {
-        Assert.False(MediaSourceService.TryParseCacheSnapshot("   ", null, out _));
+        Assert.False(MediaInfoCacheService.TryParseCacheSnapshot("   ", null, out _));
     }
 
     [Fact]
@@ -594,7 +596,7 @@ public class MediaSourceServiceTests
     public void BuildMediaInfoCacheContent_WithNullVideoAndAudioCodec_DefaultsToH264AndAac()
     {
         var snapshot = new ProfileSnapshot("pass", "uuid", "profile-mpegts", string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, null);
-        var content = MediaSourceService.BuildMediaInfoCacheContent("http://tvh:9981/stream", snapshot);
+        var content = MediaInfoCacheService.BuildMediaInfoCacheContent("http://tvh:9981/stream", snapshot);
 
         Assert.Equal("mpegts", content["Container"]);
         var streams = (Dictionary<string, object?>[])content["MediaStreams"]!;
@@ -615,12 +617,14 @@ public class MediaSourceServiceTests
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
 
-        return new MediaSourceService(NullLogger<MediaSourceService>.Instance, library.Object, resolver.Object, StubProfileResolver(config), api.Object, new UrlBuilder(), StubRelay(), () => cachePath);
+        var cacheService = new MediaInfoCacheService(NullLogger<MediaInfoCacheService>.Instance, library.Object, () => cachePath);
+
+        return new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, new UrlBuilder(), StubRelay(), cacheService);
     }
 
     private static string GetCacheFilePath(string cachePath, string channelId)
     {
-        var fileName = MediaSourceService.BuildMediainfoCacheFileName(
+        var fileName = MediaInfoCacheService.BuildMediainfoCacheFileName(
             "Jellyfin.LiveTv.LiveTvMediaSourceProvider",
             "LiveTvChannel",
             FixedInternalChannelId.ToString("N"),

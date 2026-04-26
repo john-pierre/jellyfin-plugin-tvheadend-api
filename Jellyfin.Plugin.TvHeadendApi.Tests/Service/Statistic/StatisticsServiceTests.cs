@@ -17,7 +17,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Statistics;
+namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Statistic;
 
 public class StatisticsServiceTests
 {
@@ -84,7 +84,7 @@ public class StatisticsServiceTests
         var sm = new Mock<ISessionManager>();
 
         Assert.Throws<ArgumentNullException>(() =>
-            new StatisticsService(NullLogger<StatisticsService>.Instance, sm.Object, new ConfigurationProvider(() => null), CreateTestDbHealth(), new DatabaseWriteCoordinator(), null!));
+            new StatisticsService(NullLogger<StatisticsService>.Instance, sm.Object, new ConfigurationProvider(() => null), CreateTestDbHealth(), new DatabaseWriteCoordinator(), (DatabaseProvider)null!));
     }
 
     // ── GetStatistics ────────────────────────────────────────────────
@@ -501,10 +501,9 @@ public class StatisticsServiceTests
         var sm = new Mock<ISessionManager>();
         var invalidOptions = new DbContextOptionsBuilder<ViewingSessionContext>().Options;
 
-        // Create an uninitialized (unavailable) DatabaseHealthService
-        var dir = Path.Combine(Path.GetTempPath(), "test_unavail_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        var pathProvider = new DataFolderPathProvider(() => dir);
+        // Create an uninitialized (unavailable) DatabaseHealthService.
+        // Use a null-returning path provider so lazy initialization cannot trigger.
+        var pathProvider = new DataFolderPathProvider(() => null);
         var provider = new DatabaseProvider(pathProvider);
         var factory = new DatabaseConnectionFactory(provider);
         var migration = new DatabaseMigrationService(factory, NullLogger<DatabaseMigrationService>.Instance);

@@ -14,5 +14,5 @@ The Subscription Service queries TVHeadend's `/api/status/subscriptions` endpoin
 
 ## Internal Dependencies
 
-- **`Helper`** — ApiClient for subscription status API calls
+- **`Backend`** — ApiClient for subscription status API calls
 

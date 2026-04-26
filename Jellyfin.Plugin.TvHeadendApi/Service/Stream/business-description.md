@@ -16,5 +16,5 @@ The Stream Service has two responsibilities: (1) `MediaSourceService` builds `Me
 
 - **`Profile`** — Resolved profile determines container/codec hints for MediaSourceInfo
 - **`Auth`** — Auth token appended to stream URLs
-- **`Helper`** — UrlBuilder constructs base stream URLs
+- **`Backend`** — UrlBuilder constructs base stream URLs
 

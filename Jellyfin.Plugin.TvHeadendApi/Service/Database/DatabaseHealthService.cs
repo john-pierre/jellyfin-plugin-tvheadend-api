@@ -57,11 +57,13 @@ internal sealed class DatabaseHealthService
 
     /// <summary>
     /// Gets a value indicating whether the database is currently available for operations.
+    /// Triggers lazy initialization if not yet done.
     /// </summary>
     public bool IsAvailable
     {
         get
         {
+            EnsureInitialized();
             lock (_lock)
             {
                 return _status is DatabaseHealthStatus.Healthy
@@ -73,11 +75,13 @@ internal sealed class DatabaseHealthService
 
     /// <summary>
     /// Gets the current database health status.
+    /// Triggers lazy initialization if not yet done.
     /// </summary>
     public DatabaseHealthStatus Status
     {
         get
         {
+            EnsureInitialized();
             lock (_lock)
             {
                 return _status;
@@ -87,7 +91,9 @@ internal sealed class DatabaseHealthService
 
     /// <summary>
     /// Initializes the database: runs integrity check, runs migrations, and sets initial health state.
-    /// Must be called once during startup before any service accesses the database.
+    /// Safe to call multiple times — subsequent calls are no-ops.
+    /// Called lazily on first access via <see cref="IsAvailable"/> or <see cref="Status"/>,
+    /// or explicitly by services that need to ensure the database is ready.
     /// </summary>
     public void Initialize()
     {
@@ -180,7 +186,7 @@ internal sealed class DatabaseHealthService
         lock (_lock)
         {
             var dbPath = _provider.DatabasePath;
-            var dbName = Path.GetFileName(dbPath);
+            var dbName = Path.GetFileName(dbPath) ?? string.Empty;
             var parentFolder = Path.GetFileName(Path.GetDirectoryName(dbPath) ?? string.Empty);
 
             long? dbSize = null;
@@ -301,6 +307,29 @@ internal sealed class DatabaseHealthService
     }
 
     // ── Private helpers ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Ensures the database is initialized. If the database path is not yet available
+    /// (Plugin.Instance not set), the call is a no-op and initialization will be retried
+    /// on the next access.
+    /// </summary>
+    private void EnsureInitialized()
+    {
+        if (_initialized)
+        {
+            return;
+        }
+
+        // Don't attempt initialization if the plugin data folder is not yet available.
+        // This prevents creating the database in the wrong location (e.g. filesystem root)
+        // when Plugin.Instance has not been set yet during early DI resolution.
+        if (string.IsNullOrWhiteSpace(_provider.DatabasePath))
+        {
+            return;
+        }
+
+        Initialize();
+    }
 
     private void InitializeAndCheck()
     {

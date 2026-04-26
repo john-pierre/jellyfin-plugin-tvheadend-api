@@ -30,7 +30,8 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
     private readonly DatabaseHealthService _dbHealthService;
     private readonly DatabaseWriteCoordinator _writeCoordinator;
     private readonly RelayActivityTracker _activityTracker;
-    private readonly DbContextOptions<RelayMetricsContext> _dbContextOptions;
+    private readonly DatabaseProvider _databaseProvider;
+    private DbContextOptions<RelayMetricsContext>? _lazyDbContextOptions;
 
     public RelayMetricsService(
         ILogger<RelayMetricsService> logger,
@@ -38,14 +39,36 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         DatabaseHealthService dbHealthService,
         DatabaseWriteCoordinator writeCoordinator,
         RelayActivityTracker activityTracker,
-        DbContextOptions<RelayMetricsContext> dbContextOptions)
+        DatabaseProvider databaseProvider)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _dbHealthService = dbHealthService ?? throw new ArgumentNullException(nameof(dbHealthService));
         _writeCoordinator = writeCoordinator ?? throw new ArgumentNullException(nameof(writeCoordinator));
         _activityTracker = activityTracker ?? throw new ArgumentNullException(nameof(activityTracker));
-        _dbContextOptions = dbContextOptions ?? throw new ArgumentNullException(nameof(dbContextOptions));
+        _databaseProvider = databaseProvider ?? throw new ArgumentNullException(nameof(databaseProvider));
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RelayMetricsService"/> class
+    /// with pre-built context options for unit testing.
+    /// </summary>
+    /// <param name="logger">Logger instance.</param>
+    /// <param name="configProvider">Configuration provider.</param>
+    /// <param name="dbHealthService">Database health service.</param>
+    /// <param name="writeCoordinator">Write coordinator.</param>
+    /// <param name="activityTracker">Relay activity tracker.</param>
+    /// <param name="dbContextOptions">Pre-built EF Core context options.</param>
+    internal RelayMetricsService(
+        ILogger<RelayMetricsService> logger,
+        ConfigurationProvider configProvider,
+        DatabaseHealthService dbHealthService,
+        DatabaseWriteCoordinator writeCoordinator,
+        RelayActivityTracker activityTracker,
+        DbContextOptions<RelayMetricsContext> dbContextOptions)
+        : this(logger, configProvider, dbHealthService, writeCoordinator, activityTracker, CreateNullProvider())
+    {
+        _lazyDbContextOptions = dbContextOptions;
     }
 
     /// <inheritdoc />
@@ -99,15 +122,24 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
             return new RelayMetricsSummary { TimeRange = FormatTimeRange(hours) };
         }
 
-        using var db = CreateContext();
+        try
+        {
+            using var db = CreateContext();
 
-        var cutoff = hours > 0 ? DateTime.UtcNow.AddHours(-hours) : DateTime.MinValue;
-        var rows = db.RelayRequestMetrics
-            .AsNoTracking()
-            .Where(r => r.CreatedAtUtc >= cutoff)
-            .ToList();
+            var cutoff = hours > 0 ? DateTime.UtcNow.AddHours(-hours) : DateTime.MinValue;
+            var rows = db.RelayRequestMetrics
+                .AsNoTracking()
+                .Where(r => r.CreatedAtUtc >= cutoff)
+                .ToList();
 
-        return BuildSummary(rows, hours);
+            return BuildSummary(rows, hours);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read relay metrics summary.");
+            _dbHealthService.RecordError(ex);
+            return new RelayMetricsSummary { TimeRange = FormatTimeRange(hours) };
+        }
     }
 
     // ── Private — Persistence ───────────────────────────────────────
@@ -314,5 +346,15 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
 
     // ── Private — Context ────────────────────────────────────────────
 
-    private RelayMetricsContext CreateContext() => new(_dbContextOptions);
+    private static DatabaseProvider CreateNullProvider()
+    {
+        return new DatabaseProvider(new Storage.DataFolderPathProvider(() => null));
+    }
+
+    private DbContextOptions<RelayMetricsContext> GetDbContextOptions()
+    {
+        return _lazyDbContextOptions ??= _databaseProvider.CreateContextOptions<RelayMetricsContext>();
+    }
+
+    private RelayMetricsContext CreateContext() => new(GetDbContextOptions());
 }

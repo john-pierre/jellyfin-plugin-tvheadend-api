@@ -14,5 +14,5 @@ The Input Monitor Service queries TVHeadend's `/api/status/inputs` endpoint to r
 
 ## Internal Dependencies
 
-- **`Helper`** — ApiClient for input status API calls
+- **`Backend`** — ApiClient for input status API calls
 

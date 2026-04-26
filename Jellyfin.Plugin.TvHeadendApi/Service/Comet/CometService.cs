@@ -10,6 +10,7 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Logging;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
@@ -34,12 +35,13 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     private readonly IApiClient _apiClient;
     private readonly IUrlBuilder _urlBuilder;
     private readonly ConfigurationProvider _configProvider;
-    private readonly DbContextOptions<ViewingSessionContext>? _dbContextOptions;
+    private readonly DatabaseProvider? _databaseProvider;
     private readonly PluginLogService? _pluginLogService;
     private readonly List<LogMessage> _logBuffer = new();
     private readonly object _logLock = new();
     private readonly object _diskLock = new();
 
+    private DbContextOptions<ViewingSessionContext>? _lazyDbContextOptions;
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _receiveLoopTask;
     private int _reconnectAttempt;
@@ -52,15 +54,52 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         IApiClient apiClient,
         IUrlBuilder urlBuilder,
         ConfigurationProvider configProvider,
-        DbContextOptions<ViewingSessionContext>? dbContextOptions = null,
+        DatabaseProvider? databaseProvider = null,
         PluginLogService? pluginLogService = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _urlBuilder = urlBuilder ?? throw new ArgumentNullException(nameof(urlBuilder));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
-        _dbContextOptions = dbContextOptions;
+        _databaseProvider = databaseProvider;
         _pluginLogService = pluginLogService;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CometService"/> class
+    /// with pre-built context options for unit testing.
+    /// </summary>
+    /// <param name="logger">Logger instance.</param>
+    /// <param name="apiClient">TVHeadend API client.</param>
+    /// <param name="urlBuilder">TVHeadend URL builder.</param>
+    /// <param name="configProvider">Configuration provider.</param>
+    /// <param name="dbContextOptions">Pre-built EF Core context options.</param>
+    /// <param name="pluginLogService">Optional plugin log service.</param>
+    internal CometService(
+        ILogger<CometService> logger,
+        IApiClient apiClient,
+        IUrlBuilder urlBuilder,
+        ConfigurationProvider configProvider,
+        DbContextOptions<ViewingSessionContext>? dbContextOptions,
+        PluginLogService? pluginLogService)
+        : this(logger, apiClient, urlBuilder, configProvider, (DatabaseProvider?)null, pluginLogService)
+    {
+        _lazyDbContextOptions = dbContextOptions;
+    }
+
+    private DbContextOptions<ViewingSessionContext>? GetDbContextOptions()
+    {
+        if (_databaseProvider == null && _lazyDbContextOptions == null)
+        {
+            return null;
+        }
+
+        if (_lazyDbContextOptions != null)
+        {
+            return _lazyDbContextOptions;
+        }
+
+        return _lazyDbContextOptions ??= _databaseProvider!.CreateContextOptions<ViewingSessionContext>();
     }
 
     /// <summary>
@@ -84,14 +123,15 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     /// <returns>Log entries in reverse chronological order.</returns>
     public IReadOnlyList<TvheadendLogEntry> GetLogHistory(int count = 500, DateTime? sinceUtc = null)
     {
-        if (_dbContextOptions == null)
+        var dbOpts = GetDbContextOptions();
+        if (dbOpts == null)
         {
             return Array.Empty<TvheadendLogEntry>();
         }
 
         try
         {
-            using var db = new ViewingSessionContext(_dbContextOptions);
+            using var db = new ViewingSessionContext(dbOpts);
             IQueryable<TvheadendLogEntry> query = db.TvheadendLogEntries.AsNoTracking();
             if (sinceUtc.HasValue)
             {
@@ -426,7 +466,8 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     /// </summary>
     private void PersistLogEntry(DateTime timestampUtc, string text)
     {
-        if (_dbContextOptions == null)
+        var dbOpts = GetDbContextOptions();
+        if (dbOpts == null)
         {
             return;
         }
@@ -435,7 +476,7 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         {
             try
             {
-                using var db = new ViewingSessionContext(_dbContextOptions);
+                using var db = new ViewingSessionContext(dbOpts);
                 db.TvheadendLogEntries.Add(new TvheadendLogEntry
                 {
                     TimestampUtc = timestampUtc,

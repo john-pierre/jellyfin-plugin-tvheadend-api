@@ -2,11 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Health;
-using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
@@ -117,31 +114,6 @@ public sealed class OrchestratorService : ILiveTvService, ISupportsNewTimerIds, 
     /// <inheritdoc />
     public Task ResetTuner(string id, CancellationToken cancellationToken)
         => _streamLifecycleService.ResetTunerAsync(id, cancellationToken);
-
-    /// <summary>
-    /// Gets the EPG content type mapping from TVHeadend.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Content type dictionary.</returns>
-    public Task<Dictionary<int, string>> GetContentTypesAsync(CancellationToken cancellationToken)
-        => _guideService.GetContentTypesAsync(cancellationToken);
-
-    /// <summary>
-    /// Gets the channel tag mapping from TVHeadend.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Channel tag dictionary.</returns>
-    public Task<Dictionary<string, string>> GetChannelTagsAsync(CancellationToken cancellationToken)
-        => _guideService.GetChannelTagsAsync(cancellationToken);
-
-    /// <summary>
-    /// Gets the UUID of a DVR recording profile by name.
-    /// </summary>
-    /// <param name="profileName">Profile name.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The profile UUID.</returns>
-    public Task<string> GetRecordingProfileUuidAsync(string profileName, CancellationToken cancellationToken)
-        => _dvrService.GetRecordingProfileUuidAsync(profileName, cancellationToken);
 
     /// <summary>
     /// Creates a single timer and returns its ID.

@@ -26,7 +26,7 @@ The plugin integrates TVHeadend with Jellyfin's Live TV subsystem using TVHeaden
 │         │          └───────┬────────┘            │              │
 │         │                  │                     │              │
 │  ┌──────▼──────────────────▼─────────────────────▼──────────┐  │
-│  │                   Helper Layer                            │  │
+│  │                   Backend Layer                            │  │
 │  │  IApiClient · IUrlBuilder · GridFetcher                    │  │
 │  └──────────────────────────┬────────────────────────────────┘  │
 │                             │ HTTP/JSON                         │
@@ -50,27 +50,25 @@ The plugin integrates TVHeadend with Jellyfin's Live TV subsystem using TVHeaden
 | `ProfileDiscoveryService` | Discovers available TVHeadend profiles with TTL caching; validates configured profile names | Admin UI, StreamingProfileResolver |
 | `StatisticsService` | Tracks live TV viewing sessions via Jellyfin playback events | Background (`IHostedService`) |
 | `DashboardService` | Aggregates diagnostics, status, input, and subscription data for the admin dashboard | Admin UI |
- r| `CometService` | Buffers TVHeadend Comet log and disk-space updates for dashboard endpoints | Background (`IHostedService`) |
+| `CometService` | Buffers TVHeadend Comet log and disk-space updates for dashboard endpoints | Background (`IHostedService`) |
 | `EncodingOptionsReader` | Reads Jellyfin's FFmpeg encoding options for diagnostic reporting | DiagnosticService |
 
-### API Controller
+### API Controllers
 
-`PluginController` exposes admin-only REST endpoints under `/TvHeadendApi/`:
+The plugin exposes admin-only REST endpoints under `/TvHeadendApi/` via multiple focused controllers:
 
-- `GET /PluginInfo` — plugin metadata
-- `POST /ResetToDefaults` — reset configuration
-- `GET /Diagnose` — compatibility report
-- `POST /CreateProfile` — create TVHeadend profiles
-- `POST /GenerateAuthToken` — generate auth token
-- `GET /ProfileOptions` — available profiles
-- `GET /StreamingProfiles/Resolve` — test profile resolution with context
-- `GET /StreamingProfiles/Discovered` — discovered TVHeadend profiles
-- `GET /StreamingProfiles/Validate` — validate configured profile names
-- `POST /StreamingProfiles/RefreshCache` — invalidate profile discovery cache
-- `GET /Statistics` — viewing stats
-- `DELETE /Statistics` — clear stats
+| Controller | Responsibility |
+|---|---|
+| `PluginController` | Config, diagnostics, profiles, auth |
+| `StatisticsController` | Viewing statistics |
+| `MonitoringController` | Status, connections, inputs, subscriptions, health |
+| `DashboardController` | Aggregated dashboard data, relay metrics |
+| `StreamingProfileController` | Discovery, resolution, validation, channels, groups |
+| `LogsController` | Logs, disk space |
+| `DashboardLogsController` | Filtered log queries |
+| `RelayController` | Stream/image proxy, token security, status |
 
-All endpoints require Jellyfin admin elevation.
+All endpoints require Jellyfin admin elevation (except `RelayController` which uses anonymous + token-secured access).
 
 ## Module Responsibilities
 
@@ -82,14 +80,24 @@ All endpoints require Jellyfin admin elevation.
 | `ServiceRegistrator.cs` | DI container wiring |
 | `OrchestratorService` | Thin `ILiveTvService` facade — delegation only, no business logic |
 | `Service/Guide/` | Channel listing, EPG programs, content types, channel tags |
-| `Service/Dvr/` | Single timers, series timers, recording profile lookup |
+| `Service/Dvr/` | Single timers (`SingleTimerService`), series timers (`SeriesTimerService`), recording profile lookup |
 | `Service/Stream/` | Stream URL construction, media source info, stream lifecycle |
 | `Service/Auth/` | Auth token generation, validation, TVHeadend user management |
 | `Service/Profile/` | Profile resolution, container mapping, default profile creation |
 | `Service/StreamingProfile/` | Hierarchical streaming profile selection, discovery, validation |
 | `Service/Diagnostic/` | Compatibility checks, configuration analysis |
-| `Service/Statistics/` | Viewing session tracking, persistence, retention |
-| `Service/Helper/` | Low-level HTTP, URL building, grid pagination, idnode helpers |
+| `Service/Statistic/` | Viewing session tracking, SQLite persistence via `ViewingSessionContext`, retention |
+| `Service/Backend/` | Low-level HTTP (`ApiClient`), URL building (`UrlBuilder`), grid pagination (`GridFetcher`), idnode helpers |
+| `Service/Resilience/` | Retry with exponential back-off and circuit breaker (`ResiliencePolicies`, `FailureClassifier`) |
+| `Service/Metric/` | `System.Diagnostics.Metrics` instruments for API calls, durations, cache hits/misses (`MetricService`) |
+| `Service/Configuration/` | Plugin configuration access (`ConfigurationProvider`) and mutation (`ConfigurationSaver`) |
+| `Service/Storage/` | Plugin path resolution (`CachePathProvider`, `DataFolderPathProvider`) |
+| `Service/Common/` | Shared utilities (`JsonDefaults`) |
+| `Service/Database/` | SQLite database lifecycle, migrations, health, cleanup, recovery |
+| `Service/Health/` | Aggregated plugin health state |
+| `Service/Logging/` | Plugin log query, parsing, sanitization |
+| `Service/Relay/` | Stream relay URL building, token management, relay metrics |
+| `Service/Dashboard/` | Aggregates diagnostics, status, input, and subscription data for the admin dashboard |
 | `Model/` | TVHeadend API response DTOs and result objects |
 | `Configuration/` | Plugin configuration model and admin HTML page |
 | `Api/` | REST controller for admin UI integration |
@@ -101,13 +109,13 @@ All endpoints require Jellyfin admin elevation.
 | `OrchestratorService` | Contain business logic, HTTP calls, or mapping |
 | Domain services | Access `Plugin.Instance` directly (use injected dependencies) |
 | `Model/` | Contain logic beyond simple data holding |
-| `Service/Helper/` | Contain domain-specific business logic |
+| `Service/Backend/` | Contain domain-specific business logic |
 | `Api/` | Contain business logic (delegate to services) |
 | `Configuration/` | Contain runtime behavior logic |
 
 ## Dependency Direction Rules
 
-1. **Controller → Service → Helper → HTTP** (never reverse).
+1. **Controller → Service → Backend → HTTP** (never reverse).
 2. **Services depend on interfaces** (`IApiClient`, `IUrlBuilder`, `IProfileResolver`, etc.).
 3. **Models are passive data containers** — no service dependencies.
 4. **Configuration is read-only at runtime** — services read config via `IApiClient.GetCurrentConfiguration()`.
@@ -117,7 +125,7 @@ All endpoints require Jellyfin admin elevation.
 | Concern | Location |
 |---|---|
 | Business logic | Domain services (`Service/{domain}/`) |
-| Integration/HTTP logic | `Service/Helper/ApiClient`, `GridFetcher` |
+| Integration/HTTP logic | `Service/Backend/ApiClient`, `GridFetcher` |
 | DTOs / response models | `Model/{domain}/` |
 | Mapping (TVHeadend → Jellyfin) | Domain services (inline in service methods) |
 | Validation | Service layer (argument guards) or `TokenValidator` |
@@ -129,7 +137,7 @@ All endpoints require Jellyfin admin elevation.
 
 - **Profile cache**: `ProfileContainerResolver` caches resolved profile metadata with configurable TTL.
 - **MediaInfo cache**: `MediaSourceService` reads/writes Jellyfin's `cache/mediainfo/*.json` files to pre-populate probe data.
-- **Statistics state**: `StatisticsService` maintains active sessions in memory and persists history to SQLite.
+- **Statistics state**: `StatisticsService` maintains active sessions in memory and persists history to SQLite via `ViewingSessionContext` (EF Core).
 - **Comet state**: `CometService` buffers recent log messages and the latest disk-space update in memory.
 - **No other shared mutable state** across services.
 
@@ -138,4 +146,4 @@ All endpoints require Jellyfin admin elevation.
 - Services use try/catch with `ILogger.LogWarning` for non-fatal failures.
 - Argument validation via `ArgumentNullException.ThrowIfNull` and `ArgumentException.ThrowIfNullOrWhiteSpace`.
 - No global error handling middleware (standard for Jellyfin plugins).
-- Transient HTTP failures are handled by `ResilienceHandler` (custom `DelegatingHandler`) with exponential back-off retry (3 attempts) and circuit breaker (5 failures → 30s open).
+- Transient HTTP failures are handled by `ResilienceHandler` (custom `DelegatingHandler` in `Service/Resilience/`) with exponential back-off retry (3 attempts) and circuit breaker (5 failures → 30s open).

@@ -328,7 +328,9 @@ public class RelayMetricsTests
         RecordSync(sut, CreateImageMetric(totalMs: 10, outcome: "success"));
         RecordSync(sut, CreateImageMetric(totalMs: 20, outcome: "success"));
 
-        Thread.Sleep(500);
+        // Allow background writer to flush metrics to the in-memory database.
+        // The service processes its internal queue asynchronously, so a brief wait is needed.
+        Thread.Sleep(2000);
 
         var summary = sut.GetSummary(0);
 

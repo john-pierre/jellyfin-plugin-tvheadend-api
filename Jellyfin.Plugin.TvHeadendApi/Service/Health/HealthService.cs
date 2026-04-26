@@ -9,6 +9,7 @@ using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
 using Microsoft.EntityFrameworkCore;
@@ -17,38 +18,6 @@ using Microsoft.Extensions.Logging;
 // Central TVHeadend health tracking service — monitors upstream connectivity and exposes health state.
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Health;
-
-/// <summary>
-/// Interface for the TVHeadend health tracking service.
-/// </summary>
-public interface IHealthService
-{
-    /// <summary>Gets the current health snapshot.</summary>
-    /// <returns>A snapshot of the current TVHeadend health state.</returns>
-    HealthSnapshot GetSnapshot();
-
-    /// <summary>Records a successful TVHeadend interaction.</summary>
-    /// <param name="responseTimeMs">Response time in milliseconds.</param>
-    void RecordSuccess(int? responseTimeMs = null);
-
-    /// <summary>Records a failed TVHeadend interaction.</summary>
-    /// <param name="reason">The classified failure reason.</param>
-    void RecordFailure(FailureReason reason);
-
-    /// <summary>Returns true if requests should be blocked (circuit open + not yet half-open).</summary>
-    /// <returns><c>true</c> if requests should be blocked; otherwise <c>false</c>.</returns>
-    bool ShouldBlockRequest();
-
-    /// <summary>Performs a lightweight health check against TVHeadend.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The updated health snapshot.</returns>
-    Task<HealthSnapshot> CheckHealthAsync(CancellationToken cancellationToken);
-
-    /// <summary>Gets the recent health transition history from SQLite.</summary>
-    /// <param name="count">Maximum number of entries to return.</param>
-    /// <returns>The requested health transitions in reverse chronological order.</returns>
-    IReadOnlyList<HealthTransition> GetHealthHistory(int count = 100);
-}
 
 /// <summary>
 /// Central singleton that tracks TVHeadend upstream health state, circuit breaker, and degraded mode.
@@ -66,7 +35,9 @@ internal sealed class HealthService : IHealthService
     private readonly IUrlBuilder _urlBuilder;
     private readonly ILogger<HealthService> _logger;
     private readonly ConfigurationProvider? _configProvider;
-    private readonly DbContextOptions<ViewingSessionContext>? _dbContextOptions;
+    private readonly DatabaseProvider? _databaseProvider;
+    private readonly DatabaseWriteCoordinator? _writeCoordinator;
+    private DbContextOptions<ViewingSessionContext>? _lazyDbContextOptions;
 
     // Mutable state — guarded by _lock
     private HealthStatus _status = HealthStatus.Unknown;
@@ -85,19 +56,44 @@ internal sealed class HealthService : IHealthService
     /// <param name="urlBuilder">TVHeadend URL builder.</param>
     /// <param name="logger">Logger instance.</param>
     /// <param name="configProvider">Optional configuration provider for user-configurable thresholds.</param>
-    /// <param name="dbContextOptions">Optional DB context options for health transition persistence.</param>
+    /// <param name="databaseProvider">Optional database provider for health transition persistence.</param>
+    /// <param name="writeCoordinator">Optional write coordinator for serialized DB writes.</param>
     public HealthService(
         IApiClient apiClient,
         IUrlBuilder urlBuilder,
         ILogger<HealthService> logger,
         ConfigurationProvider? configProvider = null,
-        DbContextOptions<ViewingSessionContext>? dbContextOptions = null)
+        DatabaseProvider? databaseProvider = null,
+        DatabaseWriteCoordinator? writeCoordinator = null)
     {
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _urlBuilder = urlBuilder ?? throw new ArgumentNullException(nameof(urlBuilder));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configProvider = configProvider;
-        _dbContextOptions = dbContextOptions;
+        _databaseProvider = databaseProvider;
+        _writeCoordinator = writeCoordinator;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="HealthService"/> class
+    /// with pre-built context options for unit testing.
+    /// </summary>
+    /// <param name="apiClient">TVHeadend API client.</param>
+    /// <param name="urlBuilder">TVHeadend URL builder.</param>
+    /// <param name="logger">Logger instance.</param>
+    /// <param name="configProvider">Optional configuration provider for user-configurable thresholds.</param>
+    /// <param name="dbContextOptions">Optional pre-built DB context options for health transition persistence.</param>
+    /// <param name="writeCoordinator">Optional write coordinator for serialized DB writes.</param>
+    internal HealthService(
+        IApiClient apiClient,
+        IUrlBuilder urlBuilder,
+        ILogger<HealthService> logger,
+        ConfigurationProvider? configProvider,
+        DbContextOptions<ViewingSessionContext>? dbContextOptions,
+        DatabaseWriteCoordinator? writeCoordinator = null)
+        : this(apiClient, urlBuilder, logger, configProvider, (DatabaseProvider?)null, writeCoordinator)
+    {
+        _lazyDbContextOptions = dbContextOptions;
     }
 
     private int CircuitOpenThreshold =>
@@ -109,6 +105,21 @@ internal sealed class HealthService : IHealthService
         _configProvider?.Configuration is { } cfg && cfg.CircuitBreakerDurationSeconds > 0
             ? TimeSpan.FromSeconds(cfg.CircuitBreakerDurationSeconds)
             : DefaultCircuitOpenDuration;
+
+    private DbContextOptions<ViewingSessionContext>? GetDbContextOptions()
+    {
+        if (_databaseProvider == null && _lazyDbContextOptions == null)
+        {
+            return null;
+        }
+
+        if (_lazyDbContextOptions != null)
+        {
+            return _lazyDbContextOptions;
+        }
+
+        return _lazyDbContextOptions ??= _databaseProvider!.CreateContextOptions<ViewingSessionContext>();
+    }
 
     /// <inheritdoc />
     public HealthSnapshot GetSnapshot()
@@ -274,14 +285,15 @@ internal sealed class HealthService : IHealthService
     /// <inheritdoc />
     public IReadOnlyList<HealthTransition> GetHealthHistory(int count = 100)
     {
-        if (_dbContextOptions == null)
+        var dbOpts = GetDbContextOptions();
+        if (dbOpts == null)
         {
             return Array.Empty<HealthTransition>();
         }
 
         try
         {
-            using var db = new ViewingSessionContext(_dbContextOptions);
+            using var db = new ViewingSessionContext(dbOpts);
             return db.HealthTransitions
                 .AsNoTracking()
                 .OrderByDescending(h => h.TimestampUtc)
@@ -325,7 +337,8 @@ internal sealed class HealthService : IHealthService
         int? responseTimeMs,
         int consecutiveFailures)
     {
-        if (_dbContextOptions == null)
+        var dbOpts = GetDbContextOptions();
+        if (dbOpts == null || _writeCoordinator == null)
         {
             return;
         }
@@ -335,7 +348,8 @@ internal sealed class HealthService : IHealthService
         {
             try
             {
-                using var db = new ViewingSessionContext(_dbContextOptions);
+                using var writeLock = _writeCoordinator.AcquireWrite();
+                using var db = new ViewingSessionContext(dbOpts);
                 db.HealthTransitions.Add(new HealthTransition
                 {
                     TimestampUtc = DateTime.UtcNow,

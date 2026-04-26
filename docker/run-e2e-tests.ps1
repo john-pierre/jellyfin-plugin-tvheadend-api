@@ -59,6 +59,11 @@ try {
 
     Log "Running live integration tests..."
     $env:TVHEADEND_LIVE_TESTS = "true"
+    $env:JELLYFIN_URL = "http://localhost:18096"
+    # TVH_HOST/PORT: The hostname Jellyfin uses to reach TVHeadend.
+    # Jellyfin runs INSIDE the Docker network, so use the Docker service name + internal port.
+    $env:TVH_HOST = "tvheadend"
+    $env:TVH_PORT = "9981"
     $TestProject = Join-Path (Join-Path $ProjectRoot "Jellyfin.Plugin.TvHeadendApi.Tests") "Jellyfin.Plugin.TvHeadendApi.Tests.csproj"
     dotnet test $TestProject `
         -c Release `

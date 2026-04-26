@@ -14,5 +14,5 @@ The Auth Service creates persistent alphanumeric auth tokens via TVHeadend's use
 
 ## Internal Dependencies
 
-- **`Helper`** — ApiClient for TVHeadend user API calls, IdNodeValueHelper for extracting token values
+- **`Backend`** — ApiClient for TVHeadend user API calls, IdNodeValueHelper for extracting token values
 

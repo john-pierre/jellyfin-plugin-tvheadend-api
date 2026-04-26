@@ -48,7 +48,7 @@ dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Test
 │  │       └───────────┴───────────────┘           │  │
 │  │  ┌───────────────────────────────────────────┐│  │
 │  │  │  ApiClient  ·  UrlBuilder  ·  GridFetcher ││  │  ← Infrastructure: HTTP, URLs, pagination
-│  │  │  ResiliencePolicies  ·  PluginMetrics     ││  │  ← Resilience + observability
+│  │  │  ResiliencePolicies  ·  MetricService    ││  │  ← Resilience + observability
 │  │  └───────────────────────────────────────────┘│  │
 │  └───────────────────────────────────────────────┘  │
 │                         │                            │
@@ -99,7 +99,7 @@ The most performance-critical service. Builds the `MediaSourceInfo` that tells J
 - Resolves the streaming profile's codec/container info
 - Manages the mediainfo cache (read/write/validate/invalidate)
 
-### 6. `Service/Helper/ApiClient.cs` — HTTP Layer
+### 6. `Service/Backend/ApiClient.cs` — HTTP Layer
 
 The centralized HTTP abstraction. Uses `IHttpClientFactory` for managed client lifetimes. All TVHeadend API calls flow through here.
 
@@ -149,7 +149,7 @@ A single-file HTML page embedded as a resource. Contains:
 | Convention | Rule |
 |---|---|
 | File naming | File name == primary type name (`GuideService.cs` → `class GuideService`) |
-| Folder structure | `Service/{Domain}/` for domain services, `Service/Helper/` for infrastructure |
+| Folder structure | `Service/{Domain}/` for domain services, `Service/Backend/` for HTTP infrastructure |
 | Test naming | `{MethodName}_{Scenario}_{Expected}` (e.g., `GetChannelsAsync_ReturnsEmpty_WhenNoChannels`) |
 | Test location | Mirror source structure: `Tests/Service/Guide/GuideServiceTests.cs` |
 | Logging | Use `ILogger<T>` with semantic templates: `_logger.LogDebug("Fetching channels from {Url}.", url)` |

@@ -28,7 +28,7 @@ Every suggestion **must be safe for all environments**.
 | Change PluginConfiguration defaults | ⚠️ Caution | Existing installations |
 | Remove/rename internal services | ✅ Safe | Internal, DI-managed |
 | Add new endpoints/services | ✅ Safe | No existing consumer impact |
-| Refactor Helper layer internals | ✅ Safe | No external contracts |
+| Refactor Backend layer internals | ✅ Safe | No external contracts |
 
 ---
 

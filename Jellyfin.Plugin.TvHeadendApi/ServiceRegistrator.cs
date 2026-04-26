@@ -109,6 +109,9 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DatabaseRecoveryService>>()));
 
         // DatabaseHealthService — central health monitoring, initialization, and migration.
+        // Note: Initialize() is NOT called here because Plugin.Instance (and DataFolderPath)
+        // is not yet available during service registration. Initialization is deferred until
+        // the first service that needs the database resolves DatabaseHealthService.
         serviceCollection.AddSingleton(sp =>
         {
             var svc = new DatabaseHealthService(
@@ -117,9 +120,6 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 sp.GetRequiredService<DatabaseMigrationService>(),
                 sp.GetRequiredService<DatabaseRecoveryService>(),
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DatabaseHealthService>>());
-
-            // Initialize eagerly so migrations run before any service touches the DB.
-            svc.Initialize();
             return svc;
         });
 
@@ -139,14 +139,11 @@ public class ServiceRegistrator : IPluginServiceRegistrator
 
         // ── PluginLogService — unified log persistence + query ──
         serviceCollection.AddSingleton<PluginLogService>(sp =>
-        {
-            var db = sp.GetRequiredService<DatabaseProvider>();
-            return new PluginLogService(
+            new PluginLogService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PluginLogService>>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
                 sp.GetRequiredService<DatabaseHealthService>(),
-                db.CreateContextOptions<Service.Statistic.ViewingSessionContext>());
-        });
+                sp.GetRequiredService<DatabaseProvider>()));
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PluginLogService>());
         serviceCollection.AddSingleton<IPluginLogQueryService>(sp => sp.GetRequiredService<PluginLogService>());
 
@@ -158,16 +155,13 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 sp.GetRequiredService<PluginLogService>()));
 
         serviceCollection.AddSingleton<StatisticsService>(sp =>
-        {
-            var db = sp.GetRequiredService<DatabaseProvider>();
-            return new StatisticsService(
+            new StatisticsService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<StatisticsService>>(),
                 sp.GetRequiredService<MediaBrowser.Controller.Session.ISessionManager>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
                 sp.GetRequiredService<DatabaseHealthService>(),
                 sp.GetRequiredService<DatabaseWriteCoordinator>(),
-                db.CreateContextOptions<ViewingSessionContext>());
-        });
+                sp.GetRequiredService<DatabaseProvider>()));
         serviceCollection.AddSingleton<IStatisticsService>(sp => sp.GetRequiredService<StatisticsService>());
 
         serviceCollection.AddSingleton<IUrlBuilder, UrlBuilder>();
@@ -177,6 +171,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IDiagnosticService, DiagnosticService>();
         serviceCollection.AddSingleton<IGuideService, GuideService>();
         serviceCollection.AddSingleton<IDvrService, DvrService>();
+        serviceCollection.AddSingleton<IMediaInfoCacheService, MediaInfoCacheService>();
         serviceCollection.AddSingleton<IMediaSourceService, MediaSourceService>();
         serviceCollection.AddSingleton<ILifecycleService, LifecycleService>();
         serviceCollection.AddSingleton<IDefaultProfileService, DefaultProfileService>();
@@ -185,15 +180,13 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IProfileDiscoveryService, ProfileDiscoveryService>();
         serviceCollection.AddSingleton<IApiClient, ApiClient>();
         serviceCollection.AddSingleton<IHealthService>(sp =>
-        {
-            var db = sp.GetRequiredService<DatabaseProvider>();
-            return new HealthService(
+            new HealthService(
                 sp.GetRequiredService<IApiClient>(),
                 sp.GetRequiredService<IUrlBuilder>(),
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<HealthService>>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
-                db.CreateContextOptions<Service.Statistic.ViewingSessionContext>());
-        });
+                sp.GetRequiredService<DatabaseProvider>(),
+                sp.GetRequiredService<DatabaseWriteCoordinator>()));
         serviceCollection.AddSingleton<IStatusService, StatusService>();
         serviceCollection.AddSingleton<IInputMonitorService, InputMonitorService>();
         serviceCollection.AddSingleton<ISubscriptionService, SubscriptionService>();
@@ -209,16 +202,13 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         // Relay metrics — shared activity tracker, EF Core context, and hosted service.
         serviceCollection.AddSingleton<RelayActivityTracker>();
         serviceCollection.AddSingleton<RelayMetricsService>(sp =>
-        {
-            var db = sp.GetRequiredService<DatabaseProvider>();
-            return new RelayMetricsService(
+            new RelayMetricsService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RelayMetricsService>>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
                 sp.GetRequiredService<DatabaseHealthService>(),
                 sp.GetRequiredService<DatabaseWriteCoordinator>(),
                 sp.GetRequiredService<RelayActivityTracker>(),
-                db.CreateContextOptions<RelayMetricsContext>());
-        });
+                sp.GetRequiredService<DatabaseProvider>()));
         serviceCollection.AddSingleton<IRelayMetricsService>(sp => sp.GetRequiredService<RelayMetricsService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<RelayMetricsService>());
 
@@ -233,14 +223,11 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             return new RelayTokenHasher(secretBytes);
         });
         serviceCollection.AddSingleton<RelayTokenRepository>(sp =>
-        {
-            var db = sp.GetRequiredService<DatabaseProvider>();
-            return new RelayTokenRepository(
+            new RelayTokenRepository(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RelayTokenRepository>>(),
                 sp.GetRequiredService<DatabaseHealthService>(),
                 sp.GetRequiredService<DatabaseWriteCoordinator>(),
-                db.CreateContextOptions<RelayTokenDbContext>());
-        });
+                sp.GetRequiredService<DatabaseProvider>()));
         serviceCollection.AddSingleton<IRelayTokenRepository>(sp => sp.GetRequiredService<RelayTokenRepository>());
 
         // Relay token security — service, validator, cleanup.
@@ -251,16 +238,13 @@ public class ServiceRegistrator : IPluginServiceRegistrator
 
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StatisticsService>());
         serviceCollection.AddSingleton<CometService>(sp =>
-        {
-            var db = sp.GetRequiredService<DatabaseProvider>();
-            return new CometService(
+            new CometService(
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CometService>>(),
                 sp.GetRequiredService<IApiClient>(),
                 sp.GetRequiredService<IUrlBuilder>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
-                db.CreateContextOptions<Service.Statistic.ViewingSessionContext>(),
-                sp.GetRequiredService<PluginLogService>());
-        });
+                sp.GetRequiredService<DatabaseProvider>(),
+                sp.GetRequiredService<PluginLogService>()));
         serviceCollection.AddSingleton<ICometSnapshotReader>(sp => sp.GetRequiredService<CometService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<CometService>());
 

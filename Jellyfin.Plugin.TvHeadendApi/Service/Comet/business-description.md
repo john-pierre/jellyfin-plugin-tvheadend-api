@@ -14,6 +14,6 @@ Maintains the real-time TVHeadend Comet connection for dashboard log and disk-sp
 
 ## Internal Dependencies
 
-- **`Helper`** — `IUrlBuilder` builds the Comet endpoint URL and masks sensitive values for logging
-- **`Helper`** — `IApiClient` provides the authenticated HTTP client for the WebSocket handshake
-- **`Configuration`** — `PluginConfigurationProvider` supplies connection, SSL, web root, and authentication settings
+- **`Backend`** — `IUrlBuilder` builds the Comet endpoint URL and masks sensitive values for logging
+- **`Backend`** — `IApiClient` provides the authenticated HTTP client for the WebSocket handshake
+- **`Configuration`** — `ConfigurationProvider` supplies connection, SSL, web root, and authentication settings

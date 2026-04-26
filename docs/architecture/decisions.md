@@ -145,14 +145,14 @@ This document records significant architecture decisions for the plugin using li
 `Plugin.Instance` is a static singleton provided by the Jellyfin `BasePlugin<T>` framework. Direct access couples services to the plugin lifecycle and makes unit testing harder because the singleton is `null` outside a running Jellyfin host.
 
 **Decision:**
-Introduce four lightweight provider/wrapper types registered in DI:
+Introduce lightweight provider/wrapper types registered in DI, organized by concern:
 
-| Type | Purpose |
-|---|---|
-| `PluginConfigurationProvider` | Resolves current `PluginConfiguration` |
-| `CachePathProvider` | Resolves plugin cache path |
-| `DataFolderPathProvider` | Resolves plugin data folder path |
-| `PluginConfigurationSaver` | Mutates and persists configuration |
+| Type | Location | Purpose |
+|---|---|---|
+| `ConfigurationProvider` | `Service/Configuration/` | Resolves current `PluginConfiguration` |
+| `CachePathProvider` | `Service/Storage/` | Resolves plugin cache path |
+| `DataFolderPathProvider` | `Service/Storage/` | Resolves plugin data folder path |
+| `ConfigurationSaver` | `Service/Configuration/` | Mutates and persists configuration |
 
 Services receive these via constructor injection instead of accessing `Plugin.Instance` directly. `PluginController.ResetToDefaults` retains direct `Plugin.Instance` access because `SaveConfiguration()` and `UpdateConfiguration()` are instance methods on `BasePlugin` that cannot be abstracted further.
 

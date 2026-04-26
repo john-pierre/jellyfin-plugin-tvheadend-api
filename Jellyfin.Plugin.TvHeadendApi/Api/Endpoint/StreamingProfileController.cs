@@ -1,8 +1,11 @@
 // REST endpoints for streaming profile resolution testing and diagnostics.
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
@@ -20,18 +23,22 @@ public class StreamingProfileController : ControllerBase
 {
     private readonly IStreamingProfileResolver _resolver;
     private readonly IProfileDiscoveryService _discoveryService;
+    private readonly IGuideService _guideService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StreamingProfileController"/> class.
     /// </summary>
     /// <param name="resolver">Streaming profile resolver.</param>
     /// <param name="discoveryService">Profile discovery service.</param>
+    /// <param name="guideService">Guide service for channel and tag queries.</param>
     public StreamingProfileController(
         IStreamingProfileResolver resolver,
-        IProfileDiscoveryService discoveryService)
+        IProfileDiscoveryService discoveryService,
+        IGuideService guideService)
     {
-        _resolver = resolver ?? throw new System.ArgumentNullException(nameof(resolver));
-        _discoveryService = discoveryService ?? throw new System.ArgumentNullException(nameof(discoveryService));
+        _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
+        _discoveryService = discoveryService ?? throw new ArgumentNullException(nameof(discoveryService));
+        _guideService = guideService ?? throw new ArgumentNullException(nameof(guideService));
     }
 
     /// <summary>
@@ -100,4 +107,53 @@ public class StreamingProfileController : ControllerBase
         _discoveryService.InvalidateCache();
         return Ok(new { Message = "Profile discovery cache invalidated. Next request will fetch fresh data." });
     }
+
+    /// <summary>
+    /// Returns all enabled channels from TVHeadend for use in configuration dropdowns.
+    /// Each entry contains the channel UUID and display name.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Channel list sorted by name.</returns>
+    [HttpGet("Channels")]
+    public async Task<ActionResult<IReadOnlyList<ChannelOption>>> GetChannels(CancellationToken cancellationToken)
+    {
+        var channels = await _guideService.GetChannelsAsync(cancellationToken).ConfigureAwait(false);
+        var options = channels
+            .Where(c => !string.IsNullOrWhiteSpace(c.Id) && !string.IsNullOrWhiteSpace(c.Name))
+            .Select(c => new ChannelOption(c.Id, c.Name))
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return Ok(options);
+    }
+
+    /// <summary>
+    /// Returns all channel tags/groups from TVHeadend for use in configuration dropdowns.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Channel group list sorted by name.</returns>
+    [HttpGet("ChannelGroups")]
+    public async Task<ActionResult<IReadOnlyList<ChannelGroupOption>>> GetChannelGroups(CancellationToken cancellationToken)
+    {
+        var tags = await _guideService.GetChannelTagsAsync(cancellationToken).ConfigureAwait(false);
+        var options = tags
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .Select(kv => new ChannelGroupOption(kv.Key, kv.Value))
+            .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return Ok(options);
+    }
 }
+
+/// <summary>
+/// Represents a channel option for configuration dropdowns.
+/// </summary>
+/// <param name="Id">TVHeadend channel UUID.</param>
+/// <param name="Name">Channel display name.</param>
+public sealed record ChannelOption(string Id, string Name);
+
+/// <summary>
+/// Represents a channel group/tag option for configuration dropdowns.
+/// </summary>
+/// <param name="Id">TVHeadend tag UUID.</param>
+/// <param name="Name">Tag display name.</param>
+public sealed record ChannelGroupOption(string Id, string Name);

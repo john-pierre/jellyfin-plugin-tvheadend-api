@@ -74,9 +74,9 @@ Order (alphabetical within each group):
 
 - **Controller layer:** Thin — delegates to services, no business logic
 - **Service layer:** Domain logic organized by responsibility (Guide, Dvr, Stream, Auth, Profile, etc.)
-- **Helper layer:** Generic HTTP infrastructure — no domain logic
+- **Backend layer:** Generic HTTP infrastructure — no domain logic
 - **Model layer:** Pure data shapes, no logic beyond property declarations
-- **Dependency direction:** Controller → Service → Helper → HTTP (never reverse)
+- **Dependency direction:** Controller → Service → Backend → HTTP (never reverse)
 - **All services registered as singletons** via `ServiceRegistrator`
 
 ---

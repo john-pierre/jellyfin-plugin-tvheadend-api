@@ -13,8 +13,8 @@ All agents follow the behavioral principles in [AGENTS.md](AGENTS.md).
 - **PR title:** `feat(<scope>): <description>` or `fix(<scope>): <description>` (max 50 chars, Conventional Commits)
 - **PR description:** implementation plan as raw Markdown
 - **PRs:** create as Draft
-- ⛔ **Never commit** without explicit user approval — present staged changes + proposed message, then wait
-- ⛔ **Never push** without asking: *"Shall I push the committed changes to the remote branch?"*
+- Never commit without explicit user approval — present staged changes + proposed message, then wait
+- Never push without asking: *"Shall I push the committed changes to the remote branch?"*
 
 ---
 
@@ -50,6 +50,17 @@ dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Test
 - `docs/guides/test-strategy.md` — test types, coverage
 - `docs/guides/observability.md` — logging, metrics
 - `docs/ROADMAP.md` — milestones and technical debt
+
+---
+
+## AI Documentation (Shared)
+
+Tool-neutral AI documentation is available in:
+
+- `.docs/ai/` — Core reference docs (overview, architecture, coding/testing/performance/security standards, domain knowledge)
+- `.ai/prompts/` — Workflow prompts (refactor, bugfix, feature, test-generation, review, release)
+- `.ai/skills/` — Domain-specific skills (database, relay, tvheadend, dashboard, logging, token-security, streaming-profile)
+- `.ai/agents/` — Agent role definitions (architect, reviewer, performance, security, test-engineer, release-manager)
 
 ---
 

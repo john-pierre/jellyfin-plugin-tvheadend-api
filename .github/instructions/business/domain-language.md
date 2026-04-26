@@ -92,16 +92,21 @@
 
 ---
 
-## 7 — Infrastructure & Helpers
+## 7 — Infrastructure & Backend
 
 | Term | Class / Package | Description |
 |------|----------------|-------------|
-| **ApiClient** | `Service.Helper.ApiClient` | Typed HTTP client for TVHeadend API calls with auth header injection. |
-| **UrlBuilder** | `Service.Helper.UrlBuilder` | Constructs TVHeadend URLs with appropriate auth parameters (header, URL, or query). |
-| **GridFetcher** | `Service.Helper.GridFetcher` | Generic paginated fetcher for TVHeadend grid endpoints (probe + parallel fetch). |
-| **IdNode** | `Service.Helper.IdNodeValueHelper` | TVHeadend's generic entity model; helper extracts typed values from idnode params. |
-| **ResilienceHandler** | `Service.Helper.ResiliencePolicies` | DelegatingHandler implementing retry with exponential back-off and circuit breaker. |
-| **PluginMetrics** | `Service.Helper.PluginMetrics` | `System.Diagnostics.Metrics` instruments for API calls, durations, cache hits/misses. |
+| **ApiClient** | `Service.Backend.ApiClient` | Typed HTTP client for TVHeadend API calls with auth header injection. |
+| **UrlBuilder** | `Service.Backend.UrlBuilder` | Constructs TVHeadend URLs with appropriate auth parameters (header, URL, or query). |
+| **GridFetcher** | `Service.Backend.GridFetcher` | Generic paginated fetcher for TVHeadend grid endpoints (probe + parallel fetch). |
+| **IdNode** | `Service.Backend.IdNodeValueHelper` | TVHeadend's generic entity model; helper extracts typed values from idnode params. |
+| **ResilienceHandler** | `Service.Resilience.ResiliencePolicies` | DelegatingHandler implementing retry with exponential back-off and circuit breaker. |
+| **MetricService** | `Service.Metric.MetricService` | `System.Diagnostics.Metrics` instruments for API calls, durations, cache hits/misses. |
+| **ConfigurationProvider** | `Service.Configuration.ConfigurationProvider` | Resolves current `PluginConfiguration` via DI without direct `Plugin.Instance` access. |
+| **ConfigurationSaver** | `Service.Configuration.ConfigurationSaver` | Mutates and persists plugin configuration. |
+| **CachePathProvider** | `Service.Storage.CachePathProvider` | Resolves plugin cache path. |
+| **DataFolderPathProvider** | `Service.Storage.DataFolderPathProvider` | Resolves plugin data folder path. |
+| **JsonDefaults** | `Service.Common.JsonDefaults` | Shared JSON serialization defaults. |
 
 ---
 
@@ -110,9 +115,57 @@
 | Term | Class / Package | Description |
 |------|----------------|-------------|
 | **DiagnosticService** | `Service.Diagnostic.DiagnosticService` | Runs compatibility checks and produces a structured diagnostic report with score. |
-| **StatisticsService** | `Service.Statistics.StatisticsService` | Tracks live TV viewing sessions via `ISessionManager` events; persists to JSON. |
+| **StatisticsService** | `Service.Statistic.StatisticsService` | Tracks live TV viewing sessions via `ISessionManager` events; persists to SQLite via `ViewingSessionContext` (EF Core). |
 | **StatusService** | `Service.Status.StatusService` | Reads TVHeadend server activity and active connections. |
 | **CometService** | `Service.Comet.CometService` | Hosted service maintaining a WebSocket connection to TVHeadend's Comet endpoint; buffers log messages and disk-space updates for the admin UI. |
 | **InputMonitorService** | `Service.Input.InputMonitorService` | Monitors TV tuner signal quality (signal strength, BER, SNR, bitrate). |
 | **SubscriptionService** | `Service.Subscription.SubscriptionService` | Lists active streaming subscriptions in TVHeadend. |
+
+---
+
+## 9 — Database
+
+| Term | Class / Package | Description |
+|------|----------------|-------------|
+| **DatabaseProvider** | `Service.Database.DatabaseProvider` | Provides SQLite database connections for the plugin. |
+| **DatabaseMigrationService** | `Service.Database.DatabaseMigrationService` | Applies schema migrations to the plugin's SQLite database. |
+| **DatabaseHealthService** | `Service.Database.DatabaseHealthService` | Monitors database health status and reports health snapshots. |
+| **DatabaseCleanupService** | `Service.Database.DatabaseCleanupService` | Performs periodic database maintenance and cleanup. |
+| **DatabaseRecoveryService** | `Service.Database.DatabaseRecoveryService` | Recovers from database corruption or connection failures. |
+| **DatabaseWriteCoordinator** | `Service.Database.DatabaseWriteCoordinator` | Coordinates concurrent write access to the SQLite database. |
+| **ViewingSessionContext** | `Service.Statistic.ViewingSessionContext` | EF Core `DbContext` for viewing session persistence in SQLite. |
+
+---
+
+## 10 — Health
+
+| Term | Class / Package | Description |
+|------|----------------|-------------|
+| **HealthService** | `Service.Health.HealthService` | Aggregates health signals from various services into an overall plugin health state. |
+| **HealthState** | `Service.Health.HealthState` | Represents the current aggregated health status of the plugin. |
+
+---
+
+## 11 — Logging
+
+| Term | Class / Package | Description |
+|------|----------------|-------------|
+| **PluginLogService** | `Service.Logging.PluginLogService` | Queries and filters plugin-relevant log entries from Jellyfin's log output. |
+| **LogParser** | `Service.Logging.LogParser` | Parses structured log entries from Jellyfin's log format. |
+| **LogSanitizer** | `Service.Logging.LogSanitizer` | Sanitizes sensitive data (credentials, tokens) from log output. |
+| **PluginLoggerFactory** | `Service.Logging.PluginLoggerFactory` | Custom logger factory for plugin-specific logging configuration. |
+
+---
+
+## 12 — Relay
+
+| Term | Class / Package | Description |
+|------|----------------|-------------|
+| **RelayService** | `Service.Relay.RelayService` | Provides an alternative stream path where clients connect through Jellyfin to TVHeadend. |
+| **RelayUrlBuilder** | `Service.Relay.RelayUrlBuilder` | Constructs relay stream URLs for proxied playback. |
+| **RelayTokenService** | `Service.Relay.RelayTokenService` | Generates and manages relay authentication tokens. |
+| **RelayTokenValidatorService** | `Service.Relay.RelayTokenValidatorService` | Validates relay tokens for stream access. |
+| **RelayMetricsService** | `Service.Relay.RelayMetricsService` | Tracks relay usage metrics (connections, bandwidth). |
+| **RelayTokenCleanupService** | `Service.Relay.RelayTokenCleanupService` | Cleans up expired relay tokens. |
+| **RelayActivityTracker** | `Service.Relay.RelayActivityTracker` | Tracks active relay connections and activity. |
 

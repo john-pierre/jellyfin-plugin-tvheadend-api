@@ -14,6 +14,6 @@ The Guide Service fetches all available TV channels, their associated EPG progra
 
 ## Internal Dependencies
 
-- **`Helper`** — Uses GridFetcher for paginated channel/EPG fetching, UrlBuilder for image URLs, ApiClient for HTTP calls
+- **`Backend`** — Uses GridFetcher for paginated channel/EPG fetching, UrlBuilder for image URLs, ApiClient for HTTP calls
 - **`Auth`** — Auth tokens appended to channel icon URLs
 

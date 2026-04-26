@@ -14,5 +14,5 @@ The Status Service queries TVHeadend's `/api/status/activity` and `/api/status/c
 
 ## Internal Dependencies
 
-- **`Helper`** — ApiClient for status API calls
+- **`Backend`** — ApiClient for status API calls
 

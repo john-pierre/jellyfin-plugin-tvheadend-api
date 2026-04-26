@@ -78,6 +78,34 @@
         .tvh-validation-ok { color: #4caf50; }
         .tvh-validation-warn { color: #f0ad4e; }
 
+        /* ── Profile assignment table ─────────────────── */
+        .tvh-badge { display: inline-block; padding: 0.15em 0.5em; border-radius: 4px; font-size: 0.78em; font-weight: 600; letter-spacing: 0.02em; }
+        .tvh-badge-channel { background: rgba(33,150,243,0.2); color: #64b5f6; }
+        .tvh-badge-group { background: rgba(0,150,136,0.2); color: #4db6ac; }
+        .tvh-badge-client { background: rgba(156,39,176,0.2); color: #ce93d8; }
+        .tvh-badge-device { background: rgba(255,152,0,0.2); color: #ffb74d; }
+        .tvh-badge-user { background: rgba(76,175,80,0.2); color: #81c784; }
+        .tvh-badge-default { background: rgba(96,125,139,0.2); color: #90a4ae; }
+
+        .tvh-profile-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.9em; }
+        .tvh-profile-table th { text-align: left; padding: 0.5em 0.6em; font-size: 0.82em; font-weight: 600; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .tvh-profile-table td { padding: 0.45em 0.6em; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+        .tvh-profile-table tr:last-child td { border-bottom: none; }
+        .tvh-profile-table tr.tvh-row-default td { background: rgba(96,125,139,0.06); }
+        .tvh-profile-table input[type="number"] { width: 4.5em; }
+        .tvh-profile-table input[type="text"],
+        .tvh-profile-table select { width: 100%; box-sizing: border-box; }
+        .tvh-profile-table .tvh-action-delete { background: rgba(231,76,60,0.15); border: 1px solid rgba(231,76,60,0.35); border-radius: 4px; color: #e74c3c; cursor: pointer; font-size: 0.85em; padding: 0.2em 0.55em; line-height: 1; }
+        .tvh-profile-table .tvh-action-delete:hover { background: rgba(231,76,60,0.35); }
+        .tvh-add-rule-wrap { position: relative; display: inline-block; }
+        .tvh-add-rule-menu { position: absolute; top: 100%; left: 0; z-index: 100; min-width: 10em; background: #2a2a2a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); padding: 0.3em 0; display: none; }
+        .tvh-add-rule-menu.tvh-open { display: block; }
+        .tvh-add-rule-menu button { display: block; width: 100%; text-align: left; background: none; border: none; color: inherit; padding: 0.45em 0.9em; cursor: pointer; font-size: 0.9em; }
+        .tvh-add-rule-menu button:hover { background: rgba(255,255,255,0.08); }
+        .tvh-collapsible summary { cursor: pointer; font-weight: 600; font-size: 0.95em; padding: 0.5em 0; opacity: 0.85; }
+        .tvh-collapsible summary:hover { opacity: 1; }
+        .tvh-collapsible-body { padding-top: 0.6em; }
+
         /* ── Save indicator ──────────────────────────────── */
         .tvh-save-toast { position: fixed; bottom: 1.5em; right: 1.5em; padding: 0.5em 1.2em; border-radius: 6px; font-size: 0.88em; font-weight: 600; z-index: 9999; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
         .tvh-save-toast.tvh-show { opacity: 1; }
@@ -100,6 +128,11 @@
         .tvh-status-score { font-size: 1.3em; font-weight: 700; }
         .tvh-status-checks { display: flex; flex-wrap: wrap; gap: 0.3em 0.8em; font-size: 0.85em; }
         .tvh-status-actions { margin-left: auto; display: flex; gap: 0.5em; }
+        .tvh-diag-timestamp { font-size: 0.75em; opacity: 0.45; margin-left: auto; white-space: nowrap; }
+        .tvh-diag-details { margin-top: 0.6em; width: 100%; }
+        .tvh-diag-details summary { cursor: pointer; font-size: 0.88em; opacity: 0.7; font-weight: 600; }
+        .tvh-diag-details summary:hover { opacity: 1; }
+        .tvh-diag-details-body { margin-top: 0.5em; padding: 0.8em; border-radius: 6px; background: rgba(255,255,255,0.03); font-size: 0.9em; line-height: 1.6; }
 
         /* ── Support banner ─────────────────────────────────── */
         .tvh-support-banner {
@@ -172,14 +205,68 @@
                     <span id="StatusScore" class="tvh-status-score">—</span>
                     <span id="StatusText" style="opacity:0.7;">Checking configuration…</span>
                     <div id="StatusChecks" class="tvh-status-checks"></div>
+                    <span id="DiagLastRun" class="tvh-diag-timestamp"></span>
                     <div class="tvh-status-actions">
-                        <button id="QuickDiagnoseBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.85em;">
-                            <span>🔍 Diagnose</span>
-                        </button>
                         <button id="OptimalSetupBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-success" style="font-size:0.85em;">
                             <span>⚡ Optimal Setup</span>
                         </button>
+                        <button id="DiagnoseBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.85em;">
+                            <span>🔄 Diagnose</span>
+                        </button>
                     </div>
+                    <details id="DiagDetails" class="tvh-diag-details">
+                        <summary>▶ Show Details</summary>
+                        <div class="tvh-diag-details-body">
+                            <div id="DiagDetailsContent"><em>Running diagnostics…</em></div>
+                            <div style="margin-top:1em; padding-top:0.8em; border-top:1px solid rgba(255,255,255,0.08);">
+                                <div class="tvh-btn-row" style="margin-bottom:0.6em;">
+                                    <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-primary" title="Requires TvHeadend admin credentials">
+                                        <span>Create "jellyfin" Profile</span>
+                                    </button>
+                                    <button id="ResetDefaultsBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-muted">
+                                        <span>Reset to Defaults</span>
+                                    </button>
+                                </div>
+                                <div id="ProfileActionMsg" class="tvh-msg"></div>
+                                <div id="ResetDefaultsMsg" class="tvh-msg"></div>
+                            </div>
+                            <!-- Quick Setup Guide -->
+                            <div style="margin-top:1em; padding-top:0.8em; border-top:1px solid rgba(255,255,255,0.08);">
+                                <details>
+                                    <summary style="cursor:pointer; font-weight:600;">Fast Channel Switching Guide (&lt; 3 seconds)</summary>
+                                    <div style="margin-top:0.6em;">
+                                        <p style="margin-bottom:0.5em;">
+                                            <strong>Goal:</strong> Switch channels in under 3 seconds — even on the first tune.
+                                        </p>
+                                        <div class="tvh-guide-steps">
+                                            <span class="tvh-step-num">1</span>
+                                            <div>
+                                                <strong>Create the "jellyfin" transcode profile</strong><br>
+                                                Click "Create jellyfin Profile" above. This outputs every channel as H.264 + AAC — a format Jellyfin can Direct Play.
+                                                <details><summary>Manual alternative…</summary><span>In TvHeadend: Configuration → Stream → Stream Profiles → Add profile-transcode. Set Container = MP4, Video = libx264, Audio = AAC.</span></details>
+                                            </div>
+                                            <span class="tvh-step-num">2</span>
+                                            <div>
+                                                <strong>Select the profile</strong><br>
+                                                In the Streaming section, set Streaming Profile to <code>jellyfin</code>.
+                                            </div>
+                                            <span class="tvh-step-num">3</span>
+                                            <div>
+                                                <strong>Enable fast playback settings</strong><br>
+                                                In Playback Behaviour, enable: Direct Play, Direct Stream, Stream Probing, and Pre-create Probe Cache Files.
+                                            </div>
+                                        </div>
+                                        <details>
+                                            <summary>How it works</summary>
+                                            <p style="margin:0.4em 0 0 0; font-size:0.9em; opacity:0.8;">
+                                                TvHeadend transcodes every channel to a consistent format. The plugin pre-creates Jellyfin's mediainfo cache files with matching metadata. When you switch channels, Jellyfin finds the cache instantly, skips FFmpeg probing, and starts Direct Play.
+                                            </p>
+                                        </details>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+                    </details>
                 </div>
 
                 <!-- ── Table of Contents ───────────────────────── -->
@@ -188,10 +275,8 @@
                     <a data-scroll="sec-auth">Authentication</a>
                     <a data-scroll="sec-relay">Relay</a>
                     <a data-scroll="sec-streaming">Streaming</a>
-                    <a data-scroll="sec-streaming-profiles">Profile Rules</a>
                     <a data-scroll="sec-playback">Playback</a>
                     <a data-scroll="sec-recording">Recording</a>
-                    <a data-scroll="sec-diagnostics">Diagnostics</a>
                     <a data-scroll="sec-advanced">Advanced</a>
                 </nav>
 
@@ -364,17 +449,8 @@
                 <!-- ── D. Streaming ────────────────────────────── -->
                 <div class="tvh-section" id="sec-streaming">
                     <h2 class="tvh-section-title">Streaming</h2>
-                    <p class="tvh-section-desc">Controls how live TV streams are requested from TvHeadend.</p>
+                    <p class="tvh-section-desc">Controls how live TV streams are requested from TvHeadend and which profile is used per channel, client, or user.</p>
                     <div class="tvh-card">
-                        <div class="tvh-field inputContainer">
-                            <label class="inputLabel" for="StreamingProfile">Streaming Profile</label>
-                            <select id="StreamingProfile" name="StreamingProfile" is="emby-select">
-                                <option value="">-- Select a profile --</option>
-                            </select>
-                            <div class="fieldDescription">
-                                TvHeadend stream profile for live TV. <code>pass</code> delivers the original stream; a transcode profile (e.g. <code>jellyfin</code>) provides a consistent output format.
-                            </div>
-                        </div>
                         <div class="tvh-field inputContainer">
                             <label class="inputLabel" for="FallbackMaxStreamingBitrate">Fallback Max Bitrate (bps)</label>
                             <input id="FallbackMaxStreamingBitrate" name="FallbackMaxStreamingBitrate" type="number" is="emby-input" placeholder="3000000" />
@@ -388,106 +464,72 @@
                             <div class="fieldDescription">Treat the stream as never-ending. Should almost always be enabled for live TV.</div>
                         </div>
                     </div>
-                </div>
 
-                <!-- ── Streaming Profile Selection ──────────────── -->
-                <div class="tvh-section" id="sec-streaming-profiles">
-                    <h2 class="tvh-section-title">Streaming Profile Rules</h2>
-                    <p class="tvh-section-desc">Hierarchical rules controlling which TVHeadend streaming profile is used per channel, client, or user.</p>
-
-                    <div class="tvh-hierarchy-legend">
-                        <strong>Resolution hierarchy</strong> — first match wins:
-                        <ol>
-                            <li><strong>Channel override</strong> — per individual channel</li>
-                            <li><strong>Channel group override</strong> — per category (Sports, News, Kids…)</li>
-                            <li><strong>Client / device rule</strong> — per app or device (Swiftfin, Web, Android TV…)</li>
-                            <li><strong>User rule</strong> — per Jellyfin user</li>
-                            <li><strong>Global default</strong> — configured below</li>
-                            <li><strong>Legacy fallback</strong> — the Streaming Profile selected above</li>
-                            <li><strong>Safe fallback</strong> — hardcoded "pass"</li>
-                        </ol>
-                    </div>
-
-                    <!-- Global Defaults -->
-                    <div class="tvh-card">
-                        <h3>Global Defaults</h3>
-                        <div class="tvh-field inputContainer">
-                            <label class="inputLabel" for="SPS_DefaultPlaybackMode">Default Playback Mode</label>
-                            <select id="SPS_DefaultPlaybackMode" is="emby-select">
-                                <option value="0">Auto</option>
-                                <option value="1">Pass Through</option>
-                                <option value="2">TVHeadend Transcode</option>
-                                <option value="3">Jellyfin Transcode</option>
-                            </select>
-                            <div class="fieldDescription">Playback mode when no override or rule matches. <em>Auto</em> uses the default profile as configured.</div>
-                        </div>
-                        <div class="tvh-field inputContainer">
-                            <label class="inputLabel" for="SPS_DefaultTvHeadendProfile">Default TVHeadend Profile</label>
-                            <input id="SPS_DefaultTvHeadendProfile" type="text" is="emby-input" placeholder="e.g. jellyfin" />
-                            <div class="fieldDescription">Profile name for the global default. Leave empty to fall back to the legacy Streaming Profile above.</div>
-                        </div>
-                        <div class="tvh-field inputContainer">
-                            <label class="inputLabel" for="SPS_PassThroughProfile">Pass Through Profile</label>
-                            <input id="SPS_PassThroughProfile" type="text" is="emby-input" placeholder="pass" />
-                            <div class="fieldDescription">TVHeadend profile used for Pass Through mode. Typically "pass" (no transcoding).</div>
-                        </div>
-                        <div class="tvh-field inputContainer">
-                            <label class="inputLabel" for="SPS_JellyfinTranscodeProfile">Jellyfin Transcode Profile</label>
-                            <input id="SPS_JellyfinTranscodeProfile" type="text" is="emby-input" placeholder="matroska" />
-                            <div class="fieldDescription">TVHeadend profile used for Jellyfin Transcode mode. Should provide a probing-friendly container.</div>
-                        </div>
-                        <div class="tvh-field inputContainer">
-                            <label class="inputLabel" for="SPS_FallbackTvHeadendProfile">Fallback Profile</label>
-                            <input id="SPS_FallbackTvHeadendProfile" type="text" is="emby-input" placeholder="pass" />
-                            <div class="fieldDescription">Last-resort profile when a resolved profile name turns out to be empty or invalid.</div>
-                        </div>
-                        <div class="tvh-checkbox">
-                            <label>
-                                <input id="SPS_EnableResolutionDiagnostics" type="checkbox" is="emby-checkbox" />
-                                <span>Enable Resolution Diagnostics</span>
-                            </label>
-                            <div class="fieldDescription">Log detailed resolution trace for every playback request. Useful for debugging rules.</div>
-                        </div>
-                    </div>
-
-                    <!-- Channel Overrides -->
+                    <!-- Profile Assignment Table -->
                     <div class="tvh-card">
                         <div class="tvh-rule-header">
-                            <h3>Channel Overrides</h3>
-                            <button id="AddChannelOverrideBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.82em;">+ Add</button>
+                            <h3>Profile Assignments</h3>
+                            <div class="tvh-add-rule-wrap">
+                                <button id="AddRuleBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.82em;">+ Add Rule</button>
+                                <div id="AddRuleMenu" class="tvh-add-rule-menu">
+                                    <button type="button" data-rule-type="channel"><span class="tvh-badge tvh-badge-channel">Channel</span></button>
+                                    <button type="button" data-rule-type="group"><span class="tvh-badge tvh-badge-group">Channel Group</span></button>
+                                    <button type="button" data-rule-type="client"><span class="tvh-badge tvh-badge-client">Client</span></button>
+                                    <button type="button" data-rule-type="device"><span class="tvh-badge tvh-badge-device">Device</span></button>
+                                    <button type="button" data-rule-type="user"><span class="tvh-badge tvh-badge-user">User</span></button>
+                                </div>
+                            </div>
                         </div>
-                        <p style="font-size:0.88em; opacity:0.6; margin-top:0;">Highest priority — override the profile for specific channels.</p>
-                        <div id="ChannelOverridesList"></div>
+                        <p style="font-size:0.85em; opacity:0.6; margin-top:0; margin-bottom:0.8em;">
+                            First match wins. Rules are evaluated top-to-bottom by type priority (Channel &gt; Group &gt; Client/Device &gt; User &gt; Default), then by priority number within the same type.
+                        </p>
+                        <div style="overflow-x:auto;">
+                            <table class="tvh-profile-table" id="ProfileAssignmentsTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width:5em;">Priority</th>
+                                        <th style="width:8em;">Type</th>
+                                        <th>Match</th>
+                                        <th style="width:12em;">Profile</th>
+                                        <th>Description</th>
+                                        <th style="width:3.5em;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ProfileAssignmentsBody">
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
 
-                    <!-- Channel Group Overrides -->
+                    <!-- Advanced Profile Settings (collapsible) -->
                     <div class="tvh-card">
-                        <div class="tvh-rule-header">
-                            <h3>Channel Group Overrides</h3>
-                            <button id="AddChannelGroupOverrideBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.82em;">+ Add</button>
-                        </div>
-                        <p style="font-size:0.88em; opacity:0.6; margin-top:0;">Override by channel group / tag (e.g. Sports, News, Kids).</p>
-                        <div id="ChannelGroupOverridesList"></div>
-                    </div>
-
-                    <!-- Client / Device Rules -->
-                    <div class="tvh-card">
-                        <div class="tvh-rule-header">
-                            <h3>Client / Device Rules</h3>
-                            <button id="AddClientRuleBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.82em;">+ Add</button>
-                        </div>
-                        <p style="font-size:0.88em; opacity:0.6; margin-top:0;">Match by client app name or device name. Sorted by priority (lowest number = highest priority).</p>
-                        <div id="ClientRulesList"></div>
-                    </div>
-
-                    <!-- User Rules -->
-                    <div class="tvh-card">
-                        <div class="tvh-rule-header">
-                            <h3>User Rules</h3>
-                            <button id="AddUserRuleBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.82em;">+ Add</button>
-                        </div>
-                        <p style="font-size:0.88em; opacity:0.6; margin-top:0;">Match by Jellyfin user ID. Evaluated after client rules.</p>
-                        <div id="UserRulesList"></div>
+                        <details class="tvh-collapsible">
+                            <summary>Advanced Profile Settings</summary>
+                            <div class="tvh-collapsible-body">
+                                <div class="tvh-field inputContainer">
+                                    <label class="inputLabel" for="SPS_PassThroughProfile">Pass Through Profile</label>
+                                    <input id="SPS_PassThroughProfile" type="text" is="emby-input" placeholder="pass" />
+                                    <div class="fieldDescription">TVHeadend profile used for Pass Through mode. Typically "pass" (no transcoding).</div>
+                                </div>
+                                <div class="tvh-field inputContainer">
+                                    <label class="inputLabel" for="SPS_JellyfinTranscodeProfile">Jellyfin Transcode Profile</label>
+                                    <input id="SPS_JellyfinTranscodeProfile" type="text" is="emby-input" placeholder="matroska" />
+                                    <div class="fieldDescription">TVHeadend profile used for Jellyfin Transcode mode. Should provide a probing-friendly container.</div>
+                                </div>
+                                <div class="tvh-field inputContainer">
+                                    <label class="inputLabel" for="SPS_FallbackTvHeadendProfile">Fallback Profile</label>
+                                    <input id="SPS_FallbackTvHeadendProfile" type="text" is="emby-input" placeholder="pass" />
+                                    <div class="fieldDescription">Last-resort profile when a resolved profile name turns out to be empty or invalid.</div>
+                                </div>
+                                <div class="tvh-checkbox">
+                                    <label>
+                                        <input id="SPS_EnableResolutionDiagnostics" type="checkbox" is="emby-checkbox" />
+                                        <span>Enable Resolution Diagnostics</span>
+                                    </label>
+                                    <div class="fieldDescription">Log detailed resolution trace for every playback request. Useful for debugging rules.</div>
+                                </div>
+                            </div>
+                        </details>
                     </div>
 
                     <!-- Test Resolution -->
@@ -502,8 +544,8 @@
                             <div><label style="font-size:0.82em; opacity:0.7;">User ID</label><input id="TestUserId" type="text" is="emby-input" placeholder="e.g. user-guid" /></div>
                         </div>
                         <div class="tvh-btn-row" style="margin-bottom:0.6em;">
-                            <button id="TestResolutionBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-primary" style="font-size:0.85em;">🔍 Test Resolution</button>
-                            <button id="ValidateProfilesBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.85em;">✓ Validate Profiles</button>
+                            <button id="TestResolutionBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-primary" style="font-size:0.85em;">Test Resolution</button>
+                            <button id="ValidateProfilesBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.85em;">Validate Profiles</button>
                         </div>
                         <div id="TestResolutionResult" class="tvh-test-result" style="display:none;"></div>
                         <div id="ValidateProfilesResult" style="margin-top:0.5em;"></div>
@@ -641,66 +683,6 @@
                     </div>
                 </div>
 
-                <!-- ── F. Diagnostics & Tools ──────────────────── -->
-                <div class="tvh-section" id="sec-diagnostics">
-                    <h2 class="tvh-section-title">Diagnostics &amp; Tools</h2>
-                    <p class="tvh-section-desc">Test your configuration, create profiles, and run diagnostics.</p>
-                    <div class="tvh-card">
-                        <div class="tvh-btn-row" style="margin-bottom:0.8em;">
-                            <button id="DiagnoseBtn" is="emby-button" type="button" class="raised emby-button">
-                                <span>Run Diagnostics</span>
-                            </button>
-                            <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-primary" title="Requires TvHeadend admin credentials">
-                                <span>Create "jellyfin" Profile</span>
-                            </button>
-                            <button id="ResetDefaultsBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-muted">
-                                <span>Reset to Defaults</span>
-                            </button>
-                        </div>
-                        <div id="ProfileActionMsg" class="tvh-msg"></div>
-                        <div id="ResetDefaultsMsg" class="tvh-msg"></div>
-                        <div id="DiagnoseReport" class="tvh-diag-panel" style="margin-top:0.8em;">
-                            <em>Running diagnostics…</em>
-                        </div>
-                    </div>
-
-                    <!-- Quick Setup Guide -->
-                    <div class="tvh-card tvh-guide">
-                        <details>
-                            <summary>Fast Channel Switching Guide (&lt; 3 seconds)</summary>
-                            <div style="margin-top:0.6em;">
-                                <p style="margin-bottom:0.5em;">
-                                    <strong>Goal:</strong> Switch channels in under 3 seconds — even on the first tune.
-                                </p>
-                                <div class="tvh-guide-steps">
-                                    <span class="tvh-step-num">1</span>
-                                    <div>
-                                        <strong>Create the "jellyfin" transcode profile</strong><br>
-                                        Click "Create jellyfin Profile" above. This outputs every channel as H.264 + AAC — a format Jellyfin can Direct Play.
-                                        <details><summary>Manual alternative…</summary><span>In TvHeadend: Configuration → Stream → Stream Profiles → Add profile-transcode. Set Container = MP4, Video = libx264, Audio = AAC.</span></details>
-                                    </div>
-                                    <span class="tvh-step-num">2</span>
-                                    <div>
-                                        <strong>Select the profile</strong><br>
-                                        In the Streaming section, set Streaming Profile to <code>jellyfin</code>.
-                                    </div>
-                                    <span class="tvh-step-num">3</span>
-                                    <div>
-                                        <strong>Enable fast playback settings</strong><br>
-                                        In Playback Behaviour, enable: Direct Play, Direct Stream, Stream Probing, and Pre-create Probe Cache Files.
-                                    </div>
-                                </div>
-                                <details>
-                                    <summary>How it works</summary>
-                                    <p style="margin:0.4em 0 0 0; font-size:0.9em; opacity:0.8;">
-                                        TvHeadend transcodes every channel to a consistent format. The plugin pre-creates Jellyfin's mediainfo cache files with matching metadata. When you switch channels, Jellyfin finds the cache instantly, skips FFmpeg probing, and starts Direct Play.
-                                    </p>
-                                </details>
-                            </div>
-                        </details>
-                    </div>
-                </div>
-
                 <!-- ── G. Advanced Settings ────────────────────── -->
                 <div class="tvh-section" id="sec-advanced">
                     <h2 class="tvh-section-title">Advanced</h2>
@@ -751,19 +733,31 @@
                             <div id="LogLevelWarning" style="display:none; color:#f0ad4e; font-size:0.88em; margin-top:0.3em;">⚠️ Trace/Debug level will produce verbose output. Use only for troubleshooting.</div>
                         </div>
                         <div class="tvh-checkbox">
-                            <label><input id="StorePluginLogsInSqlite" type="checkbox" is="emby-checkbox" /> Store plugin logs in SQLite</label>
+                            <label>
+                                <input id="StorePluginLogsInSqlite" type="checkbox" is="emby-checkbox" />
+                                <span>Store plugin logs in SQLite</span>
+                            </label>
                             <div class="fieldDescription">Persist plugin log entries to the database for dashboard viewing.</div>
                         </div>
                         <div class="tvh-checkbox">
-                            <label><input id="StoreTvHeadendLogsInSqlite" type="checkbox" is="emby-checkbox" /> Store TVHeadend logs in SQLite</label>
+                            <label>
+                                <input id="StoreTvHeadendLogsInSqlite" type="checkbox" is="emby-checkbox" />
+                                <span>Store TVHeadend logs in SQLite</span>
+                            </label>
                             <div class="fieldDescription">Persist TVHeadend log entries to the database for dashboard viewing.</div>
                         </div>
                         <div class="tvh-checkbox">
-                            <label><input id="TvHeadendLogImportEnabled" type="checkbox" is="emby-checkbox" /> TVHeadend log import enabled</label>
+                            <label>
+                                <input id="TvHeadendLogImportEnabled" type="checkbox" is="emby-checkbox" />
+                                <span>TVHeadend log import enabled</span>
+                            </label>
                             <div class="fieldDescription">Enable ingestion of TVHeadend log lines via the Comet WebSocket connection.</div>
                         </div>
                         <div class="tvh-checkbox">
-                            <label><input id="EnableDebugLogSanitization" type="checkbox" is="emby-checkbox" /> Enable debug log sanitization</label>
+                            <label>
+                                <input id="EnableDebugLogSanitization" type="checkbox" is="emby-checkbox" />
+                                <span>Enable debug log sanitization</span>
+                            </label>
                             <div class="fieldDescription">Mask tokens, passwords, and Authorization headers in log messages before storage.</div>
                         </div>
                         <div class="tvh-field inputContainer">
@@ -888,8 +882,27 @@
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('api/tvheadend/status'), dataType: 'json' }).then(function (r) {
                     $('#RelayAutoDetectedHost').textContent = 'Auto-detected host: ' + (r.EffectiveHost || '(unknown)');
                     var msg = $('#RelayStatusMsg');
-                    msg.style.color = '#a5d6a7';
-                    msg.textContent = '✅ Relay endpoint reachable — ' + (r.ActiveStreams || 0) + ' active stream(s)';
+                    var status = (r.Status || '').toLowerCase();
+                    if (status === 'ok') {
+                        msg.style.color = '#a5d6a7';
+                        var latency = r.LastResponseTimeMs ? ' (' + r.LastResponseTimeMs + ' ms)' : '';
+                        msg.textContent = '✅ Relay connected to TVHeadend' + latency + ' — ' + (r.ActiveStreams || 0) + ' active stream(s)';
+                    } else if (status === 'degraded') {
+                        msg.style.color = '#f0ad4e';
+                        msg.textContent = '⚠️ TVHeadend degraded: ' + (r.Message || 'intermittent issues');
+                    } else if (status === 'disabled') {
+                        msg.style.color = '#90a4ae';
+                        msg.textContent = 'ℹ️ ' + (r.Message || 'Relay service is disabled.');
+                    } else if (status === 'unknown') {
+                        msg.style.color = '#90a4ae';
+                        msg.textContent = '⏳ ' + (r.Message || 'Checking TVHeadend connectivity…');
+                    } else {
+                        msg.style.color = '#ef9a9a';
+                        msg.textContent = '❌ ' + (r.Message || 'TVHeadend not reachable');
+                        if (r.ConsecutiveFailures > 0) {
+                            msg.textContent += ' (' + r.ConsecutiveFailures + ' consecutive failure' + (r.ConsecutiveFailures > 1 ? 's' : '') + ')';
+                        }
+                    }
                 }).catch(function () {
                     $('#RelayAutoDetectedHost').textContent = 'Auto-detected host: (could not determine)';
                     var msg = $('#RelayStatusMsg');
@@ -925,9 +938,6 @@
                     config.CleanupExpiredTokensIntervalMinutes = parseInt_('#CleanupExpiredTokensIntervalMinutes', config.CleanupExpiredTokensIntervalMinutes);
                     config.TokenValidationClockSkewSeconds = parseInt_('#TokenValidationClockSkewSeconds', config.TokenValidationClockSkewSeconds);
 
-                    var sp = $('#StreamingProfile').value;
-                    if (sp) config.StreamingProfile = sp;
-
                     config.FallbackMaxStreamingBitrate = parseInt_('#FallbackMaxStreamingBitrate', config.FallbackMaxStreamingBitrate);
                     config.IsInfiniteStream = $('#IsInfiniteStream').checked;
                     config.SupportsDirectPlay = $('#SupportsDirectPlay').checked;
@@ -959,18 +969,20 @@
                     var rp = $('#RecordingProfile').value;
                     if (rp) config.RecordingProfile = rp;
 
-                    // Streaming profile settings
+                    // Streaming profile settings — collect from unified table
                     var sps = config.StreamingProfileSettings || {};
-                    sps.DefaultPlaybackMode = parseInt($('#SPS_DefaultPlaybackMode').value, 10) || 0;
-                    sps.DefaultTvHeadendProfile = ($('#SPS_DefaultTvHeadendProfile').value || '').trim();
+                    var assignments = collectProfileAssignments();
+                    sps.DefaultPlaybackMode = 0; // Auto
+                    sps.DefaultTvHeadendProfile = assignments.defaultProfile;
+                    config.StreamingProfile = assignments.defaultProfile;
                     sps.PassThroughProfile = ($('#SPS_PassThroughProfile').value || 'pass').trim();
                     sps.JellyfinTranscodeProfile = ($('#SPS_JellyfinTranscodeProfile').value || 'matroska').trim();
                     sps.FallbackTvHeadendProfile = ($('#SPS_FallbackTvHeadendProfile').value || 'pass').trim();
                     sps.EnableResolutionDiagnostics = $('#SPS_EnableResolutionDiagnostics').checked;
-                    sps.ChannelOverrides = collectChannelOverrides();
-                    sps.ChannelGroupOverrides = collectChannelGroupOverrides();
-                    sps.ClientRules = collectRules('ClientRulesList');
-                    sps.UserRules = collectRules('UserRulesList');
+                    sps.ChannelOverrides = assignments.channelOverrides;
+                    sps.ChannelGroupOverrides = assignments.channelGroupOverrides;
+                    sps.ClientRules = assignments.clientRules;
+                    sps.UserRules = assignments.userRules;
                     config.StreamingProfileSettings = sps;
 
                     return ApiClient.updatePluginConfiguration(pluginId, config);
@@ -1002,7 +1014,6 @@
                 $('#CleanupExpiredTokensIntervalMinutes').value = config.CleanupExpiredTokensIntervalMinutes || 60;
                 $('#TokenValidationClockSkewSeconds').value = config.TokenValidationClockSkewSeconds != null ? config.TokenValidationClockSkewSeconds : 5;
                 updateRelayTokenWarnings();
-                $('#StreamingProfile').value = config.StreamingProfile || '';
                 $('#FallbackMaxStreamingBitrate').value = config.FallbackMaxStreamingBitrate || '';
                 $('#IsInfiniteStream').checked = config.IsInfiniteStream !== false;
                 $('#SupportsDirectPlay').checked = config.SupportsDirectPlay !== false;
@@ -1033,18 +1044,14 @@
                 $('#LogRetentionDays').value = config.LogRetentionDays || 7;
                 updateLogLevelWarning();
 
-                // Streaming profile settings
+                // Streaming profile settings — render unified table
                 var sps = config.StreamingProfileSettings || {};
-                $('#SPS_DefaultPlaybackMode').value = String(sps.DefaultPlaybackMode != null ? sps.DefaultPlaybackMode : 0);
-                $('#SPS_DefaultTvHeadendProfile').value = sps.DefaultTvHeadendProfile || '';
                 $('#SPS_PassThroughProfile').value = sps.PassThroughProfile || 'pass';
                 $('#SPS_JellyfinTranscodeProfile').value = sps.JellyfinTranscodeProfile || 'matroska';
                 $('#SPS_FallbackTvHeadendProfile').value = sps.FallbackTvHeadendProfile || 'pass';
                 $('#SPS_EnableResolutionDiagnostics').checked = sps.EnableResolutionDiagnostics || false;
-                renderChannelOverrides(sps.ChannelOverrides || []);
-                renderChannelGroupOverrides(sps.ChannelGroupOverrides || []);
-                renderRules('ClientRulesList', sps.ClientRules || [], 0);
-                renderRules('UserRulesList', sps.UserRules || [], 4);
+                var defaultProfile = (sps.DefaultTvHeadendProfile || config.StreamingProfile || '').trim();
+                renderProfileTable(sps.ChannelOverrides || [], sps.ChannelGroupOverrides || [], sps.ClientRules || [], sps.UserRules || [], defaultProfile);
 
                 updateAuthRequiredState();
                 updateAuthTokenButtonLabel();
@@ -1052,29 +1059,15 @@
 
             // ── Load profiles ───────────────────────────────────
             function loadAvailableProfiles(config) {
-                var streamingSel = $('#StreamingProfile');
                 var recordingSel = $('#RecordingProfile');
-                var cfgStream = (config.StreamingProfile || '').trim();
                 var cfgRecord = (config.RecordingProfile || '').trim();
 
                 return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/ProfileOptions'), dataType: 'json' }).then(function (opts) {
-                    var streaming = new Set();
-                    if (opts.StreamingProfiles) opts.StreamingProfiles.forEach(function (p) { if (p && p.trim()) streaming.add(p); });
-                    if (cfgStream) streaming.add(cfgStream);
-
                     var recording = new Set();
                     if (opts.RecordingProfiles) opts.RecordingProfiles.forEach(function (p) { if (p && p.trim()) recording.add(p); });
                     if (cfgRecord) recording.add(cfgRecord);
 
                     function eq(a, b) { return (a || '').toLowerCase() === (b || '').toLowerCase(); }
-
-                    streamingSel.innerHTML = '<option value="">-- Select a profile --</option>';
-                    Array.from(streaming).sort().forEach(function (p) {
-                        var o = document.createElement('option');
-                        o.value = p; o.textContent = p;
-                        if (cfgStream && eq(p, cfgStream)) o.selected = true;
-                        streamingSel.appendChild(o);
-                    });
 
                     recordingSel.innerHTML = '<option value="">-- Select a profile --</option>';
                     Array.from(recording).sort().forEach(function (p) {
@@ -1112,7 +1105,7 @@
             }
 
             function loadDiagnose() {
-                var el = $('#DiagnoseReport');
+                var el = $('#DiagDetailsContent');
                 el.innerHTML = '<em>Running diagnostics…</em>';
 
                 saveCurrentFormToConfig().then(function () {
@@ -1152,19 +1145,25 @@
                     }
 
                     if (r.Warnings && r.Warnings.length > 0) {
-                        html += '<div style="margin-bottom:0.6em; color:#f0ad4e;"><strong>Warnings:</strong><ul style="margin:0.2em 0 0 1.5em;">';
-                        r.Warnings.forEach(function (w) { html += '<li>' + esc(w) + '</li>'; });
-                        html += '</ul></div>';
+                        html += '<details style="margin-bottom:0.6em;" open><summary style="cursor:pointer; color:#f0ad4e;"><strong>Warnings (' + r.Warnings.length + ')</strong></summary><ul style="margin:0.2em 0 0 1.5em;">';
+                        r.Warnings.forEach(function (w) { html += '<li style="color:#f0ad4e;">' + esc(w) + '</li>'; });
+                        html += '</ul></details>';
                     }
 
                     if (r.Recommendations && r.Recommendations.length > 0) {
-                        html += '<div><strong>Recommendations:</strong><ul style="margin:0.2em 0 0 1.5em;">';
+                        html += '<details style="margin-bottom:0.6em;"><summary style="cursor:pointer;"><strong>Recommendations (' + r.Recommendations.length + ')</strong></summary><ul style="margin:0.2em 0 0 1.5em;">';
                         r.Recommendations.forEach(function (rec) { html += '<li>' + esc(rec) + '</li>'; });
-                        html += '</ul></div>';
+                        html += '</ul></details>';
                     }
 
                     el.innerHTML = html;
                     updateStatusBanner(r);
+
+                    // Update last-run timestamp
+                    var now = new Date();
+                    var ts = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0') + ':' + now.getSeconds().toString().padStart(2,'0');
+                    var diagTs = document.getElementById('DiagLastRun');
+                    if (diagTs) diagTs.textContent = 'Last check: ' + ts;
                 }).catch(function (err) {
                     el.innerHTML = '<span style="color:#ef9a9a;">Diagnostics failed: ' + esc(err.statusText || err.message || 'Unknown error') + '</span>';
                 });
@@ -1185,7 +1184,6 @@
             });
 
             $('#DiagnoseBtn').addEventListener('click', loadDiagnose);
-            $('#QuickDiagnoseBtn').addEventListener('click', loadDiagnose);
 
             // ── Optimal Setup ────────────────────────────────────
             $('#OptimalSetupBtn').addEventListener('click', function () {
@@ -1207,8 +1205,12 @@
                         });
                     }
                 }).then(function () {
-                    // Step 3: Set optimal config values
-                    $('#StreamingProfile').value = 'jellyfin';
+                    // Step 3: Set optimal config values — update Default row profile
+                    var defaultRow = document.querySelector('#ProfileAssignmentsBody .tvh-row-default');
+                    if (defaultRow) {
+                        var profileEl = defaultRow.querySelector('[data-field="profile"]');
+                        if (profileEl) profileEl.value = 'jellyfin';
+                    }
                     $('#IsInfiniteStream').checked = true;
                     $('#SupportsDirectPlay').checked = true;
                     $('#SupportsDirectStream').checked = true;
@@ -1221,10 +1223,9 @@
                     // Step 4: Save and re-diagnose
                     return saveCurrentFormToConfig();
                 }).then(function () {
-                    return loadAvailableProfiles({ StreamingProfile: 'jellyfin', RecordingProfile: $('#RecordingProfile').value });
+                    return loadAvailableProfiles({ RecordingProfile: $('#RecordingProfile').value });
                 }).then(function () {
-                    $('#StreamingProfile').value = 'jellyfin';
-                    btn.textContent = '✅ Done!';
+                    btn.textContent = 'Done!';
                     loadDiagnose();
                     setTimeout(function () { btn.textContent = origText; }, 2000);
                 }).catch(function (err) {
@@ -1273,7 +1274,12 @@
                     return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/CreateProfile'), dataType: 'json' });
                 }).then(function (r) {
                     if (!r.Success) { msg.style.color = '#ef9a9a'; msg.textContent = r.Message; return; }
-                    $('#StreamingProfile').value = 'jellyfin';
+                    // Update the Default row profile in the table
+                    var defaultRow = document.querySelector('#ProfileAssignmentsBody .tvh-row-default');
+                    if (defaultRow) {
+                        var profileEl = defaultRow.querySelector('[data-field="profile"]');
+                        if (profileEl) profileEl.value = 'jellyfin';
+                    }
                     msg.style.color = '#a5d6a7'; msg.textContent = r.Message;
                     loadDiagnose();
                 }).catch(function (err) {
@@ -1289,7 +1295,9 @@
                 loadPluginInfo();
                 loadRelayStatus();
                 Dashboard.showLoadingMsg();
-                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                Promise.all([loadDiscoveredProfiles(), loadDiscoveredChannels(), loadDiscoveredChannelGroups()]).then(function () {
+                    return ApiClient.getPluginConfiguration(pluginId);
+                }).then(function (config) {
                     loadFormFromConfig(config);
                     return loadAvailableProfiles(config);
                 }).then(function () {
@@ -1312,193 +1320,329 @@
                 return false;
             });
 
-            // ── Streaming Profile Rules — dynamic lists ────────────
+            // ── Unified Profile Assignment Table ────────────────
 
-            var playbackModeOptions = '<option value="0">Auto</option><option value="1">Pass Through</option><option value="2">TVHeadend Transcode</option><option value="3">Jellyfin Transcode</option>';
-            var matchTypeOptions = '<option value="0">Client Name (exact)</option><option value="1">Client Name (contains)</option><option value="2">Device Name (exact)</option><option value="3">Device Name (contains)</option><option value="4">User ID (exact)</option>';
+            var discoveredProfiles = [];
+            var discoveredChannels = [];    // [{Id, Name}]
+            var discoveredChannelGroups = []; // [{Id, Name}]
 
-            function createRemoveBtn() {
-                var btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'tvh-rule-remove';
-                btn.textContent = '✕';
-                btn.addEventListener('click', function () {
-                    btn.closest('.tvh-rule-row').remove();
-                    scheduleAutoSave();
+            function loadDiscoveredProfiles() {
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/StreamingProfiles/Discovered'), dataType: 'json' })
+                    .then(function (profiles) { discoveredProfiles = profiles || []; })
+                    .catch(function () { discoveredProfiles = []; });
+            }
+
+            function loadDiscoveredChannels() {
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/StreamingProfiles/Channels'), dataType: 'json' })
+                    .then(function (list) { discoveredChannels = list || []; })
+                    .catch(function () { discoveredChannels = []; });
+            }
+
+            function loadDiscoveredChannelGroups() {
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/StreamingProfiles/ChannelGroups'), dataType: 'json' })
+                    .then(function (list) { discoveredChannelGroups = list || []; })
+                    .catch(function () { discoveredChannelGroups = []; });
+            }
+
+            function buildProfileSelect(selectedValue) {
+                if (discoveredProfiles.length === 0) return null; // fallback to text input
+                var html = '<option value="">-- Select --</option>';
+                discoveredProfiles.forEach(function (p) {
+                    var name = typeof p === 'string' ? p : (p.Name || p.name || '');
+                    if (!name) return;
+                    html += '<option value="' + esc(name) + '"' + (name === selectedValue ? ' selected' : '') + '>' + esc(name) + '</option>';
                 });
-                return btn;
+                return html;
             }
 
-            // ── Channel Overrides ──
-            function renderChannelOverride(o) {
-                o = o || {};
-                var row = document.createElement('div');
-                row.className = 'tvh-rule-row';
-                row.innerHTML = '<div class="tvh-rule-grid">'
-                    + '<div><label>Channel ID</label><input type="text" is="emby-input" data-field="ChannelId" value="' + esc(o.ChannelId || '') + '" placeholder="TVH channel UUID" /></div>'
-                    + '<div><label>Playback Mode</label><select is="emby-select" data-field="PlaybackMode">' + playbackModeOptions + '</select></div>'
-                    + '<div><label>TVH Profile</label><input type="text" is="emby-input" data-field="TvHeadendProfileName" value="' + esc(o.TvHeadendProfileName || '') + '" placeholder="e.g. pass" /></div>'
-                    + '<div><label>Description</label><input type="text" is="emby-input" data-field="Description" value="' + esc(o.Description || '') + '" /></div>'
-                    + '</div>';
-                row.appendChild(createRemoveBtn());
-                var sel = row.querySelector('[data-field="PlaybackMode"]');
-                if (sel) sel.value = String(o.PlaybackMode || 0);
-                return row;
+            function buildChannelSelect(selectedValue) {
+                if (discoveredChannels.length === 0) return null; // fallback to text input
+                var html = '<option value="">-- Select Channel --</option>';
+                discoveredChannels.forEach(function (ch) {
+                    var sel = (ch.Id === selectedValue || ch.Name === selectedValue) ? ' selected' : '';
+                    html += '<option value="' + esc(ch.Id) + '"' + sel + '>' + esc(ch.Name) + '</option>';
+                });
+                return html;
             }
 
-            function renderChannelOverrides(list) {
-                var container = document.getElementById('ChannelOverridesList');
-                container.innerHTML = '';
-                if (!list || list.length === 0) {
-                    container.innerHTML = '<div class="tvh-rule-empty">No channel overrides configured.</div>';
-                    return;
+            function buildChannelGroupSelect(selectedValue) {
+                if (discoveredChannelGroups.length === 0) return null;
+                var html = '<option value="">-- Select Group --</option>';
+                discoveredChannelGroups.forEach(function (g) {
+                    var sel = (g.Id === selectedValue || g.Name === selectedValue) ? ' selected' : '';
+                    html += '<option value="' + esc(g.Name) + '"' + sel + '>' + esc(g.Name) + '</option>';
+                });
+                return html;
+            }
+
+            function buildProfileCell(selectedValue) {
+                var selectHtml = buildProfileSelect(selectedValue);
+                if (selectHtml) {
+                    return '<select is="emby-select" data-field="profile">' + selectHtml + '</select>';
                 }
-                list.forEach(function (o) { container.appendChild(renderChannelOverride(o)); });
+                return '<input type="text" is="emby-input" data-field="profile" value="' + esc(selectedValue || '') + '" placeholder="e.g. pass" />';
             }
 
-            function collectChannelOverrides() {
-                var rows = document.querySelectorAll('#ChannelOverridesList .tvh-rule-row');
-                var result = [];
+            var typeMeta = {
+                channel: { order: 1, badge: 'tvh-badge-channel', label: 'Channel', placeholder: 'Channel UUID' },
+                group:   { order: 2, badge: 'tvh-badge-group',   label: 'Channel Group', placeholder: 'e.g. Sports' },
+                client:  { order: 3, badge: 'tvh-badge-client',  label: 'Client', placeholder: 'e.g. Jellyfin Web' },
+                device:  { order: 3, badge: 'tvh-badge-device',  label: 'Device', placeholder: 'e.g. iPhone 15' },
+                user:    { order: 4, badge: 'tvh-badge-user',    label: 'User', placeholder: 'User ID' },
+                default: { order: 5, badge: 'tvh-badge-default', label: 'Default', placeholder: '' }
+            };
+
+            function getMaxPriority() {
+                var max = 0;
+                var rows = document.querySelectorAll('#ProfileAssignmentsBody tr:not(.tvh-row-default)');
                 rows.forEach(function (row) {
-                    var chId = (row.querySelector('[data-field="ChannelId"]') || {}).value || '';
-                    if (!chId.trim()) return;
-                    result.push({
-                        ChannelId: chId.trim(),
-                        PlaybackMode: parseInt((row.querySelector('[data-field="PlaybackMode"]') || {}).value || '0', 10),
-                        TvHeadendProfileName: ((row.querySelector('[data-field="TvHeadendProfileName"]') || {}).value || '').trim(),
-                        Description: ((row.querySelector('[data-field="Description"]') || {}).value || '').trim()
-                    });
+                    var inp = row.querySelector('[data-field="priority"]');
+                    if (inp) { var v = parseInt(inp.value, 10); if (v > max) max = v; }
                 });
-                return result;
+                return max;
             }
 
-            document.getElementById('AddChannelOverrideBtn').addEventListener('click', function () {
-                var container = document.getElementById('ChannelOverridesList');
-                var empty = container.querySelector('.tvh-rule-empty');
-                if (empty) empty.remove();
-                container.appendChild(renderChannelOverride({}));
+            function buildTableRow(type, match, profile, description, priority) {
+                var meta = typeMeta[type] || typeMeta.default;
+                var isDefault = type === 'default';
+                var tr = document.createElement('tr');
+                tr.setAttribute('data-rule-type', type);
+                if (isDefault) tr.className = 'tvh-row-default';
+
+                // Priority
+                var tdPri = document.createElement('td');
+                if (!isDefault) {
+                    tdPri.innerHTML = '<input type="number" is="emby-input" data-field="priority" value="' + (priority || 0) + '" min="0" style="width:4.5em;" />';
+                } else {
+                    tdPri.innerHTML = '<span style="opacity:0.4;">—</span>';
+                }
+                tr.appendChild(tdPri);
+
+                // Type badge
+                var tdType = document.createElement('td');
+                tdType.innerHTML = '<span class="tvh-badge ' + meta.badge + '">' + esc(meta.label) + '</span>';
+                tr.appendChild(tdType);
+
+                // Match
+                var tdMatch = document.createElement('td');
+                if (!isDefault) {
+                    var matchHtml = null;
+                    if (type === 'channel') {
+                        var chOpts = buildChannelSelect(match);
+                        if (chOpts) {
+                            matchHtml = '<select is="emby-select" data-field="match">' + chOpts + '</select>';
+                        }
+                    } else if (type === 'group') {
+                        var grpOpts = buildChannelGroupSelect(match);
+                        if (grpOpts) {
+                            matchHtml = '<select is="emby-select" data-field="match">' + grpOpts + '</select>';
+                        }
+                    }
+                    if (!matchHtml) {
+                        matchHtml = '<input type="text" is="emby-input" data-field="match" value="' + esc(match || '') + '" placeholder="' + esc(meta.placeholder) + '" />';
+                    }
+                    tdMatch.innerHTML = matchHtml;
+                } else {
+                    tdMatch.innerHTML = '<span style="opacity:0.4;">—</span>';
+                }
+                tr.appendChild(tdMatch);
+
+                // Profile
+                var tdProfile = document.createElement('td');
+                tdProfile.innerHTML = buildProfileCell(profile);
+                tr.appendChild(tdProfile);
+
+                // Description
+                var tdDesc = document.createElement('td');
+                if (!isDefault) {
+                    tdDesc.innerHTML = '<input type="text" is="emby-input" data-field="description" value="' + esc(description || '') + '" placeholder="optional" />';
+                } else {
+                    tdDesc.innerHTML = '<span style="opacity:0.4; font-size:0.88em;">Fallback when no rule matches</span>';
+                }
+                tr.appendChild(tdDesc);
+
+                // Actions
+                var tdAction = document.createElement('td');
+                if (!isDefault) {
+                    var delBtn = document.createElement('button');
+                    delBtn.type = 'button';
+                    delBtn.className = 'tvh-action-delete';
+                    delBtn.textContent = '\u2715';
+                    delBtn.addEventListener('click', function () {
+                        tr.remove();
+                        scheduleAutoSave();
+                    });
+                    tdAction.appendChild(delBtn);
+                }
+                tr.appendChild(tdAction);
+
+                return tr;
+            }
+
+            function sortAssignmentRows() {
+                var tbody = document.getElementById('ProfileAssignmentsBody');
+                var rows = Array.from(tbody.querySelectorAll('tr'));
+                rows.sort(function (a, b) {
+                    var ta = a.getAttribute('data-rule-type') || 'default';
+                    var tb = b.getAttribute('data-rule-type') || 'default';
+                    var oa = (typeMeta[ta] || typeMeta.default).order;
+                    var ob = (typeMeta[tb] || typeMeta.default).order;
+                    if (oa !== ob) return oa - ob;
+                    var pa = parseInt((a.querySelector('[data-field="priority"]') || {}).value || '0', 10);
+                    var pb = parseInt((b.querySelector('[data-field="priority"]') || {}).value || '0', 10);
+                    return pa - pb;
+                });
+                rows.forEach(function (row) { tbody.appendChild(row); });
+            }
+
+            function renderProfileTable(channelOverrides, channelGroupOverrides, clientRules, userRules, defaultProfile) {
+                var tbody = document.getElementById('ProfileAssignmentsBody');
+                tbody.innerHTML = '';
+
+                // Channel overrides
+                (channelOverrides || []).forEach(function (o) {
+                    tbody.appendChild(buildTableRow('channel', o.ChannelId, o.TvHeadendProfileName, o.Description, 0));
+                });
+
+                // Channel group overrides
+                (channelGroupOverrides || []).forEach(function (o) {
+                    tbody.appendChild(buildTableRow('group', o.ChannelGroup, o.TvHeadendProfileName, o.Description, 0));
+                });
+
+                // Client & Device rules
+                (clientRules || []).forEach(function (r) {
+                    var ruleType = (r.MatchType === 2 || r.MatchType === 3) ? 'device' : 'client';
+                    tbody.appendChild(buildTableRow(ruleType, r.MatchValue, r.TvHeadendProfileName, r.Description || r.RuleName, r.Priority));
+                });
+
+                // User rules
+                (userRules || []).forEach(function (r) {
+                    tbody.appendChild(buildTableRow('user', r.MatchValue, r.TvHeadendProfileName, r.Description || r.RuleName, r.Priority));
+                });
+
+                // Default row (always last)
+                tbody.appendChild(buildTableRow('default', '', defaultProfile, '', 0));
+
+                sortAssignmentRows();
+            }
+
+            function collectProfileAssignments() {
+                var rows = document.querySelectorAll('#ProfileAssignmentsBody tr');
+                var channelOverrides = [];
+                var channelGroupOverrides = [];
+                var clientRules = [];
+                var userRules = [];
+                var defaultProfile = '';
+
+                rows.forEach(function (row) {
+                    var type = row.getAttribute('data-rule-type');
+                    var profileEl = row.querySelector('[data-field="profile"]');
+                    var profile = profileEl ? profileEl.value.trim() : '';
+
+                    if (type === 'default') {
+                        defaultProfile = profile;
+                        return;
+                    }
+
+                    var matchEl = row.querySelector('[data-field="match"]');
+                    var match = matchEl ? matchEl.value.trim() : '';
+                    if (!match) return;
+
+                    var descEl = row.querySelector('[data-field="description"]');
+                    var description = descEl ? descEl.value.trim() : '';
+                    var priEl = row.querySelector('[data-field="priority"]');
+                    var priority = priEl ? (parseInt(priEl.value, 10) || 0) : 0;
+
+                    if (type === 'channel') {
+                        channelOverrides.push({
+                            ChannelId: match,
+                            PlaybackMode: 0,
+                            TvHeadendProfileName: profile,
+                            Description: description
+                        });
+                    } else if (type === 'group') {
+                        channelGroupOverrides.push({
+                            ChannelGroup: match,
+                            PlaybackMode: 0,
+                            TvHeadendProfileName: profile,
+                            Description: description
+                        });
+                    } else if (type === 'client') {
+                        clientRules.push({
+                            Enabled: true,
+                            RuleName: description || match,
+                            Description: description,
+                            Priority: priority,
+                            MatchType: 0, // ClientNameExact
+                            MatchValue: match,
+                            PlaybackMode: 0,
+                            TvHeadendProfileName: profile
+                        });
+                    } else if (type === 'device') {
+                        clientRules.push({
+                            Enabled: true,
+                            RuleName: description || match,
+                            Description: description,
+                            Priority: priority,
+                            MatchType: 2, // DeviceNameExact
+                            MatchValue: match,
+                            PlaybackMode: 0,
+                            TvHeadendProfileName: profile
+                        });
+                    } else if (type === 'user') {
+                        userRules.push({
+                            Enabled: true,
+                            RuleName: description || match,
+                            Description: description,
+                            Priority: priority,
+                            MatchType: 4, // UserIdExact
+                            MatchValue: match,
+                            PlaybackMode: 0,
+                            TvHeadendProfileName: profile
+                        });
+                    }
+                });
+
+                return {
+                    defaultProfile: defaultProfile,
+                    channelOverrides: channelOverrides,
+                    channelGroupOverrides: channelGroupOverrides,
+                    clientRules: clientRules,
+                    userRules: userRules
+                };
+            }
+
+            // ── Add Rule button + dropdown ──
+            document.getElementById('AddRuleBtn').addEventListener('click', function (e) {
+                e.stopPropagation();
+                var menu = document.getElementById('AddRuleMenu');
+                menu.classList.toggle('tvh-open');
+            });
+
+            document.getElementById('AddRuleMenu').addEventListener('click', function (e) {
+                var btn = e.target.closest('[data-rule-type]');
+                if (!btn) return;
+                var type = btn.getAttribute('data-rule-type');
+                var newPri = getMaxPriority() + 10;
+                var tbody = document.getElementById('ProfileAssignmentsBody');
+                var defaultRow = tbody.querySelector('.tvh-row-default');
+                var newRow = buildTableRow(type, '', '', '', newPri);
+                if (defaultRow) {
+                    tbody.insertBefore(newRow, defaultRow);
+                } else {
+                    tbody.appendChild(newRow);
+                }
+                sortAssignmentRows();
+                document.getElementById('AddRuleMenu').classList.remove('tvh-open');
                 scheduleAutoSave();
             });
 
-            // ── Channel Group Overrides ──
-            function renderChannelGroupOverride(o) {
-                o = o || {};
-                var row = document.createElement('div');
-                row.className = 'tvh-rule-row';
-                row.innerHTML = '<div class="tvh-rule-grid">'
-                    + '<div><label>Channel Group</label><input type="text" is="emby-input" data-field="ChannelGroup" value="' + esc(o.ChannelGroup || '') + '" placeholder="e.g. Sports" /></div>'
-                    + '<div><label>Playback Mode</label><select is="emby-select" data-field="PlaybackMode">' + playbackModeOptions + '</select></div>'
-                    + '<div><label>TVH Profile</label><input type="text" is="emby-input" data-field="TvHeadendProfileName" value="' + esc(o.TvHeadendProfileName || '') + '" placeholder="e.g. pass" /></div>'
-                    + '<div><label>Description</label><input type="text" is="emby-input" data-field="Description" value="' + esc(o.Description || '') + '" /></div>'
-                    + '</div>';
-                row.appendChild(createRemoveBtn());
-                var sel = row.querySelector('[data-field="PlaybackMode"]');
-                if (sel) sel.value = String(o.PlaybackMode || 0);
-                return row;
-            }
-
-            function renderChannelGroupOverrides(list) {
-                var container = document.getElementById('ChannelGroupOverridesList');
-                container.innerHTML = '';
-                if (!list || list.length === 0) {
-                    container.innerHTML = '<div class="tvh-rule-empty">No channel group overrides configured.</div>';
-                    return;
+            // Close menu on click outside
+            document.addEventListener('click', function (e) {
+                var menu = document.getElementById('AddRuleMenu');
+                if (menu && !e.target.closest('.tvh-add-rule-wrap')) {
+                    menu.classList.remove('tvh-open');
                 }
-                list.forEach(function (o) { container.appendChild(renderChannelGroupOverride(o)); });
-            }
-
-            function collectChannelGroupOverrides() {
-                var rows = document.querySelectorAll('#ChannelGroupOverridesList .tvh-rule-row');
-                var result = [];
-                rows.forEach(function (row) {
-                    var grp = (row.querySelector('[data-field="ChannelGroup"]') || {}).value || '';
-                    if (!grp.trim()) return;
-                    result.push({
-                        ChannelGroup: grp.trim(),
-                        PlaybackMode: parseInt((row.querySelector('[data-field="PlaybackMode"]') || {}).value || '0', 10),
-                        TvHeadendProfileName: ((row.querySelector('[data-field="TvHeadendProfileName"]') || {}).value || '').trim(),
-                        Description: ((row.querySelector('[data-field="Description"]') || {}).value || '').trim()
-                    });
-                });
-                return result;
-            }
-
-            document.getElementById('AddChannelGroupOverrideBtn').addEventListener('click', function () {
-                var container = document.getElementById('ChannelGroupOverridesList');
-                var empty = container.querySelector('.tvh-rule-empty');
-                if (empty) empty.remove();
-                container.appendChild(renderChannelGroupOverride({}));
-                scheduleAutoSave();
-            });
-
-            // ── Generic Rule Rendering (Client + User) ──
-            function renderRule(o, defaultMatchType) {
-                o = o || {};
-                var row = document.createElement('div');
-                row.className = 'tvh-rule-row';
-                row.innerHTML = '<div class="tvh-rule-grid-3">'
-                    + '<div><label>Rule Name</label><input type="text" is="emby-input" data-field="RuleName" value="' + esc(o.RuleName || '') + '" placeholder="e.g. Swiftfin iOS" /></div>'
-                    + '<div><label>Priority</label><input type="number" is="emby-input" data-field="Priority" value="' + (o.Priority || 0) + '" min="0" placeholder="0" /></div>'
-                    + '<div style="display:flex; align-items:end; gap:0.5em;"><label style="white-space:nowrap;"><input type="checkbox" is="emby-checkbox" data-field="Enabled" ' + (o.Enabled !== false ? 'checked' : '') + ' /> Enabled</label></div>'
-                    + '<div><label>Match Type</label><select is="emby-select" data-field="MatchType">' + matchTypeOptions + '</select></div>'
-                    + '<div><label>Match Value</label><input type="text" is="emby-input" data-field="MatchValue" value="' + esc(o.MatchValue || '') + '" placeholder="e.g. Swiftfin" /></div>'
-                    + '<div><label>Playback Mode</label><select is="emby-select" data-field="PlaybackMode">' + playbackModeOptions + '</select></div>'
-                    + '<div class="tvh-rule-full"><label>TVH Profile</label><input type="text" is="emby-input" data-field="TvHeadendProfileName" value="' + esc(o.TvHeadendProfileName || '') + '" placeholder="e.g. matroska" /></div>'
-                    + '<div class="tvh-rule-full"><label>Description</label><input type="text" is="emby-input" data-field="Description" value="' + esc(o.Description || '') + '" /></div>'
-                    + '</div>';
-                row.appendChild(createRemoveBtn());
-                var mt = row.querySelector('[data-field="MatchType"]');
-                if (mt) mt.value = String(o.MatchType != null ? o.MatchType : (defaultMatchType || 0));
-                var pm = row.querySelector('[data-field="PlaybackMode"]');
-                if (pm) pm.value = String(o.PlaybackMode || 0);
-                return row;
-            }
-
-            function renderRules(containerId, list, defaultMatchType) {
-                var container = document.getElementById(containerId);
-                container.innerHTML = '';
-                if (!list || list.length === 0) {
-                    container.innerHTML = '<div class="tvh-rule-empty">No rules configured.</div>';
-                    return;
-                }
-                list.forEach(function (r) { container.appendChild(renderRule(r, defaultMatchType)); });
-            }
-
-            function collectRules(containerId) {
-                var rows = document.querySelectorAll('#' + containerId + ' .tvh-rule-row');
-                var result = [];
-                rows.forEach(function (row) {
-                    var name = (row.querySelector('[data-field="RuleName"]') || {}).value || '';
-                    var matchVal = (row.querySelector('[data-field="MatchValue"]') || {}).value || '';
-                    if (!name.trim() && !matchVal.trim()) return;
-                    result.push({
-                        Enabled: !!(row.querySelector('[data-field="Enabled"]') || {}).checked,
-                        RuleName: name.trim(),
-                        Description: ((row.querySelector('[data-field="Description"]') || {}).value || '').trim(),
-                        Priority: parseInt((row.querySelector('[data-field="Priority"]') || {}).value || '0', 10),
-                        MatchType: parseInt((row.querySelector('[data-field="MatchType"]') || {}).value || '0', 10),
-                        MatchValue: matchVal.trim(),
-                        PlaybackMode: parseInt((row.querySelector('[data-field="PlaybackMode"]') || {}).value || '0', 10),
-                        TvHeadendProfileName: ((row.querySelector('[data-field="TvHeadendProfileName"]') || {}).value || '').trim()
-                    });
-                });
-                return result;
-            }
-
-            document.getElementById('AddClientRuleBtn').addEventListener('click', function () {
-                var container = document.getElementById('ClientRulesList');
-                var empty = container.querySelector('.tvh-rule-empty');
-                if (empty) empty.remove();
-                container.appendChild(renderRule({}, 0));
-                scheduleAutoSave();
-            });
-
-            document.getElementById('AddUserRuleBtn').addEventListener('click', function () {
-                var container = document.getElementById('UserRulesList');
-                var empty = container.querySelector('.tvh-rule-empty');
-                if (empty) empty.remove();
-                container.appendChild(renderRule({}, 4));
-                scheduleAutoSave();
             });
 
             // ── Test Resolution ──
@@ -1527,7 +1671,7 @@
                     html += '<div><span class="tvh-res-label">Mode:</span> ' + esc(modeNames[r.EffectivePlaybackMode] || String(r.EffectivePlaybackMode)) + '</div>';
                     html += '<div><span class="tvh-res-label">Source:</span> ' + esc(r.Source || '—') + '</div>';
                     if (r.MatchedRuleName) html += '<div><span class="tvh-res-label">Matched Rule:</span> ' + esc(r.MatchedRuleName) + '</div>';
-                    if (r.UsedFallback) html += '<div style="color:#f0ad4e;">⚠️ Fallback was used</div>';
+                    if (r.UsedFallback) html += '<div style="color:#f0ad4e;">Fallback was used</div>';
                     if (r.Reasons && r.Reasons.length > 0) {
                         html += '<details style="margin-top:0.4em;"><summary style="cursor:pointer; font-size:0.88em; opacity:0.7;">Debug reasons (' + r.Reasons.length + ')</summary><ul style="margin:0.3em 0 0 1.2em; font-size:0.88em; opacity:0.8;">';
                         r.Reasons.forEach(function (reason) { html += '<li>' + esc(reason) + '</li>'; });
@@ -1548,9 +1692,9 @@
                     return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/StreamingProfiles/Validate'), dataType: 'json' });
                 }).then(function (warnings) {
                     if (!warnings || warnings.length === 0) {
-                        resultEl.innerHTML = '<span class="tvh-validation-ok">✅ All configured profile names are valid.</span>';
+                        resultEl.innerHTML = '<span class="tvh-validation-ok">All configured profile names are valid.</span>';
                     } else {
-                        var html = '<span class="tvh-validation-warn">⚠️ ' + warnings.length + ' warning(s):</span><ul style="margin:0.3em 0 0 1.2em; font-size:0.88em;">';
+                        var html = '<span class="tvh-validation-warn">' + warnings.length + ' warning(s):</span><ul style="margin:0.3em 0 0 1.2em; font-size:0.88em;">';
                         warnings.forEach(function (w) { html += '<li style="color:#f0ad4e;">' + esc(w) + '</li>'; });
                         html += '</ul>';
                         resultEl.innerHTML = html;
@@ -1592,6 +1736,7 @@
                     saveCurrentFormToConfig().then(function () {
                         showSaveToast(true);
                         flashField(field);
+                        loadDiagnose();
                     }).catch(function (err) {
                         showSaveToast(false);
                         console.warn('[TvHeadend] Auto-save failed:', err);

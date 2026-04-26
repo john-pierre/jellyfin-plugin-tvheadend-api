@@ -32,9 +32,12 @@ internal sealed class DatabaseConnectionFactory
     /// The caller owns the connection and must dispose it.
     /// </summary>
     /// <returns>An opened <see cref="SqliteConnection"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the plugin data folder is not available.</exception>
     public SqliteConnection CreateConnection()
     {
-        var connection = new SqliteConnection(_provider.ConnectionString);
+        var connStr = _provider.ConnectionString
+            ?? throw new InvalidOperationException("Database path is not available — plugin data folder is not initialized.");
+        var connection = new SqliteConnection(connStr);
         connection.Open();
         ApplyPragmas(connection);
         return connection;
@@ -44,11 +47,14 @@ internal sealed class DatabaseConnectionFactory
     /// Creates a new opened read-only SQLite connection.
     /// </summary>
     /// <returns>An opened read-only <see cref="SqliteConnection"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the plugin data folder is not available.</exception>
     public SqliteConnection CreateReadOnlyConnection()
     {
+        var dbPath = _provider.DatabasePath
+            ?? throw new InvalidOperationException("Database path is not available — plugin data folder is not initialized.");
         var builder = new SqliteConnectionStringBuilder
         {
-            DataSource = _provider.DatabasePath,
+            DataSource = dbPath,
             Mode = SqliteOpenMode.ReadOnly,
             Cache = SqliteCacheMode.Shared,
             Pooling = false,

@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
@@ -103,7 +104,7 @@ internal sealed class ResilienceHandler : DelegatingHandler
             try
             {
                 // Clone the request for retries — the original content stream may already be consumed.
-                using var clone = await CloneRequestAsync(request, cancellationToken).ConfigureAwait(false);
+                using var clone = await HttpRequestCloner.CloneAsync(request, cancellationToken).ConfigureAwait(false);
                 response = await base.SendAsync(clone, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -211,35 +212,5 @@ internal sealed class ResilienceHandler : DelegatingHandler
         {
             _openUntil = openUntil;
         }
-    }
-
-    private static async Task<HttpRequestMessage> CloneRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        var clone = new HttpRequestMessage(request.Method, request.RequestUri)
-        {
-            Version = request.Version,
-        };
-
-        if (request.Content is not null)
-        {
-            var contentBytes = await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-            clone.Content = new ByteArrayContent(contentBytes);
-            foreach (var header in request.Content.Headers)
-            {
-                clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-        }
-
-        foreach (var header in request.Headers)
-        {
-            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-        }
-
-        foreach (var option in request.Options)
-        {
-            ((System.Collections.Generic.IDictionary<string, object?>)clone.Options).Add(option);
-        }
-
-        return clone;
     }
 }

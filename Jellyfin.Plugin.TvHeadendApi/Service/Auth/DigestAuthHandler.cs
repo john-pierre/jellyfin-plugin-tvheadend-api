@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 
@@ -102,7 +103,7 @@ internal sealed class DigestAuthHandler : DelegatingHandler
 
         var header = BuildAuthorizationHeader(realm, nonce, uri, ncHex, cnonce, qop, opaque, algorithm, digestResponse);
 
-        using var retryRequest = await CloneRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        using var retryRequest = await HttpRequestCloner.CloneAsync(request, cancellationToken).ConfigureAwait(false);
         retryRequest.Headers.Authorization = new AuthenticationHeaderValue("Digest", header);
 
         return await base.SendAsync(retryRequest, cancellationToken).ConfigureAwait(false);
@@ -111,7 +112,7 @@ internal sealed class DigestAuthHandler : DelegatingHandler
     private async Task<HttpResponseMessage> RetryWithBasicAuthAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var basicToken = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_username}:{_password}"));
-        using var retryRequest = await CloneRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        using var retryRequest = await HttpRequestCloner.CloneAsync(request, cancellationToken).ConfigureAwait(false);
         retryRequest.Headers.Authorization = new AuthenticationHeaderValue("Basic", basicToken);
         return await base.SendAsync(retryRequest, cancellationToken).ConfigureAwait(false);
     }
@@ -236,29 +237,5 @@ internal sealed class DigestAuthHandler : DelegatingHandler
         }
 
         return result;
-    }
-
-    private static async Task<HttpRequestMessage> CloneRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        var clone = new HttpRequestMessage(request.Method, request.RequestUri);
-
-        if (request.Content != null)
-        {
-            var contentBytes = await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-            clone.Content = new ByteArrayContent(contentBytes);
-            foreach (var header in request.Content.Headers)
-            {
-                clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-        }
-
-        foreach (var header in request.Headers)
-        {
-            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-        }
-
-        clone.Version = request.Version;
-
-        return clone;
     }
 }

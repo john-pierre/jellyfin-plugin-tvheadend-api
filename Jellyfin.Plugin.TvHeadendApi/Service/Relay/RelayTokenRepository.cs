@@ -21,7 +21,8 @@ internal sealed class RelayTokenRepository : IRelayTokenRepository, IDisposable
     private readonly ILogger<RelayTokenRepository> _logger;
     private readonly DatabaseHealthService _dbHealthService;
     private readonly DatabaseWriteCoordinator _writeCoordinator;
-    private readonly DbContextOptions<RelayTokenDbContext> _dbContextOptions;
+    private readonly DatabaseProvider _databaseProvider;
+    private DbContextOptions<RelayTokenDbContext>? _lazyDbContextOptions;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RelayTokenRepository"/> class.
@@ -29,17 +30,35 @@ internal sealed class RelayTokenRepository : IRelayTokenRepository, IDisposable
     /// <param name="logger">Logger instance.</param>
     /// <param name="dbHealthService">Central database health service.</param>
     /// <param name="writeCoordinator">Central write coordinator.</param>
-    /// <param name="dbContextOptions">EF Core context options.</param>
+    /// <param name="databaseProvider">Central database provider.</param>
     public RelayTokenRepository(
         ILogger<RelayTokenRepository> logger,
         DatabaseHealthService dbHealthService,
         DatabaseWriteCoordinator writeCoordinator,
-        DbContextOptions<RelayTokenDbContext> dbContextOptions)
+        DatabaseProvider databaseProvider)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _dbHealthService = dbHealthService ?? throw new ArgumentNullException(nameof(dbHealthService));
         _writeCoordinator = writeCoordinator ?? throw new ArgumentNullException(nameof(writeCoordinator));
-        _dbContextOptions = dbContextOptions ?? throw new ArgumentNullException(nameof(dbContextOptions));
+        _databaseProvider = databaseProvider ?? throw new ArgumentNullException(nameof(databaseProvider));
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RelayTokenRepository"/> class
+    /// with pre-built context options for unit testing.
+    /// </summary>
+    /// <param name="logger">Logger instance.</param>
+    /// <param name="dbHealthService">Central database health service.</param>
+    /// <param name="writeCoordinator">Central write coordinator.</param>
+    /// <param name="dbContextOptions">Pre-built EF Core context options.</param>
+    internal RelayTokenRepository(
+        ILogger<RelayTokenRepository> logger,
+        DatabaseHealthService dbHealthService,
+        DatabaseWriteCoordinator writeCoordinator,
+        DbContextOptions<RelayTokenDbContext> dbContextOptions)
+        : this(logger, dbHealthService, writeCoordinator, CreateNullProvider())
+    {
+        _lazyDbContextOptions = dbContextOptions;
     }
 
     /// <inheritdoc />
@@ -173,5 +192,15 @@ internal sealed class RelayTokenRepository : IRelayTokenRepository, IDisposable
         // No local resources to dispose — write coordination is centralized.
     }
 
-    private RelayTokenDbContext CreateContext() => new(_dbContextOptions);
+    private static DatabaseProvider CreateNullProvider()
+    {
+        return new DatabaseProvider(new Storage.DataFolderPathProvider(() => null));
+    }
+
+    private DbContextOptions<RelayTokenDbContext> GetDbContextOptions()
+    {
+        return _lazyDbContextOptions ??= _databaseProvider.CreateContextOptions<RelayTokenDbContext>();
+    }
+
+    private RelayTokenDbContext CreateContext() => new(GetDbContextOptions());
 }

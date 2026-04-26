@@ -22,6 +22,7 @@ internal sealed class DatabaseProvider
     internal const string DatabaseFileName = "tvheadend_plugin.db";
 
     private readonly DataFolderPathProvider _pathProvider;
+    private string? _cachedDatabasePath;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DatabaseProvider"/> class.
@@ -34,26 +35,53 @@ internal sealed class DatabaseProvider
 
     /// <summary>
     /// Gets the full path to the plugin's SQLite database file.
+    /// The path is cached on first successful resolution to prevent issues
+    /// when <see cref="Plugin.Instance"/> is temporarily unavailable (e.g. during config reset).
+    /// Returns <c>null</c> only if the plugin data-folder has never been available.
     /// </summary>
-    public string DatabasePath
+    public string? DatabasePath
     {
         get
         {
-            var folder = _pathProvider.Path ?? string.Empty;
-            return System.IO.Path.Combine(folder, DatabaseFileName);
+            if (_cachedDatabasePath != null)
+            {
+                return _cachedDatabasePath;
+            }
+
+            var folder = _pathProvider.Path;
+            if (string.IsNullOrWhiteSpace(folder))
+            {
+                return null;
+            }
+
+            _cachedDatabasePath = System.IO.Path.Combine(folder, DatabaseFileName);
+            return _cachedDatabasePath;
         }
     }
 
     /// <summary>
     /// Gets the SQLite connection string for the plugin database.
+    /// Returns <c>null</c> when the database path is not available.
     /// </summary>
-    public string ConnectionString => new SqliteConnectionStringBuilder
+    public string? ConnectionString
     {
-        DataSource = DatabasePath,
-        Mode = SqliteOpenMode.ReadWriteCreate,
-        Cache = SqliteCacheMode.Shared,
-        Pooling = false,
-    }.ToString();
+        get
+        {
+            var path = DatabasePath;
+            if (path == null)
+            {
+                return null;
+            }
+
+            return new SqliteConnectionStringBuilder
+            {
+                DataSource = path,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Shared,
+                Pooling = false,
+            }.ToString();
+        }
+    }
 
     /// <summary>
     /// Creates <see cref="DbContextOptions{TContext}"/> for the specified EF Core context type.
@@ -64,7 +92,7 @@ internal sealed class DatabaseProvider
         where TContext : DbContext
     {
         return new DbContextOptionsBuilder<TContext>()
-            .UseSqlite(ConnectionString)
+            .UseSqlite(ConnectionString ?? $"Data Source={DatabaseFileName}")
             .Options;
     }
 }

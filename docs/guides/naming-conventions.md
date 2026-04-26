@@ -61,11 +61,23 @@ Jellyfin.Plugin.TvHeadendApi/
 │   ├── Diagnostic/                    → Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic
 │   │   ├── DiagnosticService.cs       → public class DiagnosticService { }
 │   │   ├── EncodingOptionsReader.cs   → public class EncodingOptionsReader { }
-│   ├── Helper/                        → Jellyfin.Plugin.TvHeadendApi.Service.Helper
+│   ├── Backend/                        → Jellyfin.Plugin.TvHeadendApi.Service.Backend
 │   │   ├── IdNodeValueHelper.cs       → public class IdNodeValueHelper { }
 │   │   ├── ApiClient.cs               → public class ApiClient { }
 │   │   ├── UrlBuilder.cs              → public class UrlBuilder { }
 │   │   ├── GridFetcher.cs             → public class GridFetcher { }
+│   ├── Resilience/                     → Jellyfin.Plugin.TvHeadendApi.Service.Resilience
+│   │   ├── ResiliencePolicies.cs      → public class ResiliencePolicies { }
+│   ├── Metric/                         → Jellyfin.Plugin.TvHeadendApi.Service.Metric
+│   │   ├── MetricService.cs           → public class MetricService { }
+│   ├── Configuration/                  → Jellyfin.Plugin.TvHeadendApi.Service.Configuration
+│   │   ├── ConfigurationProvider.cs   → public class ConfigurationProvider { }
+│   │   ├── ConfigurationSaver.cs      → public class ConfigurationSaver { }
+│   ├── Storage/                        → Jellyfin.Plugin.TvHeadendApi.Service.Storage
+│   │   ├── CachePathProvider.cs       → public class CachePathProvider { }
+│   │   ├── DataFolderPathProvider.cs  → public class DataFolderPathProvider { }
+│   ├── Common/                         → Jellyfin.Plugin.TvHeadendApi.Service.Common
+│   │   ├── JsonDefaults.cs            → public class JsonDefaults { }
 ├── Api/                               → Jellyfin.Plugin.TvHeadendApi.Api
 │   ├── PluginController.cs            → public class PluginController { }
 ├── Configuration/                     → Jellyfin.Plugin.TvHeadendApi.Configuration
@@ -95,15 +107,20 @@ Services are organized by **domain responsibility**, not by implementation detai
 | **Service.Profile** | TVHeadend profile configuration and provisioning | `ProfileResolver`, `DefaultProfileService`, `ProfileDetails` |
 | **Service.Stream** | Stream URL construction and stream lifecycle | `MediaSourceService`, stream URL building |
 | **Service.Diagnostic** | Plugin diagnostics and health checks | `DiagnosticService` |
-| **Service.Helper** | Low-level HTTP and URL helpers | `ApiClient`, `UrlBuilder`, `ResiliencePolicies`, `PluginMetrics` |
+| **Service.Backend** | Low-level HTTP and URL infrastructure | `ApiClient`, `UrlBuilder`, `GridFetcher`, `IdNodeValueHelper` |
+| **Service.Resilience** | Retry and circuit breaker policies | `ResiliencePolicies`, `FailureClassifier` |
+| **Service.Metric** | Metrics instrumentation | `MetricService` |
+| **Service.Configuration** | Plugin configuration access and mutation | `ConfigurationProvider`, `ConfigurationSaver` |
+| **Service.Storage** | Plugin path resolution | `CachePathProvider`, `DataFolderPathProvider` |
+| **Service.Common** | Shared utilities | `JsonDefaults` |
 
 ### Service Type Suffixes
 - **Service**: Full lifecycle service (e.g., `DiagnosticService`, `ProvisioningService`, `MediaSourceService`)
 - **Resolver**: Returns computed/resolved values (e.g., `ProfileResolver`, `ProfileContainerResolver`)
 - **Validator**: Validates input according to rules (e.g., `TokenValidator`)
 - **Helper**: Static utility methods or utility classes (e.g., `ProfileMappingHelper`, `IdNodeValueHelper`)
-- **Provider**: Supplies/resolves dependencies or configuration (e.g., `PluginConfigurationProvider`, `CachePathProvider`)
-- **Saver**: Persists/saves data (e.g., `PluginConfigurationSaver`)
+- **Provider**: Supplies/resolves dependencies or configuration (e.g., `ConfigurationProvider`, `CachePathProvider`)
+- **Saver**: Persists/saves data (e.g., `ConfigurationSaver`)
 - **Reader**: Reads or extracts data (e.g., `EncodingOptionsReader`)
 - **Handler**: HTTP/network middleware (e.g., `DigestAuthHandler`, `ResilienceHandler`)
 - **Fetcher**: Retrieves/fetches data from sources (e.g., `GridFetcher`)
@@ -129,7 +146,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
-using Jellyfin.Plugin.TvHeadendApi.Service.Helper;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller.Configuration;
@@ -143,7 +160,7 @@ using Microsoft.Extensions.Logging;
 - **Why**: Short, clear, namespace provides context that it's for authentication
 - **Location**: `Service/Auth/TokenValidator.cs`
 - **Namespace**: `Jellyfin.Plugin.TvHeadendApi.Service.Auth`
-- **Usage**: `TokenValidator.IsAlphanumeric(token)`
+- **Usage**: `TokenValidator.IsValidTokenFormat(token)`
 
 ### ✗ Incorrect: `AuthTokenValidator`
 - **Why**: Redundant prefix; "Auth" is already in the namespace
@@ -165,16 +182,16 @@ using Microsoft.Extensions.Logging;
 - **Correct Location**: `Service/Auth/`
 - **Rationale**: Separates concerns; "Validation" and "Profile" are different domains
 
-### ✓ Correct: `PluginConfigurationProvider`
+### ✓ Correct: `ConfigurationProvider`
 - **Why**: Supplies/provides the plugin configuration without direct coupling
-- **Location**: `Service/Helper/PluginConfigurationProvider.cs`
-- **Namespace**: `Jellyfin.Plugin.TvHeadendApi.Service.Helper`
+- **Location**: `Service/Configuration/ConfigurationProvider.cs`
+- **Namespace**: `Jellyfin.Plugin.TvHeadendApi.Service.Configuration`
 - **Usage**: Constructor injection; provides lazily-resolved configuration
 
 ### ✓ Correct: `DigestAuthHandler`
 - **Why**: HTTP middleware handler for digest authentication
-- **Location**: `Service/Helper/DigestAuthHandler.cs`
-- **Namespace**: `Jellyfin.Plugin.TvHeadendApi.Service.Helper`
+- **Location**: `Service/Backend/DigestAuthHandler.cs`
+- **Namespace**: `Jellyfin.Plugin.TvHeadendApi.Service.Backend`
 - **Usage**: Registered in `DelegatingHandler` chain for HTTP client
 
 ### ✓ Correct: `EncodingOptionsReader`

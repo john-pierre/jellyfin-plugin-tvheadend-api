@@ -11,7 +11,6 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Dvr;
 using Jellyfin.Plugin.TvHeadendApi.Model.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Common;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
@@ -81,7 +80,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         }
 
         AddPluginSettingsToReport(report, config);
-        scoreDeductions += CheckAuthToken(report, config);
+        scoreDeductions += AuthTokenChecker.Check(report, config.AuthToken);
 
         HttpClient httpClient;
         string baseUrl;
@@ -116,10 +115,10 @@ internal sealed class DiagnosticService : IDiagnosticService
             scoreDeductions += await CheckDvrProfilesAsync(report, config, httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
         }
 
-        scoreDeductions += CheckPlaybackSettings(report, config);
+        scoreDeductions += PlaybackSettingsChecker.Check(report, config.SupportsDirectPlay, config.SupportsDirectStream, config.SupportsTranscoding, config.SupportsProbing, config.AnalyzeDurationMs, config.BufferMs);
         CheckFfmpegSettings(report, config);
         CheckProbeCacheStatus(report, allChannelUuids, cancellationToken);
-        CheckRelayService(report, config);
+        RelayChecker.Check(report, config.RelayEnabled, config.RelayHostOverride);
 
         report.CompatibilityScore = Math.Max(0, 100 - scoreDeductions);
         report.OverallStatus = report.CompatibilityScore >= 80 ? "OK" : report.CompatibilityScore >= 50 ? "WARNING" : "ERROR";
@@ -154,44 +153,6 @@ internal sealed class DiagnosticService : IDiagnosticService
         report.PluginSettings.Add($"Jellyfin FFmpeg AnalyzeDuration: {jellyfinAnalyzeDuration ?? "(not set / default)"}");
 
         report.PluginSettings.Add($"Recording Profile: {config.RecordingProfile}");
-    }
-
-    private static int CheckAuthToken(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config)
-    {
-        if (string.IsNullOrWhiteSpace(config.AuthToken))
-        {
-            report.Checks.Add(new DiagnoseCheck
-            {
-                Category = "Authentication",
-                Name = "Auth Token Format",
-                Status = "ERROR",
-                Message = "Auth token is empty.",
-                Recommendation = "Generate a token and use only letters and numbers (A-Z, a-z, 0-9)."
-            });
-            return 20;
-        }
-
-        if (!TokenValidator.IsValidTokenFormat(config.AuthToken))
-        {
-            report.Checks.Add(new DiagnoseCheck
-            {
-                Category = "Authentication",
-                Name = "Auth Token Format",
-                Status = "ERROR",
-                Message = "Auth token contains unsupported characters.",
-                Recommendation = "Use only letters and numbers (A-Z, a-z, 0-9)."
-            });
-            return 20;
-        }
-
-        report.Checks.Add(new DiagnoseCheck
-        {
-            Category = "Authentication",
-            Name = "Auth Token Format",
-            Status = "OK",
-            Message = "Auth token format is alphanumeric."
-        });
-        return 0;
     }
 
     private async Task<int> CheckServerConnectivityAsync(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
@@ -350,7 +311,7 @@ internal sealed class DiagnosticService : IDiagnosticService
 
                 if (profileClass.Contains("transcode", StringComparison.OrdinalIgnoreCase))
                 {
-                    scoreDeductions += CheckTranscodeProfile(report, proVideoCodec, proAudioCodec, srcVideoCodecs, srcAudioCodecs, deinterlace);
+                    scoreDeductions += PlaybackSettingsChecker.CheckTranscodeProfile(report, proVideoCodec, proAudioCodec, srcVideoCodecs, srcAudioCodecs, deinterlace);
                 }
                 else
                 {
@@ -361,53 +322,6 @@ internal sealed class DiagnosticService : IDiagnosticService
         catch (Exception ex)
         {
             report.Warnings.Add($"Could not inspect stream profile '{config.StreamingProfile}': {ex.Message}");
-        }
-
-        return scoreDeductions;
-    }
-
-    private static int CheckTranscodeProfile(DiagnoseResult report, string? proVideoCodec, string? proAudioCodec, IReadOnlyList<string> srcVideoCodecs, IReadOnlyList<string> srcAudioCodecs, bool? deinterlace)
-    {
-        var scoreDeductions = 0;
-        report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Profile Type", Status = "OK", Message = "Transcode profile detected. Output format is fixed per channel." });
-
-        if (!string.IsNullOrWhiteSpace(proVideoCodec) && !string.IsNullOrWhiteSpace(proAudioCodec))
-        {
-            report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Codec Profiles", Status = "OK", Message = $"Video: {proVideoCodec}, Audio: {proAudioCodec}" });
-        }
-        else
-        {
-            if (string.IsNullOrWhiteSpace(proVideoCodec))
-            {
-                report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Video Codec Link", Status = "WARNING", Message = "No linked video codec profile (pro_vcodec / vcodec).", Recommendation = "Link a video codec profile in TVHeadend for consistent output." });
-                scoreDeductions += 5;
-            }
-
-            if (string.IsNullOrWhiteSpace(proAudioCodec))
-            {
-                report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Audio Codec Link", Status = "WARNING", Message = "No linked audio codec profile (pro_acodec / acodec).", Recommendation = "Link an audio codec profile in TVHeadend for consistent output." });
-                scoreDeductions += 5;
-            }
-        }
-
-        if (deinterlace == true)
-        {
-            report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Deinterlacing", Status = "OK", Message = "Deinterlacing is enabled." });
-        }
-        else
-        {
-            report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Deinterlacing", Status = "WARNING", Message = "Deinterlacing is not enabled.", Recommendation = "Enable deinterlacing in the TVHeadend video codec profile so clients can more often direct play." });
-            scoreDeductions += 5;
-        }
-
-        if (srcVideoCodecs.Count == 0)
-        {
-            report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Source Video Codecs", Status = "INFO", Message = "No source video codec filter set (all codecs accepted)." });
-        }
-
-        if (srcAudioCodecs.Count == 0)
-        {
-            report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Source Audio Codecs", Status = "INFO", Message = "No source audio codec filter set (all codecs accepted)." });
         }
 
         return scoreDeductions;
@@ -485,67 +399,6 @@ internal sealed class DiagnosticService : IDiagnosticService
         catch (Exception ex)
         {
             report.Warnings.Add($"Could not inspect DVR profiles: {ex.Message}");
-        }
-
-        return scoreDeductions;
-    }
-
-    private static int CheckPlaybackSettings(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config)
-    {
-        var scoreDeductions = 0;
-
-        report.Checks.Add(new DiagnoseCheck { Category = "Playback", Name = "Playback Mode", Status = "OK", Message = $"DirectPlay={config.SupportsDirectPlay}, DirectStream={config.SupportsDirectStream}, Transcoding={config.SupportsTranscoding}" });
-
-        if (config.AnalyzeDurationMs > 1000)
-        {
-            report.Checks.Add(new DiagnoseCheck
-            {
-                Category = "Playback",
-                Name = "AnalyzeDuration",
-                Status = "WARNING",
-                Message = $"AnalyzeDuration is {config.AnalyzeDurationMs}ms ({config.AnalyzeDurationMs * 1000}us) which is very high.",
-                Recommendation = "Consider 200ms or less for faster channel switching."
-            });
-            scoreDeductions += 15;
-        }
-        else if (config.AnalyzeDurationMs > 0 && config.AnalyzeDurationMs < 50)
-        {
-            report.Checks.Add(new DiagnoseCheck
-            {
-                Category = "Playback",
-                Name = "AnalyzeDuration",
-                Status = "WARNING",
-                Message = $"AnalyzeDuration is {config.AnalyzeDurationMs}ms which is very low.",
-                Recommendation = "FFmpeg may not detect all streams. Recommended minimum: 100ms."
-            });
-            scoreDeductions += 5;
-        }
-        else
-        {
-            var effectiveMs = config.AnalyzeDurationMs > 0 ? config.AnalyzeDurationMs : 200;
-            report.Checks.Add(new DiagnoseCheck { Category = "Playback", Name = "AnalyzeDuration", Status = "OK", Message = $"Effective AnalyzeDuration: {effectiveMs}ms (good for fast channel switching)." });
-        }
-
-        if (!config.SupportsProbing && config.AnalyzeDurationMs == 0)
-        {
-            report.Recommendations.Add("Probing is off and AnalyzeDuration is 0. This legacy auto mode falls back to 200ms when TVHeadend stream details are available. Consider setting an explicit AnalyzeDuration of 200ms to match the current default.");
-        }
-
-        if (config.BufferMs > 2000)
-        {
-            report.Checks.Add(new DiagnoseCheck
-            {
-                Category = "Playback",
-                Name = "Buffer Size",
-                Status = "WARNING",
-                Message = $"Buffer is {config.BufferMs}ms which is quite high.",
-                Recommendation = "Lower the buffer to reduce channel-switch latency."
-            });
-            scoreDeductions += 5;
-        }
-        else
-        {
-            report.Checks.Add(new DiagnoseCheck { Category = "Playback", Name = "Buffer Size", Status = "OK", Message = $"Buffer: {(config.BufferMs > 0 ? $"{config.BufferMs}ms" : "Jellyfin default")}" });
         }
 
         return scoreDeductions;
@@ -711,33 +564,5 @@ internal sealed class DiagnosticService : IDiagnosticService
     private static bool? ReadBoolOrParam(JsonElement directValue, IReadOnlyList<IdNodeParam> parameters, string parameterName)
     {
         return IdNodeValueHelper.ReadBoolOrParam(directValue, parameters, parameterName);
-    }
-
-    private void CheckRelayService(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config)
-    {
-        if (!config.RelayEnabled)
-        {
-            report.Checks.Add(new DiagnoseCheck
-            {
-                Category = "Relay",
-                Name = "Relay Service",
-                Status = "WARNING",
-                Message = "Relay service is disabled. Images and streams are served directly from TVHeadend.",
-                Recommendation = "Enable the relay service to hide TVHeadend credentials and internal URLs from clients.",
-            });
-            report.Warnings.Add("Relay service is disabled — TVHeadend credentials may be exposed to clients.");
-            return;
-        }
-
-        var hasOverride = !string.IsNullOrWhiteSpace(config.RelayHostOverride);
-        report.Checks.Add(new DiagnoseCheck
-        {
-            Category = "Relay",
-            Name = "Relay Service",
-            Status = "OK",
-            Message = hasOverride
-                ? $"Relay enabled with custom host: {config.RelayHostOverride}"
-                : "Relay enabled with auto-detected Jellyfin host.",
-        });
     }
 }

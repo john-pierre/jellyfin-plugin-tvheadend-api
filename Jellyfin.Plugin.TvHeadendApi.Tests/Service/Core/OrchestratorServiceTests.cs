@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Tests;
+namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Core;
 
 public class OrchestratorServiceTests
 {
@@ -308,53 +308,6 @@ public class OrchestratorServiceTests
         var result = await sut.GetNewTimerDefaultsAsync(CancellationToken.None, program);
 
         Assert.Same(expected, result);
-    }
-
-    [Fact]
-    public async Task GetContentTypesAsync_DelegatesToGuideService()
-    {
-        var expected = new Dictionary<int, string> { [16] = "Movie/Drama" };
-        var guide = new Mock<IGuideService>();
-        var dvr = new Mock<IDvrService>();
-        var source = new Mock<IMediaSourceService>();
-        var lifecycle = new Mock<ILifecycleService>();
-        guide.Setup(x => x.GetContentTypesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(expected);
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
-
-        var result = await sut.GetContentTypesAsync(CancellationToken.None);
-
-        Assert.Same(expected, result);
-    }
-
-    [Fact]
-    public async Task GetChannelTagsAsync_DelegatesToGuideService()
-    {
-        var expected = new Dictionary<string, string> { ["tag"] = "News" };
-        var guide = new Mock<IGuideService>();
-        var dvr = new Mock<IDvrService>();
-        var source = new Mock<IMediaSourceService>();
-        var lifecycle = new Mock<ILifecycleService>();
-        guide.Setup(x => x.GetChannelTagsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(expected);
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
-
-        var result = await sut.GetChannelTagsAsync(CancellationToken.None);
-
-        Assert.Same(expected, result);
-    }
-
-    [Fact]
-    public async Task GetRecordingProfileUuidAsync_DelegatesToDvrService()
-    {
-        var guide = new Mock<IGuideService>();
-        var dvr = new Mock<IDvrService>();
-        var source = new Mock<IMediaSourceService>();
-        var lifecycle = new Mock<ILifecycleService>();
-        dvr.Setup(x => x.GetRecordingProfileUuidAsync("default", It.IsAny<CancellationToken>())).ReturnsAsync("uuid-123");
-        var sut = new OrchestratorService(guide.Object, dvr.Object, source.Object, lifecycle.Object, NullLogger<OrchestratorService>.Instance);
-
-        var result = await sut.GetRecordingProfileUuidAsync("default", CancellationToken.None);
-
-        Assert.Equal("uuid-123", result);
     }
 
     [Fact]

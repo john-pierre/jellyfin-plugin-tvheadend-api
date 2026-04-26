@@ -6,11 +6,7 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
-using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
-using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
-using Jellyfin.Plugin.TvHeadendApi.Service.Status;
-using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
@@ -44,11 +40,7 @@ public class PluginControllerEndpointTests
         var controller = new PluginController(
             mockDiagnosticService.Object,
             mockProfileService.Object,
-            mockTokenService.Object,
-            new Mock<IStatisticsService>().Object,
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
+            mockTokenService.Object);
 
         // Act
         var result = await controller.Diagnose(CancellationToken.None);
@@ -76,11 +68,7 @@ public class PluginControllerEndpointTests
         var controller = new PluginController(
             mockDiagnosticService.Object,
             mockProfileService.Object,
-            mockTokenService.Object,
-            new Mock<IStatisticsService>().Object,
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
+            mockTokenService.Object);
 
         // Act
         await controller.Diagnose(CancellationToken.None);
@@ -113,11 +101,7 @@ public class PluginControllerEndpointTests
         var controller = new PluginController(
             mockDiagnosticService.Object,
             mockProfileService.Object,
-            mockTokenService.Object,
-            new Mock<IStatisticsService>().Object,
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
+            mockTokenService.Object);
 
         // Act
         var result = await controller.CreateProfile(CancellationToken.None);
@@ -151,11 +135,7 @@ public class PluginControllerEndpointTests
         var controller = new PluginController(
             mockDiagnosticService.Object,
             mockProfileService.Object,
-            mockTokenService.Object,
-            new Mock<IStatisticsService>().Object,
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
+            mockTokenService.Object);
 
         // Act
         var result = await controller.CreateProfile(CancellationToken.None);
@@ -188,11 +168,7 @@ public class PluginControllerEndpointTests
         var controller = new PluginController(
             mockDiagnosticService.Object,
             mockProfileService.Object,
-            mockTokenService.Object,
-            new Mock<IStatisticsService>().Object,
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
+            mockTokenService.Object);
 
         // Act
         var result = await controller.GenerateAuthToken(CancellationToken.None);
@@ -216,11 +192,7 @@ public class PluginControllerEndpointTests
         var controller = new PluginController(
             mockDiagnosticService.Object,
             mockProfileService.Object,
-            mockTokenService.Object,
-            new Mock<IStatisticsService>().Object,
-            new Mock<IStatusService>().Object,
-            new Mock<IInputMonitorService>().Object,
-            new Mock<ISubscriptionService>().Object, NullHealthService.Instance);
+            mockTokenService.Object);
 
         // Act
         var result = controller.ResetToDefaults();

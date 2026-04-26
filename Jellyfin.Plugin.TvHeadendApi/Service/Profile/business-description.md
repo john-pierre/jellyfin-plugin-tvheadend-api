@@ -14,5 +14,5 @@ The Profile Service manages the relationship between TVHeadend streaming profile
 
 ## Internal Dependencies
 
-- **`Helper`** — ApiClient for profile grid/idnode API calls, IdNodeValueHelper for profile parameter extraction
+- **`Backend`** — ApiClient for profile grid/idnode API calls, IdNodeValueHelper for profile parameter extraction
 

@@ -15,6 +15,6 @@ The Diagnostic Service analyzes plugin configuration, TVHeadend server info, str
 ## Internal Dependencies
 
 - **`Profile`** — Reads profile availability for compatibility scoring
-- **`Helper`** — ApiClient for serverinfo endpoint
+- **`Backend`** — ApiClient for serverinfo endpoint
 - **`Configuration`** — Reads PluginConfiguration for analysis
 

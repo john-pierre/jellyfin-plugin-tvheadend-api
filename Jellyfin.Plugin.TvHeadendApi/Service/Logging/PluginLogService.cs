@@ -32,11 +32,12 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
     private readonly ILogger<PluginLogService> _logger;
     private readonly ConfigurationProvider _configProvider;
     private readonly DatabaseHealthService _dbHealthService;
-    private readonly DbContextOptions<ViewingSessionContext> _dbContextOptions;
+    private readonly DatabaseProvider _databaseProvider;
 
     private readonly BlockingCollection<PluginLogEntry> _queue =
         new(new ConcurrentQueue<PluginLogEntry>(), MaxQueueSize);
 
+    private DbContextOptions<ViewingSessionContext>? _lazyDbContextOptions;
     private CancellationTokenSource? _cts;
     private Task? _writerTask;
     private volatile bool _dbLoggingFailed;
@@ -45,12 +46,40 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
         ILogger<PluginLogService> logger,
         ConfigurationProvider configProvider,
         DatabaseHealthService dbHealthService,
-        DbContextOptions<ViewingSessionContext> dbContextOptions)
+        DatabaseProvider databaseProvider)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _dbHealthService = dbHealthService ?? throw new ArgumentNullException(nameof(dbHealthService));
-        _dbContextOptions = dbContextOptions;
+        _databaseProvider = databaseProvider ?? throw new ArgumentNullException(nameof(databaseProvider));
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PluginLogService"/> class
+    /// with pre-built context options for unit testing.
+    /// </summary>
+    /// <param name="logger">Logger instance.</param>
+    /// <param name="configProvider">Configuration provider.</param>
+    /// <param name="dbHealthService">Database health service.</param>
+    /// <param name="dbContextOptions">Pre-built EF Core context options.</param>
+    internal PluginLogService(
+        ILogger<PluginLogService> logger,
+        ConfigurationProvider configProvider,
+        DatabaseHealthService dbHealthService,
+        DbContextOptions<ViewingSessionContext> dbContextOptions)
+        : this(logger, configProvider, dbHealthService, CreateNullProvider())
+    {
+        _lazyDbContextOptions = dbContextOptions;
+    }
+
+    private static DatabaseProvider CreateNullProvider()
+    {
+        return new DatabaseProvider(new Storage.DataFolderPathProvider(() => null));
+    }
+
+    private DbContextOptions<ViewingSessionContext> GetDbContextOptions()
+    {
+        return _lazyDbContextOptions ??= _databaseProvider.CreateContextOptions<ViewingSessionContext>();
     }
 
     /// <summary>
@@ -164,7 +193,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
 
         try
         {
-            using var db = new ViewingSessionContext(_dbContextOptions);
+            using var db = new ViewingSessionContext(GetDbContextOptions());
             IQueryable<PluginLogEntry> query = db.PluginLogEntries.AsNoTracking();
 
             if (!string.IsNullOrEmpty(source))
@@ -210,7 +239,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
 
         try
         {
-            using var db = new ViewingSessionContext(_dbContextOptions);
+            using var db = new ViewingSessionContext(GetDbContextOptions());
             IQueryable<PluginLogEntry> query = db.PluginLogEntries.AsNoTracking();
 
             if (!string.IsNullOrEmpty(source))
@@ -339,7 +368,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
 
         try
         {
-            using var db = new ViewingSessionContext(_dbContextOptions);
+            using var db = new ViewingSessionContext(GetDbContextOptions());
             db.PluginLogEntries.AddRange(batch);
             await db.SaveChangesAsync().ConfigureAwait(false);
         }

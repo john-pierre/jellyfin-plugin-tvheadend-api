@@ -83,7 +83,7 @@ builder.Services.AddOpenTelemetry()
 
 ## Resilience Observability
 
-The custom retry and circuit breaker logic (see `ResilienceHandler` in `ResiliencePolicies.cs`) is applied as a `DelegatingHandler` in the `HttpClient` pipeline. No external resilience library (e.g., Polly) is used — the implementation is self-contained to avoid assembly-loading issues in Jellyfin's plugin host.
+The custom retry and circuit breaker logic (see `ResilienceHandler` in `Service/Resilience/ResiliencePolicies.cs`) is applied as a `DelegatingHandler` in the `HttpClient` pipeline. No external resilience library (e.g., Polly) is used — the implementation is self-contained to avoid assembly-loading issues in Jellyfin's plugin host.
 
 | Event | How to observe |
 |---|---|

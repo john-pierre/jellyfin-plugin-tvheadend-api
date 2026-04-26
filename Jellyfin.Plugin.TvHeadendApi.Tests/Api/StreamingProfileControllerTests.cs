@@ -2,15 +2,19 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Api.Endpoint;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
+using MediaBrowser.Controller.LiveTv;
+using MediaBrowser.Model.LiveTv;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -31,24 +35,33 @@ public class StreamingProfileControllerTests
             new ConfigurationProvider(() => cfg));
     }
 
+    private static Mock<IGuideService> CreateGuide() => new Mock<IGuideService>();
+
     [Fact]
     public void Constructor_NullResolver_ThrowsArgumentNullException()
     {
         var discovery = new Mock<IProfileDiscoveryService>();
-        Assert.Throws<ArgumentNullException>(() => new StreamingProfileController(null!, discovery.Object));
+        Assert.Throws<ArgumentNullException>(() => new StreamingProfileController(null!, discovery.Object, CreateGuide().Object));
     }
 
     [Fact]
     public void Constructor_NullDiscovery_ThrowsArgumentNullException()
     {
-        Assert.Throws<ArgumentNullException>(() => new StreamingProfileController(CreateResolver(), null!));
+        Assert.Throws<ArgumentNullException>(() => new StreamingProfileController(CreateResolver(), null!, CreateGuide().Object));
+    }
+
+    [Fact]
+    public void Constructor_NullGuide_ThrowsArgumentNullException()
+    {
+        var discovery = new Mock<IProfileDiscoveryService>();
+        Assert.Throws<ArgumentNullException>(() => new StreamingProfileController(CreateResolver(), discovery.Object, null!));
     }
 
     [Fact]
     public void Resolve_WithDefaults_ReturnsOkWithResult()
     {
         var discovery = new Mock<IProfileDiscoveryService>();
-        var sut = new StreamingProfileController(CreateResolver(), discovery.Object);
+        var sut = new StreamingProfileController(CreateResolver(), discovery.Object, CreateGuide().Object);
 
         var result = sut.Resolve();
 
@@ -70,7 +83,7 @@ public class StreamingProfileControllerTests
         });
 
         var discovery = new Mock<IProfileDiscoveryService>();
-        var sut = new StreamingProfileController(CreateResolver(config), discovery.Object);
+        var sut = new StreamingProfileController(CreateResolver(config), discovery.Object, CreateGuide().Object);
 
         var result = sut.Resolve(channelId: "ch-test");
 
@@ -91,7 +104,7 @@ public class StreamingProfileControllerTests
                 new("uuid-2", "matroska"),
             });
 
-        var sut = new StreamingProfileController(CreateResolver(), discovery.Object);
+        var sut = new StreamingProfileController(CreateResolver(), discovery.Object, CreateGuide().Object);
 
         var result = await sut.GetDiscoveredProfiles(CancellationToken.None);
 
@@ -107,7 +120,7 @@ public class StreamingProfileControllerTests
         discovery.Setup(x => x.ValidateConfiguredProfilesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string> { "Profile 'bogus' not found in TVHeadend." });
 
-        var sut = new StreamingProfileController(CreateResolver(), discovery.Object);
+        var sut = new StreamingProfileController(CreateResolver(), discovery.Object, CreateGuide().Object);
 
         var result = await sut.ValidateProfiles(CancellationToken.None);
 
@@ -120,11 +133,59 @@ public class StreamingProfileControllerTests
     public void RefreshCache_ReturnsOk()
     {
         var discovery = new Mock<IProfileDiscoveryService>();
-        var sut = new StreamingProfileController(CreateResolver(), discovery.Object);
+        var sut = new StreamingProfileController(CreateResolver(), discovery.Object, CreateGuide().Object);
 
         var result = sut.RefreshCache();
 
         Assert.IsType<OkObjectResult>(result);
         discovery.Verify(x => x.InvalidateCache(), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetChannels_ReturnsOkWithSortedChannels()
+    {
+        var guide = new Mock<IGuideService>();
+        guide.Setup(x => x.GetChannelsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ChannelInfo>
+            {
+                new ChannelInfo { Id = "uuid-2", Name = "ZDF" },
+                new ChannelInfo { Id = "uuid-1", Name = "ARD" },
+                new ChannelInfo { Id = "", Name = "Empty" },
+            });
+
+        var discovery = new Mock<IProfileDiscoveryService>();
+        var sut = new StreamingProfileController(CreateResolver(), discovery.Object, guide.Object);
+
+        var result = await sut.GetChannels(CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var channels = Assert.IsType<List<ChannelOption>>(ok.Value);
+        Assert.Equal(2, channels.Count);
+        Assert.Equal("ARD", channels[0].Name);
+        Assert.Equal("ZDF", channels[1].Name);
+    }
+
+    [Fact]
+    public async Task GetChannelGroups_ReturnsOkWithSortedGroups()
+    {
+        var guide = new Mock<IGuideService>();
+        guide.Setup(x => x.GetChannelTagsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, string>
+            {
+                { "tag-2", "Sports" },
+                { "tag-1", "News" },
+                { "tag-3", "" },
+            });
+
+        var discovery = new Mock<IProfileDiscoveryService>();
+        var sut = new StreamingProfileController(CreateResolver(), discovery.Object, guide.Object);
+
+        var result = await sut.GetChannelGroups(CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var groups = Assert.IsType<List<ChannelGroupOption>>(ok.Value);
+        Assert.Equal(2, groups.Count);
+        Assert.Equal("News", groups[0].Name);
+        Assert.Equal("Sports", groups[1].Name);
     }
 }

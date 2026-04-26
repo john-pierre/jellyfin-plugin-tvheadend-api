@@ -1411,9 +1411,33 @@
                 var icon = document.getElementById('relayBannerIcon');
                 var text = document.getElementById('relayBannerText');
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('api/tvheadend/status'), dataType: 'json' }).then(function (r) {
-                    banner.className = 'tvh-status-banner tvh-status-ok';
-                    icon.textContent = '✅';
-                    text.textContent = 'Relay service operational — ' + (r.ActiveStreams || 0) + ' active stream(s), host: ' + (r.EffectiveHost || 'auto');
+                    var status = (r.Status || '').toLowerCase();
+                    if (status === 'ok') {
+                        banner.className = 'tvh-status-banner tvh-status-ok';
+                        icon.textContent = '✅';
+                        var latency = r.LastResponseTimeMs ? ' (' + r.LastResponseTimeMs + ' ms)' : '';
+                        text.textContent = 'Relay connected to TVHeadend' + latency + ' — ' + (r.ActiveStreams || 0) + ' active stream(s), host: ' + (r.EffectiveHost || 'auto');
+                    } else if (status === 'degraded') {
+                        banner.className = 'tvh-status-banner tvh-status-warn';
+                        icon.textContent = '⚠️';
+                        text.textContent = 'TVHeadend degraded — ' + (r.Message || 'intermittent issues');
+                    } else if (status === 'disabled') {
+                        banner.className = 'tvh-status-banner tvh-status-warn';
+                        icon.textContent = 'ℹ️';
+                        text.textContent = r.Message || 'Relay service is disabled.';
+                    } else if (status === 'unknown') {
+                        banner.className = 'tvh-status-banner tvh-status-loading';
+                        icon.textContent = '⏳';
+                        text.textContent = r.Message || 'Checking TVHeadend connectivity…';
+                    } else {
+                        banner.className = 'tvh-status-banner tvh-status-err';
+                        icon.textContent = '❌';
+                        var msg = r.Message || 'TVHeadend not reachable';
+                        if (r.ConsecutiveFailures > 0) {
+                            msg += ' (' + r.ConsecutiveFailures + ' failure' + (r.ConsecutiveFailures > 1 ? 's' : '') + ')';
+                        }
+                        text.textContent = msg;
+                    }
                 }).catch(function () {
                     banner.className = 'tvh-status-banner tvh-status-err';
                     icon.textContent = '❌';

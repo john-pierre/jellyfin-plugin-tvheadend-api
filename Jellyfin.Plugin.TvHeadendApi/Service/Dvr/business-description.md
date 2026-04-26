@@ -14,6 +14,6 @@ The DVR Service handles the full lifecycle of recordings: creating single timers
 
 ## Internal Dependencies
 
-- **`Helper`** — Uses GridFetcher for DVR entry/autorec grid fetching, ApiClient for create/update/delete operations
+- **`Backend`** — Uses GridFetcher for DVR entry/autorec grid fetching, ApiClient for create/update/delete operations
 - **`Guide`** — EPG event references for timer creation
 
