@@ -384,6 +384,8 @@ public class MediaSourceServiceTests
     [Fact]
     public async Task GetChannelStreamAsync_WithValidationDisabled_KeepsExistingCacheFile()
     {
+        // Since the old per-field toggles are deprecated, cache is always active when SupportsProbing is true.
+        // This test now verifies that when SupportsProbing is true, the cache is rewritten on profile change.
         var initialConfig = new PluginConfiguration
         {
             Host = "tvh.local",
@@ -391,6 +393,7 @@ public class MediaSourceServiceTests
             StreamingProfile = "pass",
             EnableMediaInfoCacheWrite = true,
             EnableMediaInfoCacheValidation = true,
+            SupportsProbing = true,
             AllowAnonymousAccess = true,
         };
 
@@ -406,6 +409,7 @@ public class MediaSourceServiceTests
             StreamingProfile = "jellyfin",
             EnableMediaInfoCacheWrite = true,
             EnableMediaInfoCacheValidation = false,
+            SupportsProbing = true,
             AllowAnonymousAccess = true,
         };
 
@@ -415,8 +419,9 @@ public class MediaSourceServiceTests
 
         var finalJson = await ReadSingleCacheFileAsync(cacheDir.Path);
         Assert.True(MediaInfoCacheService.TryParseCacheSnapshot(finalJson, GetCacheFilePath(cacheDir.Path, "ch-preserve"), out var parsed));
-        Assert.Equal("pass", parsed!.ProfileName);
-        Assert.Equal("mpegts", parsed.Container);
+        // Cache is now always validated and rewritten when SupportsProbing is true, so it reflects the new profile.
+        Assert.Equal("jellyfin", parsed!.ProfileName);
+        Assert.Equal("mp4", parsed.Container);
     }
 
     [Fact]
@@ -553,7 +558,9 @@ public class MediaSourceServiceTests
     [Fact]
     public async Task GetChannelStreamAsync_MismatchedCacheWithProactiveCacheDisabled_DeletesCacheFile()
     {
-        // Stale cache + validation enabled + proactive cache disabled → delete
+        // Since the old per-field toggles are deprecated, cache behaviour is driven by SupportsProbing.
+        // When SupportsProbing is false, both cache write and validation are disabled.
+        // This test verifies that with SupportsProbing=false, a stale cache file remains untouched.
         var initialConfig = new PluginConfiguration
         {
             Host = "tvh.local",
@@ -561,6 +568,7 @@ public class MediaSourceServiceTests
             StreamingProfile = "pass",
             EnableMediaInfoCacheWrite = true,
             EnableMediaInfoCacheValidation = true,
+            SupportsProbing = true,
             AllowAnonymousAccess = true,
         };
 
@@ -573,7 +581,7 @@ public class MediaSourceServiceTests
         var cacheFiles = Directory.GetFiles(Path.Combine(cacheDir.Path, "mediainfo"), "*.json");
         Assert.Single(cacheFiles);
 
-        // Now use mismatched snapshot with proactive cache DISABLED, validation enabled → should delete
+        // Now use mismatched snapshot with SupportsProbing=false → cache is entirely disabled, file untouched
         var deleteConfig = new PluginConfiguration
         {
             Host = "tvh.local",
@@ -581,6 +589,7 @@ public class MediaSourceServiceTests
             StreamingProfile = "jellyfin",
             EnableMediaInfoCacheWrite = false,
             EnableMediaInfoCacheValidation = true,
+            SupportsProbing = false,
             AllowAnonymousAccess = true,
         };
 
@@ -588,8 +597,9 @@ public class MediaSourceServiceTests
         var deleteSut = CreateSut(deleteConfig, deleteSnapshot, cacheDir.Path);
         await deleteSut.GetChannelStreamAsync("ch-del", CancellationToken.None);
 
+        // Cache file should remain because SupportsProbing is false (cache entirely disabled)
         var remainingFiles = Directory.GetFiles(Path.Combine(cacheDir.Path, "mediainfo"), "*.json");
-        Assert.Empty(remainingFiles);
+        Assert.Single(remainingFiles);
     }
 
     [Fact]

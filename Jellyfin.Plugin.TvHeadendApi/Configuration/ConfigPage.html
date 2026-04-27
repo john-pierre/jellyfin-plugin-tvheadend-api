@@ -207,64 +207,63 @@
                     <div id="StatusChecks" class="tvh-status-checks"></div>
                     <span id="DiagLastRun" class="tvh-diag-timestamp"></span>
                     <div class="tvh-status-actions">
+                        <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-primary" style="font-size:0.85em;" title="Requires TvHeadend admin credentials">
+                            <span>Create "jellyfin" Profile</span>
+                        </button>
                         <button id="OptimalSetupBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-success" style="font-size:0.85em;">
                             <span>⚡ Optimal Setup</span>
                         </button>
                         <button id="DiagnoseBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.85em;">
                             <span>🔄 Diagnose</span>
                         </button>
+                        <button id="ResetDefaultsBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-muted" style="font-size:0.85em;">
+                            <span>Reset to Defaults</span>
+                        </button>
+                        <button id="WarmCacheBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.85em;" title="Pre-create cache files for all channels">
+                            <span>Warm Cache</span>
+                        </button>
                     </div>
+                    <div id="ProfileActionMsg" class="tvh-msg"></div>
+                    <div id="ResetDefaultsMsg" class="tvh-msg"></div>
                     <details id="DiagDetails" class="tvh-diag-details">
-                        <summary>▶ Show Details</summary>
+                        <summary>Show Details</summary>
                         <div class="tvh-diag-details-body">
                             <div id="DiagDetailsContent"><em>Running diagnostics…</em></div>
-                            <div style="margin-top:1em; padding-top:0.8em; border-top:1px solid rgba(255,255,255,0.08);">
-                                <div class="tvh-btn-row" style="margin-bottom:0.6em;">
-                                    <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-primary" title="Requires TvHeadend admin credentials">
-                                        <span>Create "jellyfin" Profile</span>
-                                    </button>
-                                    <button id="ResetDefaultsBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-muted">
-                                        <span>Reset to Defaults</span>
-                                    </button>
+                        </div>
+                    </details>
+                </div>
+
+                <!-- ── Quick Setup Guide (collapsible, separate from banner) ── -->
+                <div class="tvh-card tvh-guide" style="margin-bottom:1.2em;">
+                    <details>
+                        <summary>Fast Channel Switching Guide (&lt; 3 seconds)</summary>
+                        <div style="margin-top:0.6em;">
+                            <p style="margin-bottom:0.5em;">
+                                <strong>Goal:</strong> Switch channels in under 3 seconds — even on the first tune.
+                            </p>
+                            <div class="tvh-guide-steps">
+                                <span class="tvh-step-num">1</span>
+                                <div>
+                                    <strong>Create the "jellyfin" transcode profile</strong><br>
+                                    Click "Create jellyfin Profile" in the banner above. This outputs every channel as H.264 + AAC — a format Jellyfin can Direct Play.
                                 </div>
-                                <div id="ProfileActionMsg" class="tvh-msg"></div>
-                                <div id="ResetDefaultsMsg" class="tvh-msg"></div>
+                                <span class="tvh-step-num">2</span>
+                                <div>
+                                    <strong>Select the profile</strong><br>
+                                    In the Streaming section, set the Default profile to <code>jellyfin</code>.
+                                </div>
+                                <span class="tvh-step-num">3</span>
+                                <div>
+                                    <strong>Enable fast playback settings</strong><br>
+                                    In Playback Behaviour, enable: Direct Play, Direct Stream, Stream Probing, and Pre-create Probe Cache Files.
+                                </div>
                             </div>
-                            <!-- Quick Setup Guide -->
-                            <div style="margin-top:1em; padding-top:0.8em; border-top:1px solid rgba(255,255,255,0.08);">
-                                <details>
-                                    <summary style="cursor:pointer; font-weight:600;">Fast Channel Switching Guide (&lt; 3 seconds)</summary>
-                                    <div style="margin-top:0.6em;">
-                                        <p style="margin-bottom:0.5em;">
-                                            <strong>Goal:</strong> Switch channels in under 3 seconds — even on the first tune.
-                                        </p>
-                                        <div class="tvh-guide-steps">
-                                            <span class="tvh-step-num">1</span>
-                                            <div>
-                                                <strong>Create the "jellyfin" transcode profile</strong><br>
-                                                Click "Create jellyfin Profile" above. This outputs every channel as H.264 + AAC — a format Jellyfin can Direct Play.
-                                                <details><summary>Manual alternative…</summary><span>In TvHeadend: Configuration → Stream → Stream Profiles → Add profile-transcode. Set Container = MP4, Video = libx264, Audio = AAC.</span></details>
-                                            </div>
-                                            <span class="tvh-step-num">2</span>
-                                            <div>
-                                                <strong>Select the profile</strong><br>
-                                                In the Streaming section, set Streaming Profile to <code>jellyfin</code>.
-                                            </div>
-                                            <span class="tvh-step-num">3</span>
-                                            <div>
-                                                <strong>Enable fast playback settings</strong><br>
-                                                In Playback Behaviour, enable: Direct Play, Direct Stream, Stream Probing, and Pre-create Probe Cache Files.
-                                            </div>
-                                        </div>
-                                        <details>
-                                            <summary>How it works</summary>
-                                            <p style="margin:0.4em 0 0 0; font-size:0.9em; opacity:0.8;">
-                                                TvHeadend transcodes every channel to a consistent format. The plugin pre-creates Jellyfin's mediainfo cache files with matching metadata. When you switch channels, Jellyfin finds the cache instantly, skips FFmpeg probing, and starts Direct Play.
-                                            </p>
-                                        </details>
-                                    </div>
-                                </details>
-                            </div>
+                            <details>
+                                <summary>How it works</summary>
+                                <p style="margin:0.4em 0 0 0; font-size:0.9em; opacity:0.8;">
+                                    TvHeadend transcodes every channel to a consistent format. The plugin pre-creates Jellyfin's mediainfo cache files with matching metadata. When you switch channels, Jellyfin finds the cache instantly, skips FFmpeg probing, and starts Direct Play.
+                                </p>
+                            </details>
                         </div>
                     </details>
                 </div>
@@ -596,22 +595,22 @@
                                 </details>
                             </div>
                         </div>
-                        <div class="tvh-checkbox">
+                        <div class="tvh-checkbox" style="display:none;">
                             <label>
                                 <input id="EnableMediaInfoCacheWrite" name="EnableMediaInfoCacheWrite" type="checkbox" is="emby-checkbox" />
                                 <span>Pre-create Probe Cache Files</span>
                             </label>
                             <div class="fieldDescription">
-                                Pre-creates mediainfo cache files based on the selected streaming profile, making even the first tune fast by skipping FFmpeg probing.
+                                Deprecated — cache is now always active when Stream Probing is enabled.
                             </div>
                         </div>
-                        <div class="tvh-checkbox">
+                        <div class="tvh-checkbox" style="display:none;">
                             <label>
                                 <input id="EnableMediaInfoCacheValidation" name="EnableMediaInfoCacheValidation" type="checkbox" is="emby-checkbox" />
                                 <span>Validate Cache Against Profile</span>
                             </label>
                             <div class="fieldDescription">
-                                Compares existing cache files with the active streaming profile. Outdated files are deleted and optionally replaced when pre-create is also enabled.
+                                Deprecated — cache validation is now always active when Stream Probing is enabled.
                             </div>
                         </div>
                     </div>
@@ -1053,6 +1052,9 @@
                 var defaultProfile = (sps.DefaultTvHeadendProfile || config.StreamingProfile || '').trim();
                 renderProfileTable(sps.ChannelOverrides || [], sps.ChannelGroupOverrides || [], sps.ClientRules || [], sps.UserRules || [], defaultProfile);
 
+                // Track the default profile for auto-invalidation on change.
+                lastKnownDefaultProfile = defaultProfile;
+
                 updateAuthRequiredState();
                 updateAuthTokenButtonLabel();
             }
@@ -1111,52 +1113,38 @@
                 saveCurrentFormToConfig().then(function () {
                     return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Diagnose'), dataType: 'json' });
                 }).then(function (r) {
+                    // Detail content — only checks, config, warnings, recommendations.
+                    // Score, connection, and server version are shown in the banner above.
                     var html = '';
-                    var scoreColor = r.CompatibilityScore >= 80 ? '#4caf50' : r.CompatibilityScore >= 50 ? '#f0ad4e' : '#e74c3c';
-                    var icon = r.OverallStatus === 'OK' ? '✅' : r.OverallStatus === 'WARNING' ? '⚠️' : '❌';
-
-                    html += '<div style="font-size:1.1em; margin-bottom:0.6em;">' + icon + ' <strong>Compatibility: <span style="color:' + scoreColor + ';">' + r.CompatibilityScore + '/100</span></strong></div>';
-                    html += '<div style="margin-bottom:0.4em;">' + esc(r.Connection);
-                    if (r.LatencyMs > 0) html += ' <span style="opacity:0.6;">(' + r.LatencyMs + ' ms)</span>';
-                    html += '</div>';
-                    if (r.ServerVersion) html += '<div style="margin-bottom:0.4em;">' + esc(r.ServerVersion) + '</div>';
-
-                    var stats = [];
-                    if (r.ChannelCount !== undefined) stats.push(r.ChannelCount + ' channels');
-                    if (r.DvrEntryCount > 0) stats.push(r.DvrEntryCount + ' DVR entries');
-                    if (r.AvailableStreamingProfiles && r.AvailableStreamingProfiles.length > 0) stats.push(r.AvailableStreamingProfiles.length + ' profiles');
-                    if (stats.length > 0) html += '<div style="margin-bottom:0.6em; opacity:0.7;">' + esc(stats.join(' · ')) + '</div>';
 
                     if (r.Checks && r.Checks.length > 0) {
-                        html += '<div style="margin-bottom:0.6em;"><strong>Checks:</strong>';
                         r.Checks.forEach(function (c) {
                             var ci = c.Status === 'OK' ? '✅' : c.Status === 'WARNING' ? '⚠️' : c.Status === 'ERROR' ? '❌' : 'ℹ️';
-                            html += '<div style="margin:0.15em 0 0 1em;">' + ci + ' <strong>' + esc(c.Name) + ':</strong> ' + esc(c.Message);
+                            html += '<div style="margin:0.15em 0;">' + ci + ' <strong>' + esc(c.Name) + ':</strong> ' + esc(c.Message);
                             if (c.Recommendation) html += ' <em style="opacity:0.6;">→ ' + esc(c.Recommendation) + '</em>';
                             html += '</div>';
                         });
-                        html += '</div>';
                     }
 
                     if (r.PluginSettings && r.PluginSettings.length > 0) {
-                        html += '<details style="margin-bottom:0.6em;"><summary style="cursor:pointer;"><strong>Configuration Details</strong></summary><ul style="margin:0.2em 0 0 1.5em;">';
+                        html += '<details style="margin-top:0.6em;"><summary style="cursor:pointer;"><strong>Configuration Details</strong></summary><ul style="margin:0.2em 0 0 1.5em;">';
                         r.PluginSettings.forEach(function (s) { html += '<li>' + esc(s) + '</li>'; });
                         html += '</ul></details>';
                     }
 
                     if (r.Warnings && r.Warnings.length > 0) {
-                        html += '<details style="margin-bottom:0.6em;" open><summary style="cursor:pointer; color:#f0ad4e;"><strong>Warnings (' + r.Warnings.length + ')</strong></summary><ul style="margin:0.2em 0 0 1.5em;">';
+                        html += '<details style="margin-top:0.6em;" open><summary style="cursor:pointer; color:#f0ad4e;"><strong>Warnings (' + r.Warnings.length + ')</strong></summary><ul style="margin:0.2em 0 0 1.5em;">';
                         r.Warnings.forEach(function (w) { html += '<li style="color:#f0ad4e;">' + esc(w) + '</li>'; });
                         html += '</ul></details>';
                     }
 
-                    if (r.Recommendations && r.Recommendations.length > 0) {
-                        html += '<details style="margin-bottom:0.6em;"><summary style="cursor:pointer;"><strong>Recommendations (' + r.Recommendations.length + ')</strong></summary><ul style="margin:0.2em 0 0 1.5em;">';
+                    if (r.Recommendations && r.Recommendations.length > 0 && !(r.Recommendations.length === 1 && r.Recommendations[0] === 'Everything looks good!')) {
+                        html += '<details style="margin-top:0.6em;"><summary style="cursor:pointer;"><strong>Recommendations (' + r.Recommendations.length + ')</strong></summary><ul style="margin:0.2em 0 0 1.5em;">';
                         r.Recommendations.forEach(function (rec) { html += '<li>' + esc(rec) + '</li>'; });
                         html += '</ul></details>';
                     }
 
-                    el.innerHTML = html;
+                    el.innerHTML = html || '<span style="opacity:0.6;">No issues found.</span>';
                     updateStatusBanner(r);
 
                     // Update last-run timestamp
@@ -1289,6 +1277,27 @@
 
             $('#AllowAnonymousAccess').addEventListener('change', updateAuthRequiredState);
             $('#AuthToken').addEventListener('input', updateAuthTokenButtonLabel);
+
+            // ── Cache warmup button ──────────────────────────────
+            $('#WarmCacheBtn').addEventListener('click', function () {
+                var btn = $('#WarmCacheBtn span');
+                var orig = btn.textContent;
+                btn.textContent = 'Warming\u2026';
+                saveCurrentFormToConfig().then(function () {
+                    return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/WarmCache'), dataType: 'json' });
+                }).then(function (r) {
+                    btn.textContent = r.Warmed + '/' + r.TotalChannels + ' warmed';
+                    setTimeout(function () { btn.textContent = orig; }, 3000);
+                    loadDiagnose();
+                }).catch(function (err) {
+                    btn.textContent = 'Failed';
+                    console.error('[TvHeadend] Cache warmup failed:', err);
+                    setTimeout(function () { btn.textContent = orig; }, 3000);
+                });
+            });
+
+            // ── Auto-invalidation on profile change ──────────────
+            var lastKnownDefaultProfile = '';
 
             // ── Page init ────────────────────────────────────────
             $('#TvHeadendApiConfigPage').addEventListener('pageshow', function () {
@@ -1736,6 +1745,23 @@
                     saveCurrentFormToConfig().then(function () {
                         showSaveToast(true);
                         flashField(field);
+
+                        // Auto-invalidate cache when the default streaming profile changes.
+                        var defaultRow = document.querySelector('#ProfileAssignmentsBody .tvh-row-default');
+                        var newProfile = '';
+                        if (defaultRow) {
+                            var profileEl = defaultRow.querySelector('[data-field="profile"]');
+                            if (profileEl) newProfile = profileEl.value.trim();
+                        }
+                        if (newProfile !== lastKnownDefaultProfile && lastKnownDefaultProfile !== '') {
+                            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/InvalidateCache') }).then(function () {
+                                console.log('[TvHeadend] Cache invalidated — profile changed from "' + lastKnownDefaultProfile + '" to "' + newProfile + '"');
+                            }).catch(function (err) {
+                                console.warn('[TvHeadend] Cache invalidation failed:', err);
+                            });
+                            lastKnownDefaultProfile = newProfile;
+                        }
+
                         loadDiagnose();
                     }).catch(function (err) {
                         showSaveToast(false);

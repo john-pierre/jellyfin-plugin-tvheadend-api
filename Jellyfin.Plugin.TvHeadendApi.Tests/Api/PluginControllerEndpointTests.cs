@@ -7,6 +7,7 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
@@ -40,7 +41,8 @@ public class PluginControllerEndpointTests
         var controller = new PluginController(
             mockDiagnosticService.Object,
             mockProfileService.Object,
-            mockTokenService.Object);
+            mockTokenService.Object,
+            new Mock<IMediaInfoCacheService>().Object);
 
         // Act
         var result = await controller.Diagnose(CancellationToken.None);
@@ -68,7 +70,8 @@ public class PluginControllerEndpointTests
         var controller = new PluginController(
             mockDiagnosticService.Object,
             mockProfileService.Object,
-            mockTokenService.Object);
+            mockTokenService.Object,
+            new Mock<IMediaInfoCacheService>().Object);
 
         // Act
         await controller.Diagnose(CancellationToken.None);
@@ -101,7 +104,8 @@ public class PluginControllerEndpointTests
         var controller = new PluginController(
             mockDiagnosticService.Object,
             mockProfileService.Object,
-            mockTokenService.Object);
+            mockTokenService.Object,
+            new Mock<IMediaInfoCacheService>().Object);
 
         // Act
         var result = await controller.CreateProfile(CancellationToken.None);
@@ -135,7 +139,8 @@ public class PluginControllerEndpointTests
         var controller = new PluginController(
             mockDiagnosticService.Object,
             mockProfileService.Object,
-            mockTokenService.Object);
+            mockTokenService.Object,
+            new Mock<IMediaInfoCacheService>().Object);
 
         // Act
         var result = await controller.CreateProfile(CancellationToken.None);
@@ -168,7 +173,8 @@ public class PluginControllerEndpointTests
         var controller = new PluginController(
             mockDiagnosticService.Object,
             mockProfileService.Object,
-            mockTokenService.Object);
+            mockTokenService.Object,
+            new Mock<IMediaInfoCacheService>().Object);
 
         // Act
         var result = await controller.GenerateAuthToken(CancellationToken.None);
@@ -192,7 +198,8 @@ public class PluginControllerEndpointTests
         var controller = new PluginController(
             mockDiagnosticService.Object,
             mockProfileService.Object,
-            mockTokenService.Object);
+            mockTokenService.Object,
+            new Mock<IMediaInfoCacheService>().Object);
 
         // Act
         var result = controller.ResetToDefaults();

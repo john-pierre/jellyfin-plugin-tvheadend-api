@@ -8,6 +8,7 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -25,6 +26,7 @@ public class PluginController : ControllerBase
     private readonly IDiagnosticService _diagnosticService;
     private readonly IDefaultProfileService _defaultProfileService;
     private readonly ITokenService _tokenService;
+    private readonly IMediaInfoCacheService _cacheService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginController"/> class.
@@ -32,17 +34,21 @@ public class PluginController : ControllerBase
     /// <param name="diagnosticService">Service that builds the diagnostic report.</param>
     /// <param name="defaultProfileService">Service that provisions recommended TVHeadend default profiles.</param>
     /// <param name="tokenService">Service that manages TVHeadend auth tokens.</param>
+    /// <param name="cacheService">Service that manages mediainfo cache warmup and invalidation.</param>
     public PluginController(
         IDiagnosticService diagnosticService,
         IDefaultProfileService defaultProfileService,
-        ITokenService tokenService)
+        ITokenService tokenService,
+        IMediaInfoCacheService cacheService)
     {
         ArgumentNullException.ThrowIfNull(diagnosticService);
         ArgumentNullException.ThrowIfNull(defaultProfileService);
         ArgumentNullException.ThrowIfNull(tokenService);
+        ArgumentNullException.ThrowIfNull(cacheService);
         _diagnosticService = diagnosticService;
         _defaultProfileService = defaultProfileService;
         _tokenService = tokenService;
+        _cacheService = cacheService;
     }
 
     /// <summary>
@@ -136,5 +142,28 @@ public class PluginController : ControllerBase
             StreamingProfiles = diagnose.AvailableStreamingProfiles.ToArray(),
             RecordingProfiles = diagnose.AvailableRecordingProfiles.ToArray(),
         });
+    }
+
+    /// <summary>
+    /// Warms the mediainfo cache for all known channels so that the first tune is fast.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A summary of how many channels were warmed, skipped, or failed.</returns>
+    [HttpPost("WarmCache")]
+    public async Task<ActionResult<CacheWarmupResult>> WarmCache(CancellationToken cancellationToken)
+    {
+        var result = await _cacheService.WarmAllChannelCachesAsync(cancellationToken).ConfigureAwait(false);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Deletes all mediainfo cache files. Useful after a streaming profile change.
+    /// </summary>
+    /// <returns>The number of cache files deleted.</returns>
+    [HttpPost("InvalidateCache")]
+    public async Task<ActionResult> InvalidateCache()
+    {
+        var count = await _cacheService.InvalidateAllCachesAsync().ConfigureAwait(false);
+        return Ok(new { Success = true, DeletedFiles = count });
     }
 }

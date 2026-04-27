@@ -114,7 +114,16 @@ internal sealed class MediaSourceService : IMediaSourceService
         }
 
         var profileSnapshot = await _streamProfileContainerResolver.ResolveProfileSnapshotAsync(config, cancellationToken).ConfigureAwait(false);
-        await _mediaInfoCacheService.EnsureMediaInfoCacheStateAsync(channelId, streamUrl, profileSnapshot, config.EnableMediaInfoCacheWrite, config.EnableMediaInfoCacheValidation, cancellationToken).ConfigureAwait(false);
+
+        // Cache is always active when probing is enabled — the old per-field toggles are deprecated.
+        var cacheEnabled = config.SupportsProbing;
+        await _mediaInfoCacheService.EnsureMediaInfoCacheStateAsync(
+            channelId,
+            streamUrl,
+            profileSnapshot,
+            cacheEnabled,
+            cacheEnabled,
+            cancellationToken).ConfigureAwait(false);
 
         return mediaSource;
     }

@@ -15,10 +15,12 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
+using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Controller.Session;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -66,6 +68,8 @@ public class ServiceRegistratorTests
         services.AddSingleton(Mock.Of<IServerConfigurationManager>());
         services.AddSingleton(Mock.Of<ILibraryManager>());
         services.AddSingleton(Mock.Of<ISessionManager>());
+        services.AddSingleton(Mock.Of<IMediaEncoder>());
+        services.AddSingleton(Mock.Of<IApplicationPaths>());
         services.AddSingleton(host.Object);
 
         using var provider = services.BuildServiceProvider();

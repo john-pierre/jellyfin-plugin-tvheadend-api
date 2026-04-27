@@ -6,6 +6,7 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
@@ -20,12 +21,14 @@ public class PluginControllerCoverageTests
     private static PluginController CreateController(
         IDiagnosticService? diag = null,
         IDefaultProfileService? profile = null,
-        ITokenService? token = null)
+        ITokenService? token = null,
+        IMediaInfoCacheService? cache = null)
     {
         return new PluginController(
             diag ?? new Mock<IDiagnosticService>().Object,
             profile ?? new Mock<IDefaultProfileService>().Object,
-            token ?? new Mock<ITokenService>().Object);
+            token ?? new Mock<ITokenService>().Object,
+            cache ?? new Mock<IMediaInfoCacheService>().Object);
     }
 
     // --- GetPluginInfo ---
@@ -46,7 +49,8 @@ public class PluginControllerCoverageTests
         Assert.Throws<ArgumentNullException>(() => new PluginController(
             null!,
             new Mock<IDefaultProfileService>().Object,
-            new Mock<ITokenService>().Object));
+            new Mock<ITokenService>().Object,
+            new Mock<IMediaInfoCacheService>().Object));
     }
 
     [Fact]
@@ -55,7 +59,8 @@ public class PluginControllerCoverageTests
         Assert.Throws<ArgumentNullException>(() => new PluginController(
             new Mock<IDiagnosticService>().Object,
             null!,
-            new Mock<ITokenService>().Object));
+            new Mock<ITokenService>().Object,
+            new Mock<IMediaInfoCacheService>().Object));
     }
 
     [Fact]
@@ -64,6 +69,7 @@ public class PluginControllerCoverageTests
         Assert.Throws<ArgumentNullException>(() => new PluginController(
             new Mock<IDiagnosticService>().Object,
             new Mock<IDefaultProfileService>().Object,
-            null!));
+            null!,
+            new Mock<IMediaInfoCacheService>().Object));
     }
 }

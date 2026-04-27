@@ -30,6 +30,11 @@ public static class LogSanitizer
         @"(?<=(username|user)\s*[:=]\s*)\S+",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // TVHeadend log pattern: "using auth <TOKEN> for ..." or "auth <TOKEN>"
+    private static readonly Regex TvhAuthTokenRegex = new(
+        @"(?<=\bauth\s+)[A-Za-z0-9]{8,}\b",
+        RegexOptions.Compiled);
+
     /// <summary>
     /// Sanitizes a log message by masking sensitive data.
     /// </summary>
@@ -46,6 +51,7 @@ public static class LogSanitizer
         result = AuthHeaderRegex.Replace(result, "$1" + Redacted);
         result = PasswordKvRegex.Replace(result, Redacted);
         result = UsernameKvRegex.Replace(result, Redacted);
+        result = TvhAuthTokenRegex.Replace(result, Redacted);
 
         return result;
     }
@@ -64,6 +70,7 @@ public static class LogSanitizer
 
         return QuerySecretRegex.IsMatch(message)
                || AuthHeaderRegex.IsMatch(message)
-               || PasswordKvRegex.IsMatch(message);
+               || PasswordKvRegex.IsMatch(message)
+               || TvhAuthTokenRegex.IsMatch(message);
     }
 }

@@ -148,4 +148,47 @@ public class LogSanitizerTests
         Assert.DoesNotContain("admin", result);
         Assert.Contains("***REDACTED***", result);
     }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Sanitize_RemovesTvhAuthToken_UsingAuthPattern()
+    {
+        var input = "using auth PsChg7J5mkwpMjivQUPJywM1JFrc for /imagecache/1760";
+        var result = LogSanitizer.Sanitize(input);
+
+        Assert.DoesNotContain("PsChg7J5mkwpMjivQUPJywM1JFrc", result);
+        Assert.Contains("***REDACTED***", result);
+        Assert.Contains("/imagecache/1760", result);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Sanitize_RemovesTvhAuthToken_InHttpLog()
+    {
+        var input = "192.168.0.18 using auth AbCdEf12345678 for /stream/channelid/abc123";
+        var result = LogSanitizer.Sanitize(input);
+
+        Assert.DoesNotContain("AbCdEf12345678", result);
+        Assert.Contains("using auth ***REDACTED***", result);
+        Assert.Contains("/stream/channelid/abc123", result);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ContainsSensitiveData_DetectsTvhAuthToken()
+    {
+        Assert.True(LogSanitizer.ContainsSensitiveData("using auth PsChg7J5mkwpMjivQUPJywM1JFrc for /imagecache/1760"));
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Sanitize_DoesNotRedactShortAuthWords()
+    {
+        // "auth" followed by a short word (< 8 chars) should NOT be redacted — it's not a token
+        var input = "HTTP auth failed for user admin";
+        var result = LogSanitizer.Sanitize(input);
+
+        // "failed" is only 6 chars, should not be redacted by the TvhAuthTokenRegex
+        Assert.Contains("failed", result);
+    }
 }

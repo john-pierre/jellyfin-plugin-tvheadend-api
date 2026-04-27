@@ -8,6 +8,7 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
@@ -22,7 +23,8 @@ public class PluginControllerTests
         Assert.Throws<ArgumentNullException>(() => new PluginController(
             null!,
             new FakeDefaultProfileService(),
-            new FakeTokenService()));
+            new FakeTokenService(),
+            new Mock<IMediaInfoCacheService>().Object));
     }
 
     [Fact]
@@ -31,7 +33,8 @@ public class PluginControllerTests
         Assert.Throws<ArgumentNullException>(() => new PluginController(
             new FakeDiagnosticService(new DiagnoseResult()),
             null!,
-            new FakeTokenService()));
+            new FakeTokenService(),
+            new Mock<IMediaInfoCacheService>().Object));
     }
 
     [Fact]
@@ -40,7 +43,8 @@ public class PluginControllerTests
         Assert.Throws<ArgumentNullException>(() => new PluginController(
             new FakeDiagnosticService(new DiagnoseResult()),
             new FakeDefaultProfileService(),
-            null!));
+            null!,
+            new Mock<IMediaInfoCacheService>().Object));
     }
 
     [Fact]
@@ -50,7 +54,8 @@ public class PluginControllerTests
         var sut = new PluginController(
             new FakeDiagnosticService(expected),
             new FakeDefaultProfileService(),
-            new FakeTokenService());
+            new FakeTokenService(),
+            new Mock<IMediaInfoCacheService>().Object);
 
         var result = await sut.Diagnose(CancellationToken.None);
 
@@ -65,7 +70,8 @@ public class PluginControllerTests
         var sut = new PluginController(
             new FakeDiagnosticService(new DiagnoseResult()),
             new FakeDefaultProfileService(),
-            new FakeTokenService());
+            new FakeTokenService(),
+            new Mock<IMediaInfoCacheService>().Object);
 
         var result = await sut.CreateProfile(CancellationToken.None);
 
@@ -85,7 +91,8 @@ public class PluginControllerTests
         var sut = new PluginController(
             new FakeDiagnosticService(diagnose),
             new FakeDefaultProfileService(),
-            new FakeTokenService());
+            new FakeTokenService(),
+            new Mock<IMediaInfoCacheService>().Object);
 
         var result = await sut.GetProfileOptions(CancellationToken.None);
 
@@ -102,7 +109,8 @@ public class PluginControllerTests
         var sut = new PluginController(
             new FakeDiagnosticService(new DiagnoseResult()),
             new FakeDefaultProfileService(),
-            new FakeTokenService());
+            new FakeTokenService(),
+            new Mock<IMediaInfoCacheService>().Object);
 
         var result = sut.ResetToDefaults();
 
