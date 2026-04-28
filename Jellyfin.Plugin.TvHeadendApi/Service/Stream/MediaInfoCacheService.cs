@@ -468,7 +468,11 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
     }
 
     /// <inheritdoc />
-    public async Task<CacheWarmupResult> WarmAllChannelCachesAsync(CancellationToken cancellationToken)
+    public Task<CacheWarmupResult> WarmAllChannelCachesAsync(CancellationToken cancellationToken)
+        => WarmAllChannelCachesAsync(null!, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CacheWarmupResult> WarmAllChannelCachesAsync(IProgress<CacheWarmupProgress>? progress, CancellationToken cancellationToken)
     {
         var config = _apiClient.GetCurrentConfiguration();
         if (config == null)
@@ -483,6 +487,7 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
         var failed = 0;
         var errors = new List<string>();
         var lockObj = new object();
+        var processedCount = 0;
 
         // Limit parallelism to 2 — each FFprobe opens a real TVH stream and we
         // must not overwhelm the tuners.
@@ -494,26 +499,44 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
             try
             {
                 var channelId = channel.Id;
+                var channelName = channel.Name ?? channelId ?? "Unknown";
+
                 if (string.IsNullOrWhiteSpace(channelId))
                 {
+                    var idx = Interlocked.Increment(ref processedCount);
                     lock (lockObj)
                     {
                         failed++;
                         errors.Add("Channel with empty ID skipped.");
                     }
 
+                    progress?.Report(new CacheWarmupProgress(idx, totalChannels, channelName, channelId ?? string.Empty, "failed", "Empty channel ID"));
                     return;
                 }
+
+                // Report that we are probing this channel.
+                progress?.Report(new CacheWarmupProgress(
+                    Interlocked.Increment(ref processedCount),
+                    totalChannels,
+                    channelName,
+                    channelId,
+                    "probing",
+                    null));
+
+                // Decrement so final report uses the same index.
+                Interlocked.Decrement(ref processedCount);
 
                 // Check if cache already exists and is valid.
                 var existingSnapshot = await TryGetMediainfoCacheSnapshotAsync(channelId, cancellationToken).ConfigureAwait(false);
                 if (existingSnapshot != null)
                 {
+                    var idx = Interlocked.Increment(ref processedCount);
                     lock (lockObj)
                     {
                         alreadyCached++;
                     }
 
+                    progress?.Report(new CacheWarmupProgress(idx, totalChannels, channelName, channelId, "skipped", "Already cached"));
                     return;
                 }
 
@@ -536,18 +559,36 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
                     await TryWriteMediaInfoCacheAsync(channelId, streamUrl, profileSnapshot, cancellationToken).ConfigureAwait(false);
                 }
 
+                var finalIdx = Interlocked.Increment(ref processedCount);
                 lock (lockObj)
                 {
                     warmed++;
                 }
+
+                progress?.Report(new CacheWarmupProgress(
+                    finalIdx,
+                    totalChannels,
+                    channelName,
+                    channelId,
+                    "cached",
+                    probed ? "FFprobe" : "Synthetic"));
             }
             catch (Exception ex)
             {
+                var idx = Interlocked.Increment(ref processedCount);
                 lock (lockObj)
                 {
                     failed++;
                     errors.Add($"Channel {channel.Id}: {ex.Message}");
                 }
+
+                progress?.Report(new CacheWarmupProgress(
+                    idx,
+                    totalChannels,
+                    channel.Name ?? channel.Id ?? "Unknown",
+                    channel.Id ?? string.Empty,
+                    "failed",
+                    ex.Message));
             }
             finally
             {

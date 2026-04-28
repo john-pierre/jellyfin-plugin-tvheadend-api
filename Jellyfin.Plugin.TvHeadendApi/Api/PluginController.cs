@@ -1,6 +1,8 @@
 using System;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
@@ -11,6 +13,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Api;
@@ -154,6 +157,72 @@ public class PluginController : ControllerBase
     {
         var result = await _cacheService.WarmAllChannelCachesAsync(cancellationToken).ConfigureAwait(false);
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Warms the mediainfo cache for all known channels and streams per-channel progress
+    /// as Server-Sent Events (SSE). Each event contains a JSON-serialised
+    /// <see cref="CacheWarmupProgress"/>. The final event has <c>event: done</c> and carries
+    /// the full <see cref="CacheWarmupResult"/>.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An SSE stream of progress events.</returns>
+    [HttpPost("WarmCacheStream")]
+    public async Task WarmCacheStream(CancellationToken cancellationToken)
+    {
+        Response.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+
+        // Use a Channel to serialize writes — Progress<T> callbacks fire on thread-pool
+        // threads and Response.WriteAsync is not thread-safe.
+        var channel = Channel.CreateUnbounded<CacheWarmupProgress>(
+            new UnboundedChannelOptions { SingleReader = true });
+
+        var progress = new Progress<CacheWarmupProgress>(p => channel.Writer.TryWrite(p));
+
+        // Start the warmup on a background task so we can drain the channel on this thread.
+        var warmupTask = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    return await _cacheService.WarmAllChannelCachesAsync(progress, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                finally
+                {
+                    channel.Writer.Complete();
+                }
+            },
+            cancellationToken);
+
+        // Single reader loop — all Response writes happen here, sequentially.
+        try
+        {
+            await foreach (var p in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var json = JsonSerializer.Serialize(p);
+                await Response.WriteAsync($"data: {json}\n\n", cancellationToken).ConfigureAwait(false);
+                await Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Client disconnected — expected.
+        }
+
+        var result = await warmupTask.ConfigureAwait(false);
+
+        try
+        {
+            var resultJson = JsonSerializer.Serialize(result);
+            await Response.WriteAsync($"event: done\ndata: {resultJson}\n\n", cancellationToken).ConfigureAwait(false);
+            await Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Client disconnected — expected.
+        }
     }
 
     /// <summary>

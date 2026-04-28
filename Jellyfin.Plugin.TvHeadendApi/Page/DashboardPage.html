@@ -47,9 +47,9 @@
         .tvh-badge-active { background: #0d47a1; color: #90caf9; }
 
         /* ── Tables ─────────────────────────────────────────── */
-        .tvh-table-wrap { overflow-x: auto; }
+        .tvh-table-wrap { overflow-x: auto; overflow-y: auto; max-height: 500px; }
         #TvHeadendDashboardPage table { width: 100%; border-collapse: collapse; font-size: 0.86em; }
-        #TvHeadendDashboardPage th { text-align: left; border-bottom: 2px solid #444; padding: 0.45em 0.6em; opacity: 0.7; font-weight: 600; white-space: nowrap; }
+        #TvHeadendDashboardPage th { text-align: left; border-bottom: 2px solid #444; padding: 0.45em 0.6em; opacity: 0.7; font-weight: 600; white-space: nowrap; position: sticky; top: 0; background: #1c1c1e; z-index: 1; }
         #TvHeadendDashboardPage td { padding: 0.45em 0.6em; border-bottom: 1px solid rgba(255,255,255,0.06); }
 
         /* ── Signal bars ────────────────────────────────────── */

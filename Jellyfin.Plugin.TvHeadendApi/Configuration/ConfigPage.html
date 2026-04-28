@@ -119,6 +119,14 @@
         .tvh-toc a { font-size: 0.85em; color: #00a4dc; text-decoration: none; white-space: nowrap; cursor: pointer; }
         .tvh-toc a:hover { text-decoration: underline; }
 
+        /* ── Tabs ────────────────────────────────────────────── */
+        .tvh-tabs { display: flex; flex-wrap: wrap; gap: 0; border-bottom: 2px solid #333; margin-bottom: 1.4em; }
+        .tvh-tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: inherit; opacity: 0.6; padding: 0.55em 1em; font-size: 0.92em; font-weight: 600; cursor: pointer; margin-bottom: -2px; transition: opacity 0.2s, border-color 0.2s; white-space: nowrap; }
+        .tvh-tab-btn:hover { opacity: 0.85; }
+        .tvh-tab-btn.tvh-tab-active { opacity: 1; border-bottom-color: #00a4dc; color: #00a4dc; }
+        .tvh-tab-panel { display: none; }
+        .tvh-tab-panel.tvh-tab-visible { display: block; }
+
         /* ── Status banner ───────────────────────────────────── */
         .tvh-status-banner { padding: 0.8em 1em; border-radius: 8px; margin-bottom: 1.2em; display: flex; flex-wrap: wrap; align-items: center; gap: 0.8em; font-size: 0.9em; }
         .tvh-status-ok { background: rgba(76,175,80,0.08); border: 1px solid rgba(76,175,80,0.3); }
@@ -223,6 +231,7 @@
                             <span>Warm Cache</span>
                         </button>
                     </div>
+                    <div id="WarmCacheStatus" class="tvh-msg" style="font-size:0.82em;min-height:1.4em;margin-top:0.3em;opacity:0;transition:opacity 0.3s;"></div>
                     <div id="ProfileActionMsg" class="tvh-msg"></div>
                     <div id="ResetDefaultsMsg" class="tvh-msg"></div>
                     <details id="DiagDetails" class="tvh-diag-details">
@@ -268,16 +277,18 @@
                     </details>
                 </div>
 
-                <!-- ── Table of Contents ───────────────────────── -->
-                <nav class="tvh-toc" id="TvhToc">
-                    <a data-scroll="sec-connection">Connection</a>
-                    <a data-scroll="sec-auth">Authentication</a>
-                    <a data-scroll="sec-relay">Relay</a>
-                    <a data-scroll="sec-streaming">Streaming</a>
-                    <a data-scroll="sec-playback">Playback</a>
-                    <a data-scroll="sec-recording">Recording</a>
-                    <a data-scroll="sec-advanced">Advanced</a>
-                </nav>
+                <!-- ── Tab Navigation ────────────────────────── -->
+                <div class="tvh-tabs" id="TvhTabs">
+                    <button type="button" class="tvh-tab-btn tvh-tab-active" data-tab="tab-connection">Connection</button>
+                    <button type="button" class="tvh-tab-btn" data-tab="tab-relay">Relay</button>
+                    <button type="button" class="tvh-tab-btn" data-tab="tab-streaming">Streaming</button>
+                    <button type="button" class="tvh-tab-btn" data-tab="tab-playback">Playback</button>
+                    <button type="button" class="tvh-tab-btn" data-tab="tab-recording">Recording</button>
+                    <button type="button" class="tvh-tab-btn" data-tab="tab-advanced">Advanced</button>
+                </div>
+
+                <!-- ══ Tab: Connection ═══════════════════════════ -->
+                <div class="tvh-tab-panel tvh-tab-visible" id="tab-connection">
 
                 <!-- ── A. Connection ───────────────────────────── -->
                 <div class="tvh-section" id="sec-connection">
@@ -354,6 +365,10 @@
                         </div>
                     </div>
                 </div>
+                </div><!-- /tab-connection -->
+
+                <!-- ══ Tab: Relay ════════════════════════════════ -->
+                <div class="tvh-tab-panel" id="tab-relay">
 
                 <!-- ── C. Streaming ────────────────────────────── -->
                 <div class="tvh-section" id="sec-relay">
@@ -444,6 +459,10 @@
                         </div>
                     </div>
                 </div>
+                </div><!-- /tab-relay -->
+
+                <!-- ══ Tab: Streaming ════════════════════════════ -->
+                <div class="tvh-tab-panel" id="tab-streaming">
 
                 <!-- ── D. Streaming ────────────────────────────── -->
                 <div class="tvh-section" id="sec-streaming">
@@ -550,6 +569,10 @@
                         <div id="ValidateProfilesResult" style="margin-top:0.5em;"></div>
                     </div>
                 </div>
+                </div><!-- /tab-streaming -->
+
+                <!-- ══ Tab: Playback ═════════════════════════════ -->
+                <div class="tvh-tab-panel" id="tab-playback">
 
                 <!-- ── D. Playback Behaviour ───────────────────── -->
                 <div class="tvh-section" id="sec-playback">
@@ -651,6 +674,10 @@
                         </div>
                     </div>
                 </div>
+                </div><!-- /tab-playback -->
+
+                <!-- ══ Tab: Recording ════════════════════════════ -->
+                <div class="tvh-tab-panel" id="tab-recording">
 
                 <!-- ── E. Recording (DVR) ──────────────────────── -->
                 <div class="tvh-section" id="sec-recording">
@@ -681,6 +708,10 @@
                         </div>
                     </div>
                 </div>
+                </div><!-- /tab-recording -->
+
+                <!-- ══ Tab: Advanced ═════════════════════════════ -->
+                <div class="tvh-tab-panel" id="tab-advanced">
 
                 <!-- ── G. Advanced Settings ────────────────────── -->
                 <div class="tvh-section" id="sec-advanced">
@@ -771,6 +802,7 @@
                         </div>
                     </div>
                 </div>
+                </div><!-- /tab-advanced -->
 
                 <!-- ── Save ─────────────────────────────────────── -->
                 <div class="tvh-save-area">
@@ -1162,14 +1194,23 @@
                 Dashboard.navigate('configurationpage?name=TvHeadendDashboard');
             });
 
-            // ── TOC scroll ───────────────────────────────────────
-            $('#TvhToc').addEventListener('click', function (e) {
-                var target = e.target.closest('[data-scroll]');
-                if (!target) return;
-                e.preventDefault();
-                var el = document.getElementById(target.getAttribute('data-scroll'));
-                if (el) el.scrollIntoView(true);
-            });
+            // ── Tab switching ────────────────────────────────────
+            (function initTabs() {
+                var tabBar = document.getElementById('TvhTabs');
+                if (!tabBar) return;
+                tabBar.addEventListener('click', function (e) {
+                    var btn = e.target.closest('.tvh-tab-btn');
+                    if (!btn) return;
+                    var tabId = btn.getAttribute('data-tab');
+                    // Deactivate all
+                    tabBar.querySelectorAll('.tvh-tab-btn').forEach(function (b) { b.classList.remove('tvh-tab-active'); });
+                    document.querySelectorAll('.tvh-tab-panel').forEach(function (p) { p.classList.remove('tvh-tab-visible'); });
+                    // Activate target
+                    btn.classList.add('tvh-tab-active');
+                    var panel = document.getElementById(tabId);
+                    if (panel) panel.classList.add('tvh-tab-visible');
+                });
+            })();
 
             $('#DiagnoseBtn').addEventListener('click', loadDiagnose);
 
@@ -1278,21 +1319,95 @@
             $('#AllowAnonymousAccess').addEventListener('change', updateAuthRequiredState);
             $('#AuthToken').addEventListener('input', updateAuthTokenButtonLabel);
 
-            // ── Cache warmup button ──────────────────────────────
+            // ── Cache warmup button (SSE progress) ─────────────────
             $('#WarmCacheBtn').addEventListener('click', function () {
                 var btn = $('#WarmCacheBtn span');
+                var statusEl = $('#WarmCacheStatus');
                 var orig = btn.textContent;
                 btn.textContent = 'Warming\u2026';
+                btn.parentElement.disabled = true;
+                statusEl.style.opacity = '1';
+                statusEl.style.color = '#b0bec5';
+                statusEl.textContent = 'Preparing\u2026';
+
                 saveCurrentFormToConfig().then(function () {
-                    return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/WarmCache'), dataType: 'json' });
-                }).then(function (r) {
-                    btn.textContent = r.Warmed + '/' + r.TotalChannels + ' warmed';
-                    setTimeout(function () { btn.textContent = orig; }, 3000);
-                    loadDiagnose();
+                    // Build SSE URL — Jellyfin requires auth header, so we use fetch + ReadableStream
+                    // because EventSource cannot set custom headers.
+                    var url = ApiClient.getUrl('TvHeadendApi/WarmCacheStream');
+                    var headers = { 'Content-Type': 'application/json' };
+                    var token = ApiClient.accessToken();
+                    if (token) { headers['Authorization'] = 'MediaBrowser Token="' + token + '"'; }
+
+                    return fetch(url, { method: 'POST', headers: headers }).then(function (response) {
+                        if (!response.ok) { throw new Error('HTTP ' + response.status); }
+
+                        var reader = response.body.getReader();
+                        var decoder = new TextDecoder();
+                        var buffer = '';
+
+                        function processChunk() {
+                            return reader.read().then(function (result) {
+                                if (result.done) return;
+                                buffer += decoder.decode(result.value, { stream: true });
+
+                                // Parse SSE frames from the buffer.
+                                var lines = buffer.split('\n');
+                                buffer = lines.pop(); // keep incomplete line in buffer
+
+                                var eventType = 'message';
+                                for (var i = 0; i < lines.length; i++) {
+                                    var line = lines[i];
+                                    if (line.indexOf('event: ') === 0) {
+                                        eventType = line.substring(7).trim();
+                                    } else if (line.indexOf('data: ') === 0) {
+                                        var jsonStr = line.substring(6);
+                                        try {
+                                            var data = JSON.parse(jsonStr);
+                                            if (eventType === 'done') {
+                                                // Final result
+                                                btn.textContent = data.Warmed + '/' + data.TotalChannels + ' warmed';
+                                                statusEl.style.color = '#a5d6a7';
+                                                var parts = [];
+                                                if (data.AlreadyCached > 0) parts.push(data.AlreadyCached + ' already cached');
+                                                if (data.Failed > 0) parts.push(data.Failed + ' failed');
+                                                statusEl.textContent = parts.length ? 'Done — ' + parts.join(', ') : 'Done ✓';
+                                                setTimeout(function () {
+                                                    btn.textContent = orig;
+                                                    btn.parentElement.disabled = false;
+                                                }, 5000);
+                                                setTimeout(function () { statusEl.style.opacity = '0'; }, 8000);
+                                                loadDiagnose();
+                                            } else {
+                                                // Progress update
+                                                btn.textContent = data.Current + '/' + data.Total;
+                                                var icon = data.Status === 'probing' ? '\u23F3' :
+                                                           data.Status === 'cached'  ? '\u2705' :
+                                                           data.Status === 'skipped' ? '\u23ED' :
+                                                           data.Status === 'failed'  ? '\u274C' : '\u2022';
+                                                var detail = data.Detail ? ' — ' + data.Detail : '';
+                                                statusEl.style.color = data.Status === 'failed' ? '#ef9a9a' :
+                                                                       data.Status === 'cached' ? '#a5d6a7' :
+                                                                       data.Status === 'skipped' ? '#90caf9' : '#b0bec5';
+                                                statusEl.textContent = icon + ' [' + data.Current + '/' + data.Total + '] ' + data.ChannelName + ' — ' + data.Status + detail;
+                                            }
+                                        } catch (e) { /* ignore malformed JSON */ }
+                                        eventType = 'message';
+                                    }
+                                }
+
+                                return processChunk();
+                            });
+                        }
+
+                        return processChunk();
+                    });
                 }).catch(function (err) {
                     btn.textContent = 'Failed';
+                    statusEl.style.color = '#ef9a9a';
+                    statusEl.textContent = '\u274C ' + (err.statusText || err.message || 'Unknown error');
                     console.error('[TvHeadend] Cache warmup failed:', err);
-                    setTimeout(function () { btn.textContent = orig; }, 3000);
+                    setTimeout(function () { btn.textContent = orig; btn.parentElement.disabled = false; }, 3000);
+                    setTimeout(function () { statusEl.style.opacity = '0'; }, 8000);
                 });
             });
 

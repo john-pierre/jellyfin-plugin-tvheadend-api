@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -57,6 +58,15 @@ public interface IMediaInfoCacheService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A result summarising how many channels were warmed, skipped, or failed.</returns>
     Task<CacheWarmupResult> WarmAllChannelCachesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Warms the mediainfo cache for all known channels, reporting per-channel progress
+    /// via the supplied <paramref name="progress"/> callback.
+    /// </summary>
+    /// <param name="progress">Receives a <see cref="CacheWarmupProgress"/> update for every channel.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result summarising how many channels were warmed, skipped, or failed.</returns>
+    Task<CacheWarmupResult> WarmAllChannelCachesAsync(IProgress<CacheWarmupProgress>? progress, CancellationToken cancellationToken);
 
     /// <summary>
     /// Deletes all mediainfo cache files from the cache directory.
