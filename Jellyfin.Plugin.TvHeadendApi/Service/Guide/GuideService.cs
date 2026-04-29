@@ -406,9 +406,13 @@ internal sealed class GuideService : IGuideService
         var raw = rawImagePath.Trim();
         var normalized = raw.TrimStart('/');
 
-        // External absolute URLs (e.g. http://...) are passed through unchanged — they don't
+        // External absolute HTTP(S) URLs are passed through unchanged — they don't
         // need relaying because they don't point to TVHeadend's internal API.
-        if (Uri.TryCreate(raw, UriKind.Absolute, out _))
+        // Note: We check for http/https scheme explicitly instead of using UriKind.Absolute
+        // because on Linux, paths starting with "/" (e.g. "/imagecache/123") are treated as
+        // absolute file URIs by Uri.TryCreate, which would incorrectly skip the relay.
+        if (Uri.TryCreate(raw, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
         {
             return raw;
         }
