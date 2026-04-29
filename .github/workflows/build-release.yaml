@@ -270,8 +270,8 @@ jobs:
       - name: Clean Previous Stack
         run: docker compose -f docker/docker-compose.test.yaml down --volumes --remove-orphans 2>/dev/null || true
 
-      - name: Start TVHeadend & IPTV Simulator
-        run: docker compose -f docker/docker-compose.test.yaml up -d --build iptv-simulator tvheadend
+      - name: Start Test Stack (IPTV Simulator + TVHeadend + Jellyfin)
+        run: docker compose -f docker/docker-compose.test.yaml up -d --build iptv-simulator tvheadend jellyfin
 
       - name: Wait for TVHeadend Healthy
         run: |
@@ -279,18 +279,29 @@ jobs:
           for i in $(seq 1 60); do
             if curl -sf http://localhost:19981/api/serverinfo > /dev/null 2>&1; then
               echo "TVHeadend is ready."
-              exit 0
+              break
             fi
             sleep 3
           done
-          echo "TVHeadend did not become healthy in time."
-          docker compose -f docker/docker-compose.test.yaml logs tvheadend
-          exit 1
 
       - name: Run Bootstrap
         run: |
           docker compose -f docker/docker-compose.test.yaml up tvheadend-bootstrap --exit-code-from tvheadend-bootstrap
           echo "Bootstrap complete."
+
+      - name: Wait for Jellyfin Healthy
+        run: |
+          echo "Waiting for Jellyfin to become healthy..."
+          for i in $(seq 1 90); do
+            if curl -sf http://localhost:18096/health > /dev/null 2>&1; then
+              echo "Jellyfin is ready."
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Jellyfin did not become healthy in time."
+          docker compose -f docker/docker-compose.test.yaml logs jellyfin
+          exit 1
 
       - name: Restore Dependencies
         run: dotnet restore Jellyfin.Plugin.TvHeadendApi.sln
@@ -301,6 +312,11 @@ jobs:
       - name: Run Live Integration Tests
         env:
           TVHEADEND_URL: http://localhost:19981
+          JELLYFIN_URL: http://localhost:18096
+          TVH_HOST: tvheadend
+          TVH_PORT: "9981"
+          TVH_USER: testuser
+          TVH_PASS: testpass
         run: >
           dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj
           --configuration Release
@@ -326,9 +342,9 @@ jobs:
           reporter: dotnet-trx
           fail-on-error: true
 
-      - name: Show Bootstrap Logs on Failure
+      - name: Show Logs on Failure
         if: failure()
-        run: docker compose -f docker/docker-compose.test.yaml logs tvheadend-bootstrap iptv-simulator tvheadend
+        run: docker compose -f docker/docker-compose.test.yaml logs tvheadend-bootstrap iptv-simulator tvheadend jellyfin
 
       - name: Tear Down Services
         if: always()
