@@ -43,6 +43,12 @@ public sealed class RelayResult : IDisposable
     public string? CacheControl { get; set; }
 
     /// <summary>
+    /// Gets or sets the Accept-Ranges header from the upstream response.
+    /// Used by Apple AVPlayer to determine whether byte-range requests are supported.
+    /// </summary>
+    public string? AcceptRanges { get; set; }
+
+    /// <summary>
     /// Gets or sets the upstream response body stream. Streamed directly — never fully buffered.
     /// </summary>
     public System.IO.Stream? Body { get; set; }

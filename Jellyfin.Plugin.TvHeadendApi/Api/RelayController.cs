@@ -197,12 +197,14 @@ public class RelayController : ControllerBase
     /// <summary>
     /// Relays a live TV stream from TVHeadend for the given channel.
     /// Long-running — response streams until client disconnects.
+    /// Supports both GET (full stream) and HEAD (capability discovery for Apple AVPlayer).
     /// </summary>
     /// <param name="channelId">TVHeadend channel UUID.</param>
     /// <param name="profile">Optional streaming profile override.</param>
     /// <param name="cancellationToken">Cancellation token — triggers upstream cancellation on disconnect.</param>
     /// <returns>A <see cref="Task"/> representing the streaming operation.</returns>
     [HttpGet("stream/{channelId}")]
+    [HttpHead("stream/{channelId}")]
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
@@ -227,11 +229,26 @@ public class RelayController : ControllerBase
             }
 
             Response.StatusCode = result.StatusCode;
-            Response.ContentType = result.ContentType ?? "video/MP2T";
+            Response.ContentType = result.ContentType ?? "video/mp2t";
 
-            if (result.ContentLength.HasValue)
+            // Do NOT set Content-Length on live stream responses.
+            // Live TV streams are infinite — setting Content-Length causes ExoPlayer, VLC,
+            // and other clients to display incorrect duration or stop buffering prematurely.
+            // TVHeadend may include a Content-Length for buffer-based responses, but for
+            // the relay's stream endpoint this should always be treated as an infinite stream.
+
+            // Apple AVPlayer uses Accept-Ranges to determine seeking capability.
+            // Pass through upstream value or indicate no range support for live streams.
+            Response.Headers["Accept-Ranges"] = !string.IsNullOrEmpty(result.AcceptRanges)
+                ? result.AcceptRanges
+                : "none";
+
+            // HEAD requests: return headers only — AVPlayer uses HEAD to discover
+            // Content-Type, Accept-Ranges, and Content-Length before starting playback.
+            if (HttpMethods.IsHead(Request.Method))
             {
-                Response.ContentLength = result.ContentLength;
+                RecordAndDispose(result);
+                return;
             }
 
             result.TimingContext?.MarkFirstByteToClient();
@@ -306,6 +323,7 @@ public class RelayController : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A <see cref="Task"/> representing the streaming operation.</returns>
     [HttpGet("relay/stream/{channelId}")]
+    [HttpHead("relay/stream/{channelId}")]
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

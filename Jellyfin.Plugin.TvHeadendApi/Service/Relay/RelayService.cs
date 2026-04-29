@@ -145,7 +145,50 @@ internal sealed class RelayService : IRelayService, IDisposable
         var (_, streamClient) = GetOrRebuildClients();
         var result = await RelayRequestAsync(streamClient, endpoint, "stream", timing, cancellationToken).ConfigureAwait(false);
         result.TimingContext = timing;
+
+        // Override generic/misleading content types for stream responses.
+        // Apple AVPlayer requires a specific video MIME type for format detection.
+        result.ContentType = NormalizeStreamContentType(result.ContentType);
+
         return result;
+    }
+
+    /// <summary>
+    /// Normalizes the upstream content type for stream responses.
+    /// <list type="bullet">
+    ///   <item>Replaces generic types (octet-stream, text/plain) with the correct MPEG-TS MIME type.</item>
+    ///   <item>Strips charset parameters from binary video/audio types (confuses ExoPlayer, mpv).</item>
+    /// </list>
+    /// </summary>
+    private static string? NormalizeStreamContentType(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType))
+        {
+            return null;
+        }
+
+        // Extract just the media type (strip parameters like charset).
+        var mediaType = contentType.Split(';')[0].Trim();
+
+        // Replace generic/misleading types with video/mp2t.
+        if (mediaType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase)
+            || mediaType.Equals("text/plain", StringComparison.OrdinalIgnoreCase)
+            || mediaType.Equals("text/html", StringComparison.OrdinalIgnoreCase))
+        {
+            return "video/mp2t";
+        }
+
+        // Strip charset parameter from binary video/audio types.
+        // TVHeadend sometimes adds "; charset=utf-8" to binary streams which confuses
+        // ExoPlayer strict mode, mpv, and other media parsers.
+        if (mediaType.StartsWith("video/", StringComparison.OrdinalIgnoreCase)
+            || mediaType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+        {
+            return mediaType;
+        }
+
+        // For non-binary types (e.g., HLS playlists), preserve the full value including parameters.
+        return contentType;
     }
 
     /// <inheritdoc cref="IDisposable.Dispose"/>
@@ -383,6 +426,9 @@ internal sealed class RelayService : IRelayService, IDisposable
                 ETag = response.Headers.ETag?.ToString(),
                 LastModified = response.Content.Headers.LastModified?.ToString("R"),
                 CacheControl = response.Headers.CacheControl?.ToString(),
+                AcceptRanges = response.Headers.TryGetValues("Accept-Ranges", out var rangeValues)
+                    ? string.Join(", ", rangeValues)
+                    : null,
                 Body = body,
                 ResponseMessage = response,
             };
@@ -457,6 +503,8 @@ internal sealed class RelayService : IRelayService, IDisposable
 
     /// <summary>
     /// Maps non-success upstream status codes to appropriate gateway error codes.
+    /// Redirect status codes (3xx) that were not followed by the HTTP handler are mapped
+    /// to 502 Bad Gateway to prevent leaking internal TVHeadend URLs via Location headers.
     /// </summary>
     private static int MapUpstreamStatus(HttpStatusCode statusCode)
     {
@@ -464,6 +512,7 @@ internal sealed class RelayService : IRelayService, IDisposable
         {
             HttpStatusCode.NotFound => 404,
             HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => 502,
+            _ when (int)statusCode >= 300 && (int)statusCode < 400 => 502, // Prevent redirect leakage
             _ when (int)statusCode >= 500 => 502,
             _ => (int)statusCode,
         };
