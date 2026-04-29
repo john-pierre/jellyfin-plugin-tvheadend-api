@@ -203,7 +203,7 @@ public class RelayMetricsTests
         RecordSync(sut, CreateImageMetric(totalMs: 200, outcome: "failure", failureReason: "Upstream404"));
         RecordSync(sut, CreateStreamMetric(totalMs: 5000, outcome: "success", sessionMs: 5000));
 
-        Thread.Sleep(200); // Wait for ThreadPool persistence
+        WaitForMetrics(sut, 4);
 
         var summary = sut.GetSummary(0); // all time
 
@@ -223,7 +223,7 @@ public class RelayMetricsTests
             RecordSync(sut, CreateImageMetric(totalMs: i, outcome: "success"));
         }
 
-        Thread.Sleep(200);
+        WaitForMetrics(sut, 100);
 
         var summary = sut.GetSummary(0);
 
@@ -242,7 +242,7 @@ public class RelayMetricsTests
         RecordSync(sut, CreateImageMetric(totalMs: 50, outcome: "success", cacheStatus: "Miss"));
         RecordSync(sut, CreateImageMetric(totalMs: 5, outcome: "success", cacheStatus: "Hit"));
 
-        Thread.Sleep(200);
+        WaitForMetrics(sut, 3);
 
         var summary = sut.GetSummary(0);
 
@@ -261,7 +261,7 @@ public class RelayMetricsTests
         RecordSync(sut, CreateImageMetric(totalMs: 10, outcome: "failure", failureReason: "Upstream404"));
         RecordSync(sut, CreateImageMetric(totalMs: 10, outcome: "failure", failureReason: "UpstreamTimeout"));
 
-        Thread.Sleep(200);
+        WaitForMetrics(sut, 3);
 
         var summary = sut.GetSummary(0);
 
@@ -278,7 +278,7 @@ public class RelayMetricsTests
         Thread.Sleep(50);
         RecordSync(sut, CreateImageMetric(totalMs: 20, outcome: "failure", failureReason: "UpstreamTimeout"));
 
-        Thread.Sleep(200);
+        WaitForMetrics(sut, 2);
 
         var summary = sut.GetSummary(0);
 
@@ -295,7 +295,7 @@ public class RelayMetricsTests
         RecordSync(sut, CreateImageMetric(totalMs: 500, outcome: "success"));
         RecordSync(sut, CreateImageMetric(totalMs: 100, outcome: "success"));
 
-        Thread.Sleep(200);
+        WaitForMetrics(sut, 3);
 
         var summary = sut.GetSummary(0);
 
@@ -312,7 +312,7 @@ public class RelayMetricsTests
         RecordSync(sut, CreateStreamMetric(totalMs: 500, outcome: "cancelled", endedBy: "ClientCancelled"));
         RecordSync(sut, CreateStreamMetric(totalMs: 2000, outcome: "success", endedBy: "Completed"));
 
-        Thread.Sleep(200);
+        WaitForMetrics(sut, 3);
 
         var summary = sut.GetSummary(0);
 
@@ -328,9 +328,7 @@ public class RelayMetricsTests
         RecordSync(sut, CreateImageMetric(totalMs: 10, outcome: "success"));
         RecordSync(sut, CreateImageMetric(totalMs: 20, outcome: "success"));
 
-        // Allow background writer to flush metrics to the in-memory database.
-        // The service processes its internal queue asynchronously, so a brief wait is needed.
-        Thread.Sleep(2000);
+        WaitForMetrics(sut, 2);
 
         var summary = sut.GetSummary(0);
 
@@ -396,6 +394,25 @@ public class RelayMetricsTests
     private static void RecordSync(RelayMetricsService svc, RelayRequestMetric metric)
     {
         svc.RecordMetric(metric);
+    }
+
+    /// <summary>
+    /// Polls GetSummary until TotalRequests reaches the expected count or timeout expires.
+    /// This avoids flaky Thread.Sleep for the fire-and-forget ThreadPool persistence.
+    /// </summary>
+    private static void WaitForMetrics(RelayMetricsService svc, int expectedCount, int timeoutMs = 5000)
+    {
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (Environment.TickCount64 < deadline)
+        {
+            var summary = svc.GetSummary(0);
+            if (summary.TotalRequests >= expectedCount)
+            {
+                return;
+            }
+
+            Thread.Sleep(50);
+        }
     }
 
     private static RelayRequestMetric CreateImageMetric(
