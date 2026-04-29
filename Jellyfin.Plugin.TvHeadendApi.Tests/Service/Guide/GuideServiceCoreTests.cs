@@ -1190,6 +1190,678 @@ public class GuideServiceCoreTests
         Assert.Empty(result);
     }
 
+    [Fact]
+    public async Task GetChannelTagsAsync_WhenConfigMissing_ReturnsEmpty()
+    {
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+
+        var result = await sut.GetChannelTagsAsync(CancellationToken.None);
+
+        Assert.Empty(result);
+    }
+
+    // ── Constructor null-guard tests ──
+
+    [Fact]
+    public void Constructor_NullLogger_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new GuideService(null!, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object, StubRelay(), NullHealthService.Instance));
+    }
+
+    [Fact]
+    public void Constructor_NullApiClient_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new GuideService(NullLogger<GuideService>.Instance, null!, new Mock<IUrlBuilder>().Object, StubRelay(), NullHealthService.Instance));
+    }
+
+    [Fact]
+    public void Constructor_NullUrlBuilder_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new GuideService(NullLogger<GuideService>.Instance, new Mock<IApiClient>().Object, null!, StubRelay(), NullHealthService.Instance));
+    }
+
+    [Fact]
+    public void Constructor_NullRelayUrlBuilder_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new GuideService(NullLogger<GuideService>.Instance, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object, null!, NullHealthService.Instance));
+    }
+
+    [Fact]
+    public void Constructor_NullHealthService_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new GuideService(NullLogger<GuideService>.Instance, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object, StubRelay(), null!));
+    }
+
+    // ── Circuit breaker tests ──
+
+    [Fact]
+    public async Task GetChannelsAsync_WhenCircuitBreakerOpen_ReturnsEmpty()
+    {
+        var health = new Mock<IHealthService>();
+        health.Setup(x => x.ShouldBlockRequest()).Returns(true);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object, StubRelay(), health.Object);
+
+        var result = await sut.GetChannelsAsync(CancellationToken.None);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WhenCircuitBreakerOpen_ReturnsEmpty()
+    {
+        var health = new Mock<IHealthService>();
+        health.Setup(x => x.ShouldBlockRequest()).Returns(true);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object, StubRelay(), health.Object);
+
+        var result = await sut.GetProgramsAsync("ch-1", DateTime.UtcNow, DateTime.UtcNow.AddHours(1), CancellationToken.None);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task GetContentTypesAsync_WhenCircuitBreakerOpen_ReturnsEmpty()
+    {
+        var health = new Mock<IHealthService>();
+        health.Setup(x => x.ShouldBlockRequest()).Returns(true);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object, StubRelay(), health.Object);
+
+        var result = await sut.GetContentTypesAsync(CancellationToken.None);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task GetChannelTagsAsync_WhenCircuitBreakerOpen_ReturnsEmpty()
+    {
+        var health = new Mock<IHealthService>();
+        health.Setup(x => x.ShouldBlockRequest()).Returns(true);
+        var sut = new GuideService(NullLogger<GuideService>.Instance, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object, StubRelay(), health.Object);
+
+        var result = await sut.GetChannelTagsAsync(CancellationToken.None);
+
+        Assert.Empty(result);
+    }
+
+    // ── FormatChannelNumber edge cases ──
+
+    [Fact]
+    public void FormatChannelNumber_UndefinedJsonElement_ReturnsZero()
+    {
+        var element = default(JsonElement);
+        Assert.Equal("0", GuideService.FormatChannelNumber(element));
+    }
+
+    [Fact]
+    public void FormatChannelNumber_NumberElement_ReturnsIntString()
+    {
+        using var doc = JsonDocument.Parse("42");
+        Assert.Equal("42", GuideService.FormatChannelNumber(doc.RootElement));
+    }
+
+    [Fact]
+    public void FormatChannelNumber_StringElement_ReturnsString()
+    {
+        using var doc = JsonDocument.Parse("\"7.1\"");
+        Assert.Equal("7.1", GuideService.FormatChannelNumber(doc.RootElement));
+    }
+
+    [Fact]
+    public void FormatChannelNumber_EmptyStringElement_ReturnsZero()
+    {
+        using var doc = JsonDocument.Parse("\"\"");
+        Assert.Equal("0", GuideService.FormatChannelNumber(doc.RootElement));
+    }
+
+    [Fact]
+    public void FormatChannelNumber_WhitespaceStringElement_ReturnsZero()
+    {
+        using var doc = JsonDocument.Parse("\"  \"");
+        Assert.Equal("0", GuideService.FormatChannelNumber(doc.RootElement));
+    }
+
+    [Fact]
+    public void FormatChannelNumber_NullElement_ReturnsZero()
+    {
+        using var doc = JsonDocument.Parse("null");
+        Assert.Equal("0", GuideService.FormatChannelNumber(doc.RootElement));
+    }
+
+    [Fact]
+    public void FormatChannelNumber_BooleanElement_ReturnsZero()
+    {
+        using var doc = JsonDocument.Parse("true");
+        Assert.Equal("0", GuideService.FormatChannelNumber(doc.RootElement));
+    }
+
+    // ── Disabled channels filtered out ──
+
+    [Fact]
+    public async Task GetChannelsAsync_DisabledChannels_AreFilteredOut()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+
+        var json = """
+                   {
+                     "entries": [
+                       { "uuid": "ch-1", "name": "Active", "number": 1, "enabled": true },
+                       { "uuid": "ch-2", "name": "Disabled", "number": 2, "enabled": false }
+                     ],
+                     "total": 2
+                   }
+                   """;
+
+        var responses = new Queue<HttpResponseMessage>();
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[]}""") });
+        var handler = new QueueResponseHandler(responses);
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+        var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
+
+        Assert.Single(result);
+        Assert.Equal("ch-1", result[0].Id);
+    }
+
+    // ── GetProgramsAsync null channelId ──
+
+    [Fact]
+    public async Task GetProgramsAsync_NullChannelId_ThrowsArgumentException()
+    {
+        var sut = new GuideService(NullLogger<GuideService>.Instance, new Mock<IApiClient>().Object, new Mock<IUrlBuilder>().Object, StubRelay(), NullHealthService.Instance);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            sut.GetProgramsAsync(null!, DateTime.UtcNow, DateTime.UtcNow.AddHours(1), CancellationToken.None));
+    }
+
+    // ── Category flag tests ──
+
+    [Fact]
+    public async Task GetProgramsAsync_WithPremiereCategory_SetsIsPremiereAndNotRepeat()
+    {
+        var program = await BuildProgramWithCategories("Premiere");
+
+        Assert.True(program.IsPremiere);
+        Assert.False(program.IsRepeat);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithLiveCategory_SetsIsLive()
+    {
+        var program = await BuildProgramWithCategories("Live");
+
+        Assert.True(program.IsLive);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithRepeatCategory_SetsIsRepeat()
+    {
+        var program = await BuildProgramWithCategories("repeat");
+
+        Assert.True(program.IsRepeat);
+        Assert.False(program.IsPremiere);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithWiederholungCategory_SetsIsRepeat()
+    {
+        var program = await BuildProgramWithCategories("Wiederholung");
+
+        Assert.True(program.IsRepeat);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithFirstRunCategory_SetsIsPremiere()
+    {
+        var program = await BuildProgramWithCategories("first run");
+
+        Assert.True(program.IsPremiere);
+        Assert.False(program.IsRepeat);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithNewCategory_SetsIsPremiere()
+    {
+        var program = await BuildProgramWithCategories("new");
+
+        Assert.True(program.IsPremiere);
+    }
+
+    // ── IsSeries / SeriesId / ShowId via SerieslinkUri ──
+
+    [Fact]
+    public async Task GetProgramsAsync_WithSerieslinkUri_SetsIsSeriesAndSeriesId()
+    {
+        var program = await BuildProgramWithFields(serieslinkUri: "crid://example/series/123");
+
+        Assert.True(program.IsSeries);
+        Assert.Equal("crid://example/series/123", program.SeriesId);
+        Assert.Equal("crid://example/series/123", program.ShowId);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithoutSerieslinkUri_NoGenre_IsSeriesFalse()
+    {
+        var program = await BuildProgramWithFields(genres: new[] { 16 });
+
+        Assert.False(program.IsSeries);
+        Assert.Null(program.SeriesId);
+        Assert.Null(program.ShowId);
+    }
+
+    // ── HomePageUrl with non-absolute EpisodeUri ──
+
+    [Fact]
+    public async Task GetProgramsAsync_WithNonAbsoluteEpisodeUri_SetsHomePageUrlNull()
+    {
+        // "episode/456" is not an absolute URI, so HomePageUrl should be null
+        var program = await BuildProgramWithFields(episodeUri: "episode/456");
+
+        Assert.Null(program.HomePageUrl);
+    }
+
+    // ── No image and no channelIcon ──
+
+    [Fact]
+    public async Task GetProgramsAsync_WithNoImageOrChannelIcon_HasImageFalse()
+    {
+        var program = await BuildProgramWithFields();
+
+        Assert.Null(program.ImageUrl);
+        Assert.False(program.HasImage);
+    }
+
+    // ── FirstAired = 0 → OriginalAirDate null ──
+
+    [Fact]
+    public async Task GetProgramsAsync_WithFirstAiredZero_OriginalAirDateNull()
+    {
+        var program = await BuildProgramWithFields(firstAired: 0);
+
+        Assert.Null(program.OriginalAirDate);
+    }
+
+    // ── CopyrightYear = 0 → ProductionYear null ──
+
+    [Fact]
+    public async Task GetProgramsAsync_WithCopyrightYearZero_ProductionYearNull()
+    {
+        var program = await BuildProgramWithFields();
+
+        Assert.Null(program.ProductionYear);
+    }
+
+    // ── TryAddKnownProviderIds edge cases ──
+
+    [Fact]
+    public async Task GetProgramsAsync_MetadataEnrichment_ImdbTooShort_NotAdded()
+    {
+        var config = new PluginConfiguration { EnableJellyfinMetadataEnrichment = true };
+        var program = await BuildProgramWithFields(episodeUri: "tt12345", config: config);
+
+        Assert.False(program.ProviderIds.ContainsKey("Imdb"));
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_MetadataEnrichment_TmdbNonDigitId_NotAdded()
+    {
+        var config = new PluginConfiguration { EnableJellyfinMetadataEnrichment = true };
+        var program = await BuildProgramWithFields(serieslinkUri: "tmdb://movie/abc", config: config);
+
+        Assert.False(program.SeriesProviderIds.ContainsKey("Tmdb"));
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_MetadataEnrichment_TvdbNonDigitId_NotAdded()
+    {
+        var config = new PluginConfiguration { EnableJellyfinMetadataEnrichment = true };
+        var program = await BuildProgramWithFields(episodeUri: "tvdb://series/abc", config: config);
+
+        Assert.False(program.ProviderIds.ContainsKey("Tvdb"));
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_MetadataEnrichment_EmptySource_NoProviderIds()
+    {
+        var config = new PluginConfiguration { EnableJellyfinMetadataEnrichment = true };
+        var program = await BuildProgramWithFields(episodeUri: "", serieslinkUri: "", config: config);
+
+        Assert.Empty(program.ProviderIds);
+        Assert.Empty(program.SeriesProviderIds);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_MetadataEnrichment_WhitespaceSource_NoProviderIds()
+    {
+        var config = new PluginConfiguration { EnableJellyfinMetadataEnrichment = true };
+        var program = await BuildProgramWithFields(episodeUri: "   ", serieslinkUri: "   ", config: config);
+
+        Assert.Empty(program.ProviderIds);
+        Assert.Empty(program.SeriesProviderIds);
+    }
+
+    // ── IsMovie / IsEducational flags ──
+
+    [Fact]
+    public async Task GetProgramsAsync_WithMovieGenre_SetsIsMovie()
+    {
+        var program = await BuildProgramWithFields(genres: new[] { 16 });
+
+        Assert.True(program.IsMovie);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithEducationalGenre_SetsIsEducational()
+    {
+        var program = await BuildProgramWithFields(genres: new[] { 145 });
+
+        Assert.True(program.IsEducational);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithNoGenre_AllFlagsFalse()
+    {
+        var program = await BuildProgramWithFields(genres: Array.Empty<int>());
+
+        Assert.False(program.IsMovie);
+        Assert.False(program.IsSports);
+        Assert.False(program.IsNews);
+        Assert.False(program.IsKids);
+        Assert.False(program.IsEducational);
+        Assert.Empty(program.Genres);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithNullGenre_AllFlagsFalse()
+    {
+        var program = await BuildProgramWithFields();
+
+        Assert.False(program.IsMovie);
+        Assert.False(program.IsSeries);
+    }
+
+    // ── HD flag ──
+
+    [Fact]
+    public async Task GetProgramsAsync_WithHdFlag_SetsIsHD()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            Entries = new object[]
+            {
+                new
+                {
+                    EventId = 200,
+                    ChannelUuid = "ch-1",
+                    Title = "HD Show",
+                    Start = new DateTimeOffset(startUtc).ToUnixTimeSeconds(),
+                    Stop = new DateTimeOffset(endUtc).ToUnixTimeSeconds(),
+                    Hd = 1
+                }
+            },
+            TotalCount = 1
+        });
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+        var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.True(program.IsHD);
+    }
+
+    // ── Channel with no tags ──
+
+    [Fact]
+    public async Task GetChannelsAsync_WithNoTags_ReturnsEmptyTags()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+
+        var json = """{"entries": [{ "uuid": "ch-1", "name": "No Tags", "number": 1, "enabled": true }], "total": 1}""";
+
+        var responses = new Queue<HttpResponseMessage>();
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[]}""") });
+        var handler = new QueueResponseHandler(responses);
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+        var result = (await sut.GetChannelsAsync(CancellationToken.None)).Single();
+
+        Assert.Empty(result.Tags!);
+        Assert.Null(result.ChannelGroup);
+    }
+
+    // ── Channel with whitespace tag IDs ──
+
+    [Fact]
+    public async Task GetChannelsAsync_WithWhitespaceTagIds_FiltersThemOut()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+
+        var json = """{"entries": [{ "uuid": "ch-1", "name": "WS Tags", "number": 1, "enabled": true, "tags": ["", "  ", "valid-tag"] }], "total": 1}""";
+
+        var responses = new Queue<HttpResponseMessage>();
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[{"key":"valid-tag","val":"News"}]}""") });
+        var handler = new QueueResponseHandler(responses);
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+        var result = (await sut.GetChannelsAsync(CancellationToken.None)).Single();
+
+        Assert.Single(result.Tags!);
+        Assert.Contains("News", result.Tags!);
+    }
+
+    // ── Stereo mode null (no field) ──
+
+    [Fact]
+    public async Task GetProgramsAsync_WithNoStereoField_AudioIsNull()
+    {
+        var program = await BuildProgramWithFields();
+
+        Assert.Null(program.Audio);
+    }
+
+    // ── EpisodeTitle / Subtitle ──
+
+    [Fact]
+    public async Task GetProgramsAsync_WithSubtitle_SetsEpisodeTitle()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            Entries = new object[]
+            {
+                new
+                {
+                    EventId = 300,
+                    ChannelUuid = "ch-1",
+                    Title = "Main Title",
+                    Subtitle = "Episode Subtitle",
+                    Start = new DateTimeOffset(startUtc).ToUnixTimeSeconds(),
+                    Stop = new DateTimeOffset(endUtc).ToUnixTimeSeconds()
+                }
+            },
+            TotalCount = 1
+        });
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+        var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.Equal("Episode Subtitle", program.EpisodeTitle);
+    }
+
+    // ── RatingLabel → OfficialRating ──
+
+    [Fact]
+    public async Task GetProgramsAsync_WithRatingLabel_SetsOfficialRating()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            Entries = new object[]
+            {
+                new
+                {
+                    EventId = 301,
+                    ChannelUuid = "ch-1",
+                    Title = "Rated Show",
+                    RatingLabel = "R",
+                    Start = new DateTimeOffset(startUtc).ToUnixTimeSeconds(),
+                    Stop = new DateTimeOffset(endUtc).ToUnixTimeSeconds()
+                }
+            },
+            TotalCount = 1
+        });
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+        var program = (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.Equal("R", program.OfficialRating);
+    }
+
+    // ── Helper methods for compact test setup ──
+
+    private async Task<MediaBrowser.Controller.LiveTv.ProgramInfo> BuildProgramWithCategories(params string[] categories)
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            Entries = new object[]
+            {
+                new
+                {
+                    EventId = 500,
+                    ChannelUuid = "ch-1",
+                    Title = "Category Test",
+                    Start = new DateTimeOffset(startUtc).ToUnixTimeSeconds(),
+                    Stop = new DateTimeOffset(endUtc).ToUnixTimeSeconds(),
+                    Category = categories
+                }
+            },
+            TotalCount = 1
+        });
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+        return (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+    }
+
+    private async Task<MediaBrowser.Controller.LiveTv.ProgramInfo> BuildProgramWithFields(
+        string? serieslinkUri = null,
+        string? episodeUri = null,
+        string? image = null,
+        string? channelIcon = null,
+        int[]? genres = null,
+        long? firstAired = null,
+        int copyrightYear = 0,
+        PluginConfiguration? config = null)
+    {
+        config ??= new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+        var startUtc = new DateTime(2026, 4, 8, 20, 0, 0, DateTimeKind.Utc);
+        var endUtc = startUtc.AddHours(1);
+
+        var entry = new Dictionary<string, object?>
+        {
+            { "eventId", 600 },
+            { "channelUuid", "ch-1" },
+            { "title", "Field Test" },
+            { "start", new DateTimeOffset(startUtc).ToUnixTimeSeconds() },
+            { "stop", new DateTimeOffset(endUtc).ToUnixTimeSeconds() },
+        };
+
+        if (serieslinkUri != null) entry["serieslinkUri"] = serieslinkUri;
+        if (episodeUri != null) entry["episodeUri"] = episodeUri;
+        if (image != null) entry["image"] = image;
+        if (channelIcon != null) entry["channelIcon"] = channelIcon;
+        if (genres != null) entry["genre"] = genres;
+        if (firstAired.HasValue) entry["first_aired"] = firstAired.Value;
+        if (copyrightYear > 0) entry["copyright_year"] = copyrightYear;
+
+        var payload = JsonSerializer.Serialize(new { entries = new[] { entry }, totalCount = 1 });
+
+        var handler = new FixedResponseHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns("http://tvh/epg");
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+        return (await sut.GetProgramsAsync("ch-1", startUtc.AddMinutes(-1), endUtc.AddMinutes(1), CancellationToken.None)).Single();
+    }
+
     private sealed class QueueResponseHandler : HttpMessageHandler
     {
         private readonly Queue<HttpResponseMessage> _queue;
