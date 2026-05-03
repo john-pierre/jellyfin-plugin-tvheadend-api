@@ -119,9 +119,11 @@ public sealed class RelayTimingContext
         var sessionDuration = RelayType == RelayType.Stream ? totalMs : (double?)null;
         var avgBps = totalMs > 0 && BytesSent > 0 ? BytesSent / (totalMs / 1000.0) : (double?)null;
 
-        var outcome = FailureReason == RelayFailureReason.None
-            ? (ClientCancelled ? "cancelled" : "success")
-            : "failure";
+        var outcome = ClientCancelled
+            ? "cancelled"
+            : FailureReason == RelayFailureReason.None || FailureReason == RelayFailureReason.ClientCancelled
+                ? "success"
+                : "failure";
 
         return new RelayRequestMetric
         {

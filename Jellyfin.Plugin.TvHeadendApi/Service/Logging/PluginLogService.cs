@@ -272,6 +272,30 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
         }
     }
 
+    /// <inheritdoc />
+    public int ClearAll()
+    {
+        if (!_dbHealthService.IsAvailable)
+        {
+            return 0;
+        }
+
+        try
+        {
+            using var db = new ViewingSessionContext(GetDbContextOptions());
+            var count = db.PluginLogEntries.Count();
+            db.PluginLogEntries.RemoveRange(db.PluginLogEntries);
+            db.SaveChanges();
+            _logger.LogInformation("Cleared {Count} log entries.", count);
+            return count;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clear plugin log entries");
+            return 0;
+        }
+    }
+
     Task IHostedService.StartAsync(CancellationToken cancellationToken)
     {
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

@@ -192,6 +192,78 @@ internal sealed class RelayTokenRepository : IRelayTokenRepository, IDisposable
         // No local resources to dispose — write coordination is centralized.
     }
 
+    /// <inheritdoc />
+    public async Task<RelayTokenStatistics> GetTokenStatisticsAsync(CancellationToken cancellationToken)
+    {
+        if (!_dbHealthService.IsAvailable)
+        {
+            return new RelayTokenStatistics();
+        }
+
+        using var db = CreateContext();
+        var now = DateTime.UtcNow;
+        var all = await db.RelayTokens.AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        return new RelayTokenStatistics
+        {
+            TotalCount = all.Count,
+            ActiveStreamTokens = all.Count(t => t.RelayType == "stream" && !t.Revoked && t.ExpiresAtUtc > now),
+            ActiveImageTokens = all.Count(t => t.RelayType == "image" && !t.Revoked && t.ExpiresAtUtc > now),
+            ExpiredCount = all.Count(t => t.ExpiresAtUtc <= now && !t.Revoked),
+            RevokedCount = all.Count(t => t.Revoked),
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<int> RevokeAllAsync(string reason, CancellationToken cancellationToken)
+    {
+        if (!_dbHealthService.IsAvailable)
+        {
+            return 0;
+        }
+
+        using var writeLock = await _writeCoordinator.AcquireWriteAsync(cancellationToken).ConfigureAwait(false);
+        using var db = CreateContext();
+        var now = DateTime.UtcNow;
+        var active = await db.RelayTokens
+            .Where(t => !t.Revoked)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var token in active)
+        {
+            token.Revoked = true;
+            token.RevokedAtUtc = now;
+            token.RevokedReason = reason;
+        }
+
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return active.Count;
+    }
+
+    /// <inheritdoc />
+    public async Task<RelayTokenRecord?> FindActiveImageTokenForUserAsync(string? userId, CancellationToken cancellationToken)
+    {
+        if (!_dbHealthService.IsAvailable)
+        {
+            return null;
+        }
+
+        var now = DateTime.UtcNow;
+        using var db = CreateContext();
+
+        // Find the most recently created, non-revoked, non-expired image token for this user.
+        return await db.RelayTokens
+            .AsNoTracking()
+            .Where(t => t.RelayType == "image"
+                && !t.Revoked
+                && t.ExpiresAtUtc > now
+                && t.UserId == userId)
+            .OrderByDescending(t => t.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private static DatabaseProvider CreateNullProvider()
     {
         return new DatabaseProvider(new Storage.DataFolderPathProvider(() => null));

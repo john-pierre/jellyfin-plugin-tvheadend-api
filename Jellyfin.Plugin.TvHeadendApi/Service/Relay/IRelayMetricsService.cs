@@ -27,4 +27,10 @@ public interface IRelayMetricsService
     /// <param name="hours">Number of hours to look back. 0 = all time.</param>
     /// <returns>Aggregated metrics summary.</returns>
     RelayMetricsSummary GetSummary(int hours);
+
+    /// <summary>
+    /// Deletes all persisted relay metrics.
+    /// </summary>
+    /// <returns>The number of deleted rows.</returns>
+    int ClearAll();
 }

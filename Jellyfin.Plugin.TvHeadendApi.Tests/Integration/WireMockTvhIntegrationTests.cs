@@ -553,6 +553,8 @@ public sealed class WireMockTvhIntegrationTests : IDisposable
             .Returns<string>(path => $"http://jellyfin:8096/api/tvheadend/images/{path}");
         mock.Setup(x => x.BuildStreamRelayUrl(It.IsAny<string>(), It.IsAny<string?>()))
             .Returns<string, string?>((ch, _) => $"http://jellyfin:8096/api/tvheadend/stream/{ch}");
+        mock.Setup(x => x.BuildTokenizedImageRelayUrlAsync(It.IsAny<string>(), It.IsAny<Jellyfin.Plugin.TvHeadendApi.Model.Relay.MediaKind?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, Jellyfin.Plugin.TvHeadendApi.Model.Relay.MediaKind?, string?, CancellationToken>((path, _, _, _) => Task.FromResult($"http://jellyfin:8096/api/tvheadend/images/{path}"));
         return mock.Object;
     }
 }

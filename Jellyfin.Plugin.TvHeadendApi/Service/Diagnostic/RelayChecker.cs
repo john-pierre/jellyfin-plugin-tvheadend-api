@@ -39,5 +39,18 @@ internal static class RelayChecker
                 ? $"Relay enabled with custom host: {relayHostOverride}"
                 : "Relay enabled with auto-detected Jellyfin host.",
         });
+
+        if (!hasOverride)
+        {
+            report.Checks.Add(new DiagnoseCheck
+            {
+                Category = "Relay",
+                Name = "Jellyfin Host Override",
+                Status = "WARNING",
+                Message = "No Jellyfin Host Override configured. The plugin will auto-detect the host, which may be incorrect in Docker or reverse-proxy setups.",
+                Recommendation = "Set 'Jellyfin Host Override' in the Relay &amp; Security tab to the externally reachable Jellyfin URL (e.g. http://192.168.1.10:8096).",
+            });
+            report.Warnings.Add("Jellyfin Host Override is not set — auto-detected host may be wrong in Docker or reverse-proxy environments.");
+        }
     }
 }

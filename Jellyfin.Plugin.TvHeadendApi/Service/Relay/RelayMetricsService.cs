@@ -112,6 +112,31 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         ThreadPool.QueueUserWorkItem(_ => PersistMetricSync(metric!));
     }
 
+    /// <inheritdoc />
+    public int ClearAll()
+    {
+        if (!_dbHealthService.IsAvailable)
+        {
+            return 0;
+        }
+
+        using var writeLock = _writeCoordinator.AcquireWrite();
+        try
+        {
+            using var db = CreateContext();
+            var count = db.RelayRequestMetrics.Count();
+            db.RelayRequestMetrics.RemoveRange(db.RelayRequestMetrics);
+            db.SaveChanges();
+            _logger.LogInformation("Cleared {Count} relay metrics.", count);
+            return count;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clear relay metrics.");
+            return 0;
+        }
+    }
+
     // ── IRelayMetricsService — Read / Aggregation ───────────────────
 
     /// <inheritdoc />
@@ -175,7 +200,7 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         }
 
         summary.TotalRequests = rows.Count;
-        summary.SuccessfulRequests = rows.Count(r => r.FinalOutcome == "success");
+        summary.SuccessfulRequests = rows.Count(r => r.FinalOutcome == "success" || r.FinalOutcome == "cancelled");
         summary.FailedRequests = rows.Count(r => r.FinalOutcome == "failure");
         summary.CancelledRequests = rows.Count(r => r.FinalOutcome == "cancelled");
         summary.SuccessRate = summary.TotalRequests > 0
@@ -225,9 +250,10 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
             : 0;
         summary.NotModified304Count = imageRows.Count(r => r.WasNotModified304);
 
-        // Errors
+        // Errors — exclude ClientCancelled (normal user behavior, not a failure)
         summary.TopFailureReasons = rows
-            .Where(r => r.FailureReason != nameof(RelayFailureReason.None))
+            .Where(r => r.FailureReason != nameof(RelayFailureReason.None)
+                     && r.FailureReason != nameof(RelayFailureReason.ClientCancelled))
             .GroupBy(r => r.FailureReason)
             .OrderByDescending(g => g.Count())
             .Take(10)
@@ -281,7 +307,7 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
                 {
                     HourUtc = g.Key,
                     Requests = g.Count(),
-                    Failures = g.Count(r => r.FinalOutcome == "failure"),
+                    Failures = g.Count(r => r.FinalOutcome == "failure" && !r.ClientCancelled),
                     AvgStartupLatencyMs = SafeAverage(g.ToList(), r => r.StartupLatencyMs),
                     BytesTransferred = g.Sum(r => r.BytesSent),
                     CacheHitRatio = imgInBucket.Count > 0

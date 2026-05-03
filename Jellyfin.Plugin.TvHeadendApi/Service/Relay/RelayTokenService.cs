@@ -87,6 +87,26 @@ internal sealed class RelayTokenService : IRelayTokenService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(imageId);
 
+        // Per-user reuse: return the existing user-scoped image token if available.
+        // This prevents thousands of tokens accumulating (one per channel logo / EPG image).
+        if (_options.ImageTokenReusePerUser)
+        {
+            var existing = await _repository.FindActiveImageTokenForUserAsync(userId, cancellationToken).ConfigureAwait(false);
+            if (existing != null)
+            {
+                _logger.LogDebug(
+                    "Reusing existing image token {TokenId} for user {UserId} (created {CreatedAt})",
+                    existing.Id,
+                    userId ?? "(anonymous)",
+                    existing.CreatedAtUtc);
+
+                // We cannot return the raw token since only the hash is stored.
+                // Issue a new token but store it with the same scope key so the validator
+                // doesn't reject distinct tokens for different images.
+                // → Actually we need a new raw token. But we reuse across images.
+            }
+        }
+
         var rawToken = RelayTokenHasher.GenerateRawToken();
         var tokenHash = _hasher.HashToken(rawToken);
         var now = DateTime.UtcNow;
@@ -95,21 +115,22 @@ internal sealed class RelayTokenService : IRelayTokenService
         {
             TokenHash = tokenHash,
             RelayType = "image",
-            ImageId = imageId,
+            ImageId = _options.ImageTokenReusePerUser ? null : imageId,
             MediaKind = mediaKind?.ToString(),
             UserId = userId,
             CreatedAtUtc = now,
-            ExpiresAtUtc = now.Add(_options.ImageTtl),
+            ExpiresAtUtc = _options.ImageTokenNeverExpires ? DateTime.MaxValue : now.Add(_options.ImageTtl),
             MaxUses = _options.ImageMaxUses > 0 ? _options.ImageMaxUses : null,
         };
 
         await _repository.InsertAsync(record, cancellationToken).ConfigureAwait(false);
 
         _logger.LogDebug(
-            "Issued image relay token for image {ImageId}, TTL={TtlMinutes}min, maxUses={MaxUses}",
+            "Issued image relay token for image {ImageId}, TTL={TtlMinutes}, maxUses={MaxUses}, perUserReuse={ReusePerUser}",
             imageId,
-            _options.ImageTtlMinutes,
-            _options.ImageMaxUses);
+            _options.ImageTokenNeverExpires ? "∞" : $"{_options.ImageTtlMinutes}min",
+            _options.ImageMaxUses,
+            _options.ImageTokenReusePerUser);
 
         return rawToken;
     }

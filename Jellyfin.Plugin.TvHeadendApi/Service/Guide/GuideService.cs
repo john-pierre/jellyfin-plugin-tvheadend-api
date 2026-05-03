@@ -151,36 +151,44 @@ internal sealed class GuideService : IGuideService
 
             var channelTagNames = await GetChannelTagsAsync(cancellationToken).ConfigureAwait(false);
 
-            return result.Entries
-                .Where(channel => channel.Enabled)
-                .Select(channel =>
+            var channels = new List<ChannelInfo>();
+            foreach (var channel in result.Entries.Where(ch => ch.Enabled))
+            {
+                var resolvedTags = (channel.Tags ?? Array.Empty<string>())
+                    .Where(tagId => !string.IsNullOrWhiteSpace(tagId))
+                    .Select(tagId => channelTagNames.TryGetValue(tagId, out var tagName) && !string.IsNullOrWhiteSpace(tagName)
+                        ? tagName
+                        : tagId)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                var channelGroup = !string.IsNullOrWhiteSpace(channel.Bouquet)
+                    ? channel.Bouquet
+                    : resolvedTags.FirstOrDefault();
+
+                string? imageUrl = null;
+                if (!string.IsNullOrWhiteSpace(channel.IconPublicUrl))
                 {
-                    var resolvedTags = (channel.Tags ?? Array.Empty<string>())
-                        .Where(tagId => !string.IsNullOrWhiteSpace(tagId))
-                        .Select(tagId => channelTagNames.TryGetValue(tagId, out var tagName) && !string.IsNullOrWhiteSpace(tagName)
-                            ? tagName
-                            : tagId)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToArray();
+                    imageUrl = await _relayUrlBuilder.BuildTokenizedImageRelayUrlAsync(
+                        channel.IconPublicUrl.TrimStart('/'),
+                        Model.Relay.MediaKind.Logo,
+                        null,
+                        cancellationToken).ConfigureAwait(false);
+                }
 
-                    var channelGroup = !string.IsNullOrWhiteSpace(channel.Bouquet)
-                        ? channel.Bouquet
-                        : resolvedTags.FirstOrDefault();
+                channels.Add(new ChannelInfo
+                {
+                    Id = channel.Uuid,
+                    Name = channel.Name,
+                    Number = FormatChannelNumber(channel.Number),
+                    ImageUrl = imageUrl,
+                    HasImage = !string.IsNullOrWhiteSpace(channel.IconPublicUrl),
+                    Tags = resolvedTags,
+                    ChannelGroup = channelGroup,
+                });
+            }
 
-                    return new ChannelInfo
-                    {
-                        Id = channel.Uuid,
-                        Name = channel.Name,
-                        Number = FormatChannelNumber(channel.Number),
-                        ImageUrl = !string.IsNullOrWhiteSpace(channel.IconPublicUrl)
-                            ? _relayUrlBuilder.BuildImageRelayUrl(channel.IconPublicUrl.TrimStart('/'))
-                            : null,
-                        HasImage = !string.IsNullOrWhiteSpace(channel.IconPublicUrl),
-                        Tags = resolvedTags,
-                        ChannelGroup = channelGroup,
-                    };
-                })
-                .ToList();
+            return channels;
         }
         catch (Exception ex)
         {
@@ -220,84 +228,90 @@ internal sealed class GuideService : IGuideService
                 r => r.TotalCount,
                 _logger,
                 cancellationToken).ConfigureAwait(false);
-            return result?.Entries?
+            var filteredEntries = result?.Entries?
                 .Where(entry =>
                 {
                     var programStart = DateTimeOffset.FromUnixTimeSeconds(entry.Start).UtcDateTime;
                     var programEnd = DateTimeOffset.FromUnixTimeSeconds(entry.Stop).UtcDateTime;
                     return entry.ChannelUuid == channelId && programStart < endDateUtc && programEnd > startDateUtc;
                 })
-                .Select(entry =>
+                .ToList();
+
+            if (filteredEntries == null || filteredEntries.Count == 0)
+            {
+                return Enumerable.Empty<ProgramInfo>();
+            }
+
+            var programs = new List<ProgramInfo>(filteredEntries.Count);
+            foreach (var entry in filteredEntries)
+            {
+                string? imageUrl = null;
+                if (!string.IsNullOrWhiteSpace(entry.Image))
                 {
-                    string? imageUrl = null;
-                    if (!string.IsNullOrWhiteSpace(entry.Image))
-                    {
-                        imageUrl = ResolveTvhImageUrl(config, entry.Image);
-                    }
-                    else if (!string.IsNullOrWhiteSpace(entry.ChannelIcon))
-                    {
-                        imageUrl = ResolveTvhImageUrl(config, entry.ChannelIcon);
-                    }
+                    imageUrl = await ResolveTvhImageUrlAsync(config, entry.Image, cancellationToken).ConfigureAwait(false);
+                }
+                else if (!string.IsNullOrWhiteSpace(entry.ChannelIcon))
+                {
+                    imageUrl = await ResolveTvhImageUrlAsync(config, entry.ChannelIcon, cancellationToken).ConfigureAwait(false);
+                }
 
-                    var ratingLabelIconUrl = string.IsNullOrWhiteSpace(entry.RatingLabelIcon)
-                        ? null
-                        : ResolveTvhImageUrl(config, entry.RatingLabelIcon);
+                var ratingLabelIconUrl = string.IsNullOrWhiteSpace(entry.RatingLabelIcon)
+                    ? null
+                    : await ResolveTvhImageUrlAsync(config, entry.RatingLabelIcon, cancellationToken).ConfigureAwait(false);
 
-                    var providerHints = config.EnableJellyfinMetadataEnrichment
-                        ? BuildProviderHints(entry)
-                        : null;
+                var providerHints = config.EnableJellyfinMetadataEnrichment
+                    ? BuildProviderHints(entry)
+                    : null;
 
-                    var categories = entry.Category ?? Array.Empty<string>();
-                    var isPremiere = HasCategoryFlag(categories, "premiere", "first run", "new");
-                    var isLive = HasCategoryFlag(categories, "live");
-                    var isRepeat = !isPremiere && (entry.IsNew == 0 || HasCategoryFlag(categories, "repeat", "rerun", "wiederholung"));
+                var categories = entry.Category ?? Array.Empty<string>();
+                var isPremiere = HasCategoryFlag(categories, "premiere", "first run", "new");
+                var isLive = HasCategoryFlag(categories, "live");
+                var isRepeat = !isPremiere && (entry.IsNew == 0 || HasCategoryFlag(categories, "repeat", "rerun", "wiederholung"));
 
-                    DateTime? originalAirDate = null;
-                    if (entry.FirstAired.HasValue && entry.FirstAired.Value > 0)
-                    {
-                        originalAirDate = DateTimeOffset.FromUnixTimeSeconds(entry.FirstAired.Value).UtcDateTime;
-                    }
+                DateTime? originalAirDate = null;
+                if (entry.FirstAired.HasValue && entry.FirstAired.Value > 0)
+                {
+                    originalAirDate = DateTimeOffset.FromUnixTimeSeconds(entry.FirstAired.Value).UtcDateTime;
+                }
 
-                    return new ProgramInfo
-                    {
-                        Id = entry.EventId.ToString(CultureInfo.InvariantCulture),
-                        ChannelId = entry.ChannelUuid,
-                        Name = entry.Title,
-                        Overview = entry.Description,
-                        ShortOverview = entry.Summary,
-                        StartDate = DateTimeOffset.FromUnixTimeSeconds(entry.Start).UtcDateTime,
-                        EndDate = DateTimeOffset.FromUnixTimeSeconds(entry.Stop).UtcDateTime,
-                        Genres = entry.Genre?.Select(genreId => EtsiGenreMapping.TryGetValue(genreId, out var genreDescription) ? genreDescription : $"Unknown ({genreId})").ToList() ?? new List<string>(),
-                        IsHD = entry.IsHD == 1,
-                        EpisodeTitle = entry.Subtitle,
-                        OfficialRating = entry.RatingLabel,
-                        ImageUrl = imageUrl,
-                        LogoImageUrl = ratingLabelIconUrl,
-                        HasImage = !string.IsNullOrEmpty(imageUrl),
-                        IsMovie = entry.Genre?.Any(genreId => genreId >= 16 && genreId <= 24) ?? false,
-                        IsSports = entry.Genre?.Any(genreId => genreId >= 64 && genreId <= 75) ?? false,
-                        IsNews = entry.Genre?.Any(genreId => genreId >= 32 && genreId <= 36) ?? false,
-                        IsKids = entry.Genre?.Any(genreId => genreId >= 80 && genreId <= 83) ?? false,
-                        IsEducational = entry.Genre?.Any(genreId => genreId >= 144 && genreId <= 150) ?? false,
-                        IsLive = isLive,
-                        IsPremiere = isPremiere,
-                        IsRepeat = isRepeat,
-                        OriginalAirDate = originalAirDate,
-                        Audio = MapProgramAudio(entry.Stereo),
-                        // IsSeries: prefer SerieslinkUri presence (definitive), fall back to genre 48-51 (Show/Game Show)
-                        IsSeries = !string.IsNullOrWhiteSpace(entry.SerieslinkUri)
-                            || (entry.Genre?.Any(genreId => genreId >= 48 && genreId <= 51) ?? false),
-                        // SeriesId: use SerieslinkUri as a stable identifier for series-timer linking
-                        SeriesId = string.IsNullOrWhiteSpace(entry.SerieslinkUri) ? null : entry.SerieslinkUri,
-                        ShowId = string.IsNullOrWhiteSpace(entry.SerieslinkUri) ? null : entry.SerieslinkUri,
-                        HomePageUrl = Uri.TryCreate(entry.EpisodeUri, UriKind.Absolute, out var episodeUri) ? episodeUri.ToString() : null,
-                        ProviderIds = providerHints?.ProviderIds ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-                        SeriesProviderIds = providerHints?.SeriesProviderIds ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-                        // ProductionYear from TVH copyright_year (0 = unknown)
-                        ProductionYear = entry.CopyrightYear > 0 ? entry.CopyrightYear : null,
-                    };
-                })
-                .ToList() ?? Enumerable.Empty<ProgramInfo>();
+                programs.Add(new ProgramInfo
+                {
+                    Id = entry.EventId.ToString(CultureInfo.InvariantCulture),
+                    ChannelId = entry.ChannelUuid,
+                    Name = entry.Title,
+                    Overview = entry.Description,
+                    ShortOverview = entry.Summary,
+                    StartDate = DateTimeOffset.FromUnixTimeSeconds(entry.Start).UtcDateTime,
+                    EndDate = DateTimeOffset.FromUnixTimeSeconds(entry.Stop).UtcDateTime,
+                    Genres = entry.Genre?.Select(genreId => EtsiGenreMapping.TryGetValue(genreId, out var genreDescription) ? genreDescription : $"Unknown ({genreId})").ToList() ?? new List<string>(),
+                    IsHD = entry.IsHD == 1,
+                    EpisodeTitle = entry.Subtitle,
+                    OfficialRating = entry.RatingLabel,
+                    ImageUrl = imageUrl,
+                    LogoImageUrl = ratingLabelIconUrl,
+                    HasImage = !string.IsNullOrEmpty(imageUrl),
+                    IsMovie = entry.Genre?.Any(genreId => genreId >= 16 && genreId <= 24) ?? false,
+                    IsSports = entry.Genre?.Any(genreId => genreId >= 64 && genreId <= 75) ?? false,
+                    IsNews = entry.Genre?.Any(genreId => genreId >= 32 && genreId <= 36) ?? false,
+                    IsKids = entry.Genre?.Any(genreId => genreId >= 80 && genreId <= 83) ?? false,
+                    IsEducational = entry.Genre?.Any(genreId => genreId >= 144 && genreId <= 150) ?? false,
+                    IsLive = isLive,
+                    IsPremiere = isPremiere,
+                    IsRepeat = isRepeat,
+                    OriginalAirDate = originalAirDate,
+                    Audio = MapProgramAudio(entry.Stereo),
+                    IsSeries = !string.IsNullOrWhiteSpace(entry.SerieslinkUri)
+                        || (entry.Genre?.Any(genreId => genreId >= 48 && genreId <= 51) ?? false),
+                    SeriesId = string.IsNullOrWhiteSpace(entry.SerieslinkUri) ? null : entry.SerieslinkUri,
+                    ShowId = string.IsNullOrWhiteSpace(entry.SerieslinkUri) ? null : entry.SerieslinkUri,
+                    HomePageUrl = Uri.TryCreate(entry.EpisodeUri, UriKind.Absolute, out var episodeUri) ? episodeUri.ToString() : null,
+                    ProviderIds = providerHints?.ProviderIds ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                    SeriesProviderIds = providerHints?.SeriesProviderIds ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                    ProductionYear = entry.CopyrightYear > 0 ? entry.CopyrightYear : null,
+                });
+            }
+
+            return programs;
         }
         catch (Exception ex)
         {
@@ -401,7 +415,7 @@ internal sealed class GuideService : IGuideService
         return "0";
     }
 
-    private string ResolveTvhImageUrl(PluginConfiguration config, string rawImagePath)
+    private async Task<string> ResolveTvhImageUrlAsync(PluginConfiguration config, string rawImagePath, CancellationToken cancellationToken)
     {
         var raw = rawImagePath.Trim();
         var normalized = raw.TrimStart('/');
@@ -417,9 +431,14 @@ internal sealed class GuideService : IGuideService
             return raw;
         }
 
-        // All TVHeadend-relative image paths are routed through the relay endpoint
-        // so that TVHeadend credentials stay server-side.
-        return _relayUrlBuilder.BuildImageRelayUrl(normalized);
+        // All TVHeadend-relative image paths are routed through the token-secured relay endpoint
+        // so that TVHeadend credentials stay server-side and Jellyfin's ProviderManager can
+        // fetch the image without Jellyfin auth headers (the token provides authorization).
+        return await _relayUrlBuilder.BuildTokenizedImageRelayUrlAsync(
+            normalized,
+            null,
+            null,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static ProviderHintSet BuildProviderHints(EpgEventsGridEntry entry)

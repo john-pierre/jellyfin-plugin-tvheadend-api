@@ -1172,6 +1172,8 @@ public sealed class EndToEndIntegrationTests : IDisposable
 
                 return Task.FromResult(url);
             });
+        mock.Setup(x => x.BuildTokenizedImageRelayUrlAsync(It.IsAny<string>(), It.IsAny<Jellyfin.Plugin.TvHeadendApi.Model.Relay.MediaKind?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, Jellyfin.Plugin.TvHeadendApi.Model.Relay.MediaKind?, string?, CancellationToken>((path, _, _, _) => Task.FromResult($"http://jellyfin:8096/api/tvheadend/images/{path}"));
         return mock.Object;
     }
 

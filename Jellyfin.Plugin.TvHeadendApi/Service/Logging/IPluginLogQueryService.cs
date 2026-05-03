@@ -41,4 +41,10 @@ public interface IPluginLogQueryService
         string? level = null,
         string? logType = null,
         string? search = null);
+
+    /// <summary>
+    /// Deletes all persisted log entries.
+    /// </summary>
+    /// <returns>The number of deleted rows.</returns>
+    int ClearAll();
 }

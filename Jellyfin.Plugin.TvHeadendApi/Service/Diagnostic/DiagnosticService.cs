@@ -35,6 +35,7 @@ internal sealed class DiagnosticService : IDiagnosticService
     private readonly IApiClient _tvheadendApiClient;
     private readonly IUrlBuilder _tvheadendUrlBuilder;
     private readonly CachePathProvider _cachePathProvider;
+    private readonly IMediaInfoCacheService? _mediaInfoCacheService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DiagnosticService"/> class.
@@ -46,6 +47,7 @@ internal sealed class DiagnosticService : IDiagnosticService
     /// <param name="tvheadendApiClient">TVHeadend API client.</param>
     /// <param name="tvheadendUrlBuilder">TVHeadend URL builder.</param>
     /// <param name="cachePathProvider">Provider for the plugin cache path.</param>
+    /// <param name="mediaInfoCacheService">Optional: cache service for proper cache file name computation.</param>
     public DiagnosticService(
         ILogger<DiagnosticService> logger,
         IServerConfigurationManager serverConfigManager,
@@ -53,7 +55,8 @@ internal sealed class DiagnosticService : IDiagnosticService
         IProfileResolver streamProfileResolver,
         IApiClient tvheadendApiClient,
         IUrlBuilder tvheadendUrlBuilder,
-        CachePathProvider cachePathProvider)
+        CachePathProvider cachePathProvider,
+        IMediaInfoCacheService? mediaInfoCacheService = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _serverConfigManager = serverConfigManager ?? throw new ArgumentNullException(nameof(serverConfigManager));
@@ -62,6 +65,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
         _tvheadendUrlBuilder = tvheadendUrlBuilder ?? throw new ArgumentNullException(nameof(tvheadendUrlBuilder));
         _cachePathProvider = cachePathProvider ?? throw new ArgumentNullException(nameof(cachePathProvider));
+        _mediaInfoCacheService = mediaInfoCacheService;
     }
 
     /// <inheritdoc />
@@ -433,43 +437,21 @@ internal sealed class DiagnosticService : IDiagnosticService
                 ? Path.Combine(cachePath, "mediainfo")
                 : null;
 
-            if (mediaInfoDir != null && Directory.Exists(mediaInfoDir) && allChannelUuids.Count > 0)
+            if (mediaInfoDir != null && Directory.Exists(mediaInfoDir) && allChannelUuids.Count > 0 && _mediaInfoCacheService != null)
             {
-                var channelIdRegex = new System.Text.RegularExpressions.Regex(
-                    @"stream/channel/([0-9a-f]{32})",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-                var cachedChannels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var files = Directory.GetFiles(mediaInfoDir, "*.json");
-                foreach (var file in files)
+                var cachedCount = 0;
+                foreach (var channelUuid in allChannelUuids)
                 {
-                    try
+                    // Use the same deterministic cache file name computation that
+                    // MediaInfoCacheService uses when writing/reading cache files.
+                    var cacheFileName = _mediaInfoCacheService.BuildChannelCacheFileName(channelUuid, channelUuid);
+                    var cacheFilePath = Path.Combine(mediaInfoDir, cacheFileName);
+                    if (File.Exists(cacheFilePath))
                     {
-                        var fileJson = File.ReadAllText(file);
-                        using var fileDoc = JsonDocument.Parse(fileJson);
-                        if (!fileDoc.RootElement.TryGetProperty("Path", out var pathEl))
-                        {
-                            continue;
-                        }
-
-                        var path = pathEl.GetString();
-                        if (string.IsNullOrWhiteSpace(path))
-                        {
-                            continue;
-                        }
-
-                        var match = channelIdRegex.Match(path);
-                        if (match.Success && allChannelUuids.Contains(match.Groups[1].Value))
-                        {
-                            cachedChannels.Add(match.Groups[1].Value);
-                        }
-                    }
-                    catch
-                    {
+                        cachedCount++;
                     }
                 }
 
-                int cachedCount = cachedChannels.Count;
                 report.CacheStatus = $"{cachedCount}/{allChannelUuids.Count} channels have a Jellyfin mediainfo probe cache file.";
 
                 var cacheStatus = cachedCount == 0 ? "WARNING" : cachedCount < allChannelUuids.Count ? "INFO" : "OK";
@@ -492,7 +474,9 @@ internal sealed class DiagnosticService : IDiagnosticService
                     ? "Mediainfo cache directory does not exist yet. Tune to a channel to create it."
                     : allChannelUuids.Count == 0
                         ? "No channel UUIDs available to check probe cache."
-                        : "Cache status not available (missing cache path).";
+                        : _mediaInfoCacheService == null
+                            ? "Cache status not available (media info cache service not available)."
+                            : "Cache status not available (missing cache path).";
                 report.Checks.Add(new DiagnoseCheck { Category = "Cache", Name = "Probe Cache Coverage", Status = "INFO", Message = report.CacheStatus });
             }
         }

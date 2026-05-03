@@ -62,4 +62,28 @@ public interface IRelayTokenRepository
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task representing the async operation.</returns>
     Task UpdateValidationMetadataAsync(long id, string result, string? failureReason, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns token counts grouped by relay type and status (active / expired / revoked).
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Aggregated token statistics.</returns>
+    Task<RelayTokenStatistics> GetTokenStatisticsAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Revokes all non-revoked tokens. Returns the number of tokens revoked.
+    /// </summary>
+    /// <param name="reason">The revocation reason.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of tokens revoked.</returns>
+    Task<int> RevokeAllAsync(string reason, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Finds an existing active (non-expired, non-revoked) image token for the given user.
+    /// Used when per-user image token reuse is enabled.
+    /// </summary>
+    /// <param name="userId">The Jellyfin user ID, or null for anonymous.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The matching token record, or null if none found.</returns>
+    Task<RelayTokenRecord?> FindActiveImageTokenForUserAsync(string? userId, CancellationToken cancellationToken);
 }

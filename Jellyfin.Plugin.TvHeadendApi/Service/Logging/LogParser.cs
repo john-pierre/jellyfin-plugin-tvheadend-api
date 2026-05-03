@@ -69,6 +69,100 @@ public static class LogParser
         "yyyy-MM-dd HH:mm:ss",
     ];
 
+    // ── Content-based level reclassification ────────────────────────
+    // TVHeadend emits many errors/warnings as INFO. These patterns detect
+    // the actual severity from the message content.
+
+    /// <summary>Patterns that indicate an error condition regardless of TVHeadend log level.</summary>
+    private static readonly string[] ErrorPatterns =
+    [
+        "muxer reported errors",
+        "continuity counter error",
+        "corrupt input",
+        "exceeds max",
+        "codec frame size is not set",
+        "unhandled error",
+        "ERROR_BIT_COUNT",
+        "unref short failure",
+        "descramble failed",
+        "TS desync",
+        "table timeout",
+        "unable to",
+        "could not",
+        "cannot ",
+        "failed to",
+        "cc error",
+        "scrambled stream",
+        "no free adapter",
+        "no input source",
+        "subscription error",
+        "transport error",
+        "read error",
+        "write error",
+        "pmt error",
+        "invalid pid",
+        "pat error",
+        "stream error",
+        "data timeout",
+        "close timeout",
+        "connection lost",
+        "connection refused",
+        "connection reset",
+        "socket error",
+        "broken pipe",
+        "bad signal",
+        "-- 400",
+        "-- 401",
+        "-- 403",
+        "-- 404",
+        "-- 405",
+        "-- 408",
+        "-- 429",
+        "-- 500",
+        "-- 502",
+        "-- 503",
+        "-- 504",
+    ];
+
+    /// <summary>Patterns that indicate a warning condition regardless of TVHeadend log level.</summary>
+    private static readonly string[] WarningPatterns =
+    [
+        "no quality level set",
+        "using default",
+        "bitrate = 0",
+        "Filtered out",
+        "function not detected",
+        "signal lost",
+        "low snr",
+        "weak signal",
+        "service is encrypted",
+        "PMT incomplete",
+        "dropping frame",
+        "skip frame",
+        "buffer underflow",
+        "buffer overflow",
+        "queue full",
+        "slow reader",
+        "late frame",
+        "discontinuity",
+        "no data",
+        "ts queue delay",
+        "out of memory",
+        "force close",
+        "timeout waiting",
+        "retry",
+        "fallback",
+        "recovering",
+        "degraded",
+        "tune failed",
+        "scan no data",
+        "no mux",
+        "no service",
+        "no transport",
+        "lnb",
+        "timeout",
+    ];
+
     /// <summary>
     /// Parses a single TVHeadend log line into structured components.
     /// </summary>
@@ -141,6 +235,9 @@ public static class LogParser
             result.MessageWithoutTimestamp = remainder.TrimEnd();
         }
 
+        // TVHeadend logs many errors/warnings as INFO — reclassify based on content.
+        ReclassifyByContent(result, remainder);
+
         return result;
     }
 
@@ -207,6 +304,46 @@ public static class LogParser
                 result.Level = "Information";
                 result.LogType = "tvheadend_info";
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Reclassifies the log level based on message content when TVHeadend reports INFO
+    /// but the content indicates an error or warning condition.
+    /// Only promotes (never demotes) the severity level.
+    /// </summary>
+    /// <param name="result">The parse result to potentially reclassify.</param>
+    /// <param name="fullMessage">The full remainder text (category + message) for matching.</param>
+    private static void ReclassifyByContent(LogParseResult result, string fullMessage)
+    {
+        // Only reclassify INFO-level entries — don't demote existing warnings/errors
+        if (result.Level != "Information")
+        {
+            return;
+        }
+
+        var msg = fullMessage;
+
+        // Check for error patterns first (higher severity takes priority)
+        foreach (var pattern in ErrorPatterns)
+        {
+            if (msg.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+            {
+                result.Level = "Error";
+                result.LogType = "tvheadend_error";
+                return;
+            }
+        }
+
+        // Then check for warning patterns
+        foreach (var pattern in WarningPatterns)
+        {
+            if (msg.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+            {
+                result.Level = "Warning";
+                result.LogType = "tvheadend_warning";
+                return;
+            }
         }
     }
 

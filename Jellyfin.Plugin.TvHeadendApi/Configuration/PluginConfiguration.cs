@@ -50,6 +50,9 @@ public class PluginConfiguration : BasePluginConfiguration
         this.PrePaddingSeconds = 5;
         this.PostPaddingSeconds = 5;
         this.RecordingProfile = string.Empty;
+        this.SeriesRecordNewOnly = true;
+        this.SeriesRecordAnyTime = true;
+        this.SeriesRecordAnyChannel = false;
 
         // Statistics
         this.StatisticsRetentionPeriod = StatisticsRetentionPeriod.ThirtyDays;
@@ -62,8 +65,9 @@ public class PluginConfiguration : BasePluginConfiguration
         this.EnableRelayTokenSecurity = true;
         this.StreamTokenTtlSeconds = 120;
         this.StreamTokenMaxUses = 5;
-        this.ImageTokenTtlMinutes = 30;
+        this.ImageTokenTtlMinutes = 0;
         this.ImageTokenMaxUses = 0;
+        this.ImageTokenReusePerUser = true;
         this.EnableTokenReuse = true;
         this.StrictScopeValidation = true;
         this.CleanupExpiredTokensIntervalMinutes = 60;
@@ -302,6 +306,26 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public string RecordingProfile { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether series timers should only record new episodes by default.
+    /// Default: true.
+    /// </summary>
+    public bool SeriesRecordNewOnly { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether series timers should record at any time by default.
+    /// When false, recordings are limited to the original broadcast time window.
+    /// Default: true.
+    /// </summary>
+    public bool SeriesRecordAnyTime { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether series timers should record on any channel by default.
+    /// When false, recordings are limited to the channel of the original program.
+    /// Default: false.
+    /// </summary>
+    public bool SeriesRecordAnyChannel { get; set; }
+
     // ── Relay ──────────────────────────────────────────────────────
 
     /// <summary>
@@ -345,9 +369,17 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>
     /// Gets or sets the time-to-live in minutes for image relay tokens.
-    /// Image tokens typically need a longer TTL than stream tokens to support
-    /// caching-friendly behavior and prevent channel logos from breaking.
-    /// Default: 30.
+    /// A value of <c>0</c> means image tokens never expire (recommended default).
+    /// Any positive value sets the TTL in minutes (minimum enforced: 1 minute).
+    /// <para>
+    /// <strong>⚠ Warning:</strong> Setting a non-zero value causes image tokens to expire.
+    /// Jellyfin caches image URLs (including the embedded token) for a long time and does not
+    /// re-request them on every access. If the token expires before Jellyfin re-fetches from
+    /// the <c>ILiveTvService</c>, channel logos and EPG images will return 401/410 errors.
+    /// Only set a non-zero value if you have a specific security requirement and understand
+    /// the caching implications.
+    /// </para>
+    /// Default: 0 (never expire).
     /// </summary>
     public int ImageTokenTtlMinutes { get; set; }
 
@@ -356,6 +388,19 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Set to 0 for unlimited uses. Default: 0 (unlimited).
     /// </summary>
     public int ImageTokenMaxUses { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a single image token is reused per user.
+    /// When enabled, all image relay URLs for a given user share the same token — preventing
+    /// thousands of tokens from accumulating in the database (one per channel logo / EPG image).
+    /// When disabled, each image gets its own scoped token (more granular but higher DB load).
+    /// <para>
+    /// <strong>⚠ Warning:</strong> Disabling this with many channels and EPG programs causes rapid
+    /// token accumulation. With 100 channels × 50 programs, that is 5000+ tokens per EPG refresh.
+    /// </para>
+    /// Default: true (recommended).
+    /// </summary>
+    public bool ImageTokenReusePerUser { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether token reuse is enabled.

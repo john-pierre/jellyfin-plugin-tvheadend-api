@@ -90,6 +90,8 @@ public class RelayTokenServiceTests
     public async Task IssueImageTokenAsync_ReturnsNonEmptyToken()
     {
         var repo = new Mock<IRelayTokenRepository>();
+        repo.Setup(r => r.FindActiveImageTokenForUserAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((RelayTokenRecord?)null);
         using var hasher = CreateHasher();
         var sut = new RelayTokenService(
             NullLogger<RelayTokenService>.Instance, hasher, repo.Object, CreateOptions());
@@ -97,8 +99,9 @@ public class RelayTokenServiceTests
         var token = await sut.IssueImageTokenAsync("imagecache/42", MediaKind.Logo, null, CancellationToken.None);
 
         Assert.False(string.IsNullOrWhiteSpace(token));
+        // With ImageTokenReusePerUser=true (default), ImageId is null (token is user-scoped, not image-scoped).
         repo.Verify(r => r.InsertAsync(It.Is<RelayTokenRecord>(t =>
-            t.RelayType == "image" && t.ImageId == "imagecache/42" && t.MediaKind == "Logo"), It.IsAny<CancellationToken>()));
+            t.RelayType == "image" && t.ImageId == null && t.MediaKind == "Logo"), It.IsAny<CancellationToken>()));
     }
 
     [Fact]

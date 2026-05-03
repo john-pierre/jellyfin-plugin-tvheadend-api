@@ -228,7 +228,7 @@
                             <span>Reset to Defaults</span>
                         </button>
                         <button id="WarmCacheBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.85em;" title="Pre-create cache files for all channels">
-                            <span>Warm Cache</span>
+                            <span>Preload Cache</span>
                         </button>
                     </div>
                     <div id="WarmCacheStatus" class="tvh-msg" style="font-size:0.82em;min-height:1.4em;margin-top:0.3em;opacity:0;transition:opacity 0.3s;"></div>
@@ -555,8 +555,8 @@
                         <h3>Test Profile Resolution</h3>
                         <p style="font-size:0.88em; opacity:0.6; margin-top:0;">Test which profile would be selected for a given combination. Saves current settings first.</p>
                         <div class="tvh-rule-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:0.5em 0.8em; margin-bottom:0.6em;">
-                            <div><label style="font-size:0.82em; opacity:0.7;">Channel ID</label><input id="TestChannelId" type="text" is="emby-input" placeholder="e.g. abc123" /></div>
-                            <div><label style="font-size:0.82em; opacity:0.7;">Channel Group</label><input id="TestChannelGroup" type="text" is="emby-input" placeholder="e.g. Sports" /></div>
+                            <div><label style="font-size:0.82em; opacity:0.7;">Channel</label><select id="TestChannelId" is="emby-select"><option value="">-- Select Channel --</option></select></div>
+                            <div><label style="font-size:0.82em; opacity:0.7;">Channel Group</label><select id="TestChannelGroup" is="emby-select"><option value="">-- Select Group --</option></select></div>
                             <div><label style="font-size:0.82em; opacity:0.7;">Client Name</label><input id="TestClientName" type="text" is="emby-input" placeholder="e.g. Jellyfin Web" /></div>
                             <div><label style="font-size:0.82em; opacity:0.7;">Device Name</label><input id="TestDeviceName" type="text" is="emby-input" placeholder="e.g. iPhone 15" /></div>
                             <div><label style="font-size:0.82em; opacity:0.7;">User ID</label><input id="TestUserId" type="text" is="emby-input" placeholder="e.g. user-guid" /></div>
@@ -707,6 +707,32 @@
                             <div class="fieldDescription">Minutes to continue recording after the scheduled end.</div>
                         </div>
                     </div>
+
+                    <div class="tvh-card">
+                        <h3>Series Timer Defaults</h3>
+                        <p style="font-size:0.88em; opacity:0.6; margin-top:0;">Default settings when creating a new series timer (autorec). Can be overridden per timer in Jellyfin.</p>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="SeriesRecordNewOnly" name="SeriesRecordNewOnly" type="checkbox" is="emby-checkbox" />
+                                <span>Record New Episodes Only</span>
+                            </label>
+                            <div class="fieldDescription">Only record new episodes, skip repeats. Default: enabled.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="SeriesRecordAnyTime" name="SeriesRecordAnyTime" type="checkbox" is="emby-checkbox" />
+                                <span>Record at Any Time</span>
+                            </label>
+                            <div class="fieldDescription">Record regardless of broadcast time. When disabled, only records at the original time slot. Default: enabled.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="SeriesRecordAnyChannel" name="SeriesRecordAnyChannel" type="checkbox" is="emby-checkbox" />
+                                <span>Record on Any Channel</span>
+                            </label>
+                            <div class="fieldDescription">Record from any channel that broadcasts the series. When disabled, only records from the original channel. Default: disabled.</div>
+                        </div>
+                    </div>
                 </div>
                 </div><!-- /tab-recording -->
 
@@ -724,18 +750,13 @@
                             <div class="fieldDescription">Maximum retries when generating an alphanumeric auth token. Default: 5.</div>
                         </div>
                         <div class="tvh-field inputContainer">
-                            <label class="inputLabel" for="ProfileCacheTtlMinutes">Profile Cache TTL (minutes)</label>
-                            <input id="ProfileCacheTtlMinutes" name="ProfileCacheTtlMinutes" type="number" is="emby-input" min="1" placeholder="5" />
-                            <div class="fieldDescription">How long streaming profile metadata is cached before re-fetching. Default: 5 min.</div>
-                        </div>
-                        <div class="tvh-field inputContainer">
                             <label class="inputLabel" for="StatisticsRetentionPeriod">Statistics Retention</label>
                             <select id="StatisticsRetentionPeriod" name="StatisticsRetentionPeriod" is="emby-select">
-                                <option value="30">30 days</option>
-                                <option value="180">6 months</option>
-                                <option value="365">1 year</option>
-                                <option value="730">2 years</option>
-                                <option value="0">Forever</option>
+                                <option value="ThirtyDays">30 days</option>
+                                <option value="SixMonths">6 months</option>
+                                <option value="OneYear">1 year</option>
+                                <option value="TwoYears">2 years</option>
+                                <option value="Forever">Forever</option>
                             </select>
                             <div class="fieldDescription">How long viewing statistics are retained before automatic pruning.</div>
                         </div>
@@ -750,14 +771,14 @@
                         <div class="tvh-field inputContainer">
                             <label class="inputLabel" for="PluginLogLevelOverride">Plugin Log Level Override</label>
                             <select id="PluginLogLevelOverride" name="PluginLogLevelOverride" is="emby-select">
-                                <option value="0">Jellyfin Default</option>
-                                <option value="1">Trace</option>
-                                <option value="2">Debug</option>
-                                <option value="3">Information</option>
-                                <option value="4">Warning</option>
-                                <option value="5">Error</option>
-                                <option value="6">Critical</option>
-                                <option value="7">None</option>
+                                <option value="JellyfinDefault">Jellyfin Default</option>
+                                <option value="Trace">Trace</option>
+                                <option value="Debug">Debug</option>
+                                <option value="Information">Information</option>
+                                <option value="Warning">Warning</option>
+                                <option value="Error">Error</option>
+                                <option value="Critical">Critical</option>
+                                <option value="None">None</option>
                             </select>
                             <div class="fieldDescription">Controls log verbosity for this plugin only. By default the plugin follows Jellyfin's global logging configuration.</div>
                             <div id="LogLevelWarning" style="display:none; color:#f0ad4e; font-size:0.88em; margin-top:0.3em;">⚠️ Trace/Debug level will produce verbose output. Use only for troubleshooting.</div>
@@ -982,14 +1003,16 @@
                     config.EnableMediaInfoCacheValidation = $('#EnableMediaInfoCacheValidation').checked;
                     config.EnableJellyfinMetadataEnrichment = $('#EnableJellyfinMetadataEnrichment').checked;
                     config.AuthTokenMaxAttempts = parseInt_('#AuthTokenMaxAttempts', config.AuthTokenMaxAttempts);
-                    config.ProfileCacheTtlMinutes = parseInt_('#ProfileCacheTtlMinutes', config.ProfileCacheTtlMinutes);
-                    config.StatisticsRetentionPeriod = parseInt_('#StatisticsRetentionPeriod', config.StatisticsRetentionPeriod);
+                    config.StatisticsRetentionPeriod = $('#StatisticsRetentionPeriod').value || 'ThirtyDays';
                     config.Priority = parseInt_('#Priority', config.Priority);
                     config.PrePaddingSeconds = minutesToSeconds('#PrePaddingSeconds', config.PrePaddingSeconds);
                     config.PostPaddingSeconds = minutesToSeconds('#PostPaddingSeconds', config.PostPaddingSeconds);
+                    config.SeriesRecordNewOnly = $('#SeriesRecordNewOnly').checked;
+                    config.SeriesRecordAnyTime = $('#SeriesRecordAnyTime').checked;
+                    config.SeriesRecordAnyChannel = $('#SeriesRecordAnyChannel').checked;
 
                     // Logging
-                    config.PluginLogLevelOverride = parseInt_('#PluginLogLevelOverride', config.PluginLogLevelOverride);
+                    config.PluginLogLevelOverride = $('#PluginLogLevelOverride').value || 'JellyfinDefault';
                     config.StorePluginLogsInSqlite = $('#StorePluginLogsInSqlite').checked;
                     config.StoreTvHeadendLogsInSqlite = $('#StoreTvHeadendLogsInSqlite').checked;
                     config.TvHeadendLogImportEnabled = $('#TvHeadendLogImportEnabled').checked;
@@ -1058,15 +1081,17 @@
                 $('#EnableMediaInfoCacheValidation').checked = config.EnableMediaInfoCacheValidation !== false;
                 $('#EnableJellyfinMetadataEnrichment').checked = config.EnableJellyfinMetadataEnrichment || false;
                 $('#AuthTokenMaxAttempts').value = config.AuthTokenMaxAttempts || '';
-                $('#ProfileCacheTtlMinutes').value = config.ProfileCacheTtlMinutes || '';
-                $('#StatisticsRetentionPeriod').value = String(config.StatisticsRetentionPeriod != null ? config.StatisticsRetentionPeriod : 30);
+                $('#StatisticsRetentionPeriod').value = config.StatisticsRetentionPeriod || 'ThirtyDays';
                 $('#Priority').value = config.Priority || '';
                 $('#PrePaddingSeconds').value = secondsToMinutes(config.PrePaddingSeconds);
                 $('#PostPaddingSeconds').value = secondsToMinutes(config.PostPaddingSeconds);
                 $('#RecordingProfile').value = config.RecordingProfile || '';
+                $('#SeriesRecordNewOnly').checked = config.SeriesRecordNewOnly !== false;
+                $('#SeriesRecordAnyTime').checked = config.SeriesRecordAnyTime !== false;
+                $('#SeriesRecordAnyChannel').checked = config.SeriesRecordAnyChannel || false;
 
                 // Logging
-                $('#PluginLogLevelOverride').value = String(config.PluginLogLevelOverride != null ? config.PluginLogLevelOverride : 0);
+                $('#PluginLogLevelOverride').value = config.PluginLogLevelOverride || 'JellyfinDefault';
                 $('#StorePluginLogsInSqlite').checked = config.StorePluginLogsInSqlite !== false;
                 $('#StoreTvHeadendLogsInSqlite').checked = config.StoreTvHeadendLogsInSqlite !== false;
                 $('#TvHeadendLogImportEnabled').checked = config.TvHeadendLogImportEnabled !== false;
@@ -1214,7 +1239,7 @@
 
             $('#DiagnoseBtn').addEventListener('click', loadDiagnose);
 
-            // ── Optimal Setup ────────────────────────────────────
+            // ── Optimize Settings ────────────────────────────────────
             $('#OptimalSetupBtn').addEventListener('click', function () {
                 var btn = $('#OptimalSetupBtn span');
                 var origText = btn.textContent;
@@ -1420,6 +1445,7 @@
                 loadRelayStatus();
                 Dashboard.showLoadingMsg();
                 Promise.all([loadDiscoveredProfiles(), loadDiscoveredChannels(), loadDiscoveredChannelGroups()]).then(function () {
+                    populateTestResolutionSelects();
                     return ApiClient.getPluginConfiguration(pluginId);
                 }).then(function (config) {
                     loadFormFromConfig(config);
@@ -1466,6 +1492,19 @@
                 return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/StreamingProfiles/ChannelGroups'), dataType: 'json' })
                     .then(function (list) { discoveredChannelGroups = list || []; })
                     .catch(function () { discoveredChannelGroups = []; });
+            }
+
+            function populateTestResolutionSelects() {
+                var chSel = document.getElementById('TestChannelId');
+                var grpSel = document.getElementById('TestChannelGroup');
+                chSel.innerHTML = '<option value="">-- Select Channel --</option>';
+                discoveredChannels.forEach(function (ch) {
+                    chSel.innerHTML += '<option value="' + esc(ch.Id) + '">' + esc(ch.Name) + '</option>';
+                });
+                grpSel.innerHTML = '<option value="">-- Select Group --</option>';
+                discoveredChannelGroups.forEach(function (g) {
+                    grpSel.innerHTML += '<option value="' + esc(g.Name) + '">' + esc(g.Name) + '</option>';
+                });
             }
 
             function buildProfileSelect(selectedValue) {

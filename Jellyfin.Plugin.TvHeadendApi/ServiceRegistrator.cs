@@ -148,6 +148,10 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PluginLogService>());
         serviceCollection.AddSingleton<IPluginLogQueryService>(sp => sp.GetRequiredService<PluginLogService>());
 
+        // ── PluginLogPersistenceProvider — auto-captures plugin log entries to SQLite ──
+        serviceCollection.AddSingleton<Microsoft.Extensions.Logging.ILoggerProvider>(sp =>
+            new PluginLogPersistenceProvider(sp.GetRequiredService<PluginLogService>()));
+
         // ── PluginLoggerFactory — plugin-specific log level override ──
         serviceCollection.AddSingleton<IPluginLoggerFactory>(sp =>
             new PluginLoggerFactory(

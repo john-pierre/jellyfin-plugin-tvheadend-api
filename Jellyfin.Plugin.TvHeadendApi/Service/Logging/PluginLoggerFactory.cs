@@ -64,24 +64,9 @@ internal sealed class PluginScopedLogger : ILogger
         // Delegate to the real Jellyfin logger
         _inner.Log(logLevel, eventId, state, exception, formatter);
 
-        // Enqueue for SQLite persistence (fire-and-forget, non-blocking)
-        if (_logService != null)
-        {
-            try
-            {
-                var message = formatter(state, exception);
-                _logService.EnqueuePluginLog(
-                    level: logLevel.ToString(),
-                    category: _categoryName,
-                    message: message,
-                    exception: exception?.ToString(),
-                    eventId: eventId.Id != 0 ? eventId.ToString() : null);
-            }
-            catch
-            {
-                // Never let persistence errors affect the logging call
-            }
-        }
+        // Note: Plugin log persistence to SQLite is handled by PluginLogPersistenceProvider
+        // (registered as ILoggerProvider), which intercepts all plugin-namespace log calls
+        // automatically. No need to enqueue here — that would cause duplicate entries.
     }
 
     private static LogLevel MapToLogLevel(PluginLogLevel pluginLevel)

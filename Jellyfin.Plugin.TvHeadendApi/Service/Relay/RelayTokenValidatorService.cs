@@ -113,9 +113,17 @@ internal sealed class RelayTokenValidatorService : IRelayTokenValidator
             // Step 8: Check scope (if strict scope validation is enabled)
             if (_options.StrictScope && !string.IsNullOrWhiteSpace(expectedResourceId))
             {
-                var scopeMatch = expectedType == RelayType.Stream
-                    ? string.Equals(record.ChannelId, expectedResourceId, StringComparison.Ordinal)
-                    : string.Equals(record.ImageId, expectedResourceId, StringComparison.Ordinal);
+                bool scopeMatch;
+                if (expectedType == RelayType.Stream)
+                {
+                    scopeMatch = string.Equals(record.ChannelId, expectedResourceId, StringComparison.Ordinal);
+                }
+                else
+                {
+                    // Per-user reuse tokens have null ImageId — they are valid for any image.
+                    scopeMatch = record.ImageId == null
+                        || string.Equals(record.ImageId, expectedResourceId, StringComparison.Ordinal);
+                }
 
                 if (!scopeMatch)
                 {

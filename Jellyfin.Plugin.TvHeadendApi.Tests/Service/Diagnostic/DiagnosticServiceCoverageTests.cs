@@ -15,6 +15,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
+using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
 using MediaBrowser.Controller.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -493,10 +494,11 @@ public class DiagnosticServiceCoverageTests
         var tempDir = Path.Combine(Path.GetTempPath(), "diag_test_" + Guid.NewGuid().ToString("N"));
         try
         {
-            // Create a fake mediainfo directory with a cache file
+            // Create a fake mediainfo directory with a cache file named by channel UUID
+            // (the mock BuildChannelCacheFileName returns "{channelId}.json").
             var mediaInfoDir = Path.Combine(tempDir, "mediainfo");
             Directory.CreateDirectory(mediaInfoDir);
-            var cacheFile = Path.Combine(mediaInfoDir, "test.json");
+            var cacheFile = Path.Combine(mediaInfoDir, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json");
             File.WriteAllText(cacheFile, """{"Path":"http://tvh:9981/stream/channel/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}""");
 
             var config = DefaultConfig();
@@ -627,6 +629,10 @@ public class DiagnosticServiceCoverageTests
         urlBuilder.Setup(u => u.BuildApiUrl(It.IsAny<PluginConfiguration>(), It.IsAny<string>()))
             .Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
 
+        var cacheService = new Mock<IMediaInfoCacheService>();
+        cacheService.Setup(x => x.BuildChannelCacheFileName(It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns<string, string?>((ch, src) => ch + ".json");
+
         return new DiagnosticService(
             NullLogger<DiagnosticService>.Instance,
             new Mock<IServerConfigurationManager>().Object,
@@ -634,6 +640,7 @@ public class DiagnosticServiceCoverageTests
             resolver.Object,
             apiClient.Object,
             urlBuilder.Object,
-            new CachePathProvider(() => cachePath));
+            new CachePathProvider(() => cachePath),
+            cacheService.Object);
     }
 }

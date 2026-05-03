@@ -47,14 +47,32 @@ public sealed class RelayTokenOptions
     /// <summary>Gets the effective stream token max uses (0 = unlimited).</summary>
     public int StreamMaxUses => Math.Max(0, _configProvider.Configuration?.StreamTokenMaxUses ?? 5);
 
-    /// <summary>Gets the effective image token TTL in minutes (minimum 1).</summary>
-    public int ImageTtlMinutes => Math.Max(MinImageTtlMinutes, _configProvider.Configuration?.ImageTokenTtlMinutes ?? 30);
+    /// <summary>Gets the effective image token TTL in minutes (0 = never expire, minimum 1 if non-zero).</summary>
+    public int ImageTtlMinutes
+    {
+        get
+        {
+            var configured = _configProvider.Configuration?.ImageTokenTtlMinutes ?? 0;
+            if (configured <= 0)
+            {
+                return 0; // 0 = never expire
+            }
+
+            return Math.Max(MinImageTtlMinutes, configured);
+        }
+    }
+
+    /// <summary>Gets a value indicating whether image tokens are configured to never expire (TTL = 0).</summary>
+    public bool ImageTokenNeverExpires => ImageTtlMinutes == 0;
 
     /// <summary>Gets the effective image token max uses (0 = unlimited).</summary>
     public int ImageMaxUses => Math.Max(0, _configProvider.Configuration?.ImageTokenMaxUses ?? 0);
 
     /// <summary>Gets a value indicating whether token reuse is enabled.</summary>
     public bool TokenReuse => _configProvider.Configuration?.EnableTokenReuse ?? true;
+
+    /// <summary>Gets a value indicating whether image tokens are reused per user to reduce DB growth.</summary>
+    public bool ImageTokenReusePerUser => _configProvider.Configuration?.ImageTokenReusePerUser ?? true;
 
     /// <summary>Gets a value indicating whether strict scope validation is enabled.</summary>
     public bool StrictScope => _configProvider.Configuration?.StrictScopeValidation ?? true;
@@ -68,8 +86,8 @@ public sealed class RelayTokenOptions
     /// <summary>Gets the effective stream token TTL as a <see cref="TimeSpan"/>.</summary>
     public TimeSpan StreamTtl => TimeSpan.FromSeconds(StreamTtlSeconds);
 
-    /// <summary>Gets the effective image token TTL as a <see cref="TimeSpan"/>.</summary>
-    public TimeSpan ImageTtl => TimeSpan.FromMinutes(ImageTtlMinutes);
+    /// <summary>Gets the effective image token TTL as a <see cref="TimeSpan"/>. <see cref="TimeSpan.MaxValue"/> when never-expire.</summary>
+    public TimeSpan ImageTtl => ImageTokenNeverExpires ? TimeSpan.MaxValue : TimeSpan.FromMinutes(ImageTtlMinutes);
 
     /// <summary>Gets the effective cleanup interval as a <see cref="TimeSpan"/>.</summary>
     public TimeSpan CleanupInterval => TimeSpan.FromMinutes(CleanupIntervalMinutes);
