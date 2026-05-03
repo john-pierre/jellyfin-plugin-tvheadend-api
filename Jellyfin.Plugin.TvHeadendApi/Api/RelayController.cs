@@ -5,15 +5,20 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Metrics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using MetricsStreamEndedBy = global::Jellyfin.Plugin.TvHeadendApi.Model.Metrics.StreamEndedBy;
+using RelayFailureReason = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.RelayFailureReason;
+using RelayType = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.RelayType;
+
+#pragma warning disable SA1117 // Parameters should be on same line or each on own line
 
 namespace Jellyfin.Plugin.TvHeadendApi.Api;
 
@@ -30,6 +35,7 @@ public class RelayController : ControllerBase
     private readonly IRelayService _relay;
     private readonly IRelayMetricsService _metrics;
     private readonly RelayActivityTracker _activityTracker;
+    private readonly SessionTracker _sessionTracker;
     private readonly IRelayUrlBuilder _relayUrlBuilder;
     private readonly IRelayTokenValidator _tokenValidator;
     private readonly RelayTokenOptions _tokenOptions;
@@ -42,6 +48,7 @@ public class RelayController : ControllerBase
     /// <param name="relay">The relay service for proxying TVHeadend requests.</param>
     /// <param name="metrics">The relay metrics persistence service.</param>
     /// <param name="activityTracker">Live stream activity tracker.</param>
+    /// <param name="sessionTracker">Real-time streaming session tracker.</param>
     /// <param name="relayUrlBuilder">Relay URL builder for host resolution.</param>
     /// <param name="tokenValidator">Relay token validator for public endpoints.</param>
     /// <param name="tokenOptions">Relay token policy options.</param>
@@ -51,6 +58,7 @@ public class RelayController : ControllerBase
         IRelayService relay,
         IRelayMetricsService metrics,
         RelayActivityTracker activityTracker,
+        SessionTracker sessionTracker,
         IRelayUrlBuilder relayUrlBuilder,
         IRelayTokenValidator tokenValidator,
         RelayTokenOptions tokenOptions,
@@ -60,6 +68,7 @@ public class RelayController : ControllerBase
         _relay = relay ?? throw new ArgumentNullException(nameof(relay));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _activityTracker = activityTracker ?? throw new ArgumentNullException(nameof(activityTracker));
+        _sessionTracker = sessionTracker ?? throw new ArgumentNullException(nameof(sessionTracker));
         _relayUrlBuilder = relayUrlBuilder ?? throw new ArgumentNullException(nameof(relayUrlBuilder));
         _tokenValidator = tokenValidator ?? throw new ArgumentNullException(nameof(tokenValidator));
         _tokenOptions = tokenOptions ?? throw new ArgumentNullException(nameof(tokenOptions));
@@ -217,7 +226,26 @@ public class RelayController : ControllerBase
             return;
         }
 
+        // HEAD requests: return headers only — never open a long-running upstream stream.
+        // Apple AVPlayer uses HEAD to discover Content-Type, Accept-Ranges before playback.
+        if (HttpMethods.IsHead(Request.Method))
+        {
+            Response.StatusCode = StatusCodes.Status200OK;
+            Response.ContentType = "video/mp2t";
+            Response.Headers["Accept-Ranges"] = "none";
+            return;
+        }
+
+        // Start telemetry session immediately — visible in dashboard from this point.
+        var hasRange = Request.Headers.ContainsKey("Range");
+        var userAgent = Request.Headers.UserAgent.ToString();
+        var remoteIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var sessionId = _sessionTracker.StartSession(channelId, Request.Method, userAgent, remoteIp, hasRange);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         var result = await _relay.RelayStreamAsync(channelId, profile, cancellationToken).ConfigureAwait(false);
+        long totalBytes = 0;
+        bool firstByteSent = false;
 
         try
         {
@@ -225,82 +253,128 @@ public class RelayController : ControllerBase
             {
                 Response.StatusCode = result.StatusCode;
                 RecordAndDispose(result);
+                // Finalize session — upstream failed before any data.
+                var endReason = SessionTracker.ClassifyEndReason(null, false, result.TimingContext?.UpstreamStatusCode);
+                _sessionTracker.FinalizeSession(
+                    sessionId,
+                    0,
+                    sw.Elapsed.TotalMilliseconds,
+                    0,
+                    endReason,
+                    false,
+                    0,
+                    null,
+                    null,
+                    null,
+                    0,
+                    0,
+                    0,
+                    $"HTTP {result.StatusCode}",
+                    null,
+                    false,
+                    false,
+                    false);
                 return;
             }
 
             Response.StatusCode = result.StatusCode;
             Response.ContentType = result.ContentType ?? "video/mp2t";
-
-            // Do NOT set Content-Length on live stream responses.
-            // Live TV streams are infinite — setting Content-Length causes ExoPlayer, VLC,
-            // and other clients to display incorrect duration or stop buffering prematurely.
-            // TVHeadend may include a Content-Length for buffer-based responses, but for
-            // the relay's stream endpoint this should always be treated as an infinite stream.
-
-            // Apple AVPlayer uses Accept-Ranges to determine seeking capability.
-            // Pass through upstream value or indicate no range support for live streams.
             Response.Headers["Accept-Ranges"] = !string.IsNullOrEmpty(result.AcceptRanges)
                 ? result.AcceptRanges
                 : "none";
 
-            // HEAD requests: return headers only — AVPlayer uses HEAD to discover
-            // Content-Type, Accept-Ranges, and Content-Length before starting playback.
-            if (HttpMethods.IsHead(Request.Method))
-            {
-                RecordAndDispose(result);
-                return;
-            }
-
             result.TimingContext?.MarkFirstByteToClient();
+            var startupLatencyMs = sw.Elapsed.TotalMilliseconds;
+            _sessionTracker.MarkFirstByteSent(sessionId, startupLatencyMs);
 
             // Stream directly from TVHeadend to client — zero intermediate buffering.
-            // Track bytes transferred for metrics.
             var buffer = new byte[StreamCopyBufferSize];
-            long totalBytes = 0;
-            bool firstByteMarked = false;
+            var lastUpdateTime = sw.ElapsedMilliseconds;
             int bytesRead;
             while ((bytesRead = await result.Body.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
             {
                 await Response.Body.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
                 totalBytes += bytesRead;
 
-                if (!firstByteMarked)
+                if (!firstByteSent)
                 {
                     result.TimingContext?.MarkFirstByteFromUpstream();
-                    firstByteMarked = true;
+                    firstByteSent = true;
+                }
+
+                // Periodic session update every ~5 seconds — no DB write per packet.
+                var elapsed = sw.ElapsedMilliseconds;
+                if (elapsed - lastUpdateTime >= 5000)
+                {
+                    var durationSec = elapsed / 1000.0;
+                    var avgBitrate = durationSec > 0 ? (totalBytes * 8.0) / durationSec : 0;
+                    _sessionTracker.UpdateSession(sessionId, totalBytes, avgBitrate, avgBitrate, avgBitrate);
+                    lastUpdateTime = elapsed;
                 }
             }
 
             if (result.TimingContext != null)
             {
                 result.TimingContext.BytesSent = totalBytes;
-                result.TimingContext.EndedBy = StreamEndedBy.Completed;
+                result.TimingContext.EndedBy = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.StreamEndedBy.Completed;
             }
+
+            // Normal upstream EOF — stream completed.
+            _sessionTracker.FinalizeSession(
+                sessionId, totalBytes, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds,
+                MetricsStreamEndedBy.UpstreamEof, firstByteSent, startupLatencyMs,
+                null, null, null, 0, 0, 0,
+                "OK", "OK",
+                !string.IsNullOrEmpty(result.AcceptRanges), false, !string.IsNullOrEmpty(result.AcceptRanges));
         }
         catch (OperationCanceledException)
         {
             if (result.TimingContext != null)
             {
+                result.TimingContext.BytesSent = totalBytes;
                 result.TimingContext.ClientCancelled = true;
                 result.TimingContext.FailureReason = RelayFailureReason.ClientCancelled;
-                result.TimingContext.EndedBy = StreamEndedBy.ClientCancelled;
+                result.TimingContext.EndedBy = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.StreamEndedBy.ClientCancelled;
             }
+
+            // Correct classification: disconnect after first byte = normal Live TV behavior.
+            var endReason = firstByteSent
+                ? MetricsStreamEndedBy.ClientDisconnectAfterFirstByte
+                : MetricsStreamEndedBy.StartupCancelledBeforeFirstByte;
+            _sessionTracker.FinalizeSession(
+                sessionId, totalBytes, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds,
+                endReason, firstByteSent, 0, null, null, null, 0, 0, 0,
+                null, "ClientDisconnected", false, false, false);
         }
         catch (IOException)
         {
             if (result.TimingContext != null)
             {
+                result.TimingContext.BytesSent = totalBytes;
                 result.TimingContext.FailureReason = RelayFailureReason.DownstreamWriteFailed;
-                result.TimingContext.EndedBy = StreamEndedBy.DownstreamError;
+                result.TimingContext.EndedBy = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.StreamEndedBy.DownstreamError;
             }
+
+            _sessionTracker.FinalizeSession(
+                sessionId, totalBytes, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds,
+                MetricsStreamEndedBy.DownstreamWriteError, firstByteSent, 0,
+                null, null, null, 0, 0, 0,
+                null, "DownstreamWriteError", false, false, false);
         }
         catch (Exception)
         {
             if (result.TimingContext != null)
             {
+                result.TimingContext.BytesSent = totalBytes;
                 result.TimingContext.FailureReason = RelayFailureReason.UnexpectedException;
-                result.TimingContext.EndedBy = StreamEndedBy.Unknown;
+                result.TimingContext.EndedBy = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.StreamEndedBy.Unknown;
             }
+
+            _sessionTracker.FinalizeSession(
+                sessionId, totalBytes, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds,
+                MetricsStreamEndedBy.UnexpectedException, firstByteSent, 0,
+                null, null, null, 0, 0, 0,
+                null, "UnexpectedException", false, false, false);
         }
         finally
         {

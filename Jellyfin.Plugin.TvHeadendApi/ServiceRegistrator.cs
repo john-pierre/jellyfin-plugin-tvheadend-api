@@ -13,6 +13,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Input;
 using Jellyfin.Plugin.TvHeadendApi.Service.Logging;
+using Jellyfin.Plugin.TvHeadendApi.Service.Metrics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
@@ -211,6 +212,30 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 sp.GetRequiredService<DatabaseProvider>()));
         serviceCollection.AddSingleton<IRelayMetricsService>(sp => sp.GetRequiredService<RelayMetricsService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<RelayMetricsService>());
+
+        // ── Streaming Telemetry — real-time session tracking and dashboard ──
+        serviceCollection.AddSingleton<ActiveSessionStore>();
+        serviceCollection.AddSingleton<MetricsWriter>(sp =>
+            new MetricsWriter(
+                sp.GetRequiredService<DatabaseHealthService>(),
+                sp.GetRequiredService<DatabaseConnectionFactory>(),
+                sp.GetRequiredService<DatabaseWriteCoordinator>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MetricsWriter>>()));
+        serviceCollection.AddSingleton<SessionTracker>(sp =>
+            new SessionTracker(
+                sp.GetRequiredService<ActiveSessionStore>(),
+                sp.GetRequiredService<MetricsWriter>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SessionTracker>>()));
+        serviceCollection.AddSingleton<MetricsAggregator>(sp =>
+            new MetricsAggregator(
+                sp.GetRequiredService<DatabaseHealthService>(),
+                sp.GetRequiredService<DatabaseConnectionFactory>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MetricsAggregator>>()));
+        serviceCollection.AddSingleton<IStreamingDashboardService>(sp =>
+            new StreamingDashboardService(
+                sp.GetRequiredService<ActiveSessionStore>(),
+                sp.GetRequiredService<MetricsAggregator>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<StreamingDashboardService>>()));
 
         // Relay token security — hasher, options, repository.
         serviceCollection.AddSingleton<RelayTokenOptions>();

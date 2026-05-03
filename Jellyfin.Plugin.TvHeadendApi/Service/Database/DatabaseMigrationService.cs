@@ -434,6 +434,94 @@ internal sealed class DatabaseMigrationService
             """,
             """CREATE INDEX IF NOT EXISTS "ix_database_health_event_timestamp_utc" ON "database_health_event" ("timestamp_utc")""",
         }),
+
+        // 009 — Streaming telemetry: active sessions, completed sessions, relay events
+        new(9, "create_streaming_telemetry_tables", new[]
+        {
+            """
+            CREATE TABLE IF NOT EXISTS "active_stream_sessions" (
+                "session_id"            TEXT NOT NULL PRIMARY KEY,
+                "started_at_utc"        TEXT NOT NULL,
+                "last_update_utc"       TEXT NOT NULL,
+                "channel_id"            TEXT NOT NULL,
+                "channel_name"          TEXT NOT NULL DEFAULT '',
+                "client_name"           TEXT NOT NULL DEFAULT '',
+                "client_ip_hash"        TEXT NOT NULL DEFAULT '',
+                "request_method"        TEXT NOT NULL DEFAULT 'GET',
+                "bytes_sent"            INTEGER NOT NULL DEFAULT 0,
+                "rolling_bitrate"       REAL NOT NULL DEFAULT 0,
+                "average_bitrate"       REAL NOT NULL DEFAULT 0,
+                "peak_bitrate"          REAL NOT NULL DEFAULT 0,
+                "startup_latency_ms"    REAL NOT NULL DEFAULT 0,
+                "upstream_status"       TEXT NOT NULL DEFAULT '',
+                "downstream_status"     TEXT NOT NULL DEFAULT '',
+                "range_requested"       INTEGER NOT NULL DEFAULT 0,
+                "range_supported"       INTEGER NOT NULL DEFAULT 0,
+                "content_range_present" INTEGER NOT NULL DEFAULT 0,
+                "accept_ranges_present" INTEGER NOT NULL DEFAULT 0,
+                "stream_state"          TEXT NOT NULL DEFAULT 'Starting',
+                "user_agent"            TEXT NOT NULL DEFAULT '',
+                "remote_endpoint_hash"  TEXT NOT NULL DEFAULT ''
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "completed_stream_sessions" (
+                "session_id"                    TEXT NOT NULL PRIMARY KEY,
+                "started_at_utc"                TEXT NOT NULL,
+                "ended_at_utc"                  TEXT NOT NULL,
+                "channel_id"                    TEXT NOT NULL,
+                "channel_name"                  TEXT NOT NULL DEFAULT '',
+                "client_name"                   TEXT NOT NULL DEFAULT '',
+                "client_ip_hash"                TEXT NOT NULL DEFAULT '',
+                "request_method"                TEXT NOT NULL DEFAULT 'GET',
+                "total_duration_ms"             REAL NOT NULL DEFAULT 0,
+                "session_duration_ms"           REAL NOT NULL DEFAULT 0,
+                "total_bytes"                   INTEGER NOT NULL DEFAULT 0,
+                "rolling_bitrate"               REAL NOT NULL DEFAULT 0,
+                "average_bitrate"               REAL NOT NULL DEFAULT 0,
+                "peak_bitrate"                  REAL NOT NULL DEFAULT 0,
+                "startup_latency_ms"            REAL NOT NULL DEFAULT 0,
+                "upstream_connect_latency_ms"   REAL NULL,
+                "upstream_headers_latency_ms"   REAL NULL,
+                "upstream_first_byte_latency_ms" REAL NULL,
+                "downstream_first_byte_latency_ms" REAL NULL,
+                "p95_write_latency_ms"          REAL NULL,
+                "upstream_status"               TEXT NOT NULL DEFAULT '',
+                "downstream_status"             TEXT NOT NULL DEFAULT '',
+                "range_requested"               INTEGER NOT NULL DEFAULT 0,
+                "range_supported"               INTEGER NOT NULL DEFAULT 0,
+                "content_range_present"         INTEGER NOT NULL DEFAULT 0,
+                "accept_ranges_present"         INTEGER NOT NULL DEFAULT 0,
+                "ended_by"                      TEXT NOT NULL,
+                "failure_reason"                TEXT NULL,
+                "final_outcome"                 TEXT NOT NULL,
+                "normal_disconnect"             INTEGER NOT NULL DEFAULT 0,
+                "user_agent"                    TEXT NOT NULL DEFAULT '',
+                "remote_endpoint_hash"          TEXT NOT NULL DEFAULT ''
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "relay_events" (
+                "event_id"              INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                "timestamp_utc"         TEXT NOT NULL,
+                "session_id"            TEXT NOT NULL,
+                "event_type"            TEXT NOT NULL,
+                "severity"              TEXT NOT NULL DEFAULT 'info',
+                "message"               TEXT NOT NULL DEFAULT '',
+                "upstream_status"       TEXT NULL,
+                "downstream_status"     TEXT NULL,
+                "bytes_sent_snapshot"   INTEGER NULL
+            )
+            """,
+            """CREATE INDEX IF NOT EXISTS "ix_completed_sessions_started_at" ON "completed_stream_sessions" ("started_at_utc")""",
+            """CREATE INDEX IF NOT EXISTS "ix_completed_sessions_final_outcome" ON "completed_stream_sessions" ("final_outcome")""",
+            """CREATE INDEX IF NOT EXISTS "ix_completed_sessions_channel_id" ON "completed_stream_sessions" ("channel_id")""",
+            """CREATE INDEX IF NOT EXISTS "ix_completed_sessions_ended_by" ON "completed_stream_sessions" ("ended_by")""",
+            """CREATE INDEX IF NOT EXISTS "ix_completed_sessions_normal_disconnect" ON "completed_stream_sessions" ("normal_disconnect")""",
+            """CREATE INDEX IF NOT EXISTS "ix_relay_events_session_id" ON "relay_events" ("session_id")""",
+            """CREATE INDEX IF NOT EXISTS "ix_relay_events_timestamp" ON "relay_events" ("timestamp_utc")""",
+            """CREATE INDEX IF NOT EXISTS "ix_relay_events_event_type" ON "relay_events" ("event_type")""",
+        }),
     };
 }
 

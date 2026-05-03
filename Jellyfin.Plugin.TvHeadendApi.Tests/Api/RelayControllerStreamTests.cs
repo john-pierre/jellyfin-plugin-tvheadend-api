@@ -8,13 +8,17 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using Jellyfin.Plugin.TvHeadendApi.Api;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Model.Metrics;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Metrics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -30,6 +34,9 @@ public sealed class RelayControllerStreamTests
     private readonly Mock<IRelayMetricsService> _metricsMock;
     private readonly Mock<IRelayUrlBuilder> _urlBuilderMock;
     private readonly Mock<IRelayTokenValidator> _tokenValidatorMock;
+    private readonly Mock<IHealthService> _healthServiceMock;
+    private readonly PluginConfiguration _config;
+    private readonly RelayActivityTracker _activityTracker;
     private readonly RelayController _controller;
 
     public RelayControllerStreamTests()
@@ -38,23 +45,34 @@ public sealed class RelayControllerStreamTests
         _metricsMock = new Mock<IRelayMetricsService>();
         _urlBuilderMock = new Mock<IRelayUrlBuilder>();
         _tokenValidatorMock = new Mock<IRelayTokenValidator>();
+        _healthServiceMock = new Mock<IHealthService>();
 
-        var config = new PluginConfiguration();
-        var configProvider = new ConfigurationProvider(() => config);
-        var activityTracker = new RelayActivityTracker();
+        _config = new PluginConfiguration();
+        var configProvider = new ConfigurationProvider(() => _config);
+        _activityTracker = new RelayActivityTracker();
         var tokenOptions = new RelayTokenOptions(configProvider);
-        var healthService = NullHealthService.Instance;
+
+        // Default: return Unknown health snapshot.
+        _healthServiceMock.Setup(x => x.GetSnapshot()).Returns(new HealthSnapshot());
+
+        // Create a SessionTracker with no-op dependencies for unit tests.
+        var activeSessionStore = new ActiveSessionStore();
+        var sessionTracker = new SessionTracker(
+            activeSessionStore,
+            new NullMetricsWriter(),
+            NullLogger<SessionTracker>.Instance);
 
         _urlBuilderMock.Setup(x => x.GetEffectiveBaseUrl()).Returns("http://localhost:8096");
 
         _controller = new RelayController(
             _relayServiceMock.Object,
             _metricsMock.Object,
-            activityTracker,
+            _activityTracker,
+            sessionTracker,
             _urlBuilderMock.Object,
             _tokenValidatorMock.Object,
             tokenOptions,
-            healthService,
+            _healthServiceMock.Object,
             configProvider);
 
         // Setup HttpContext with response stream.
@@ -66,6 +84,220 @@ public sealed class RelayControllerStreamTests
         };
     }
 
+    // ── Constructor Guard Tests ─────────────────────────────────────────────
+
+    [Fact]
+    public void Constructor_NullRelay_ThrowsArgumentNullException()
+    {
+        var config = new PluginConfiguration();
+        var configProvider = new ConfigurationProvider(() => config);
+        var activityTracker = new RelayActivityTracker();
+        var tokenOptions = new RelayTokenOptions(configProvider);
+        var activeSessionStore = new ActiveSessionStore();
+        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+
+        var act = () => new RelayController(
+            null!,
+            _metricsMock.Object,
+            activityTracker,
+            sessionTracker,
+            _urlBuilderMock.Object,
+            _tokenValidatorMock.Object,
+            tokenOptions,
+            _healthServiceMock.Object,
+            configProvider);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("relay");
+    }
+
+    [Fact]
+    public void Constructor_NullMetrics_ThrowsArgumentNullException()
+    {
+        var config = new PluginConfiguration();
+        var configProvider = new ConfigurationProvider(() => config);
+        var activityTracker = new RelayActivityTracker();
+        var tokenOptions = new RelayTokenOptions(configProvider);
+        var activeSessionStore = new ActiveSessionStore();
+        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+
+        var act = () => new RelayController(
+            _relayServiceMock.Object,
+            null!,
+            activityTracker,
+            sessionTracker,
+            _urlBuilderMock.Object,
+            _tokenValidatorMock.Object,
+            tokenOptions,
+            _healthServiceMock.Object,
+            configProvider);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("metrics");
+    }
+
+    [Fact]
+    public void Constructor_NullActivityTracker_ThrowsArgumentNullException()
+    {
+        var config = new PluginConfiguration();
+        var configProvider = new ConfigurationProvider(() => config);
+        var tokenOptions = new RelayTokenOptions(configProvider);
+        var activeSessionStore = new ActiveSessionStore();
+        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+
+        var act = () => new RelayController(
+            _relayServiceMock.Object,
+            _metricsMock.Object,
+            null!,
+            sessionTracker,
+            _urlBuilderMock.Object,
+            _tokenValidatorMock.Object,
+            tokenOptions,
+            _healthServiceMock.Object,
+            configProvider);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("activityTracker");
+    }
+
+    [Fact]
+    public void Constructor_NullSessionTracker_ThrowsArgumentNullException()
+    {
+        var config = new PluginConfiguration();
+        var configProvider = new ConfigurationProvider(() => config);
+        var activityTracker = new RelayActivityTracker();
+        var tokenOptions = new RelayTokenOptions(configProvider);
+
+        var act = () => new RelayController(
+            _relayServiceMock.Object,
+            _metricsMock.Object,
+            activityTracker,
+            null!,
+            _urlBuilderMock.Object,
+            _tokenValidatorMock.Object,
+            tokenOptions,
+            _healthServiceMock.Object,
+            configProvider);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("sessionTracker");
+    }
+
+    [Fact]
+    public void Constructor_NullUrlBuilder_ThrowsArgumentNullException()
+    {
+        var config = new PluginConfiguration();
+        var configProvider = new ConfigurationProvider(() => config);
+        var activityTracker = new RelayActivityTracker();
+        var tokenOptions = new RelayTokenOptions(configProvider);
+        var activeSessionStore = new ActiveSessionStore();
+        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+
+        var act = () => new RelayController(
+            _relayServiceMock.Object,
+            _metricsMock.Object,
+            activityTracker,
+            sessionTracker,
+            null!,
+            _tokenValidatorMock.Object,
+            tokenOptions,
+            _healthServiceMock.Object,
+            configProvider);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("relayUrlBuilder");
+    }
+
+    [Fact]
+    public void Constructor_NullTokenValidator_ThrowsArgumentNullException()
+    {
+        var config = new PluginConfiguration();
+        var configProvider = new ConfigurationProvider(() => config);
+        var activityTracker = new RelayActivityTracker();
+        var tokenOptions = new RelayTokenOptions(configProvider);
+        var activeSessionStore = new ActiveSessionStore();
+        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+
+        var act = () => new RelayController(
+            _relayServiceMock.Object,
+            _metricsMock.Object,
+            activityTracker,
+            sessionTracker,
+            _urlBuilderMock.Object,
+            null!,
+            tokenOptions,
+            _healthServiceMock.Object,
+            configProvider);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("tokenValidator");
+    }
+
+    [Fact]
+    public void Constructor_NullTokenOptions_ThrowsArgumentNullException()
+    {
+        var config = new PluginConfiguration();
+        var configProvider = new ConfigurationProvider(() => config);
+        var activityTracker = new RelayActivityTracker();
+        var activeSessionStore = new ActiveSessionStore();
+        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+
+        var act = () => new RelayController(
+            _relayServiceMock.Object,
+            _metricsMock.Object,
+            activityTracker,
+            sessionTracker,
+            _urlBuilderMock.Object,
+            _tokenValidatorMock.Object,
+            null!,
+            _healthServiceMock.Object,
+            configProvider);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("tokenOptions");
+    }
+
+    [Fact]
+    public void Constructor_NullHealthService_ThrowsArgumentNullException()
+    {
+        var config = new PluginConfiguration();
+        var configProvider = new ConfigurationProvider(() => config);
+        var activityTracker = new RelayActivityTracker();
+        var tokenOptions = new RelayTokenOptions(configProvider);
+        var activeSessionStore = new ActiveSessionStore();
+        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+
+        var act = () => new RelayController(
+            _relayServiceMock.Object,
+            _metricsMock.Object,
+            activityTracker,
+            sessionTracker,
+            _urlBuilderMock.Object,
+            _tokenValidatorMock.Object,
+            tokenOptions,
+            null!,
+            configProvider);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("healthService");
+    }
+
+    [Fact]
+    public void Constructor_NullConfigProvider_ThrowsArgumentNullException()
+    {
+        var config = new PluginConfiguration();
+        var configProvider = new ConfigurationProvider(() => config);
+        var activityTracker = new RelayActivityTracker();
+        var tokenOptions = new RelayTokenOptions(configProvider);
+        var activeSessionStore = new ActiveSessionStore();
+        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+
+        var act = () => new RelayController(
+            _relayServiceMock.Object,
+            _metricsMock.Object,
+            activityTracker,
+            sessionTracker,
+            _urlBuilderMock.Object,
+            _tokenValidatorMock.Object,
+            tokenOptions,
+            _healthServiceMock.Object,
+            null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configProvider");
+    }
+
     // ── HEAD Request Tests ──────────────────────────────────────────────────
 
     [Fact]
@@ -74,29 +306,22 @@ public sealed class RelayControllerStreamTests
         // Arrange — simulate HEAD request.
         _controller.HttpContext.Request.Method = HttpMethods.Head;
 
-        var relayResult = new RelayResult
-        {
-            StatusCode = 200,
-            ContentType = "video/mp2t",
-            ContentLength = 12345,
-            AcceptRanges = "bytes",
-            Body = new MemoryStream(new byte[100]),
-        };
-
-        _relayServiceMock
-            .Setup(x => x.RelayStreamAsync("ch-head", null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(relayResult);
-
-        // Act
+        // Act — HEAD should return immediately without calling upstream.
         await _controller.GetStream("ch-head", null, CancellationToken.None);
 
-        // Assert — headers set, no body written.
+        // Assert — fixed headers set, no body written, no upstream call.
         _controller.Response.StatusCode.Should().Be(200);
         _controller.Response.ContentType.Should().Be("video/mp2t");
-        _controller.Response.Headers["Accept-Ranges"].ToString().Should().Be("bytes");
+        _controller.Response.Headers["Accept-Ranges"].ToString().Should().Be("none");
 
         // Body stream should be empty (HEAD = no body).
         _controller.Response.Body.Position.Should().Be(0, "HEAD response must have empty body");
+
+        // Verify no upstream stream was opened.
+        _relayServiceMock.Verify(
+            x => x.RelayStreamAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "HEAD must never open an upstream stream");
     }
 
     [Fact]
@@ -104,17 +329,7 @@ public sealed class RelayControllerStreamTests
     {
         _controller.HttpContext.Request.Method = HttpMethods.Head;
 
-        var relayResult = new RelayResult
-        {
-            StatusCode = 200,
-            ContentType = null,
-            Body = new MemoryStream(new byte[10]),
-        };
-
-        _relayServiceMock
-            .Setup(x => x.RelayStreamAsync("ch-head-default", null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(relayResult);
-
+        // HEAD returns immediately without calling upstream — always uses default content type.
         await _controller.GetStream("ch-head-default", null, CancellationToken.None);
 
         _controller.Response.ContentType.Should().Be("video/mp2t",
@@ -597,5 +812,458 @@ public sealed class RelayControllerStreamTests
 
         result.Result.Should().BeOfType<OkObjectResult>();
     }
-}
 
+    // ── GetStream Exception Path Tests ──────────────────────────────────────
+
+    [Fact]
+    public async Task GetStream_OperationCancelled_DuringBodyRead_HandlesGracefully()
+    {
+        _controller.HttpContext.Request.Method = HttpMethods.Get;
+
+        var throwingStream = new ThrowingStream(new OperationCanceledException());
+        var relayResult = new RelayResult
+        {
+            StatusCode = 200,
+            ContentType = "video/mp2t",
+            Body = throwingStream,
+        };
+
+        _relayServiceMock
+            .Setup(x => x.RelayStreamAsync("ch-cancel", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(relayResult);
+
+        // Should not throw — OperationCanceledException is caught internally.
+        await _controller.GetStream("ch-cancel", null, CancellationToken.None);
+
+        // Status code was set to 200 before streaming started.
+        _controller.Response.StatusCode.Should().Be(200);
+    }
+
+    [Fact]
+    public async Task GetStream_IOException_DuringBodyRead_HandlesGracefully()
+    {
+        _controller.HttpContext.Request.Method = HttpMethods.Get;
+
+        var throwingStream = new ThrowingStream(new IOException("Connection reset"));
+        var relayResult = new RelayResult
+        {
+            StatusCode = 200,
+            ContentType = "video/mp2t",
+            Body = throwingStream,
+        };
+
+        _relayServiceMock
+            .Setup(x => x.RelayStreamAsync("ch-ioerr", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(relayResult);
+
+        // Should not throw — IOException is caught internally.
+        await _controller.GetStream("ch-ioerr", null, CancellationToken.None);
+
+        _controller.Response.StatusCode.Should().Be(200);
+    }
+
+    [Fact]
+    public async Task GetStream_UnexpectedException_DuringBodyRead_HandlesGracefully()
+    {
+        _controller.HttpContext.Request.Method = HttpMethods.Get;
+
+        var throwingStream = new ThrowingStream(new InvalidOperationException("Unexpected"));
+        var relayResult = new RelayResult
+        {
+            StatusCode = 200,
+            ContentType = "video/mp2t",
+            Body = throwingStream,
+        };
+
+        _relayServiceMock
+            .Setup(x => x.RelayStreamAsync("ch-unexpected", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(relayResult);
+
+        // Should not throw — generic Exception is caught internally.
+        await _controller.GetStream("ch-unexpected", null, CancellationToken.None);
+
+        _controller.Response.StatusCode.Should().Be(200);
+    }
+
+    [Fact]
+    public async Task GetStream_WithProfile_PassesProfileToRelayService()
+    {
+        _controller.HttpContext.Request.Method = HttpMethods.Get;
+
+        var relayResult = new RelayResult
+        {
+            StatusCode = 200,
+            ContentType = "video/mp2t",
+            Body = new MemoryStream(Array.Empty<byte>()),
+        };
+
+        _relayServiceMock
+            .Setup(x => x.RelayStreamAsync("ch-profile", "pass", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(relayResult);
+
+        await _controller.GetStream("ch-profile", "pass", CancellationToken.None);
+
+        _relayServiceMock.Verify(
+            x => x.RelayStreamAsync("ch-profile", "pass", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetStream_UpstreamContentType_PassedThrough()
+    {
+        _controller.HttpContext.Request.Method = HttpMethods.Get;
+
+        var relayResult = new RelayResult
+        {
+            StatusCode = 200,
+            ContentType = "video/h264",
+            Body = new MemoryStream(Array.Empty<byte>()),
+        };
+
+        _relayServiceMock
+            .Setup(x => x.RelayStreamAsync("ch-ct", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(relayResult);
+
+        await _controller.GetStream("ch-ct", null, CancellationToken.None);
+
+        _controller.Response.ContentType.Should().Be("video/h264",
+            "upstream Content-Type must be passed through to client");
+    }
+
+    [Fact]
+    public async Task GetStream_NullChannelId_Returns400()
+    {
+        await _controller.GetStream(null!, null, CancellationToken.None);
+
+        _controller.Response.StatusCode.Should().Be(400);
+    }
+
+    // ── Relay Status — Branch Coverage ──────────────────────────────────────
+
+    [Fact]
+    public void GetRelayStatus_RelayDisabled_ReturnsDisabledStatus()
+    {
+        _config.RelayEnabled = false;
+
+        var result = _controller.GetRelayStatus();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var value = ok.Value!;
+        value.GetType().GetProperty("Status")!.GetValue(value).Should().Be("disabled");
+        value.GetType().GetProperty("Message")!.GetValue(value).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void GetRelayStatus_NotConfigured_ReturnsErrorStatus()
+    {
+        _config.RelayEnabled = true;
+        _config.Host = "";
+        _config.Port = 0;
+
+        var result = _controller.GetRelayStatus();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var value = ok.Value!;
+        value.GetType().GetProperty("Status")!.GetValue(value).Should().Be("error");
+    }
+
+    [Fact]
+    public void GetRelayStatus_Healthy_ReturnsOkStatus()
+    {
+        _config.RelayEnabled = true;
+        _config.Host = "tvh.local";
+        _config.Port = 9981;
+
+        _healthServiceMock.Setup(x => x.GetSnapshot())
+            .Returns(new HealthSnapshot { Status = HealthStatus.Healthy });
+
+        var result = _controller.GetRelayStatus();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var value = ok.Value!;
+        value.GetType().GetProperty("Status")!.GetValue(value).Should().Be("ok");
+    }
+
+    [Fact]
+    public void GetRelayStatus_Degraded_ReturnsDegradedStatus()
+    {
+        _config.RelayEnabled = true;
+        _config.Host = "tvh.local";
+        _config.Port = 9981;
+
+        _healthServiceMock.Setup(x => x.GetSnapshot())
+            .Returns(new HealthSnapshot { Status = HealthStatus.Degraded });
+
+        var result = _controller.GetRelayStatus();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var value = ok.Value!;
+        value.GetType().GetProperty("Status")!.GetValue(value).Should().Be("degraded");
+    }
+
+    [Fact]
+    public void GetRelayStatus_Recovering_ReturnsDegradedStatus()
+    {
+        _config.RelayEnabled = true;
+        _config.Host = "tvh.local";
+        _config.Port = 9981;
+
+        _healthServiceMock.Setup(x => x.GetSnapshot())
+            .Returns(new HealthSnapshot { Status = HealthStatus.Recovering });
+
+        var result = _controller.GetRelayStatus();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var value = ok.Value!;
+        value.GetType().GetProperty("Status")!.GetValue(value).Should().Be("degraded");
+    }
+
+    [Fact]
+    public void GetRelayStatus_Unreachable_ReturnsErrorStatus()
+    {
+        _config.RelayEnabled = true;
+        _config.Host = "tvh.local";
+        _config.Port = 9981;
+
+        _healthServiceMock.Setup(x => x.GetSnapshot())
+            .Returns(new HealthSnapshot { Status = HealthStatus.Unreachable });
+
+        var result = _controller.GetRelayStatus();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var value = ok.Value!;
+        value.GetType().GetProperty("Status")!.GetValue(value).Should().Be("error");
+    }
+
+    [Fact]
+    public void GetRelayStatus_CircuitOpen_ReturnsErrorStatus()
+    {
+        _config.RelayEnabled = true;
+        _config.Host = "tvh.local";
+        _config.Port = 9981;
+
+        _healthServiceMock.Setup(x => x.GetSnapshot())
+            .Returns(new HealthSnapshot { Status = HealthStatus.CircuitOpen });
+
+        var result = _controller.GetRelayStatus();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var value = ok.Value!;
+        value.GetType().GetProperty("Status")!.GetValue(value).Should().Be("error");
+    }
+
+    [Fact]
+    public void GetRelayStatus_Timeout_ReturnsErrorStatus()
+    {
+        _config.RelayEnabled = true;
+        _config.Host = "tvh.local";
+        _config.Port = 9981;
+
+        _healthServiceMock.Setup(x => x.GetSnapshot())
+            .Returns(new HealthSnapshot { Status = HealthStatus.Timeout });
+
+        var result = _controller.GetRelayStatus();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var value = ok.Value!;
+        value.GetType().GetProperty("Status")!.GetValue(value).Should().Be("error");
+    }
+
+    [Fact]
+    public void GetRelayStatus_AuthFailed_ReturnsErrorWithFailureReason()
+    {
+        _config.RelayEnabled = true;
+        _config.Host = "tvh.local";
+        _config.Port = 9981;
+
+        _healthServiceMock.Setup(x => x.GetSnapshot())
+            .Returns(new HealthSnapshot
+            {
+                Status = HealthStatus.AuthFailed,
+                LastFailureReason = FailureReason.AuthFailed,
+            });
+
+        var result = _controller.GetRelayStatus();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var value = ok.Value!;
+        value.GetType().GetProperty("Status")!.GetValue(value).Should().Be("error");
+        var message = (string?)value.GetType().GetProperty("Message")!.GetValue(value);
+        message.Should().Contain("AuthFailed");
+    }
+
+    [Fact]
+    public void GetRelayStatus_Unknown_ReturnsUnknownStatus()
+    {
+        _config.RelayEnabled = true;
+        _config.Host = "tvh.local";
+        _config.Port = 9981;
+
+        _healthServiceMock.Setup(x => x.GetSnapshot())
+            .Returns(new HealthSnapshot { Status = HealthStatus.Unknown });
+
+        var result = _controller.GetRelayStatus();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var value = ok.Value!;
+        value.GetType().GetProperty("Status")!.GetValue(value).Should().Be("unknown");
+    }
+
+    // ── GetImage Exception Path Tests ───────────────────────────────────────
+
+    [Fact]
+    public async Task GetImage_OperationCancelled_PropagatesException()
+    {
+        _relayServiceMock
+            .Setup(x => x.RelayImageAsync("imagecache/cancel", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        var act = () => _controller.GetImage("imagecache/cancel", CancellationToken.None);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task GetImage_UnexpectedException_PropagatesException()
+    {
+        _relayServiceMock
+            .Setup(x => x.RelayImageAsync("imagecache/boom", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Boom"));
+
+        var act = () => _controller.GetImage("imagecache/boom", CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    // ── Token-Secured Edge Cases ────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetTokenSecuredImage_ExpiredToken_ReturnsGone()
+    {
+        _tokenValidatorMock
+            .Setup(x => x.ValidateAsync(It.IsAny<string?>(), RelayType.Image, "imagecache/expired", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RelayTokenValidationResult { IsValid = false, FailureReason = RelayTokenFailureReason.Expired });
+
+        var result = await _controller.GetTokenSecuredImage("imagecache/expired", CancellationToken.None);
+
+        result.Should().BeOfType<StatusCodeResult>()
+            .Which.StatusCode.Should().Be(410);
+    }
+
+    [Fact]
+    public async Task GetTokenSecuredImage_RevokedToken_ReturnsForbidden()
+    {
+        _tokenValidatorMock
+            .Setup(x => x.ValidateAsync(It.IsAny<string?>(), RelayType.Image, "imagecache/revoked", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RelayTokenValidationResult { IsValid = false, FailureReason = RelayTokenFailureReason.Revoked });
+
+        var result = await _controller.GetTokenSecuredImage("imagecache/revoked", CancellationToken.None);
+
+        result.Should().BeOfType<StatusCodeResult>()
+            .Which.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task GetTokenSecuredImage_WhitespacePath_ReturnsBadRequest()
+    {
+        var result = await _controller.GetTokenSecuredImage("   ", CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetTokenSecuredStream_HeadRequest_InvalidToken_ReturnsUnauthorized()
+    {
+        _controller.HttpContext.Request.Method = HttpMethods.Head;
+
+        _tokenValidatorMock
+            .Setup(x => x.ValidateAsync(It.IsAny<string?>(), RelayType.Stream, "ch-head-invalid", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RelayTokenValidationResult { IsValid = false, FailureReason = RelayTokenFailureReason.MissingToken });
+
+        await _controller.GetTokenSecuredStream("ch-head-invalid", null, CancellationToken.None);
+
+        _controller.Response.StatusCode.Should().Be(401);
+    }
+
+    [Fact]
+    public async Task GetTokenSecuredStream_WhitespaceChannelId_Returns400()
+    {
+        await _controller.GetTokenSecuredStream("   ", null, CancellationToken.None);
+
+        _controller.Response.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task GetTokenSecuredStream_RevokedToken_ReturnsForbidden()
+    {
+        _tokenValidatorMock
+            .Setup(x => x.ValidateAsync(It.IsAny<string?>(), RelayType.Stream, "ch-revoked", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RelayTokenValidationResult { IsValid = false, FailureReason = RelayTokenFailureReason.Revoked });
+
+        await _controller.GetTokenSecuredStream("ch-revoked", null, CancellationToken.None);
+
+        _controller.Response.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task GetTokenSecuredStream_ValidToken_WithProfile_PassesProfile()
+    {
+        _controller.HttpContext.Request.Method = HttpMethods.Get;
+
+        _tokenValidatorMock
+            .Setup(x => x.ValidateAsync(It.IsAny<string?>(), RelayType.Stream, "ch-prof", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RelayTokenValidationResult { IsValid = true });
+
+        var relayResult = new RelayResult
+        {
+            StatusCode = 200,
+            ContentType = "video/mp2t",
+            Body = new MemoryStream(Array.Empty<byte>()),
+        };
+
+        _relayServiceMock
+            .Setup(x => x.RelayStreamAsync("ch-prof", "matroska", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(relayResult);
+
+        await _controller.GetTokenSecuredStream("ch-prof", "matroska", CancellationToken.None);
+
+        _relayServiceMock.Verify(
+            x => x.RelayStreamAsync("ch-prof", "matroska", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    // ── Helper Types ────────────────────────────────────────────────────────
+
+    /// <summary>No-op MetricsWriter for unit tests — all writes are silently discarded.</summary>
+    private sealed class NullMetricsWriter : MetricsWriter
+    {
+        public override void WriteCompletedSession(CompletedStreamSession session)
+        {
+        }
+
+        public override void WriteEvent(RelayEvent relayEvent)
+        {
+        }
+
+        public override void WriteActiveSessionSnapshot(ActiveStreamSession session)
+        {
+        }
+    }
+
+    /// <summary>Stream that throws a configurable exception on read — for testing error paths.</summary>
+    private sealed class ThrowingStream : MemoryStream
+    {
+        private readonly Exception _exception;
+
+        public ThrowingStream(Exception exception)
+        {
+            _exception = exception;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw _exception;
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) => throw _exception;
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) => throw _exception;
+    }
+}
