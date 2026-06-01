@@ -16,6 +16,15 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
 /// </summary>
 public sealed class DashboardStatus
 {
+    // ── Setup ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the plugin requires initial setup.
+    /// When <c>true</c>, the dashboard should only display a configuration prompt
+    /// and must not attempt any TVHeadend backend communication.
+    /// </summary>
+    public bool RequiresSetup { get; set; }
+
     // ── Connection / Backend ────────────────────────────────────────────
 
     /// <summary>

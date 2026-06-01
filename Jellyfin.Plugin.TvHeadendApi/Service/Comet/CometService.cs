@@ -438,6 +438,10 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     /// </summary>
     private void AddLog(string text)
     {
+        // TVHeadend comet log lines can embed a persistent ?auth=<token>; sanitize once here so the
+        // token never reaches the in-memory buffer, the legacy SQLite table, or the admin dashboard.
+        text = Logging.LogSanitizer.Sanitize(text);
+
         var now = DateTime.UtcNow;
         var msg = new LogMessage
         {

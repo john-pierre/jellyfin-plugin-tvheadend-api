@@ -57,6 +57,15 @@ public class MediaSourceServiceTests
             provider);
     }
 
+    private static IPlaybackContextAccessor StubPlaybackContext()
+    {
+        var mock = new Mock<IPlaybackContextAccessor>();
+        mock.Setup(x => x.CreateContextAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string?, CancellationToken>((channelId, _) =>
+                Task.FromResult(new StreamingProfileContext { ChannelId = channelId }));
+        return mock.Object;
+    }
+
     private static IMediaInfoCacheService CreateCacheService(string? cachePath)
     {
         var library = new Mock<ILibraryManager>();
@@ -76,7 +85,7 @@ public class MediaSourceServiceTests
         var api = new Mock<IApiClient>();
         var urlBuilder = new UrlBuilder();
 
-        Assert.Throws<ArgumentNullException>(() => new MediaSourceService(null!, resolver.Object, StubProfileResolver(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService()));
+        Assert.Throws<ArgumentNullException>(() => new MediaSourceService(null!, resolver.Object, StubProfileResolver(), StubPlaybackContext(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService()));
     }
 
     [Fact]
@@ -87,7 +96,7 @@ public class MediaSourceServiceTests
         var urlBuilder = new UrlBuilder();
         api.Setup(x => x.GetCurrentConfiguration()).Returns((PluginConfiguration?)null);
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(), StubPlaybackContext(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetChannelStreamAsync("ch-1", CancellationToken.None));
     }
@@ -100,7 +109,7 @@ public class MediaSourceServiceTests
         var urlBuilder = new UrlBuilder();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(new PluginConfiguration());
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(), StubPlaybackContext(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
 
         await Assert.ThrowsAsync<ArgumentException>(() => sut.GetChannelStreamAsync(string.Empty, CancellationToken.None));
     }
@@ -130,11 +139,11 @@ public class MediaSourceServiceTests
         var urlBuilder = new UrlBuilder();
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
-        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
+        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), StubPlaybackContext(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
         var mediaSource = await sut.GetChannelStreamAsync("ch-42", CancellationToken.None);
 
         Assert.Equal("ch-42", mediaSource.Id);
@@ -162,11 +171,11 @@ public class MediaSourceServiceTests
         var urlBuilder = new UrlBuilder();
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
-        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
+        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), StubPlaybackContext(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
         var mediaSource = await sut.GetChannelStreamAsync("ch-1", CancellationToken.None);
 
         Assert.Equal(0, mediaSource.AnalyzeDurationMs);
@@ -189,11 +198,11 @@ public class MediaSourceServiceTests
         var urlBuilder = new UrlBuilder();
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
-        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
+        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), StubPlaybackContext(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
         var result = await sut.GetChannelStreamMediaSourcesAsync("ch-2", CancellationToken.None);
 
         Assert.Single(result);
@@ -218,11 +227,11 @@ public class MediaSourceServiceTests
         var urlBuilder = new UrlBuilder();
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
-        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
+        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), StubPlaybackContext(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
         var mediaSource = await sut.GetChannelStreamAsync("ch-99", CancellationToken.None);
 
         Assert.Equal(1234, mediaSource.BufferMs);
@@ -245,11 +254,11 @@ public class MediaSourceServiceTests
         var urlBuilder = new UrlBuilder();
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
-        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
+        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("jelly fin+fast", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), StubPlaybackContext(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
         var mediaSource = await sut.GetChannelStreamAsync("ch/1", CancellationToken.None);
 
         Assert.Contains("stream/ch%2F1", mediaSource.Path, StringComparison.Ordinal);
@@ -273,11 +282,11 @@ public class MediaSourceServiceTests
         var urlBuilder = new UrlBuilder();
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
-        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>()))
+        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
-        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), StubPlaybackContext(), api.Object, urlBuilder, StubRelay(), CreateNullCacheService());
         var mediaSource = await sut.GetChannelStreamAsync("ch-cache", CancellationToken.None);
 
         Assert.NotNull(mediaSource);
@@ -621,15 +630,15 @@ public class MediaSourceServiceTests
         library.Setup(x => x.GetNewItemId(It.IsAny<string>(), It.IsAny<Type>())).Returns(FixedInternalChannelId);
 
         var resolver = new Mock<IProfileContainerResolver>();
-        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync(snapshot.Container);
-        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<CancellationToken>())).ReturnsAsync(snapshot);
+        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(snapshot.Container);
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(snapshot);
 
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
 
         var cacheService = new MediaInfoCacheService(NullLogger<MediaInfoCacheService>.Instance, library.Object, () => cachePath);
 
-        return new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), api.Object, new UrlBuilder(), StubRelay(), cacheService);
+        return new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), StubPlaybackContext(), api.Object, new UrlBuilder(), StubRelay(), cacheService);
     }
 
     private static string GetCacheFilePath(string cachePath, string channelId)

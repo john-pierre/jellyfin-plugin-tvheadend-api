@@ -337,60 +337,59 @@ public sealed class DeepVerificationTests
         SkipIfUnavailable();
 
         var channelId = await TryGetFirstChannelUuidAsync();
-        if (channelId == null)
-        {
-            return; // TVH unreachable — skip gracefully.
-        }
+        Assert.False(string.IsNullOrEmpty(channelId), "Bootstrapped stack must expose at least one channel to stream.");
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        HttpResponseMessage? response = null;
+        // The open /stream endpoint requires a token when relay token security is enabled.
+        // Disable it for the duration of this raw byte-flow check, then restore it.
+        using var originalConfig = await ReadPluginConfigAsync();
+        var hadSecurity = originalConfig.RootElement.TryGetProperty("EnableRelayTokenSecurity", out var secProp) && secProp.GetBoolean();
+
         try
         {
-            response = await _fixture.Client.GetAsync(
+            if (hadSecurity)
+            {
+                await SavePluginConfigAsync(originalConfig, OverrideField(
+                    "EnableRelayTokenSecurity",
+                    w => w.WriteBoolean("EnableRelayTokenSecurity", false)));
+            }
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            using var response = await _fixture.Client.GetAsync(
                 $"/api/tvheadend/stream/{channelId}?profile=pass",
                 HttpCompletionOption.ResponseHeadersRead,
                 cts.Token);
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-            // Verify content type indicates video/binary stream.
             var contentType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
             Assert.True(
                 contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) ||
                 contentType == "application/octet-stream",
                 $"Expected video/* or application/octet-stream, got: {contentType}");
 
-            // Read up to 4096 bytes from the response stream.
-            using var stream = await response.Content.ReadAsStreamAsync();
-            var buffer = new byte[4096];
+            // Read a real chunk of continuous data — proves the full Jellyfin→TVHeadend→IPTV path streams.
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            var buffer = new byte[65536];
             var totalRead = 0;
             while (totalRead < buffer.Length)
             {
-                var bytesRead = await stream.ReadAsync(buffer, totalRead, buffer.Length - totalRead, cts.Token);
+                var bytesRead = await stream.ReadAsync(buffer.AsMemory(totalRead, buffer.Length - totalRead), cts.Token);
                 if (bytesRead == 0)
                 {
-                    break; // Stream ended.
+                    break;
                 }
 
                 totalRead += bytesRead;
             }
 
-            // Prove real data is flowing — at least 1000 bytes received.
-            Assert.True(totalRead >= 1000, $"Expected >= 1000 bytes from stream, got {totalRead}.");
-        }
-        catch (TaskCanceledException)
-        {
-            // Timeout after reading headers means the stream was flowing — acceptable
-            // only if we didn't get to the assertion phase. If we reach here without
-            // having tested the bytes, it means we were slow to start but the endpoint is alive.
-        }
-        catch (OperationCanceledException)
-        {
-            // Same as above.
+            Assert.True(totalRead >= 16000, $"Expected >= 16000 bytes of continuous stream data, got {totalRead}.");
         }
         finally
         {
-            response?.Dispose();
+            using var restoreConfig = await ReadPluginConfigAsync();
+            await SavePluginConfigAsync(restoreConfig, OverrideField(
+                "EnableRelayTokenSecurity",
+                w => w.WriteBoolean("EnableRelayTokenSecurity", hadSecurity)));
         }
     }
 

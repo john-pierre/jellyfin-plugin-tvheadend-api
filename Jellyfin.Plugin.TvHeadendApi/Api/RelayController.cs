@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using MetricsStreamEndedBy = global::Jellyfin.Plugin.TvHeadendApi.Model.Metrics.StreamEndedBy;
 using RelayFailureReason = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.RelayFailureReason;
+using RelayTokenValidationResult = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.RelayTokenValidationResult;
 using RelayType = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.RelayType;
 
 #pragma warning disable SA1117 // Parameters should be on same line or each on own line
@@ -216,6 +217,8 @@ public class RelayController : ControllerBase
     [HttpHead("stream/{channelId}")]
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
     public async Task GetStream(string channelId, [FromQuery] string? profile, CancellationToken cancellationToken)
@@ -226,16 +229,87 @@ public class RelayController : ControllerBase
             return;
         }
 
-        // HEAD requests: return headers only — never open a long-running upstream stream.
-        // Apple AVPlayer uses HEAD to discover Content-Type, Accept-Ranges before playback.
-        if (HttpMethods.IsHead(Request.Method))
+        var config = _configProvider.Configuration;
+        if (config == null || !config.RelayEnabled)
         {
-            Response.StatusCode = StatusCodes.Status200OK;
-            Response.ContentType = "video/mp2t";
-            Response.Headers["Accept-Ranges"] = "none";
+            // Relay is disabled in plugin configuration — refuse to proxy (incl. HEAD probes).
+            Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
             return;
         }
 
+        // SECURITY: when relay token security is enabled, this open endpoint must NOT serve
+        // anonymously — real clients receive tokenized /relay/stream URLs. Require a valid token
+        // here too (for HEAD as well) so the token gate cannot be bypassed via /stream/{channelId}.
+        RelayTokenValidationResult? validation = null;
+        if (config.EnableRelayTokenSecurity)
+        {
+            validation = await ValidateStreamTokenAsync(channelId, cancellationToken).ConfigureAwait(false);
+            if (validation == null)
+            {
+                return;
+            }
+        }
+
+        // HEAD requests (after the gates): return headers only — never open a long-running stream.
+        // Apple AVPlayer uses HEAD to discover Content-Type / Accept-Ranges before playback.
+        if (HttpMethods.IsHead(Request.Method))
+        {
+            WriteStreamHeadResponse();
+            return;
+        }
+
+        await StreamChannelCoreAsync(channelId, ResolveEffectiveProfile(validation, profile), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates the relay token for a stream request. On failure, sets the appropriate response
+    /// status code and returns <c>null</c>; on success returns the validated result (carrying the
+    /// matched token record, including the rule-resolved profile).
+    /// </summary>
+    /// <param name="channelId">TVHeadend channel UUID the token must be scoped to.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The validation result when the token is valid; otherwise <c>null</c> (status already set).</returns>
+    private async Task<RelayTokenValidationResult?> ValidateStreamTokenAsync(string channelId, CancellationToken cancellationToken)
+    {
+        var tokenValidation = await _tokenValidator.ValidateAsync(
+            RelayAuthorizationHelper.ExtractToken(Request),
+            RelayType.Stream,
+            channelId,
+            cancellationToken).ConfigureAwait(false);
+
+        if (tokenValidation.IsValid)
+        {
+            return tokenValidation;
+        }
+
+        Response.StatusCode = RelayAuthorizationHelper.MapToStatusCode(tokenValidation.FailureReason);
+        return null;
+    }
+
+    /// <summary>
+    /// Determines the streaming profile to use. When the request was token-secured, the profile
+    /// issued in the token (the rule-resolved profile) is authoritative — the client cannot override
+    /// it by tampering with the <c>?profile=</c> query parameter. Falls back to the requested profile
+    /// only when no token scoped a profile (e.g. token security disabled).
+    /// </summary>
+    /// <param name="validation">The token validation result, or <c>null</c> when no token was required.</param>
+    /// <param name="requestedProfile">The profile from the query string.</param>
+    /// <returns>The effective profile to stream.</returns>
+    private static string? ResolveEffectiveProfile(RelayTokenValidationResult? validation, string? requestedProfile)
+        => !string.IsNullOrWhiteSpace(validation?.TokenRecord?.SelectedProfile)
+            ? validation.TokenRecord.SelectedProfile
+            : requestedProfile;
+
+    /// <summary>
+    /// Streams a live TV channel from TVHeadend to the client. Assumes the request is already
+    /// authorized (token-validated, or token security disabled) and that the method is GET.
+    /// </summary>
+    /// <param name="channelId">TVHeadend channel UUID.</param>
+    /// <param name="profile">Optional streaming profile override.</param>
+    /// <param name="cancellationToken">Cancellation token — triggers upstream cancellation on disconnect.</param>
+    /// <returns>A <see cref="Task"/> representing the streaming operation.</returns>
+    private async Task StreamChannelCoreAsync(string channelId, string? profile, CancellationToken cancellationToken)
+    {
         // Start telemetry session immediately — visible in dashboard from this point.
         var hasRange = Request.Headers.ContainsKey("Range");
         var userAgent = Request.Headers.UserAgent.ToString();
@@ -243,16 +317,20 @@ public class RelayController : ControllerBase
         var sessionId = _sessionTracker.StartSession(channelId, Request.Method, userAgent, remoteIp, hasRange);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var result = await _relay.RelayStreamAsync(channelId, profile, cancellationToken).ConfigureAwait(false);
+        RelayResult? result = null;
         long totalBytes = 0;
         bool firstByteSent = false;
 
         try
         {
+            // RelayStreamAsync increments the active-stream counter as its first step. Keeping the
+            // call INSIDE this try guarantees the finally always releases that slot and finalizes the
+            // session — even when the client cancels during the upstream connect (the call re-throws).
+            result = await _relay.RelayStreamAsync(channelId, profile, cancellationToken).ConfigureAwait(false);
+
             if (result.Body == null)
             {
                 Response.StatusCode = result.StatusCode;
-                RecordAndDispose(result);
                 // Finalize session — upstream failed before any data.
                 var endReason = SessionTracker.ClassifyEndReason(null, false, result.TimingContext?.UpstreamStatusCode);
                 _sessionTracker.FinalizeSession(
@@ -320,16 +398,17 @@ public class RelayController : ControllerBase
             }
 
             // Normal upstream EOF — stream completed.
+            var eofBitrate = ComputeAverageBitrate(totalBytes, sw.Elapsed);
             _sessionTracker.FinalizeSession(
                 sessionId, totalBytes, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds,
                 MetricsStreamEndedBy.UpstreamEof, firstByteSent, startupLatencyMs,
-                null, null, null, 0, 0, 0,
+                null, null, null, eofBitrate, eofBitrate, eofBitrate,
                 "OK", "OK",
                 !string.IsNullOrEmpty(result.AcceptRanges), false, !string.IsNullOrEmpty(result.AcceptRanges));
         }
         catch (OperationCanceledException)
         {
-            if (result.TimingContext != null)
+            if (result?.TimingContext != null)
             {
                 result.TimingContext.BytesSent = totalBytes;
                 result.TimingContext.ClientCancelled = true;
@@ -341,14 +420,15 @@ public class RelayController : ControllerBase
             var endReason = firstByteSent
                 ? MetricsStreamEndedBy.ClientDisconnectAfterFirstByte
                 : MetricsStreamEndedBy.StartupCancelledBeforeFirstByte;
+            var cancelBitrate = ComputeAverageBitrate(totalBytes, sw.Elapsed);
             _sessionTracker.FinalizeSession(
                 sessionId, totalBytes, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds,
-                endReason, firstByteSent, 0, null, null, null, 0, 0, 0,
+                endReason, firstByteSent, 0, null, null, null, cancelBitrate, cancelBitrate, cancelBitrate,
                 null, "ClientDisconnected", false, false, false);
         }
         catch (IOException)
         {
-            if (result.TimingContext != null)
+            if (result?.TimingContext != null)
             {
                 result.TimingContext.BytesSent = totalBytes;
                 result.TimingContext.FailureReason = RelayFailureReason.DownstreamWriteFailed;
@@ -363,7 +443,7 @@ public class RelayController : ControllerBase
         }
         catch (Exception)
         {
-            if (result.TimingContext != null)
+            if (result?.TimingContext != null)
             {
                 result.TimingContext.BytesSent = totalBytes;
                 result.TimingContext.FailureReason = RelayFailureReason.UnexpectedException;
@@ -378,10 +458,10 @@ public class RelayController : ControllerBase
         }
         finally
         {
-            if (result.TimingContext?.RelayType == RelayType.Stream)
-            {
-                _activityTracker.DecrementStreams();
-            }
+            // Always release the activity slot: RelayStreamAsync increments the counter as its
+            // first step, so every entry here — success, upstream failure, or client-cancel during
+            // connect — must release exactly once. DecrementStreams floors at 0.
+            _activityTracker.DecrementStreams();
 
             RecordAndDispose(result);
         }
@@ -412,21 +492,31 @@ public class RelayController : ControllerBase
             return;
         }
 
-        // Validate relay token at request start only
-        var tokenValidation = await _tokenValidator.ValidateAsync(
-            RelayAuthorizationHelper.ExtractToken(Request),
-            RelayType.Stream,
-            channelId,
-            cancellationToken).ConfigureAwait(false);
-
-        if (!tokenValidation.IsValid)
+        var config = _configProvider.Configuration;
+        if (config == null || !config.RelayEnabled)
         {
-            Response.StatusCode = RelayAuthorizationHelper.MapToStatusCode(tokenValidation.FailureReason);
+            Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
             return;
         }
 
-        // Delegate to existing stream relay logic
-        await GetStream(channelId, profile, cancellationToken).ConfigureAwait(false);
+        // Validate the relay token at request start — for HEAD as well as GET, since legitimate
+        // clients (e.g. Apple AVPlayer) always have the token embedded in the MediaSource URL.
+        var validation = await ValidateStreamTokenAsync(channelId, cancellationToken).ConfigureAwait(false);
+        if (validation == null)
+        {
+            return;
+        }
+
+        // HEAD capability discovery (after token validation).
+        if (HttpMethods.IsHead(Request.Method))
+        {
+            WriteStreamHeadResponse();
+            return;
+        }
+
+        // Delegate to the shared streaming core. Use the profile issued in the token (rule-resolved)
+        // so a client cannot override it by tampering with ?profile=.
+        await StreamChannelCoreAsync(channelId, ResolveEffectiveProfile(validation, profile), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -464,6 +554,24 @@ public class RelayController : ControllerBase
 
         // Delegate to existing image relay logic
         return await GetImage(path, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Computes the average bitrate (bits/second) for a completed stream so the persisted
+    /// history reflects real throughput instead of zero.
+    /// </summary>
+    private static double ComputeAverageBitrate(long totalBytes, TimeSpan elapsed)
+        => elapsed.TotalSeconds > 0.001 ? (totalBytes * 8.0) / elapsed.TotalSeconds : 0;
+
+    /// <summary>
+    /// Writes the HEAD response for stream capability discovery (Apple AVPlayer).
+    /// Returns only the content type and range support — no channel data, no upstream connection.
+    /// </summary>
+    private void WriteStreamHeadResponse()
+    {
+        Response.StatusCode = StatusCodes.Status200OK;
+        Response.ContentType = "video/mp2t";
+        Response.Headers["Accept-Ranges"] = "none";
     }
 
     private void RecordAndDispose(RelayResult? result)

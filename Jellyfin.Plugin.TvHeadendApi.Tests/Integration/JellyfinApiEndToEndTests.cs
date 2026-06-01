@@ -180,6 +180,10 @@ public sealed class JellyfinApiEndToEndTests
         Assert.True(
             postResp.StatusCode == HttpStatusCode.OK || postResp.StatusCode == HttpStatusCode.NoContent,
             $"Expected 200 or 204 for config update, got {(int)postResp.StatusCode}.");
+
+        // ResetToDefaults points Host at the default (unreachable inside the container) and can trip
+        // the circuit breaker; wait for the connection to recover so later collection tests are not polluted.
+        await _fixture.EnsureConfiguredAndHealthyAsync();
     }
 
     [Fact]

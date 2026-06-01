@@ -9,6 +9,7 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Input;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Model.Subscription;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dashboard;
 using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
@@ -47,8 +48,10 @@ public class DashboardServiceTests
         return health;
     }
 
-    private DashboardService CreateSut()
+    private DashboardService CreateSut(PluginConfiguration? config = null)
     {
+        var effectiveConfig = config ?? new PluginConfiguration { Username = "admin", Password = "secret" };
+        var configProvider = new ConfigurationProvider(() => effectiveConfig);
         return new DashboardService(
             _diagMock.Object,
             _statusMock.Object,
@@ -58,42 +61,48 @@ public class DashboardServiceTests
             _apiClientMock.Object,
             NullHealthService.Instance,
             CreateTestDbHealth(),
+            configProvider,
             NullLogger<DashboardService>.Instance);
+    }
+
+    private static ConfigurationProvider CreateConfiguredProvider()
+    {
+        return new ConfigurationProvider(() => new PluginConfiguration { Username = "admin", Password = "secret" });
     }
 
     [Fact]
     public void Constructor_NullDiagnostic_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            null!, _statusMock.Object, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), NullLogger<DashboardService>.Instance));
+            null!, _statusMock.Object, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), CreateConfiguredProvider(), NullLogger<DashboardService>.Instance));
     }
 
     [Fact]
     public void Constructor_NullStatus_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            _diagMock.Object, null!, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), NullLogger<DashboardService>.Instance));
+            _diagMock.Object, null!, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), CreateConfiguredProvider(), NullLogger<DashboardService>.Instance));
     }
 
     [Fact]
     public void Constructor_NullInput_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            _diagMock.Object, _statusMock.Object, null!, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), NullLogger<DashboardService>.Instance));
+            _diagMock.Object, _statusMock.Object, null!, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), CreateConfiguredProvider(), NullLogger<DashboardService>.Instance));
     }
 
     [Fact]
     public void Constructor_NullSubscription_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            _diagMock.Object, _statusMock.Object, _inputMock.Object, null!, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), NullLogger<DashboardService>.Instance));
+            _diagMock.Object, _statusMock.Object, _inputMock.Object, null!, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), CreateConfiguredProvider(), NullLogger<DashboardService>.Instance));
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DashboardService(
-            _diagMock.Object, _statusMock.Object, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), null!));
+            _diagMock.Object, _statusMock.Object, _inputMock.Object, _subMock.Object, _urlBuilderMock.Object, _apiClientMock.Object, NullHealthService.Instance, CreateTestDbHealth(), CreateConfiguredProvider(), null!));
     }
 
     [Fact]
@@ -287,5 +296,57 @@ public class DashboardServiceTests
 
         Assert.Equal("http://tvh.local:9981", result.BaseUrl);
         _urlBuilderMock.Verify(x => x.GetBaseUrl(pluginConfiguration), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetDashboardStatusAsync_WhenNoCredentials_ReturnsRequiresSetup()
+    {
+        var config = new PluginConfiguration(); // default: empty username/password, anonymous disabled
+        var sut = CreateSut(config);
+
+        var result = await sut.GetDashboardStatusAsync(CancellationToken.None);
+
+        Assert.True(result.RequiresSetup);
+        Assert.NotEmpty(result.PluginVersion);
+        // No backend calls should have been made
+        _diagMock.Verify(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _statusMock.Verify(x => x.GetActivityStatusAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _inputMock.Verify(x => x.GetInputStatusAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetDashboardStatusAsync_WhenAnonymousAccessEnabled_DoesNotRequireSetup()
+    {
+        var config = new PluginConfiguration { AllowAnonymousAccess = true };
+        _diagMock.Setup(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiagnoseResult { OverallStatus = "OK" });
+        _statusMock.Setup(x => x.GetActivityStatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync((ActivityStatus?)null);
+        _inputMock.Setup(x => x.GetInputStatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<InputStatusEntry>());
+        _subMock.Setup(x => x.GetActiveSubscriptionsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<SubscriptionEntry>());
+        _statusMock.Setup(x => x.GetConnectionsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ConnectionEntry>());
+
+        var sut = CreateSut(config);
+        var result = await sut.GetDashboardStatusAsync(CancellationToken.None);
+
+        Assert.False(result.RequiresSetup);
+        _diagMock.Verify(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetDashboardStatusAsync_WhenCredentialsProvided_DoesNotRequireSetup()
+    {
+        var config = new PluginConfiguration { Username = "admin", Password = "secret" };
+        _diagMock.Setup(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiagnoseResult { OverallStatus = "OK" });
+        _statusMock.Setup(x => x.GetActivityStatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync((ActivityStatus?)null);
+        _inputMock.Setup(x => x.GetInputStatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<InputStatusEntry>());
+        _subMock.Setup(x => x.GetActiveSubscriptionsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<SubscriptionEntry>());
+        _statusMock.Setup(x => x.GetConnectionsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ConnectionEntry>());
+
+        var sut = CreateSut(config);
+        var result = await sut.GetDashboardStatusAsync(CancellationToken.None);
+
+        Assert.False(result.RequiresSetup);
+        _diagMock.Verify(x => x.DiagnoseAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 }

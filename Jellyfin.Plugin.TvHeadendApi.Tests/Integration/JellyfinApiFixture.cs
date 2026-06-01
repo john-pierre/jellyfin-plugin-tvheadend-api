@@ -224,6 +224,57 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
             $"Authentication failed after {maxAttempts} attempts. Jellyfin may not have a valid admin user.");
     }
 
+    /// <summary>
+    /// Re-applies the working TVHeadend connection configuration and waits for the plugin's
+    /// resilience circuit breaker to recover (connection healthy again). Destructive tests that
+    /// reset configuration or intentionally break connectivity must call this in their <c>finally</c>
+    /// so they leave the shared fixture in a known-good state for subsequent tests in the collection.
+    /// </summary>
+    /// <returns>A task that completes when the connection is healthy or the timeout elapses.</returns>
+    public async Task EnsureConfiguredAndHealthyAsync()
+    {
+        if (!IsAvailable || _authClient == null)
+        {
+            return;
+        }
+
+        var tvhHost = Environment.GetEnvironmentVariable("TVH_HOST") ?? "localhost";
+        var tvhPortStr = Environment.GetEnvironmentVariable("TVH_PORT") ?? "19981";
+        var tvhUser = Environment.GetEnvironmentVariable("TVH_USER") ?? "testuser";
+        var tvhPass = Environment.GetEnvironmentVariable("TVH_PASS") ?? "testpass";
+        if (!int.TryParse(tvhPortStr, out var tvhPort))
+        {
+            tvhPort = 19981;
+        }
+
+        await ConfigurePluginAsync(_authClient, tvhHost, tvhPort, tvhUser, tvhPass).ConfigureAwait(false);
+
+        // The circuit breaker stays open ~30s after a bad-config/reset test, so re-applying the
+        // correct config is not enough — poll until the plugin can actually reach TVHeadend again.
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            try
+            {
+                var resp = await _authClient.GetAsync("/TvHeadendApi/Diagnose").ConfigureAwait(false);
+                if (resp.IsSuccessStatusCode)
+                {
+                    var body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    using var doc = JsonDocument.Parse(body);
+                    if (doc.RootElement.TryGetProperty("ChannelCount", out var cc) && cc.GetInt32() > 0)
+                    {
+                        return;
+                    }
+                }
+            }
+            catch (HttpRequestException)
+            {
+                // Retry until healthy or timeout.
+            }
+
+            await Task.Delay(2000).ConfigureAwait(false);
+        }
+    }
+
     private static async Task ConfigurePluginAsync(HttpClient client, string tvhHost, int tvhPort, string tvhUser, string tvhPass)
     {
         // GET current plugin config.

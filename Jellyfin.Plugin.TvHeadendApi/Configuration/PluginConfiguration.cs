@@ -32,6 +32,7 @@ public class PluginConfiguration : BasePluginConfiguration
         this.StreamingProfile = "pass";
         this.FallbackMaxStreamingBitrate = 3000000;
         this.IsInfiniteStream = true;
+        this.StreamDeliveryMode = StreamDeliveryMode.Relay;
 
         // Playback behaviour
         this.SupportsDirectPlay = true;
@@ -168,6 +169,19 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Examples: "pass", "matroska", "webtv-h264-aac-mpegts".
     /// </summary>
     public string StreamingProfile { get; set; }
+
+    /// <summary>
+    /// Gets or sets how the live-stream URL handed to clients is built.
+    /// <para>
+    /// <see cref="StreamDeliveryMode.Relay"/> (default) proxies the stream through the plugin's
+    /// Jellyfin relay endpoint so TVHeadend credentials/URLs stay server-side.
+    /// <see cref="StreamDeliveryMode.DirectToTvheadend"/> points clients straight at TVHeadend
+    /// using an auth token — fastest and needs no reachable Jellyfin host, but exposes the
+    /// TVHeadend host and token to clients. Direct mode requires <see cref="AuthToken"/>
+    /// (or <see cref="AllowAnonymousAccess"/>); otherwise the plugin falls back to relay.
+    /// </para>
+    /// </summary>
+    public StreamDeliveryMode StreamDeliveryMode { get; set; }
 
     /// <summary>
     /// Gets or sets the fallback maximum streaming bitrate in bits per second.

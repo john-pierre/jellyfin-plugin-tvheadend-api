@@ -98,6 +98,18 @@ internal sealed class DatabaseCleanupService
             totalDeleted += CleanupTable(
                 connection, "relay_request_metric", "created_at_utc", metricsRetentionDays);
 
+            // Streaming telemetry tables — these grow per stream and previously had no retention.
+            totalDeleted += CleanupTable(
+                connection, "completed_stream_sessions", "ended_at_utc", metricsRetentionDays);
+
+            totalDeleted += CleanupTable(
+                connection, "relay_events", "timestamp_utc", metricsRetentionDays);
+
+            // Active sessions are normally removed on finalization; prune any stale rows left by
+            // an abnormal shutdown so the table cannot grow unbounded.
+            totalDeleted += CleanupTable(
+                connection, "active_stream_sessions", "started_at_utc", metricsRetentionDays);
+
             totalDeleted += CleanupExpiredTokens(connection, tokenRetentionDays);
 
             totalDeleted += CleanupTable(

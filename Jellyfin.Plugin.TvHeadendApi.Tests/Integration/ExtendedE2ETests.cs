@@ -168,6 +168,10 @@ public sealed class ExtendedE2ETests
             ("RelayEnabled", w => w.WriteBoolean("RelayEnabled", true)),
             ("EnableRelayTokenSecurity", w => w.WriteBoolean("EnableRelayTokenSecurity", true)),
             ("StreamingProfile", w => w.WriteString("StreamingProfile", "pass"))));
+
+        // Wait for the resilience circuit breaker to recover so the next test in the shared
+        // collection starts against a healthy connection (prevents order-dependent cascades).
+        await _fixture.EnsureConfiguredAndHealthyAsync();
     }
 
     // ═══════════════════════════════════════════════════════════════════════

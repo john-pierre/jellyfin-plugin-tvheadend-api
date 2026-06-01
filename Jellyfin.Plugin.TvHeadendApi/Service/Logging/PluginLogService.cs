@@ -112,6 +112,11 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
             ? LogSanitizer.Sanitize(message)
             : message;
 
+        // Exception text can carry secrets too (e.g. a URL with ?auth= in an HttpRequestException).
+        var sanitizedException = exception != null && config.EnableDebugLogSanitization
+            ? LogSanitizer.Sanitize(exception)
+            : exception;
+
         var logType = level.ToLowerInvariant() switch
         {
             "trace" => "trace",
@@ -131,7 +136,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
             Level = level,
             Category = Truncate(category, 256) ?? string.Empty,
             Message = Truncate(sanitizedMessage, MaxMessageLength) ?? string.Empty,
-            Exception = exception != null ? Truncate(exception, MaxExceptionLength) : null,
+            Exception = sanitizedException != null ? Truncate(sanitizedException, MaxExceptionLength) : null,
             EventId = eventId,
             CorrelationId = correlationId,
             ChannelId = channelId,
@@ -154,6 +159,14 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
             return;
         }
 
+        // Drop high-frequency, zero-diagnostic-value TVHeadend log noise (e.g. the internal EPG
+        // grabber output that repeats every refetch interval). Importing it floods the log table
+        // and buries plugin events, making the dashboard log view useless.
+        if (IsLowValueTvhNoise(rawLine))
+        {
+            return;
+        }
+
         var parsed = LogParser.Parse(rawLine);
 
         var sanitizedMessage = config.EnableDebugLogSanitization
@@ -168,12 +181,34 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
             Level = parsed.Level,
             Category = parsed.Category,
             Message = Truncate(sanitizedMessage, MaxMessageLength) ?? string.Empty,
-            RawSource = Truncate(rawLine, MaxMessageLength),
+
+            // RawSource is always sanitized: TVHeadend access-log lines embed a persistent
+            // ?auth=<token>, and this field is returned verbatim to admins. Redact unconditionally
+            // (independent of EnableDebugLogSanitization) so the token never lands at rest.
+            RawSource = Truncate(LogSanitizer.Sanitize(rawLine), MaxMessageLength),
             RawLineHash = parsed.OriginalLineHash,
             ImportedAtUtc = DateTime.UtcNow,
         };
 
         _queue.TryAdd(entry);
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> for high-frequency, zero-diagnostic-value TVHeadend log lines
+    /// (the internal EPG grabber's periodic output and no-op playlist re-scans) that would
+    /// otherwise flood the log table every refetch interval and bury plugin events.
+    /// </summary>
+    /// <param name="rawLine">The raw TVHeadend log line.</param>
+    /// <returns><c>true</c> when the line should be dropped rather than imported.</returns>
+    private static bool IsLowValueTvhNoise(string rawLine)
+    {
+        if (string.IsNullOrWhiteSpace(rawLine))
+        {
+            return true;
+        }
+
+        return rawLine.Contains("tv_grab_url", StringComparison.OrdinalIgnoreCase)
+            || rawLine.Contains("m3u parse: 0 new", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc />

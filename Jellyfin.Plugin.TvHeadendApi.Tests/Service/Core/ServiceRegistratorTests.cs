@@ -14,6 +14,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Jellyfin.Plugin.TvHeadendApi.Service.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Subscription;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
@@ -21,6 +22,7 @@ using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.MediaEncoding;
+using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Session;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -70,6 +72,7 @@ public class ServiceRegistratorTests
         services.AddSingleton(Mock.Of<ISessionManager>());
         services.AddSingleton(Mock.Of<IMediaEncoder>());
         services.AddSingleton(Mock.Of<IApplicationPaths>());
+        services.AddSingleton(Mock.Of<IAuthorizationContext>());
         services.AddSingleton(host.Object);
 
         using var provider = services.BuildServiceProvider();
@@ -86,6 +89,7 @@ public class ServiceRegistratorTests
         Assert.NotNull(provider.GetRequiredService<ILifecycleService>());
         Assert.NotNull(provider.GetRequiredService<IDefaultProfileService>());
         Assert.NotNull(provider.GetRequiredService<IProfileContainerResolver>());
+        Assert.NotNull(provider.GetRequiredService<IPlaybackContextAccessor>());
         Assert.NotNull(provider.GetRequiredService<IStatusService>());
         Assert.NotNull(provider.GetRequiredService<IInputMonitorService>());
         Assert.NotNull(provider.GetRequiredService<ISubscriptionService>());

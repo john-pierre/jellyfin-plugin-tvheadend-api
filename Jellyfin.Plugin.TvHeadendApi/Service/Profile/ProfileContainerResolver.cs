@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,7 +23,7 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
     private readonly IUrlBuilder _tvheadendUrlBuilder;
     private readonly IProfileResolver _streamProfileResolver;
 
-    private volatile ProfileCacheEntry? _profileCache;
+    private readonly ConcurrentDictionary<string, ProfileCacheEntry> _profileCache = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ProfileContainerResolver"/> class.
@@ -52,20 +53,30 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
     }
 
     /// <inheritdoc />
-    public async Task<string> ResolveContainerAsync(PluginConfiguration config, CancellationToken cancellationToken)
+    public Task<string> ResolveContainerAsync(PluginConfiguration config, CancellationToken cancellationToken)
+        => ResolveContainerAsync(config, null, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<string> ResolveContainerAsync(PluginConfiguration config, string? effectiveProfileName, CancellationToken cancellationToken)
     {
-        var snapshot = await ResolveProfileSnapshotAsync(config, cancellationToken).ConfigureAwait(false);
+        var snapshot = await ResolveProfileSnapshotAsync(config, effectiveProfileName, cancellationToken).ConfigureAwait(false);
         return snapshot.Container;
     }
 
     /// <inheritdoc />
-    public async Task<ProfileSnapshot> ResolveProfileSnapshotAsync(PluginConfiguration config, CancellationToken cancellationToken)
+    public Task<ProfileSnapshot> ResolveProfileSnapshotAsync(PluginConfiguration config, CancellationToken cancellationToken)
+        => ResolveProfileSnapshotAsync(config, null, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<ProfileSnapshot> ResolveProfileSnapshotAsync(PluginConfiguration config, string? effectiveProfileName, CancellationToken cancellationToken)
     {
-        var profileName = config.StreamingProfile;
+        ArgumentNullException.ThrowIfNull(config);
+
+        // Resolve the requested profile (per-channel/client rule result) or fall back to the global one.
+        string profileName = string.IsNullOrWhiteSpace(effectiveProfileName) ? config.StreamingProfile : effectiveProfileName!;
         var cacheTtl = TimeSpan.FromMinutes(config.ProfileCacheTtlMinutes > 0 ? config.ProfileCacheTtlMinutes : 5);
 
-        if (_profileCache is { } cached
-            && string.Equals(cached.ProfileName, profileName, StringComparison.OrdinalIgnoreCase)
+        if (_profileCache.TryGetValue(profileName, out var cached)
             && DateTime.UtcNow - cached.Timestamp < cacheTtl)
         {
             return cached.Snapshot;
@@ -74,15 +85,14 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
         await _profileContainerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_profileCache is { } cached2
-                && string.Equals(cached2.ProfileName, profileName, StringComparison.OrdinalIgnoreCase)
+            if (_profileCache.TryGetValue(profileName, out var cached2)
                 && DateTime.UtcNow - cached2.Timestamp < cacheTtl)
             {
                 return cached2.Snapshot;
             }
 
             var snapshot = await DetectProfileSnapshotAsync(config, profileName, cancellationToken).ConfigureAwait(false);
-            _profileCache = new ProfileCacheEntry(DateTime.UtcNow, profileName, snapshot);
+            _profileCache[profileName] = new ProfileCacheEntry(DateTime.UtcNow, profileName, snapshot);
             return snapshot;
         }
         finally

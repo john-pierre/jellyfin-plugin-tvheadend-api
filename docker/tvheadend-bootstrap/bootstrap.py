@@ -348,21 +348,39 @@ else:
 # ===========================================================================
 # 7. Trigger EPG grab and wait for data
 # ===========================================================================
-log("Triggering EPG internal re-run...")
-tvh_post("/api/epggrab/internal/rerun", {"rerun": "1"})
+# The XMLTV URL grabber needs at least two grab passes: the first pass discovers
+# and auto-maps the XMLTV channels to TVHeadend channels, and a subsequent pass
+# imports the actual programme events onto those mapped channels. Triggering the
+# grab only once (before mapping settles) leaves the EPG empty, so we re-trigger
+# the internal re-run periodically until events appear.
+log("Triggering EPG grab and waiting for events...")
 
-log("Waiting for EPG data...")
-for _ in range(10):
+EPG_MAX_WAIT = max(MAX_WAIT, 90)
+epg_elapsed = 0
+epg_total = 0
+last_rerun = -1000
+while epg_elapsed < EPG_MAX_WAIT:
+    # Re-trigger the internal grabber every ~12s — the first pass maps channels,
+    # later passes import events onto them.
+    if epg_elapsed - last_rerun >= 12:
+        tvh_post("/api/epggrab/internal/rerun", {"rerun": "1"})
+        last_rerun = epg_elapsed
+
     epg_resp = tvh_get("/api/epg/events/grid?limit=1")
     if epg_resp:
         try:
             epg_total = json.loads(epg_resp).get("totalCount", 0)
-            if epg_total >= 1:
-                log(f"  EPG loaded: {epg_total} events.")
-                break
         except json.JSONDecodeError:
-            pass
-    time.sleep(3)
+            epg_total = 0
+    log(f"  EPG check: events={epg_total}, elapsed={epg_elapsed}s")
+    if epg_total >= 1:
+        log(f"  EPG loaded: {epg_total} events.")
+        break
+    time.sleep(4)
+    epg_elapsed += 4
+
+if epg_total < 1:
+    log(f"  WARNING: EPG still empty after {EPG_MAX_WAIT}s — events were not imported.")
 
 # ===========================================================================
 # 8. Create a test streaming profile

@@ -554,8 +554,9 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
 
                 if (!probed)
                 {
-                    // Fallback: write a synthetic cache file from the profile snapshot.
-                    var profileSnapshot = await _profileContainerResolver.ResolveProfileSnapshotAsync(config, cancellationToken).ConfigureAwait(false);
+                    // Fallback: write a synthetic cache file from the EFFECTIVE profile snapshot
+                    // (the per-channel rule result), not the global one.
+                    var profileSnapshot = await _profileContainerResolver.ResolveProfileSnapshotAsync(config, effectiveProfile, cancellationToken).ConfigureAwait(false);
                     await TryWriteMediaInfoCacheAsync(channelId, streamUrl, profileSnapshot, cancellationToken).ConfigureAwait(false);
                 }
 

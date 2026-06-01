@@ -277,11 +277,31 @@ internal sealed class StreamingProfileResolver : IStreamingProfileResolver
                 && context.DeviceName.Contains(rule.MatchValue, StringComparison.OrdinalIgnoreCase),
 
             StreamingProfileRuleMatchType.UserIdExact =>
-                !string.IsNullOrWhiteSpace(context.UserId)
-                && string.Equals(context.UserId, rule.MatchValue, StringComparison.OrdinalIgnoreCase),
+                MatchesUserId(context.UserId, rule.MatchValue),
 
             _ => false,
         };
+    }
+
+    /// <summary>
+    /// Compares a resolved user id against a rule value, tolerating different GUID formats
+    /// (dashed "D", compact "N", braced "B") so a rule still matches regardless of how the id was entered.
+    /// </summary>
+    private static bool MatchesUserId(string? contextUserId, string ruleValue)
+    {
+        if (string.IsNullOrWhiteSpace(contextUserId))
+        {
+            return false;
+        }
+
+        if (string.Equals(contextUserId, ruleValue, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return Guid.TryParse(contextUserId, out var contextGuid)
+            && Guid.TryParse(ruleValue, out var ruleGuid)
+            && contextGuid == ruleGuid;
     }
 
     private static StreamingProfileResolutionResult BuildSafeFallback(string reason)

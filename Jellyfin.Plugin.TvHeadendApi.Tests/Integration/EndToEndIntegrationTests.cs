@@ -424,9 +424,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
 
         // Build a MediaSourceService with mocked profile resolution (returns mpegts container).
         var resolver = new Mock<IProfileContainerResolver>();
-        resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
+        resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("mpegts");
-        resolver.Setup(x => x.ResolveProfileSnapshotAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(It.IsAny<PluginConfiguration>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
@@ -440,6 +440,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             new StreamingProfileResolver(
                 NullLogger<StreamingProfileResolver>.Instance,
                 new ConfigurationProvider(() => _config)),
+            CreateStubPlaybackContext(),
             _apiClient,
             _urlBuilder,
             _relayUrlBuilder,
@@ -474,9 +475,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
         // Build MediaSourceService — the stream URL now routes through the relay,
         // so the TVH auth token is used server-side and not exposed in the client-facing URL.
         var resolver = new Mock<IProfileContainerResolver>();
-        resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
+        resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("mpegts");
-        resolver.Setup(x => x.ResolveProfileSnapshotAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(It.IsAny<PluginConfiguration>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
@@ -493,6 +494,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             new StreamingProfileResolver(
                 NullLogger<StreamingProfileResolver>.Instance,
                 new ConfigurationProvider(() => _config)),
+            CreateStubPlaybackContext(),
             tokenApiClient,
             _urlBuilder,
             _relayUrlBuilder,
@@ -521,9 +523,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
 
         // Build real MediaSourceService with mocked profile resolution.
         var resolver = new Mock<IProfileContainerResolver>();
-        resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
+        resolver.Setup(x => x.ResolveContainerAsync(It.IsAny<PluginConfiguration>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("mpegts");
-        resolver.Setup(x => x.ResolveProfileSnapshotAsync(It.IsAny<PluginConfiguration>(), It.IsAny<CancellationToken>()))
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(It.IsAny<PluginConfiguration>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProfileSnapshot("test-pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
 
         var library = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
@@ -537,6 +539,7 @@ public sealed class EndToEndIntegrationTests : IDisposable
             new StreamingProfileResolver(
                 NullLogger<StreamingProfileResolver>.Instance,
                 new ConfigurationProvider(() => _config)),
+            CreateStubPlaybackContext(),
             _apiClient,
             _urlBuilder,
             _relayUrlBuilder,
@@ -1174,6 +1177,15 @@ public sealed class EndToEndIntegrationTests : IDisposable
             });
         mock.Setup(x => x.BuildTokenizedImageRelayUrlAsync(It.IsAny<string>(), It.IsAny<Jellyfin.Plugin.TvHeadendApi.Model.Relay.MediaKind?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Returns<string, Jellyfin.Plugin.TvHeadendApi.Model.Relay.MediaKind?, string?, CancellationToken>((path, _, _, _) => Task.FromResult($"http://jellyfin:8096/api/tvheadend/images/{path}"));
+        return mock.Object;
+    }
+
+    private static IPlaybackContextAccessor CreateStubPlaybackContext()
+    {
+        var mock = new Mock<IPlaybackContextAccessor>();
+        mock.Setup(x => x.CreateContextAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string?, CancellationToken>((channelId, _) =>
+                Task.FromResult(new StreamingProfileContext { ChannelId = channelId }));
         return mock.Object;
     }
 

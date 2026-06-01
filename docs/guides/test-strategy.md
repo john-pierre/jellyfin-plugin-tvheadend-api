@@ -94,12 +94,33 @@ The test stack consists of four containers:
 .\docker\run-e2e-tests.ps1
 ```
 
-The script:
-1. Tears down any previous stack (clean volumes)
-2. Builds and starts all containers (`docker compose up -d --build --wait`)
-3. Waits for bootstrap completion (max 120s)
-4. Runs live integration tests (`--filter "Category=LiveIntegration"`)
-5. Outputs TRX results to `TestResults/e2e-results.trx`
+```bash
+# Linux / CI
+docker/run-e2e-tests.sh
+```
+
+Both scripts:
+1. Tear down any previous stack (clean volumes — both the `tvh-test` project and the compose file's own project name, to avoid `container_name` reuse conflicts)
+2. Build and start all containers (`docker compose up -d --build --wait`)
+3. Wait for bootstrap completion (max 120s); a non-zero bootstrap exit fails the run
+4. Run live integration tests (`--filter "Category=LiveIntegration"`)
+5. Output TRX results to `TestResults/e2e-results.trx`
+6. **Propagate the `dotnet test` exit code** so CI actually gates on the E2E outcome, and always tear the stack down (clean volumes) in a `finally`/`trap`.
+
+**Connection environment variables.** The plugin runs *inside* the Jellyfin container, so it reaches
+TVHeadend via the Docker service name; direct service-layer tests run from the host and use the
+published port. The scripts set both:
+
+| Variable | Value | Used by |
+|---|---|---|
+| `TVH_HOST` / `TVH_PORT` | `tvheadend` / `9981` | Plugin config written into Jellyfin (container-internal) |
+| `TVHEADEND_URL` | `http://localhost:19981` | Direct service/raw-API tests (from the host) |
+| `JELLYFIN_URL` | `http://localhost:18096` | Jellyfin HTTP API tests |
+| `TVH_USER` / `TVH_PASS` | `testuser` / `testpass` | Bootstrap-created TVHeadend account |
+
+> **Note:** Jellyfin only ingests Live-TV channels into its library on a guide refresh. After a fresh
+> Jellyfin start, trigger the `RefreshGuide` scheduled task (or wait for the scheduled run) before
+> querying `/LiveTv/Channels` or `PlaybackInfo`.
 
 **Option B: Manual steps**
 

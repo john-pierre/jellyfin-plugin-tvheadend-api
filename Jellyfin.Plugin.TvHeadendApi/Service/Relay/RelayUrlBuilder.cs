@@ -10,6 +10,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using MediaBrowser.Controller;
+using Microsoft.AspNetCore.Http;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 
@@ -24,6 +25,7 @@ internal sealed class RelayUrlBuilder : IRelayUrlBuilder
     private readonly ConfigurationProvider _configProvider;
     private readonly IRelayTokenService? _tokenService;
     private readonly RelayTokenOptions? _tokenOptions;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RelayUrlBuilder"/> class.
@@ -32,16 +34,22 @@ internal sealed class RelayUrlBuilder : IRelayUrlBuilder
     /// <param name="configProvider">Plugin configuration provider.</param>
     /// <param name="tokenService">Relay token service for issuing tokens (optional for backward compatibility).</param>
     /// <param name="tokenOptions">Relay token policy options (optional for backward compatibility).</param>
+    /// <param name="httpContextAccessor">
+    /// Accessor for the current HTTP request, used to derive a client-reachable Jellyfin host
+    /// (handles reverse proxies / published URLs). Optional for backward compatibility.
+    /// </param>
     public RelayUrlBuilder(
         IServerApplicationHost appHost,
         ConfigurationProvider configProvider,
         IRelayTokenService? tokenService = null,
-        RelayTokenOptions? tokenOptions = null)
+        RelayTokenOptions? tokenOptions = null,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _appHost = appHost ?? throw new ArgumentNullException(nameof(appHost));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _tokenService = tokenService;
         _tokenOptions = tokenOptions;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     /// <inheritdoc />
@@ -70,12 +78,34 @@ internal sealed class RelayUrlBuilder : IRelayUrlBuilder
     /// <inheritdoc />
     public string GetEffectiveBaseUrl()
     {
+        // 1. Explicit operator override always wins (reverse-proxy / custom domains).
         var overrideUrl = _configProvider.Configuration?.RelayHostOverride;
         if (!string.IsNullOrWhiteSpace(overrideUrl))
         {
             return overrideUrl.TrimEnd('/');
         }
 
+        // 2. Derive a client-reachable URL from the current request when one is available.
+        //    GetSmartApiUrl honours the published server URL, reverse-proxy headers and the
+        //    network the request came in on — so manual host configuration is rarely needed.
+        var request = _httpContextAccessor?.HttpContext?.Request;
+        if (request != null)
+        {
+            try
+            {
+                var smartUrl = _appHost.GetSmartApiUrl(request);
+                if (!string.IsNullOrWhiteSpace(smartUrl))
+                {
+                    return smartUrl.TrimEnd('/');
+                }
+            }
+            catch (Exception)
+            {
+                // Fall through to local-access auto-detection.
+            }
+        }
+
+        // 3. Fallback: the server's local-access URL.
         return GetAutoDetectedBaseUrl();
     }
 

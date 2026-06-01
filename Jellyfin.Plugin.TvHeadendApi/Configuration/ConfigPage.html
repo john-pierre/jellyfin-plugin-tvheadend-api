@@ -424,8 +424,8 @@
                         <h3>Image Tokens</h3>
                         <div class="tvh-field inputContainer">
                             <label class="inputLabel" for="ImageTokenTtlMinutes">Image Token TTL (minutes)</label>
-                            <input id="ImageTokenTtlMinutes" name="ImageTokenTtlMinutes" type="number" min="1" is="emby-input" placeholder="30" />
-                            <div class="fieldDescription">Image tokens need a longer TTL to support caching-friendly behavior and prevent channel logos from breaking. Minimum: 1 minute.</div>
+                            <input id="ImageTokenTtlMinutes" name="ImageTokenTtlMinutes" type="number" min="0" is="emby-input" placeholder="0" />
+                            <div class="fieldDescription"><strong>0 = never expire (recommended).</strong> Jellyfin caches image URLs (with the embedded token) for a long time; a non-zero TTL can make channel logos and EPG images return 401/410 once the token expires. Only set a positive value if you have a specific security requirement.</div>
                         </div>
                         <div class="tvh-field inputContainer">
                             <label class="inputLabel" for="ImageTokenMaxUses">Image Token Max Uses</label>
@@ -469,6 +469,14 @@
                     <h2 class="tvh-section-title">Streaming</h2>
                     <p class="tvh-section-desc">Controls how live TV streams are requested from TvHeadend and which profile is used per channel, client, or user.</p>
                     <div class="tvh-card">
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="StreamDeliveryMode">Stream Delivery Mode</label>
+                            <select id="StreamDeliveryMode" name="StreamDeliveryMode" is="emby-select">
+                                <option value="Relay">Relay through Jellyfin (recommended)</option>
+                                <option value="DirectToTvheadend">Direct to TVHeadend (fastest)</option>
+                            </select>
+                            <div class="fieldDescription"><strong>Relay</strong> proxies the stream through Jellyfin so TVHeadend credentials/URLs are never exposed to clients; the Jellyfin host is auto-derived from the client request (the host override is only needed for unusual reverse-proxy setups). <strong>Direct to TVHeadend</strong> points clients straight at TVHeadend with an auth token — fastest and needs no reachable Jellyfin host, but exposes the TVHeadend host and token to clients. Direct mode requires a configured Auth Token (or anonymous access); otherwise it falls back to relay.</div>
+                        </div>
                         <div class="tvh-field inputContainer">
                             <label class="inputLabel" for="FallbackMaxStreamingBitrate">Fallback Max Bitrate (bps)</label>
                             <input id="FallbackMaxStreamingBitrate" name="FallbackMaxStreamingBitrate" type="number" is="emby-input" placeholder="3000000" />
@@ -990,6 +998,7 @@
                     config.CleanupExpiredTokensIntervalMinutes = parseInt_('#CleanupExpiredTokensIntervalMinutes', config.CleanupExpiredTokensIntervalMinutes);
                     config.TokenValidationClockSkewSeconds = parseInt_('#TokenValidationClockSkewSeconds', config.TokenValidationClockSkewSeconds);
 
+                    config.StreamDeliveryMode = $('#StreamDeliveryMode').value || 'Relay';
                     config.FallbackMaxStreamingBitrate = parseInt_('#FallbackMaxStreamingBitrate', config.FallbackMaxStreamingBitrate);
                     config.IsInfiniteStream = $('#IsInfiniteStream').checked;
                     config.SupportsDirectPlay = $('#SupportsDirectPlay').checked;
@@ -1026,7 +1035,8 @@
                     // Streaming profile settings — collect from unified table
                     var sps = config.StreamingProfileSettings || {};
                     var assignments = collectProfileAssignments();
-                    sps.DefaultPlaybackMode = 0; // Auto
+                    // Preserve any previously-configured default playback mode (the table UI does not edit it).
+                    if (sps.DefaultPlaybackMode == null) sps.DefaultPlaybackMode = 0; // Auto
                     sps.DefaultTvHeadendProfile = assignments.defaultProfile;
                     config.StreamingProfile = assignments.defaultProfile;
                     sps.PassThroughProfile = ($('#SPS_PassThroughProfile').value || 'pass').trim();
@@ -1061,13 +1071,14 @@
                 $('#EnableRelayTokenSecurity').checked = config.EnableRelayTokenSecurity !== false;
                 $('#StreamTokenTtlSeconds').value = config.StreamTokenTtlSeconds || 120;
                 $('#StreamTokenMaxUses').value = config.StreamTokenMaxUses != null ? config.StreamTokenMaxUses : 5;
-                $('#ImageTokenTtlMinutes').value = config.ImageTokenTtlMinutes || 30;
+                $('#ImageTokenTtlMinutes').value = config.ImageTokenTtlMinutes != null ? config.ImageTokenTtlMinutes : 0;
                 $('#ImageTokenMaxUses').value = config.ImageTokenMaxUses != null ? config.ImageTokenMaxUses : 0;
                 $('#EnableTokenReuse').checked = config.EnableTokenReuse !== false;
                 $('#StrictScopeValidation').checked = config.StrictScopeValidation !== false;
                 $('#CleanupExpiredTokensIntervalMinutes').value = config.CleanupExpiredTokensIntervalMinutes || 60;
                 $('#TokenValidationClockSkewSeconds').value = config.TokenValidationClockSkewSeconds != null ? config.TokenValidationClockSkewSeconds : 5;
                 updateRelayTokenWarnings();
+                $('#StreamDeliveryMode').value = config.StreamDeliveryMode || 'Relay';
                 $('#FallbackMaxStreamingBitrate').value = config.FallbackMaxStreamingBitrate || '';
                 $('#IsInfiniteStream').checked = config.IsInfiniteStream !== false;
                 $('#SupportsDirectPlay').checked = config.SupportsDirectPlay !== false;
@@ -1565,12 +1576,21 @@
                 return max;
             }
 
-            function buildTableRow(type, match, profile, description, priority) {
+            function buildTableRow(type, match, profile, description, priority, preserved) {
                 var meta = typeMeta[type] || typeMeta.default;
                 var isDefault = type === 'default';
                 var tr = document.createElement('tr');
                 tr.setAttribute('data-rule-type', type);
                 if (isDefault) tr.className = 'tvh-row-default';
+
+                // Preserve fields the simplified table UI does not render (match type,
+                // playback mode, enabled flag) so a load→save round-trip is idempotent and
+                // does not silently flatten rules created outside this UI.
+                if (preserved) {
+                    if (preserved.matchType != null) tr.setAttribute('data-match-type', String(preserved.matchType));
+                    if (preserved.playbackMode != null) tr.setAttribute('data-playback-mode', String(preserved.playbackMode));
+                    if (preserved.enabled != null) tr.setAttribute('data-enabled', preserved.enabled ? '1' : '0');
+                }
 
                 // Priority
                 var tdPri = document.createElement('td');
@@ -1664,23 +1684,23 @@
 
                 // Channel overrides
                 (channelOverrides || []).forEach(function (o) {
-                    tbody.appendChild(buildTableRow('channel', o.ChannelId, o.TvHeadendProfileName, o.Description, 0));
+                    tbody.appendChild(buildTableRow('channel', o.ChannelId, o.TvHeadendProfileName, o.Description, 0, { playbackMode: o.PlaybackMode }));
                 });
 
                 // Channel group overrides
                 (channelGroupOverrides || []).forEach(function (o) {
-                    tbody.appendChild(buildTableRow('group', o.ChannelGroup, o.TvHeadendProfileName, o.Description, 0));
+                    tbody.appendChild(buildTableRow('group', o.ChannelGroup, o.TvHeadendProfileName, o.Description, 0, { playbackMode: o.PlaybackMode }));
                 });
 
                 // Client & Device rules
                 (clientRules || []).forEach(function (r) {
                     var ruleType = (r.MatchType === 2 || r.MatchType === 3) ? 'device' : 'client';
-                    tbody.appendChild(buildTableRow(ruleType, r.MatchValue, r.TvHeadendProfileName, r.Description || r.RuleName, r.Priority));
+                    tbody.appendChild(buildTableRow(ruleType, r.MatchValue, r.TvHeadendProfileName, r.Description || r.RuleName, r.Priority, { matchType: r.MatchType, playbackMode: r.PlaybackMode, enabled: r.Enabled }));
                 });
 
                 // User rules
                 (userRules || []).forEach(function (r) {
-                    tbody.appendChild(buildTableRow('user', r.MatchValue, r.TvHeadendProfileName, r.Description || r.RuleName, r.Priority));
+                    tbody.appendChild(buildTableRow('user', r.MatchValue, r.TvHeadendProfileName, r.Description || r.RuleName, r.Priority, { matchType: r.MatchType, playbackMode: r.PlaybackMode, enabled: r.Enabled }));
                 });
 
                 // Default row (always last)
@@ -1716,51 +1736,48 @@
                     var priEl = row.querySelector('[data-field="priority"]');
                     var priority = priEl ? (parseInt(priEl.value, 10) || 0) : 0;
 
+                    // Recover fields the simplified UI does not render (preserved as data-* attributes
+                    // on load) so non-default playback modes, match types and disabled rules survive a save.
+                    var pmAttr = row.getAttribute('data-playback-mode');
+                    var playbackMode = pmAttr != null ? (parseInt(pmAttr, 10) || 0) : 0;
+                    var mtAttr = row.getAttribute('data-match-type');
+                    var enAttr = row.getAttribute('data-enabled');
+                    var enabled = enAttr != null ? enAttr === '1' : true;
+
                     if (type === 'channel') {
                         channelOverrides.push({
                             ChannelId: match,
-                            PlaybackMode: 0,
+                            PlaybackMode: playbackMode,
                             TvHeadendProfileName: profile,
                             Description: description
                         });
                     } else if (type === 'group') {
                         channelGroupOverrides.push({
                             ChannelGroup: match,
-                            PlaybackMode: 0,
+                            PlaybackMode: playbackMode,
                             TvHeadendProfileName: profile,
                             Description: description
                         });
-                    } else if (type === 'client') {
+                    } else if (type === 'client' || type === 'device') {
                         clientRules.push({
-                            Enabled: true,
+                            Enabled: enabled,
                             RuleName: description || match,
                             Description: description,
                             Priority: priority,
-                            MatchType: 0, // ClientNameExact
+                            MatchType: mtAttr != null ? (parseInt(mtAttr, 10) || 0) : (type === 'device' ? 2 : 0),
                             MatchValue: match,
-                            PlaybackMode: 0,
-                            TvHeadendProfileName: profile
-                        });
-                    } else if (type === 'device') {
-                        clientRules.push({
-                            Enabled: true,
-                            RuleName: description || match,
-                            Description: description,
-                            Priority: priority,
-                            MatchType: 2, // DeviceNameExact
-                            MatchValue: match,
-                            PlaybackMode: 0,
+                            PlaybackMode: playbackMode,
                             TvHeadendProfileName: profile
                         });
                     } else if (type === 'user') {
                         userRules.push({
-                            Enabled: true,
+                            Enabled: enabled,
                             RuleName: description || match,
                             Description: description,
                             Priority: priority,
-                            MatchType: 4, // UserIdExact
+                            MatchType: mtAttr != null ? (parseInt(mtAttr, 10) || 0) : 4,
                             MatchValue: match,
-                            PlaybackMode: 0,
+                            PlaybackMode: playbackMode,
                             TvHeadendProfileName: profile
                         });
                     }
@@ -1928,18 +1945,6 @@
             $('#TvHeadendApiConfigForm').addEventListener('input', scheduleAutoSave);
         })();
     </script>
-
-    <!-- ── Footer ──────────────────────────────────────────── -->
-    <div class="tvh-footer">
-        <p>If this plugin is useful to you, consider supporting its development:</p>
-        <p>
-            <a href="https://github.com/sponsors/john-pierre" target="_blank" rel="noopener">GitHub Sponsors</a>
-            &middot;
-            <a href="https://ko-fi.com/johnpierre" target="_blank" rel="noopener">Ko-fi</a>
-            &middot;
-            <a href="https://buymeacoffee.com/johnpierre" target="_blank" rel="noopener">Buy Me a Coffee</a>
-        </p>
-    </div>
 </div>
 </body>
 </html>

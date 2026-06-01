@@ -48,6 +48,12 @@ public sealed class RelayControllerStreamTests
         _healthServiceMock = new Mock<IHealthService>();
 
         _config = new PluginConfiguration();
+
+        // These tests exercise the open /stream endpoint's response shaping (HEAD, Accept-Ranges,
+        // Content-Length, content-type), not the token gate. Disable relay token security so the
+        // open endpoint serves without a token; dedicated tests cover the security gate explicitly.
+        _config.EnableRelayTokenSecurity = false;
+
         var configProvider = new ConfigurationProvider(() => _config);
         _activityTracker = new RelayActivityTracker();
         var tokenOptions = new RelayTokenOptions(configProvider);
@@ -334,6 +340,43 @@ public sealed class RelayControllerStreamTests
 
         _controller.Response.ContentType.Should().Be("video/mp2t",
             "default content type must be lowercase 'video/mp2t'");
+    }
+
+    // ── Security Gate Tests (regression for anonymous-stream bypass) ─────────
+
+    [Fact]
+    public async Task GetStream_OpenEndpoint_WithTokenSecurityOn_InvalidToken_IsRejected()
+    {
+        // With relay token security enabled, the open /stream endpoint must NOT serve anonymously —
+        // it must require a valid token so the token gate cannot be bypassed.
+        _config.EnableRelayTokenSecurity = true;
+        _controller.HttpContext.Request.Method = HttpMethods.Get;
+        _tokenValidatorMock
+            .Setup(x => x.ValidateAsync(It.IsAny<string?>(), RelayType.Stream, "ch-secured", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RelayTokenValidationResult { IsValid = false, FailureReason = RelayTokenFailureReason.MissingToken });
+
+        await _controller.GetStream("ch-secured", null, CancellationToken.None);
+
+        _controller.Response.StatusCode.Should().BeOneOf(401, 403, 410);
+        _relayServiceMock.Verify(
+            x => x.RelayStreamAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "the open endpoint must not stream without a valid token when security is enabled");
+    }
+
+    [Fact]
+    public async Task GetStream_WithRelayDisabled_ReturnsServiceUnavailable()
+    {
+        _config.RelayEnabled = false;
+        _controller.HttpContext.Request.Method = HttpMethods.Get;
+
+        await _controller.GetStream("ch-disabled", null, CancellationToken.None);
+
+        _controller.Response.StatusCode.Should().Be(503);
+        _relayServiceMock.Verify(
+            x => x.RelayStreamAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "a disabled relay must not proxy streams");
     }
 
     // ── Accept-Ranges Header Tests ──────────────────────────────────────────

@@ -49,6 +49,11 @@ public class ServiceRegistrator : IPluginServiceRegistrator
     /// </param>
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
+        // Ensure the HTTP request context is resolvable (idempotent — Jellyfin registers it too).
+        // Used to derive the requesting client identity for streaming-profile rules and to build
+        // client-reachable relay URLs from the incoming request.
+        serviceCollection.AddHttpContextAccessor();
+
         // Register named HttpClients for TVHeadend API communication.
         // "TvHeadend" — standard client with certificate revocation checks.
         // "TvHeadendUnsafe" — skips certificate validation (self-signed certs).
@@ -182,6 +187,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IDefaultProfileService, DefaultProfileService>();
         serviceCollection.AddSingleton<IProfileContainerResolver, ProfileContainerResolver>();
         serviceCollection.AddSingleton<IStreamingProfileResolver, StreamingProfileResolver>();
+        serviceCollection.AddSingleton<IPlaybackContextAccessor, PlaybackContextAccessor>();
         serviceCollection.AddSingleton<IProfileDiscoveryService, ProfileDiscoveryService>();
         serviceCollection.AddSingleton<IApiClient, ApiClient>();
         serviceCollection.AddSingleton<IHealthService>(sp =>
@@ -202,7 +208,8 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 sp.GetRequiredService<IServerApplicationHost>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
                 sp.GetRequiredService<IRelayTokenService>(),
-                sp.GetRequiredService<RelayTokenOptions>()));
+                sp.GetRequiredService<RelayTokenOptions>(),
+                sp.GetService<Microsoft.AspNetCore.Http.IHttpContextAccessor>()));
 
         // Relay metrics — shared activity tracker, EF Core context, and hosted service.
         serviceCollection.AddSingleton<RelayActivityTracker>();

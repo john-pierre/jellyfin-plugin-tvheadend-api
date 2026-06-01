@@ -12,6 +12,9 @@ $ScriptDir = $PSScriptRoot
 $ComposeFile = Join-Path $ScriptDir "docker-compose.test.yaml"
 $ProjectRoot = Split-Path -Parent $ScriptDir
 
+# Fail-closed: if the stack never gets to running tests, the script must exit non-zero.
+$script:TestExitCode = 1
+
 function Log($msg) { Write-Host "[e2e] $msg" -ForegroundColor Cyan }
 
 function Cleanup {
@@ -70,8 +73,18 @@ try {
         --filter "Category=LiveIntegration" `
         --logger "trx;LogFileName=e2e-results.trx" `
         --results-directory (Join-Path $ProjectRoot "TestResults")
+    $script:TestExitCode = $LASTEXITCODE
 
-    Log "E2E tests complete."
+    if ($script:TestExitCode -eq 0) {
+        Log "E2E tests passed."
+    } else {
+        Log "ERROR: E2E tests FAILED (exit code $($script:TestExitCode))."
+    }
 } finally {
-    # Cleanup
+    Cleanup
+}
+
+# Propagate the test result so CI actually gates on it.
+if ($script:TestExitCode -ne 0) {
+    exit $script:TestExitCode
 }

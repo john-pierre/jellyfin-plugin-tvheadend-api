@@ -6,6 +6,7 @@ using Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
@@ -32,6 +33,7 @@ internal sealed class DashboardService : IDashboardService
     private readonly IApiClient _apiClient;
     private readonly IHealthService _healthService;
     private readonly DatabaseHealthService _dbHealthService;
+    private readonly ConfigurationProvider _configProvider;
     private readonly ILogger<DashboardService> _logger;
 
     /// <summary>
@@ -45,6 +47,7 @@ internal sealed class DashboardService : IDashboardService
     /// <param name="apiClient">API client for TVHeadend configuration access.</param>
     /// <param name="healthService">TVHeadend health tracking service.</param>
     /// <param name="dbHealthService">Database health monitoring service.</param>
+    /// <param name="configProvider">Plugin configuration provider.</param>
     /// <param name="logger">Logger for diagnostics.</param>
     public DashboardService(
         IDiagnosticService diagnosticService,
@@ -55,6 +58,7 @@ internal sealed class DashboardService : IDashboardService
         IApiClient apiClient,
         IHealthService healthService,
         DatabaseHealthService dbHealthService,
+        ConfigurationProvider configProvider,
         ILogger<DashboardService> logger)
     {
         _diagnosticService = diagnosticService ?? throw new ArgumentNullException(nameof(diagnosticService));
@@ -65,6 +69,7 @@ internal sealed class DashboardService : IDashboardService
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _healthService = healthService ?? throw new ArgumentNullException(nameof(healthService));
         _dbHealthService = dbHealthService ?? throw new ArgumentNullException(nameof(dbHealthService));
+        _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -78,6 +83,15 @@ internal sealed class DashboardService : IDashboardService
             PluginVersion = typeof(Plugin).Assembly.GetName().Version?.ToString() ?? "unknown",
             Timestamp = DateTimeOffset.UtcNow,
         };
+
+        // Short-circuit: if TVHeadend credentials are not configured, return immediately
+        // without contacting the TVHeadend backend.
+        if (IsSetupRequired())
+        {
+            dashboard.RequiresSetup = true;
+            _logger.LogInformation("Dashboard: plugin requires setup — skipping all TVHeadend backend calls");
+            return dashboard;
+        }
 
         await PopulateDiagnosticsAsync(dashboard, cancellationToken).ConfigureAwait(false);
         await PopulateActivityAsync(dashboard, cancellationToken).ConfigureAwait(false);
@@ -198,5 +212,30 @@ internal sealed class DashboardService : IDashboardService
         {
             dashboard.ConnectionError = diagnoseResult.Connection;
         }
+    }
+
+    /// <summary>
+    /// Determines whether the plugin requires initial setup.
+    /// Returns <c>true</c> when either the configuration is unavailable or
+    /// no valid TVHeadend credentials are configured (no username/password and
+    /// anonymous access is disabled).
+    /// </summary>
+    private bool IsSetupRequired()
+    {
+        var config = _configProvider.Configuration;
+        if (config is null)
+        {
+            return true;
+        }
+
+        // If anonymous access is allowed, credentials are not required.
+        if (config.AllowAnonymousAccess)
+        {
+            return false;
+        }
+
+        // Credentials are required but missing.
+        return string.IsNullOrWhiteSpace(config.Username)
+            && string.IsNullOrWhiteSpace(config.Password);
     }
 }

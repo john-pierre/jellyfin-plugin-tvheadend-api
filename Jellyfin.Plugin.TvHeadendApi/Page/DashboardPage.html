@@ -141,6 +141,19 @@
             font-weight: 600;
         }
         .tvh-support-link:hover { background: rgba(255,255,255,0.16); }
+
+        /* ── Setup required banner ─────────────────────────── */
+        .tvh-setup-banner {
+            margin-bottom: 1.5em;
+            padding: 1.5em 1.5em;
+            border-radius: 10px;
+            border: 1px solid rgba(255,152,0,0.5);
+            background: linear-gradient(135deg, rgba(255,152,0,0.12), rgba(255,87,34,0.08));
+            text-align: center;
+        }
+        .tvh-setup-banner h2 { margin: 0 0 0.5em 0; font-size: 1.3em; }
+        .tvh-setup-banner p { margin: 0 0 1em 0; font-size: 0.95em; opacity: 0.9; line-height: 1.6; }
+        .tvh-setup-banner .tvh-setup-icon { font-size: 2.5em; margin-bottom: 0.3em; }
     </style>
     <div data-role="content">
         <div class="content-primary">
@@ -179,6 +192,22 @@
             </div>
 
             <div id="tvhErrorBanner" class="tvh-error-banner" style="display:none;"></div>
+
+            <!-- ── Setup required banner (hidden by default) ── -->
+            <div id="tvhSetupBanner" class="tvh-setup-banner" style="display:none;">
+                <div class="tvh-setup-icon">⚙️</div>
+                <h2>TvHeadend Plugin — Setup Required</h2>
+                <p>
+                    The plugin has not been configured yet.<br/>
+                    Please open the settings page and enter your TVHeadend server host, port, and credentials.
+                </p>
+                <button id="tvhSetupSettingsBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:1em; padding:0.6em 1.5em;">
+                    <span>Open Settings</span>
+                </button>
+            </div>
+
+            <!-- ── Main dashboard content (hidden when setup required) ── -->
+            <div id="tvhDashboardContent">
 
             <!-- ── Summary cards ────────────────────────────── -->
             <div id="tvhRelayBanner" class="tvh-status-banner tvh-status-loading" style="margin-bottom:1em;">
@@ -523,12 +552,17 @@
                 </div>
             </div>
 
+            </div> <!-- /tvhDashboardContent -->
+
         </div>
     </div>
 
     <script type="text/javascript">
         (function () {
             'use strict';
+
+            // ── State: setup mode ────────────────────────────
+            var isSetupMode = false;
 
             // ── State ──────────────────────────────────────────
             var autoRefreshTimer = null;
@@ -655,9 +689,40 @@
             document.getElementById('tvhSettingsBtn').addEventListener('click', function () {
                 Dashboard.navigate('configurationpage?name=TvHeadendApiConfig');
             });
+            document.getElementById('tvhSetupSettingsBtn').addEventListener('click', function () {
+                Dashboard.navigate('configurationpage?name=TvHeadendApiConfig');
+            });
+
+            // ── Enter / exit setup mode ──────────────────────
+            function enterSetupMode() {
+                isSetupMode = true;
+                document.getElementById('tvhSetupBanner').style.display = '';
+                document.getElementById('tvhDashboardContent').style.display = 'none';
+                // Stop all auto-refresh timers
+                if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+                if (statsAutoRefreshTimer) { clearInterval(statsAutoRefreshTimer); statsAutoRefreshTimer = null; }
+                if (logsRefreshTimer) { clearInterval(logsRefreshTimer); logsRefreshTimer = null; }
+            }
+
+            function exitSetupMode() {
+                isSetupMode = false;
+                document.getElementById('tvhSetupBanner').style.display = 'none';
+                document.getElementById('tvhDashboardContent').style.display = '';
+            }
 
             // ── Render dashboard data ──────────────────────────
             function renderDashboard(d) {
+                // Check if setup is required — show banner and halt all processing
+                if (d.RequiresSetup) {
+                    enterSetupMode();
+                    return;
+                }
+
+                // Ensure dashboard content is visible (e.g. after config was saved)
+                if (isSetupMode) {
+                    exitSetupMode();
+                }
+
                 // Error banner
                 var banner = document.getElementById('tvhErrorBanner');
                 if (!d.IsReachable && d.ConnectionError) {
@@ -866,6 +931,37 @@
                         loadEl.style.display = 'none';
                         document.getElementById('tvhLastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
                         renderDashboard(data);
+                    })
+                    .catch(function (err) {
+                        loadEl.style.display = 'none';
+                        var banner = document.getElementById('tvhErrorBanner');
+                        banner.innerHTML = '<strong>Dashboard request failed:</strong> ' + esc(err.statusText || err.message || 'Unknown error');
+                        banner.style.display = '';
+                    });
+            }
+
+            /// Performs the initial dashboard load that gates all other API calls.
+            /// Only called from pageshow — if setup is required, nothing else is loaded.
+            function initialDashboardLoad() {
+                var loadEl = document.getElementById('tvhLoadingIndicator');
+                loadEl.style.display = '';
+
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Dashboard'), dataType: 'json' })
+                    .then(function (data) {
+                        loadEl.style.display = 'none';
+                        document.getElementById('tvhLastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+                        renderDashboard(data);
+
+                        // Only load remaining sections when the plugin is fully configured
+                        if (!data.RequiresSetup) {
+                            loadStatistics();
+                            loadRelayMetrics();
+                            loadLogs();
+                            loadRelayBannerStatus();
+                            toggleAutoRefresh();
+                            toggleStatsAutoRefresh();
+                            toggleLogsAutoRefresh();
+                        }
                     })
                     .catch(function (err) {
                         loadEl.style.display = 'none';
@@ -1766,20 +1862,14 @@
                     timezoneSelect.value = timezoneMode;
                 }
 
-                // // Initialize pagination selector
+                // Initialize pagination selector
                 var pageSelect = document.getElementById('tvhSessionsPerPage');
                 if (pageSelect) {
                     pageSelect.value = sessionItemsPerPage;
                 }
 
-                refreshDashboard();
-                loadStatistics();
-                loadRelayMetrics();
-                loadLogs();
-                loadRelayBannerStatus();
-                toggleAutoRefresh();
-                toggleStatsAutoRefresh();
-                toggleLogsAutoRefresh();
+                // Load dashboard first — other API calls are gated by RequiresSetup
+                initialDashboardLoad();
             });
 
             document.getElementById('TvHeadendDashboardPage').addEventListener('pagehide', function () {
