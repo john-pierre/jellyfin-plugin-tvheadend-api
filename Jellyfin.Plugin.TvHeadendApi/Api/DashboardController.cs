@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Dashboard;
 using Jellyfin.Plugin.TvHeadendApi.Service.Logging;

@@ -1,155 +1,89 @@
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
-using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Logging;
-using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using Microsoft.Extensions.Logging;
-using Moq;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Logging;
 
 /// <summary>
-/// Tests for <see cref="PluginScopedLogger"/> and log level override behavior.
+/// Tests for <see cref="PluginLogLevelPolicy"/> — the plugin-specific log-level override
+/// applied by <see cref="PluginLogPersistenceProvider"/> when persisting plugin log entries.
 /// </summary>
 public class PluginLogLevelOverrideTests
 {
-    private readonly Mock<ILogger> _innerLogger;
-    private readonly ConfigurationProvider _configProvider;
-    private readonly PluginConfiguration _config;
-
-    public PluginLogLevelOverrideTests()
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void JellyfinDefault_PersistsEverythingDelivered()
     {
-        _innerLogger = new Mock<ILogger>();
-        _config = new PluginConfiguration();
-        _configProvider = new ConfigurationProvider(() => _config);
+        // JellyfinDefault means: persist whatever Jellyfin's framework already delivered (no extra filter).
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Trace, PluginLogLevel.JellyfinDefault));
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Debug, PluginLogLevel.JellyfinDefault));
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Information, PluginLogLevel.JellyfinDefault));
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Critical, PluginLogLevel.JellyfinDefault));
     }
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void JellyfinDefault_DelegatesToInnerLogger()
+    public void DebugOverride_AllowsDebugAndAbove_SuppressesTrace()
     {
-        _config.PluginLogLevelOverride = PluginLogLevel.JellyfinDefault;
-        _innerLogger.Setup(l => l.IsEnabled(LogLevel.Debug)).Returns(false);
-        _innerLogger.Setup(l => l.IsEnabled(LogLevel.Information)).Returns(true);
-
-        var logger = new PluginScopedLogger(_innerLogger.Object, _configProvider, null, "Test");
-
-        Assert.False(logger.IsEnabled(LogLevel.Debug));
-        Assert.True(logger.IsEnabled(LogLevel.Information));
-    }
-
-    [Fact]
-    [Trait("Category", "Unit")]
-    public void DebugOverride_AllowsDebugLogs()
-    {
-        _config.PluginLogLevelOverride = PluginLogLevel.Debug;
-        _innerLogger.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(false);
-
-        var logger = new PluginScopedLogger(_innerLogger.Object, _configProvider, null, "Test");
-
-        Assert.True(logger.IsEnabled(LogLevel.Debug));
-        Assert.True(logger.IsEnabled(LogLevel.Information));
-        Assert.True(logger.IsEnabled(LogLevel.Warning));
-        Assert.True(logger.IsEnabled(LogLevel.Error));
-    }
-
-    [Fact]
-    [Trait("Category", "Unit")]
-    public void DebugOverride_SuppressesTrace()
-    {
-        _config.PluginLogLevelOverride = PluginLogLevel.Debug;
-
-        var logger = new PluginScopedLogger(_innerLogger.Object, _configProvider, null, "Test");
-
-        Assert.False(logger.IsEnabled(LogLevel.Trace));
+        Assert.False(PluginLogLevelPolicy.ShouldPersist(LogLevel.Trace, PluginLogLevel.Debug));
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Debug, PluginLogLevel.Debug));
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Information, PluginLogLevel.Debug));
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Warning, PluginLogLevel.Debug));
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Error, PluginLogLevel.Debug));
     }
 
     [Fact]
     [Trait("Category", "Unit")]
     public void WarningOverride_SuppressesInformationAndDebug()
     {
-        _config.PluginLogLevelOverride = PluginLogLevel.Warning;
-
-        var logger = new PluginScopedLogger(_innerLogger.Object, _configProvider, null, "Test");
-
-        Assert.False(logger.IsEnabled(LogLevel.Debug));
-        Assert.False(logger.IsEnabled(LogLevel.Information));
-        Assert.True(logger.IsEnabled(LogLevel.Warning));
-        Assert.True(logger.IsEnabled(LogLevel.Error));
-        Assert.True(logger.IsEnabled(LogLevel.Critical));
-    }
-
-    [Fact]
-    [Trait("Category", "Unit")]
-    public void NoneOverride_SuppressesAll()
-    {
-        _config.PluginLogLevelOverride = PluginLogLevel.None;
-
-        var logger = new PluginScopedLogger(_innerLogger.Object, _configProvider, null, "Test");
-
-        Assert.False(logger.IsEnabled(LogLevel.Trace));
-        Assert.False(logger.IsEnabled(LogLevel.Debug));
-        Assert.False(logger.IsEnabled(LogLevel.Information));
-        Assert.False(logger.IsEnabled(LogLevel.Warning));
-        Assert.False(logger.IsEnabled(LogLevel.Error));
-        Assert.False(logger.IsEnabled(LogLevel.Critical));
+        Assert.False(PluginLogLevelPolicy.ShouldPersist(LogLevel.Debug, PluginLogLevel.Warning));
+        Assert.False(PluginLogLevelPolicy.ShouldPersist(LogLevel.Information, PluginLogLevel.Warning));
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Warning, PluginLogLevel.Warning));
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Error, PluginLogLevel.Warning));
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Critical, PluginLogLevel.Warning));
     }
 
     [Fact]
     [Trait("Category", "Unit")]
     public void ErrorOverride_AllowsErrorAndCritical()
     {
-        _config.PluginLogLevelOverride = PluginLogLevel.Error;
-
-        var logger = new PluginScopedLogger(_innerLogger.Object, _configProvider, null, "Test");
-
-        Assert.False(logger.IsEnabled(LogLevel.Warning));
-        Assert.True(logger.IsEnabled(LogLevel.Error));
-        Assert.True(logger.IsEnabled(LogLevel.Critical));
+        Assert.False(PluginLogLevelPolicy.ShouldPersist(LogLevel.Warning, PluginLogLevel.Error));
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Error, PluginLogLevel.Error));
+        Assert.True(PluginLogLevelPolicy.ShouldPersist(LogLevel.Critical, PluginLogLevel.Error));
     }
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Log_WhenDisabled_DoesNotCallInner()
+    public void NoneOverride_SuppressesAll()
     {
-        _config.PluginLogLevelOverride = PluginLogLevel.Error;
-
-        var logger = new PluginScopedLogger(_innerLogger.Object, _configProvider, null, "Test");
-        logger.Log(LogLevel.Debug, new EventId(0), "test", null, (s, _) => s);
-
-        _innerLogger.Verify(
-            l => l.Log(It.IsAny<LogLevel>(), It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), It.IsAny<System.Exception>(), It.IsAny<System.Func<It.IsAnyType, System.Exception?, string>>()),
-            Times.Never);
+        Assert.False(PluginLogLevelPolicy.ShouldPersist(LogLevel.Trace, PluginLogLevel.None));
+        Assert.False(PluginLogLevelPolicy.ShouldPersist(LogLevel.Debug, PluginLogLevel.None));
+        Assert.False(PluginLogLevelPolicy.ShouldPersist(LogLevel.Information, PluginLogLevel.None));
+        Assert.False(PluginLogLevelPolicy.ShouldPersist(LogLevel.Warning, PluginLogLevel.None));
+        Assert.False(PluginLogLevelPolicy.ShouldPersist(LogLevel.Error, PluginLogLevel.None));
+        Assert.False(PluginLogLevelPolicy.ShouldPersist(LogLevel.Critical, PluginLogLevel.None));
     }
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Log_WhenEnabled_CallsInner()
+    public void LogLevelNone_IsNeverPersisted()
     {
-        _config.PluginLogLevelOverride = PluginLogLevel.Debug;
-        _innerLogger.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
-
-        var logger = new PluginScopedLogger(_innerLogger.Object, _configProvider, null, "Test");
-        logger.Log(LogLevel.Error, new EventId(1), "error message", null, (s, _) => s);
-
-        _innerLogger.Verify(
-            l => l.Log(LogLevel.Error, It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), null, It.IsAny<System.Func<It.IsAnyType, System.Exception?, string>>()),
-            Times.Once);
+        Assert.False(PluginLogLevelPolicy.ShouldPersist(LogLevel.None, PluginLogLevel.JellyfinDefault));
+        Assert.False(PluginLogLevelPolicy.ShouldPersist(LogLevel.None, PluginLogLevel.Trace));
     }
 
-    [Fact]
+    [Theory]
     [Trait("Category", "Unit")]
-    public void JellyfinDefault_DoesNotForceDebug()
+    [InlineData(PluginLogLevel.Trace, LogLevel.Trace)]
+    [InlineData(PluginLogLevel.Debug, LogLevel.Debug)]
+    [InlineData(PluginLogLevel.Information, LogLevel.Information)]
+    [InlineData(PluginLogLevel.Warning, LogLevel.Warning)]
+    [InlineData(PluginLogLevel.Error, LogLevel.Error)]
+    [InlineData(PluginLogLevel.Critical, LogLevel.Critical)]
+    [InlineData(PluginLogLevel.None, LogLevel.None)]
+    public void MapToLogLevel_MapsEachLevel(PluginLogLevel input, LogLevel expected)
     {
-        // When JellyfinDefault is set, inner logger determines the level
-        _config.PluginLogLevelOverride = PluginLogLevel.JellyfinDefault;
-        _innerLogger.Setup(l => l.IsEnabled(LogLevel.Debug)).Returns(false);
-
-        var logger = new PluginScopedLogger(_innerLogger.Object, _configProvider, null, "Test");
-
-        // Should NOT force debug logs
-        Assert.False(logger.IsEnabled(LogLevel.Debug));
+        Assert.Equal(expected, PluginLogLevelPolicy.MapToLogLevel(input));
     }
 }

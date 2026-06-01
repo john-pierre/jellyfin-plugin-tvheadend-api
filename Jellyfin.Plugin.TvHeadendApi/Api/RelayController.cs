@@ -104,6 +104,14 @@ public class RelayController : ControllerBase
             || healthSnapshot.Status == HealthStatus.Timeout
             || healthSnapshot.Status == HealthStatus.AuthFailed;
 
+        // The circuit breaker can trip on a brief burst of failures even though the backend is fine.
+        // If we succeeded very recently, present that as "recovering" rather than a hard red
+        // "not reachable" (which contradicts the live diagnostics panel). Auth failures are a real
+        // configuration problem, not transient, so they always surface as an error.
+        var recentlySucceeded = healthSnapshot.LastSuccessUtc.HasValue
+            && DateTimeOffset.UtcNow - healthSnapshot.LastSuccessUtc.Value < TimeSpan.FromMinutes(2)
+            && healthSnapshot.Status != HealthStatus.AuthFailed;
+
         string status;
         string? message = null;
         if (!relayEnabled)
@@ -124,6 +132,11 @@ public class RelayController : ControllerBase
         {
             status = "degraded";
             message = $"TVHeadend is responding but with issues: {healthSnapshot.Status}";
+        }
+        else if (tvhUnreachable && recentlySucceeded)
+        {
+            status = "degraded";
+            message = $"TVHeadend connection is recovering ({healthSnapshot.Status}); a request succeeded in the last 2 minutes.";
         }
         else if (tvhUnreachable)
         {
@@ -361,9 +374,10 @@ public class RelayController : ControllerBase
                 ? result.AcceptRanges
                 : "none";
 
-            result.TimingContext?.MarkFirstByteToClient();
-            var startupLatencyMs = sw.Elapsed.TotalMilliseconds;
-            _sessionTracker.MarkFirstByteSent(sessionId, startupLatencyMs);
+            // Startup latency is recorded when the FIRST byte is actually written to the client
+            // (inside the loop below), not at header time, so the metric reflects real
+            // time-to-first-byte rather than time-to-headers.
+            double startupLatencyMs = 0;
 
             // Stream directly from TVHeadend to client — zero intermediate buffering.
             var buffer = new byte[StreamCopyBufferSize];
@@ -377,6 +391,9 @@ public class RelayController : ControllerBase
                 if (!firstByteSent)
                 {
                     result.TimingContext?.MarkFirstByteFromUpstream();
+                    result.TimingContext?.MarkFirstByteToClient();
+                    startupLatencyMs = sw.Elapsed.TotalMilliseconds;
+                    _sessionTracker.MarkFirstByteSent(sessionId, startupLatencyMs);
                     firstByteSent = true;
                 }
 

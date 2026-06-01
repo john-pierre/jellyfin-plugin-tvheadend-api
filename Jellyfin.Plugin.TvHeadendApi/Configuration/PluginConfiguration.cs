@@ -515,9 +515,11 @@ public class PluginConfiguration : BasePluginConfiguration
     // ── Logging ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Gets or sets the plugin-specific log level override.
-    /// <c>JellyfinDefault</c> follows the global Jellyfin logging configuration.
-    /// Other values override log verbosity for this plugin only.
+    /// Gets or sets the plugin-specific log level override applied when capturing plugin log
+    /// entries to SQLite (the dashboard log view). <c>JellyfinDefault</c> captures everything
+    /// Jellyfin's logging configuration delivers; any other value raises the minimum level, so
+    /// entries below it are dropped before persistence. It can only filter down to what Jellyfin's
+    /// global level already delivers — it cannot capture entries more verbose than that level.
     /// </summary>
     public PluginLogLevel PluginLogLevelOverride { get; set; }
 

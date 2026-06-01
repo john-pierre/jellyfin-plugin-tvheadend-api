@@ -2,7 +2,6 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
 using Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;

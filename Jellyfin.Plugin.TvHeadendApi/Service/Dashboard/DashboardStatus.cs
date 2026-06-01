@@ -3,17 +3,20 @@ using System.Collections.Generic;
 using Jellyfin.Plugin.TvHeadendApi.Model.Input;
 using Jellyfin.Plugin.TvHeadendApi.Model.Status;
 using Jellyfin.Plugin.TvHeadendApi.Model.Subscription;
-using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
-using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Dashboard;
 
 /// <summary>
 /// Aggregated dashboard status returned by the dashboard API endpoint.
 /// Contains connection health, tuner state, subscriptions, and summary statistics.
 /// </summary>
+/// <remarks>
+/// This is a service-produced response aggregate (composed by <c>DashboardService</c> from the
+/// health, database, and backend domains), so it lives in the Service layer alongside the other
+/// service snapshot types it surfaces — not in the passive Model layer.
+/// </remarks>
 public sealed class DashboardStatus
 {
     // ── Setup ─────────────────────────────────────────────────────────────

@@ -8,7 +8,8 @@
 <div id="TvHeadendApiConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
     <style>
         /* ── Layout ─────────────────────────────────────────── */
-        #TvHeadendApiConfigPage .content-primary { max-width: 900px; }
+        /* Match the dashboard's full-width, centred layout (was a narrow 900px column). */
+        #TvHeadendApiConfigPage { max-width: 1200px; margin: 0 auto; }
 
         /* ── Header ─────────────────────────────────────────── */
         .tvh-header { margin-bottom: 1.5em; }
@@ -125,7 +126,16 @@
         .tvh-tab-btn:hover { opacity: 0.85; }
         .tvh-tab-btn.tvh-tab-active { opacity: 1; border-bottom-color: #00a4dc; color: #00a4dc; }
         .tvh-tab-panel { display: none; }
-        .tvh-tab-panel.tvh-tab-visible { display: block; }
+        /* Visible tab lays its sections out in a responsive 2-column grid, matching the dashboard's card layout. */
+        .tvh-tab-panel.tvh-tab-visible { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.6em; align-items: start; }
+        .tvh-tab-panel.tvh-tab-visible > .tvh-section { margin-bottom: 1.5em; min-width: 0; }
+        /* Sections with wide tables / rule editors take the full row. */
+        .tvh-tab-panel.tvh-tab-visible > #sec-streaming,
+        .tvh-tab-panel.tvh-tab-visible > #sec-playback,
+        .tvh-tab-panel.tvh-tab-visible > #sec-recording { grid-column: 1 / -1; }
+        @media (max-width: 860px) {
+            .tvh-tab-panel.tvh-tab-visible { grid-template-columns: 1fr; }
+        }
 
         /* ── Status banner ───────────────────────────────────── */
         .tvh-status-banner { padding: 0.8em 1em; border-radius: 8px; margin-bottom: 1.2em; display: flex; flex-wrap: wrap; align-items: center; gap: 0.8em; font-size: 0.9em; }
@@ -141,34 +151,6 @@
         .tvh-diag-details summary { cursor: pointer; font-size: 0.88em; opacity: 0.7; font-weight: 600; }
         .tvh-diag-details summary:hover { opacity: 1; }
         .tvh-diag-details-body { margin-top: 0.5em; padding: 0.8em; border-radius: 6px; background: rgba(255,255,255,0.03); font-size: 0.9em; line-height: 1.6; }
-
-        /* ── Support banner ─────────────────────────────────── */
-        .tvh-support-banner {
-            margin-bottom: 1.2em;
-            padding: 1em 1.1em;
-            border-radius: 10px;
-            border: 1px solid rgba(0,164,220,0.45);
-            background: linear-gradient(135deg, rgba(0,164,220,0.14), rgba(46,204,113,0.1));
-        }
-        .tvh-support-banner h2 { margin: 0 0 0.35em 0; font-size: 1.1em; }
-        .tvh-support-banner p { margin: 0 0 0.75em 0; font-size: 0.9em; opacity: 0.9; }
-        .tvh-support-links { display: flex; flex-wrap: wrap; gap: 0.55em; }
-        .tvh-support-link {
-            display: inline-block;
-            text-decoration: none;
-            padding: 0.42em 0.72em;
-            border-radius: 5px;
-            border: 1px solid rgba(255,255,255,0.22);
-            background: rgba(255,255,255,0.08);
-            color: #e0f3ff;
-            font-size: 0.86em;
-            font-weight: 600;
-        }
-        .tvh-support-link:hover { background: rgba(255,255,255,0.16); }
-
-        /* ── Footer ─────────────────────────────────────────── */
-        .tvh-footer { margin-top: 2em; padding-top: 1em; border-top: 1px solid #333; text-align: center; opacity: 0.7; font-size: 0.88em; }
-        .tvh-footer a { margin: 0 0.5em; }
 
         /* ── Responsive ─────────────────────────────────────── */
         @media (max-width: 600px) {
@@ -192,18 +174,6 @@
                         <button id="OpenDashboardBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-primary">
                             <span>Open Dashboard</span>
                         </button>
-                    </div>
-                </div>
-
-                <div class="tvh-support-banner" role="region" aria-label="Support and project links">
-                    <h2>Support this plugin</h2>
-                    <p>If this plugin helps your Jellyfin setup, you can support development or follow project updates here.</p>
-                    <div class="tvh-support-links">
-                        <a class="tvh-support-link" href="https://github.com/sponsors/john-pierre" target="_blank" rel="noopener">GitHub Sponsors</a>
-                        <a class="tvh-support-link" href="https://ko-fi.com/johnpierre" target="_blank" rel="noopener">Ko-fi</a>
-                        <a class="tvh-support-link" href="https://buymeacoffee.com/johnpierre" target="_blank" rel="noopener">Buy Me a Coffee</a>
-                        <a class="tvh-support-link" href="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api" target="_blank" rel="noopener">TvHeadend API Repo</a>
-                        <a class="tvh-support-link" href="https://github.com/john-pierre/jellyfin-plugin-suite" target="_blank" rel="noopener">Proposed: jellyfin-plugin-suite</a>
                     </div>
                 </div>
 
@@ -788,8 +758,8 @@
                                 <option value="Critical">Critical</option>
                                 <option value="None">None</option>
                             </select>
-                            <div class="fieldDescription">Controls log verbosity for this plugin only. By default the plugin follows Jellyfin's global logging configuration.</div>
-                            <div id="LogLevelWarning" style="display:none; color:#f0ad4e; font-size:0.88em; margin-top:0.3em;">⚠️ Trace/Debug level will produce verbose output. Use only for troubleshooting.</div>
+                            <div class="fieldDescription">Sets the minimum level of plugin log entries captured to the dashboard log view. "Jellyfin Default" captures everything Jellyfin's logging delivers; a higher level (e.g. Warning) drops lower-level entries. It can only filter down — it cannot capture entries more verbose than Jellyfin's global log level.</div>
+                            <div id="LogLevelWarning" style="display:none; color:#f0ad4e; font-size:0.88em; margin-top:0.3em;">⚠️ To actually capture Trace/Debug entries, Jellyfin's global log level must already be at least that verbose.</div>
                         </div>
                         <div class="tvh-checkbox">
                             <label>
@@ -867,9 +837,9 @@
 
             // ── Relay token security warnings ─────────────────────
             function updateLogLevelWarning() {
-                var val = parseInt($('#PluginLogLevelOverride').value, 10);
+                var val = $('#PluginLogLevelOverride').value;
                 var warn = document.getElementById('LogLevelWarning');
-                if (warn) warn.style.display = (val === 1 || val === 2) ? 'block' : 'none';
+                if (warn) warn.style.display = (val === 'Trace' || val === 'Debug') ? 'block' : 'none';
             }
             document.addEventListener('DOMContentLoaded', function() {
                 var el = document.getElementById('PluginLogLevelOverride');
@@ -1103,6 +1073,7 @@
 
                 // Logging
                 $('#PluginLogLevelOverride').value = config.PluginLogLevelOverride || 'JellyfinDefault';
+                updateLogLevelWarning();
                 $('#StorePluginLogsInSqlite').checked = config.StorePluginLogsInSqlite !== false;
                 $('#StoreTvHeadendLogsInSqlite').checked = config.StoreTvHeadendLogsInSqlite !== false;
                 $('#TvHeadendLogImportEnabled').checked = config.TvHeadendLogImportEnabled !== false;

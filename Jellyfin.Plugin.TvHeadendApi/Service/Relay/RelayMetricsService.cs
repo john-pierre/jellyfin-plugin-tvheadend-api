@@ -280,15 +280,19 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
             })
             .ToList();
 
-        // Slowest requests (max 20)
+        // Slowest requests (max 20) — ranked by STARTUP latency (time-to-first-byte), the metric a
+        // user actually perceives as "slow". A long-running live stream is not "slow"; its total
+        // duration is just watch time. Requests that never delivered a byte (failed/timed out before
+        // first byte) fall back to total duration so they still surface as slow.
         summary.SlowestRequests = rows
-            .OrderByDescending(r => r.TotalDurationMs)
+            .OrderByDescending(r => r.StartupLatencyMs ?? r.TotalDurationMs)
             .Take(20)
             .Select(r => new RelaySlowestEntry
             {
                 CreatedAtUtc = r.CreatedAtUtc,
                 RelayType = r.RelayType,
                 TotalDurationMs = r.TotalDurationMs,
+                StartupLatencyMs = r.StartupLatencyMs,
                 BytesSent = r.BytesSent,
                 FinalOutcome = r.FinalOutcome,
                 ChannelId = r.ChannelId,

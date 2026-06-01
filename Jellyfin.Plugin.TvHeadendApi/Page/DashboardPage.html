@@ -484,12 +484,13 @@
                         </div>
                     </div>
 
-                    <!-- Slowest requests table -->
+                    <!-- Slowest-to-start table -->
                     <div class="tvh-card tvh-full" style="margin-top:1em;">
-                        <h3>Slowest Requests</h3>
+                        <h3>Slowest to Start</h3>
+                        <p class="tvh-hint" style="margin:0 0 .5em; opacity:0.7; font-size:0.85em;">Ranked by startup latency (time to first byte). For streams, "Watched" is the session length, not a slowness signal.</p>
                         <div class="tvh-table-wrap">
                             <table id="tvhRelaySlowestTable">
-                                <thead><tr><th>Time</th><th>Type</th><th>Duration</th><th>Bytes</th><th>Outcome</th></tr></thead>
+                                <thead><tr><th>Time</th><th>Type</th><th>Startup</th><th>Watched</th><th>Bytes</th><th>Outcome</th></tr></thead>
                                 <tbody id="tvhRelaySlowestBody"></tbody>
                             </table>
                         </div>
@@ -1645,12 +1646,13 @@
                 var slBody = document.getElementById('tvhRelaySlowestBody');
                 var slowest = m.SlowestRequests || [];
                 if (slowest.length === 0) {
-                    slBody.innerHTML = '<tr><td colspan="5" class="tvh-empty">No data</td></tr>';
+                    slBody.innerHTML = '<tr><td colspan="6" class="tvh-empty">No data</td></tr>';
                 } else {
                     slBody.innerHTML = slowest.map(function(s) {
                         var outcomeColor = s.FinalOutcome === 'success' || s.FinalOutcome === 'cancelled' ? '#4caf50' : '#e74c3c';
+                        var startup = s.StartupLatencyMs != null ? fmtMs(s.StartupLatencyMs) : '—';
                         return '<tr><td>' + formatDateWithTimezone(s.CreatedAtUtc) + '</td><td>' + esc(s.RelayType) +
-                            '</td><td>' + fmtMs(s.TotalDurationMs) + '</td><td>' + formatBytes(s.BytesSent) +
+                            '</td><td>' + startup + '</td><td>' + fmtMs(s.TotalDurationMs) + '</td><td>' + formatBytes(s.BytesSent) +
                             '</td><td><span style="color:' + outcomeColor + ';">' + esc(s.FinalOutcome) + '</span></td></tr>';
                     }).join('');
                 }
@@ -1724,14 +1726,15 @@
                 var el = document.getElementById('tvhRelayLatencyChart');
                 var lat = m.TotalDuration || {};
                 var su = m.StartupLatency || {};
+                // Note: "Startup (first byte)" IS the time the first byte reached the client, so a
+                // separate "First Byte Client" row would just duplicate it — intentionally omitted.
                 var items = [
-                    { label: 'Avg Total',     ms: lat.Avg,    color: '#64b5f6' },
-                    { label: 'P95 Total',     ms: lat.P95,    color: '#42a5f5' },
-                    { label: 'Avg Startup',   ms: su.Avg,     color: '#81c784' },
-                    { label: 'P95 Startup',   ms: su.P95,     color: '#66bb6a' },
-                    { label: 'Upstream Hdrs',  ms: m.AvgUpstreamHeadersMs, color: '#ffb74d' },
-                    { label: 'First Byte TVH', ms: m.AvgFirstByteFromUpstreamMs, color: '#ffa726' },
-                    { label: 'First Byte Client', ms: m.AvgFirstByteToClientMs, color: '#ff9800' },
+                    { label: 'Avg Total',           ms: lat.Avg,    color: '#64b5f6' },
+                    { label: 'P95 Total',           ms: lat.P95,    color: '#42a5f5' },
+                    { label: 'Avg Startup (1st byte)', ms: su.Avg,  color: '#81c784' },
+                    { label: 'P95 Startup (1st byte)', ms: su.P95,  color: '#66bb6a' },
+                    { label: 'Upstream Headers',    ms: m.AvgUpstreamHeadersMs, color: '#ffb74d' },
+                    { label: 'First Byte from TVH', ms: m.AvgFirstByteFromUpstreamMs, color: '#ffa726' },
                 ].filter(function(x) { return x.ms != null && x.ms > 0; });
 
                 if (items.length === 0) { el.innerHTML = '<div class="tvh-empty">No latency data</div>'; return; }
@@ -1761,8 +1764,23 @@
                 var total = 0;
                 keys.forEach(function(k) { total += dist[k]; });
                 var colorMap = {
-                    UpstreamEof: '#4caf50', ClientCancelled: '#64b5f6', ServerShutdown: '#ff9800',
-                    StartupCancelledBeforeFirstByte: '#f0ad4e', Error: '#e74c3c'
+                    UpstreamEof: '#4caf50', Completed: '#4caf50', ClientCancelled: '#64b5f6',
+                    UserStopOrChannelSwitch: '#64b5f6', ClientDisconnectAfterFirstByte: '#64b5f6',
+                    ServerShutdown: '#ff9800', PluginShutdown: '#ff9800',
+                    StartupCancelledBeforeFirstByte: '#f0ad4e', Error: '#e74c3c',
+                    DownstreamError: '#e74c3c', DownstreamWriteError: '#e74c3c',
+                    UpstreamTimeout: '#e74c3c', UpstreamHttpError: '#e74c3c', UnexpectedException: '#e74c3c'
+                };
+                // Live TV streams normally end because the client closes / switches channel — that is
+                // NOT a failure, so present it as "Closed by client" rather than "Cancelled".
+                var labelMap = {
+                    ClientCancelled: 'Closed by client', ClientDisconnectAfterFirstByte: 'Closed by client',
+                    UserStopOrChannelSwitch: 'Channel switch / stop',
+                    Completed: 'Stream ended (EOF)', UpstreamEof: 'Stream ended (EOF)',
+                    StartupCancelledBeforeFirstByte: 'Cancelled before start',
+                    DownstreamError: 'Client write error', DownstreamWriteError: 'Client write error',
+                    UpstreamTimeout: 'Upstream timeout', UpstreamHttpError: 'Upstream error',
+                    PluginShutdown: 'Server shutdown', UnexpectedException: 'Unexpected error', Unknown: 'Unknown'
                 };
                 var W = el.offsetWidth || 400, barH = 24, gap = 6, labelW = 180;
                 var H = keys.length * (barH + gap) + 10;
@@ -1774,7 +1792,7 @@
                     var w = Math.max(2, (dist[k] / total) * barMaxW);
                     var color = colorMap[k] || '#9e9e9e';
                     var pct = Math.round(dist[k] * 100 / total);
-                    var displayName = k.replace(/([A-Z])/g, ' $1').trim();
+                    var displayName = labelMap[k] || k.replace(/([A-Z])/g, ' $1').trim();
                     svg += '<text x="' + (labelW - 5) + '" y="' + (y + barH / 2 + 4) + '" fill="rgba(255,255,255,0.7)" font-size="11" text-anchor="end">' + esc(displayName) + '</text>';
                     svg += '<rect x="' + labelW + '" y="' + y + '" width="' + w + '" height="' + barH + '" fill="' + color + '" rx="3" opacity="0.8" />';
                     svg += '<text x="' + (labelW + w + 5) + '" y="' + (y + barH / 2 + 4) + '" fill="rgba(255,255,255,0.8)" font-size="11">' + dist[k] + ' (' + pct + '%)</text>';

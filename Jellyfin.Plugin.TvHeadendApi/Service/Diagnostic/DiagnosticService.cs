@@ -116,6 +116,7 @@ internal sealed class DiagnosticService : IDiagnosticService
 
             await FetchChannelGridAsync(report, config, httpClient, baseUrl, webRoot, allChannelUuids, cancellationToken).ConfigureAwait(false);
             scoreDeductions += await CheckStreamingProfilesAsync(report, config, httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
+            await CheckTranscodeCapabilityAsync(report, config, httpClient, cancellationToken).ConfigureAwait(false);
             scoreDeductions += await CheckDvrProfilesAsync(report, config, httpClient, baseUrl, webRoot, cancellationToken).ConfigureAwait(false);
         }
 
@@ -329,6 +330,94 @@ internal sealed class DiagnosticService : IDiagnosticService
         }
 
         return scoreDeductions;
+    }
+
+    /// <summary>
+    /// Checks whether TVHeadend can actually encode video. Many builds ship without a software
+    /// H.264 encoder (libx264) and expose only hardware encoders (VAAPI/QSV) that need a configured
+    /// GPU — in that case any video-transcode profile (including the plugin's 'jellyfin' profile,
+    /// which uses libx264) silently produces audio-only. Surfacing this prevents users from creating
+    /// a transcode profile and hitting audio-only playback.
+    /// </summary>
+    private async Task CheckTranscodeCapabilityAsync(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, HttpClient httpClient, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var url = _tvheadendUrlBuilder.BuildApiUrl(config, "api/codec/list");
+            var json = await _tvheadendApiClient.GetStringAsync(httpClient, url, cancellationToken).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
+            {
+                return;
+            }
+
+            var videoEncoders = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            var hasSoftwareH264 = false;
+            var hasHardwareVideo = false;
+
+            foreach (var entry in entries.EnumerateArray())
+            {
+                var caption = entry.TryGetProperty("caption", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() ?? string.Empty : string.Empty;
+                var className = entry.TryGetProperty("class", out var k) && k.ValueKind == JsonValueKind.String ? k.GetString() ?? string.Empty : string.Empty;
+                var id = (caption + " " + className).ToLowerInvariant();
+
+                var isVideo = id.Contains("h264", StringComparison.Ordinal) || id.Contains("hevc", StringComparison.Ordinal) || id.Contains("h265", StringComparison.Ordinal)
+                    || id.Contains("mpeg2video", StringComparison.Ordinal) || id.Contains("mpeg4", StringComparison.Ordinal)
+                    || id.Contains("vp8", StringComparison.Ordinal) || id.Contains("vp9", StringComparison.Ordinal) || id.Contains("av1", StringComparison.Ordinal) || id.Contains("theora", StringComparison.Ordinal);
+                if (!isVideo)
+                {
+                    continue;
+                }
+
+                videoEncoders.Add(string.IsNullOrWhiteSpace(caption) ? className : caption);
+
+                if (id.Contains("libx264", StringComparison.Ordinal))
+                {
+                    hasSoftwareH264 = true;
+                }
+
+                if (id.Contains("vaapi", StringComparison.Ordinal) || id.Contains("qsv", StringComparison.Ordinal) || id.Contains("nvenc", StringComparison.Ordinal)
+                    || id.Contains("v4l2m2m", StringComparison.Ordinal) || id.Contains("videotoolbox", StringComparison.Ordinal) || id.Contains("_omx", StringComparison.Ordinal))
+                {
+                    hasHardwareVideo = true;
+                }
+            }
+
+            if (videoEncoders.Count > 0)
+            {
+                report.PluginSettings.Add("TVHeadend video encoders: " + string.Join(", ", videoEncoders));
+            }
+
+            if (hasSoftwareH264)
+            {
+                report.Checks.Add(new DiagnoseCheck
+                {
+                    Category = "Streaming",
+                    Name = "Transcode Capability",
+                    Status = "OK",
+                    Message = "TVHeadend has a software H.264 encoder (libx264); transcode profiles can produce video.",
+                });
+                return;
+            }
+
+            var message = hasHardwareVideo
+                ? "TVHeadend exposes only hardware video encoders (VAAPI/QSV/etc.) and no software H.264 (libx264). Hardware transcoding requires a configured GPU/render device; without one, the plugin's 'jellyfin' transcode profile (libx264) produces AUDIO-ONLY."
+                : "TVHeadend has no usable H.264 video encoder (no libx264). Any video-transcode profile — including the plugin's 'jellyfin' profile — produces AUDIO-ONLY.";
+
+            report.Checks.Add(new DiagnoseCheck
+            {
+                Category = "Streaming",
+                Name = "Transcode Capability",
+                Status = "WARNING",
+                Message = message,
+                Recommendation = "Use a pass-through profile for Direct Play (the plugin default), or configure a working video encoder in TVHeadend before using transcode profiles.",
+            });
+            report.Warnings.Add("TVHeadend cannot software-transcode H.264 video — transcode profiles will be audio-only. Use Direct Play (pass).");
+        }
+        catch (Exception ex)
+        {
+            report.Checks.Add(new DiagnoseCheck { Category = "Streaming", Name = "Transcode Capability", Status = "INFO", Message = "Could not query TVHeadend codec list: " + ex.Message });
+        }
     }
 
     private async Task<int> CheckDvrProfilesAsync(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)

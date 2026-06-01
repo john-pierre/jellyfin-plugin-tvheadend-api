@@ -1,6 +1,5 @@
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Model.Dashboard;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Dashboard;
 
