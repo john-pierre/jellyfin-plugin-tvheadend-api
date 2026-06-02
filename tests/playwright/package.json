@@ -1,0 +1,17 @@
+{
+  "name": "tvheadend-plugin-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright end-to-end tests for the Jellyfin TVHeadend plugin: playback methods (Direct Play / Direct Stream / Transcode), streaming profiles, dashboard metrics, settings, and a sustained soak test.",
+  "scripts": {
+    "setup": "playwright install chromium",
+    "test": "playwright test --grep-invert @soak",
+    "test:all": "playwright test",
+    "test:soak": "playwright test --grep @soak --timeout=0",
+    "test:headed": "playwright test --headed --grep-invert @soak",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0"
+  }
+}
