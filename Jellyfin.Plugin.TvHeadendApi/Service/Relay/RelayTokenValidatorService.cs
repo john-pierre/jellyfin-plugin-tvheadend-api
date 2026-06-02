@@ -133,11 +133,15 @@ internal sealed class RelayTokenValidatorService : IRelayTokenValidator
                 }
             }
 
-            // Step 9: Increment use count
-            await _repository.IncrementUseCountAsync(record.Id, cancellationToken).ConfigureAwait(false);
-
-            // Step 10: Update validation metadata
-            await UpdateMetadataAsync(record.Id, "valid", null, cancellationToken).ConfigureAwait(false);
+            // Steps 9-10: For tokens with a usage limit, increment the use count and record validation
+            // metadata. Unlimited tokens (notably the global, non-expiring image token shared by every
+            // image request from every concurrent user) skip both writes — otherwise every request
+            // would serialize on a single hot row and bottleneck under load.
+            if (record.MaxUses.HasValue && record.MaxUses.Value > 0)
+            {
+                await _repository.IncrementUseCountAsync(record.Id, cancellationToken).ConfigureAwait(false);
+                await UpdateMetadataAsync(record.Id, "valid", null, cancellationToken).ConfigureAwait(false);
+            }
 
             _logger.LogDebug("Relay token {TokenId} validated successfully (use {UseCount})", record.Id, record.UseCount + 1);
             return RelayTokenValidationResult.Success(record);

@@ -31,6 +31,7 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
     private readonly DatabaseWriteCoordinator _writeCoordinator;
     private readonly RelayActivityTracker _activityTracker;
     private readonly DatabaseProvider _databaseProvider;
+    private readonly object _dbContextOptionsLock = new();
     private DbContextOptions<RelayMetricsContext>? _lazyDbContextOptions;
 
     public RelayMetricsService(
@@ -383,7 +384,12 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
 
     private DbContextOptions<RelayMetricsContext> GetDbContextOptions()
     {
-        return _lazyDbContextOptions ??= _databaseProvider.CreateContextOptions<RelayMetricsContext>();
+        // Lock the lazy init: this singleton is reached concurrently from per-request metric persistence
+        // (ThreadPool) and dashboard reads, so an unsynchronized ??= could build the options twice.
+        lock (_dbContextOptionsLock)
+        {
+            return _lazyDbContextOptions ??= _databaseProvider.CreateContextOptions<RelayMetricsContext>();
+        }
     }
 
     private RelayMetricsContext CreateContext() => new(GetDbContextOptions());

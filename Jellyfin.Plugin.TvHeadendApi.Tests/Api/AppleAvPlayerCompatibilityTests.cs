@@ -85,7 +85,8 @@ public sealed class AppleAvPlayerCompatibilityTests : IDisposable
             NullLogger<RelayService>.Instance,
             metricsService,
             activityTracker,
-            NullHealthService.Instance);
+            NullHealthService.Instance,
+            new RelayImageCache(NullLogger<RelayImageCache>.Instance, configProvider, () => null));
     }
 
     /// <inheritdoc />

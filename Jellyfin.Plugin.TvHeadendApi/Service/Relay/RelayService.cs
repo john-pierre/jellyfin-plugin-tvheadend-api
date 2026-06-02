@@ -2,6 +2,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -62,23 +63,24 @@ internal sealed class RelayService : IRelayService, IDisposable
     private readonly IRelayMetricsService _metricsService;
     private readonly RelayActivityTracker _activityTracker;
     private readonly IHealthService _healthService;
+    private readonly RelayImageCache _imageCache;
 
     /// <summary>
     /// Fingerprint of socket-level config (host, port, SSL, cert errors, webroot).
     /// Changes here require a full socket handler rebuild (TCP pool + TLS sessions lost).
     /// </summary>
-    private string _socketFingerprint = string.Empty;
+    private volatile string _socketFingerprint = string.Empty;
 
     /// <summary>
     /// Fingerprint of auth-level config (anonymous, username, password).
     /// Changes here only rebuild the auth wrapper — the socket pool survives.
     /// </summary>
-    private string _authFingerprint = string.Empty;
+    private volatile string _authFingerprint = string.Empty;
 
     private SocketsHttpHandler? _socketHandler;
     private HttpMessageHandler? _outerHandler;
-    private HttpClient? _imageClient;
-    private HttpClient? _streamClient;
+    private volatile HttpClient? _imageClient;
+    private volatile HttpClient? _streamClient;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RelayService"/> class.
@@ -89,13 +91,15 @@ internal sealed class RelayService : IRelayService, IDisposable
     /// <param name="metricsService">Relay metrics persistence service.</param>
     /// <param name="activityTracker">Live stream activity tracker.</param>
     /// <param name="healthService">TVHeadend health tracking service.</param>
+    /// <param name="imageCache">On-disk cache for relayed images.</param>
     public RelayService(
         IUrlBuilder urlBuilder,
         ConfigurationProvider configProvider,
         ILogger<RelayService> logger,
         IRelayMetricsService metricsService,
         RelayActivityTracker activityTracker,
-        IHealthService healthService)
+        IHealthService healthService,
+        RelayImageCache imageCache)
     {
         ArgumentNullException.ThrowIfNull(urlBuilder);
         ArgumentNullException.ThrowIfNull(configProvider);
@@ -103,6 +107,7 @@ internal sealed class RelayService : IRelayService, IDisposable
         ArgumentNullException.ThrowIfNull(metricsService);
         ArgumentNullException.ThrowIfNull(activityTracker);
         ArgumentNullException.ThrowIfNull(healthService);
+        ArgumentNullException.ThrowIfNull(imageCache);
 
         _urlBuilder = urlBuilder;
         _configProvider = configProvider;
@@ -110,6 +115,7 @@ internal sealed class RelayService : IRelayService, IDisposable
         _metricsService = metricsService;
         _activityTracker = activityTracker;
         _healthService = healthService;
+        _imageCache = imageCache;
     }
 
     /// <inheritdoc />
@@ -117,10 +123,124 @@ internal sealed class RelayService : IRelayService, IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(upstreamPath);
         var timing = new RelayTimingContext { RelayType = RelayType.Image, MediaKind = InferMediaKind(upstreamPath), ImageSourceType = InferImageSourceType(upstreamPath) };
+
+        // Cache hit — serve from disk without touching TVHeadend. Sniff the bytes for the content type
+        // (rather than trusting the stored one) so the response is always a correct image/* type even
+        // for entries cached before content-type sniffing existed.
+        var cached = _imageCache.TryGet(upstreamPath);
+        if (cached != null)
+        {
+            return new RelayResult
+            {
+                StatusCode = 200,
+                ContentType = SniffImageContentType(cached.Bytes) ?? cached.ContentType,
+                ContentLength = cached.Bytes.Length,
+                Body = new MemoryStream(cached.Bytes, writable: false),
+                TimingContext = timing,
+            };
+        }
+
+        // Cache miss — fetch from TVHeadend.
         var (imageClient, _) = GetOrRebuildClients();
         var result = await RelayRequestAsync(imageClient, upstreamPath, "image", timing, cancellationToken).ConfigureAwait(false);
         result.TimingContext = timing;
+
+        // On success, buffer the (small) image so we can (a) correct the content type — TVHeadend serves
+        // images as "text/html" or with no type, which makes Jellyfin's image conversion fail — by
+        // sniffing the magic bytes, and (b) cache it. Streams are never buffered this way.
+        if (result.StatusCode == 200 && result.Body != null)
+        {
+            try
+            {
+                var originalContentType = result.ContentType;
+                var etag = result.ETag;
+                var lastModified = result.LastModified;
+                var cacheControl = result.CacheControl;
+                var acceptRanges = result.AcceptRanges;
+                using var buffer = new MemoryStream();
+                await result.Body.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+                var bytes = buffer.ToArray();
+                result.Dispose();
+
+                var contentType = SniffImageContentType(bytes) ?? originalContentType;
+                if (_imageCache.Enabled)
+                {
+                    _imageCache.Store(upstreamPath, bytes, contentType);
+                }
+
+                return new RelayResult
+                {
+                    StatusCode = 200,
+                    ContentType = contentType,
+                    ContentLength = bytes.Length,
+                    ETag = etag,
+                    LastModified = lastModified,
+                    CacheControl = cacheControl,
+                    AcceptRanges = acceptRanges,
+                    Body = new MemoryStream(bytes, writable: false),
+                    TimingContext = timing,
+                };
+            }
+            catch (Exception ex) when (ex is IOException or HttpRequestException)
+            {
+                // Buffering failed mid-download — fall through and return what we have.
+                _logger.LogDebug(ex, "Failed to buffer relayed image: {UpstreamPath}", upstreamPath);
+            }
+        }
+
         return result;
+    }
+
+    /// <summary>
+    /// Detects an image content type from the leading "magic" bytes. TVHeadend mislabels images
+    /// (often "text/html") or omits the content type, which makes Jellyfin's image-to-local conversion
+    /// fail; sniffing the bytes yields a correct "image/*" type. Returns <c>null</c> if unrecognised.
+    /// </summary>
+    private static string? SniffImageContentType(byte[] bytes)
+    {
+        if (bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
+        {
+            return "image/png";
+        }
+
+        if (bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
+        {
+            return "image/jpeg";
+        }
+
+        if (bytes.Length >= 6 && bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x38)
+        {
+            return "image/gif";
+        }
+
+        if (bytes.Length >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46
+            && bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50)
+        {
+            return "image/webp";
+        }
+
+        if (bytes.Length >= 2 && bytes[0] == 0x42 && bytes[1] == 0x4D)
+        {
+            return "image/bmp";
+        }
+
+        if (bytes.Length >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0x01 && bytes[3] == 0x00)
+        {
+            return "image/x-icon";
+        }
+
+        // SVG and other XML/text vector images.
+        if (bytes.Length >= 5)
+        {
+            var head = System.Text.Encoding.ASCII.GetString(bytes, 0, Math.Min(bytes.Length, 256)).TrimStart(' ', '\t', '\r', '\n');
+            if (head.StartsWith("<svg", StringComparison.OrdinalIgnoreCase)
+                || (head.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) && head.Contains("<svg", StringComparison.OrdinalIgnoreCase)))
+            {
+                return "image/svg+xml";
+            }
+        }
+
+        return null;
     }
 
     /// <inheritdoc />
@@ -227,12 +347,17 @@ internal sealed class RelayService : IRelayService, IDisposable
         var socketFp = BuildSocketFingerprint(config);
         var authFp = BuildAuthFingerprint(config);
 
-        // Fast path — no lock when nothing has changed.
-        if (string.Equals(_socketFingerprint, socketFp, StringComparison.Ordinal)
-            && string.Equals(_authFingerprint, authFp, StringComparison.Ordinal)
-            && _imageClient is not null && _streamClient is not null)
+        // Fast path — no lock when nothing has changed. The shared fields are volatile and read into
+        // locals once, so the returned pair is internally consistent even if another thread rebuilds
+        // concurrently. (A rebuild only happens on an admin config change — host/port/SSL/credentials —
+        // never under steady-state load, where dozens of concurrent viewers all take this branch.)
+        var imageClient = _imageClient;
+        var streamClient = _streamClient;
+        if (imageClient is not null && streamClient is not null
+            && string.Equals(_socketFingerprint, socketFp, StringComparison.Ordinal)
+            && string.Equals(_authFingerprint, authFp, StringComparison.Ordinal))
         {
-            return (_imageClient, _streamClient);
+            return (imageClient, streamClient);
         }
 
         lock (_clientLock)

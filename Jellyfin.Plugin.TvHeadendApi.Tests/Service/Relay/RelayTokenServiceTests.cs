@@ -87,21 +87,65 @@ public class RelayTokenServiceTests
     }
 
     [Fact]
-    public async Task IssueImageTokenAsync_ReturnsNonEmptyToken()
+    public async Task IssueImageTokenAsync_NeverExpire_IssuesOneReusableTokenPerUser()
     {
+        // Default config: ImageTokenTtlMinutes = 0 -> never expire -> one stable token per user.
         var repo = new Mock<IRelayTokenRepository>();
-        repo.Setup(r => r.FindActiveImageTokenForUserAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+        repo.Setup(r => r.FindByHashAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((RelayTokenRecord?)null);
         using var hasher = CreateHasher();
         var sut = new RelayTokenService(
             NullLogger<RelayTokenService>.Instance, hasher, repo.Object, CreateOptions());
 
-        var token = await sut.IssueImageTokenAsync("imagecache/42", MediaKind.Logo, null, CancellationToken.None);
+        var token = await sut.IssueImageTokenAsync("imagecache/42", MediaKind.Logo, "user-1", CancellationToken.None);
 
         Assert.False(string.IsNullOrWhiteSpace(token));
-        // With ImageTokenReusePerUser=true (default), ImageId is null (token is user-scoped, not image-scoped).
+        // One non-expiring, unlimited row scoped to the user and valid for any image.
         repo.Verify(r => r.InsertAsync(It.Is<RelayTokenRecord>(t =>
-            t.RelayType == "image" && t.ImageId == null && t.MediaKind == "Logo"), It.IsAny<CancellationToken>()));
+            t.RelayType == "image" && t.ImageId == null && t.UserId == "user-1" &&
+            t.MaxUses == null && t.ExpiresAtUtc == DateTime.MaxValue), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task IssueImageTokenAsync_ReusableToken_StablePerUser_DistinctAcrossUsers()
+    {
+        // The token must be byte-identical across calls for the same user (Jellyfin persists the URL),
+        // differ between users, and be inserted exactly once per user.
+        var stored = new System.Collections.Generic.List<RelayTokenRecord>();
+        var repo = new Mock<IRelayTokenRepository>();
+        repo.Setup(r => r.FindByHashAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string h, CancellationToken _) => stored.Find(x => x.TokenHash == h));
+        repo.Setup(r => r.InsertAsync(It.IsAny<RelayTokenRecord>(), It.IsAny<CancellationToken>()))
+            .Callback<RelayTokenRecord, CancellationToken>((t, _) => stored.Add(t))
+            .Returns(Task.CompletedTask);
+        using var hasher = CreateHasher();
+        var sut = new RelayTokenService(
+            NullLogger<RelayTokenService>.Instance, hasher, repo.Object, CreateOptions());
+
+        var a1 = await sut.IssueImageTokenAsync("imagecache/1", MediaKind.Logo, "user-A", CancellationToken.None);
+        var a2 = await sut.IssueImageTokenAsync("imagecache/2", null, "user-A", CancellationToken.None);
+        var b1 = await sut.IssueImageTokenAsync("imagecache/3", null, "user-B", CancellationToken.None);
+
+        Assert.Equal(a1, a2);     // same user -> same stable token across images
+        Assert.NotEqual(a1, b1);  // different users -> different tokens
+        repo.Verify(r => r.InsertAsync(It.IsAny<RelayTokenRecord>(), It.IsAny<CancellationToken>()), Times.Exactly(2)); // one row per user
+    }
+
+    [Fact]
+    public async Task IssueImageTokenAsync_WithTtl_IssuesPerImageToken()
+    {
+        var config = new PluginConfiguration { ImageTokenTtlMinutes = 30 };
+        var repo = new Mock<IRelayTokenRepository>();
+        using var hasher = CreateHasher();
+        var sut = new RelayTokenService(
+            NullLogger<RelayTokenService>.Instance, hasher, repo.Object, CreateOptions(config));
+
+        var token = await sut.IssueImageTokenAsync("imagecache/42", MediaKind.Logo, "user-1", CancellationToken.None);
+
+        Assert.False(string.IsNullOrWhiteSpace(token));
+        repo.Verify(r => r.InsertAsync(It.Is<RelayTokenRecord>(t =>
+            t.RelayType == "image" && t.ImageId == "imagecache/42" && t.MediaKind == "Logo" &&
+            t.ExpiresAtUtc != DateTime.MaxValue), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

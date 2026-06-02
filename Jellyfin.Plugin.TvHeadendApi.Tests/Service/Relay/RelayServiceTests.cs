@@ -47,7 +47,7 @@ public sealed class RelayServiceTests : IDisposable
         var metricsService = new Mock<IRelayMetricsService>().Object;
         var activityTracker = new RelayActivityTracker();
 
-        _sut = new RelayService(urlBuilder, configProvider, logger, metricsService, activityTracker, NullHealthService.Instance);
+        _sut = new RelayService(urlBuilder, configProvider, logger, metricsService, activityTracker, NullHealthService.Instance, new RelayImageCache(NullLogger<RelayImageCache>.Instance, configProvider, () => null));
     }
 
     public void Dispose()
@@ -93,6 +93,24 @@ public sealed class RelayServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RelayImageAsync_CorrectsBogusContentType_BySniffingMagicBytes()
+    {
+        // TVHeadend serves images mislabeled as text/html (or with no type). The relay must sniff the
+        // magic bytes and return a correct image/* type, otherwise Jellyfin's ConvertImageToLocal fails
+        // with "Unable to convert any images to local" and channel logos / EPG art never load.
+        _server.Given(Request.Create().WithPath("/imagecache/789").UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "text/html")
+                .WithBody(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01 }));
+
+        using var result = await _sut.RelayImageAsync("imagecache/789", CancellationToken.None);
+
+        result.StatusCode.Should().Be(200);
+        result.ContentType.Should().Be("image/png");
+    }
+
+    [Fact]
     public async Task RelayStreamAsync_StartsQuickly()
     {
         _server.Given(Request.Create().WithPath("/stream/channel/*").UsingGet())
@@ -127,7 +145,7 @@ public sealed class RelayServiceTests : IDisposable
             AllowAnonymousAccess = true,
         };
         var configProvider = new ConfigurationProvider(() => config);
-        using var sut = new RelayService(new UrlBuilder(), configProvider, NullLogger<RelayService>.Instance, new Mock<IRelayMetricsService>().Object, new RelayActivityTracker(), NullHealthService.Instance);
+        using var sut = new RelayService(new UrlBuilder(), configProvider, NullLogger<RelayService>.Instance, new Mock<IRelayMetricsService>().Object, new RelayActivityTracker(), NullHealthService.Instance, new RelayImageCache(NullLogger<RelayImageCache>.Instance, configProvider, () => null));
 
         using var result = await sut.RelayImageAsync("imagecache/999", CancellationToken.None);
 
@@ -210,7 +228,7 @@ public sealed class RelayServiceTests : IDisposable
         };
 
         var configProvider = new ConfigurationProvider(() => config);
-        using var sut = new RelayService(new UrlBuilder(), configProvider, NullLogger<RelayService>.Instance, new Mock<IRelayMetricsService>().Object, new RelayActivityTracker(), NullHealthService.Instance);
+        using var sut = new RelayService(new UrlBuilder(), configProvider, NullLogger<RelayService>.Instance, new Mock<IRelayMetricsService>().Object, new RelayActivityTracker(), NullHealthService.Instance, new RelayImageCache(NullLogger<RelayImageCache>.Instance, configProvider, () => null));
 
         // First request goes to server1.
         using var result1 = await sut.RelayImageAsync("imagecache/1", CancellationToken.None);
@@ -245,7 +263,7 @@ public sealed class RelayServiceTests : IDisposable
         };
 
         var configProvider = new ConfigurationProvider(() => config);
-        using var sut = new RelayService(new UrlBuilder(), configProvider, NullLogger<RelayService>.Instance, new Mock<IRelayMetricsService>().Object, new RelayActivityTracker(), NullHealthService.Instance);
+        using var sut = new RelayService(new UrlBuilder(), configProvider, NullLogger<RelayService>.Instance, new Mock<IRelayMetricsService>().Object, new RelayActivityTracker(), NullHealthService.Instance, new RelayImageCache(NullLogger<RelayImageCache>.Instance, configProvider, () => null));
 
         // First request — anonymous.
         using var result1 = await sut.RelayImageAsync("imagecache/auth", CancellationToken.None);

@@ -22,7 +22,7 @@ internal sealed class RelayTokenHasher : IDisposable
     /// <summary>Maximum accepted raw token length in characters (prevents abuse with very long inputs).</summary>
     internal const int MaxRawTokenLength = 512;
 
-    private readonly HMAC _hmac;
+    private readonly byte[] _serverSecret;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RelayTokenHasher"/> class.
@@ -39,7 +39,12 @@ internal sealed class RelayTokenHasher : IDisposable
             throw new ArgumentException("Server secret must be at least 16 bytes.", nameof(serverSecret));
         }
 
-        _hmac = new HMACSHA256(serverSecret);
+        // Store a defensive copy of the key. Hashing uses the static, thread-safe
+        // HMACSHA256.HashData API instead of a shared HMAC instance — an HMAC instance
+        // is NOT safe for concurrent use, and relay image pre-caching issues many parallel
+        // token validations, which would otherwise throw
+        // "Concurrent operations from multiple threads on this type are not supported".
+        _serverSecret = (byte[])serverSecret.Clone();
     }
 
     /// <summary>
@@ -66,8 +71,23 @@ internal sealed class RelayTokenHasher : IDisposable
         }
 
         var inputBytes = Encoding.UTF8.GetBytes(rawToken);
-        var hashBytes = _hmac.ComputeHash(inputBytes);
+        var hashBytes = HMACSHA256.HashData(_serverSecret, inputBytes);
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Derives a stable, deterministic raw token for the given scope. The same scope always yields
+    /// the same token (it is recomputed from the server secret, never stored), so it can be re-issued
+    /// indefinitely. Used for the global, non-expiring image relay token whose URL Jellyfin persists
+    /// permanently — that token must stay byte-for-byte identical across calls and restarts.
+    /// </summary>
+    /// <param name="scope">A stable scope identifier (e.g. "global-image").</param>
+    /// <returns>A URL-safe base64-encoded deterministic token string (no padding).</returns>
+    public string DeriveDeterministicToken(string scope)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scope);
+        var mac = HMACSHA256.HashData(_serverSecret, Encoding.UTF8.GetBytes("relay-derive:" + scope));
+        return Base64UrlEncode(mac);
     }
 
     /// <summary>
@@ -83,7 +103,7 @@ internal sealed class RelayTokenHasher : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        _hmac.Dispose();
+        Array.Clear(_serverSecret);
     }
 
     /// <summary>

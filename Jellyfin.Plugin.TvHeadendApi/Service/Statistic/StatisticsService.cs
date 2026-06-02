@@ -29,6 +29,7 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
     private readonly DatabaseHealthService _dbHealthService;
     private readonly DatabaseWriteCoordinator _writeCoordinator;
     private readonly DatabaseProvider _databaseProvider;
+    private readonly object _dbContextOptionsLock = new();
     private DbContextOptions<ViewingSessionContext>? _lazyDbContextOptions;
     private Timer? _stuckSessionTimer;
 
@@ -418,7 +419,12 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
 
     private DbContextOptions<ViewingSessionContext> GetDbContextOptions()
     {
-        return _lazyDbContextOptions ??= _databaseProvider.CreateContextOptions<ViewingSessionContext>();
+        // Lock the lazy init: this singleton is reached concurrently from playback events (write path)
+        // and dashboard reads (no write lock), so an unsynchronized ??= could build the options twice.
+        lock (_dbContextOptionsLock)
+        {
+            return _lazyDbContextOptions ??= _databaseProvider.CreateContextOptions<ViewingSessionContext>();
+        }
     }
 
     private ViewingSessionContext CreateDbContext()

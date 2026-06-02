@@ -198,6 +198,9 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IInputMonitorService, InputMonitorService>();
         serviceCollection.AddSingleton<ISubscriptionService, SubscriptionService>();
         serviceCollection.AddSingleton<IDashboardService, DashboardService>();
+        serviceCollection.AddSingleton<RelayImageCache>();
+        serviceCollection.AddSingleton<RelayImageCacheCleanupService>();
+        serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<RelayImageCacheCleanupService>());
         serviceCollection.AddSingleton<IRelayService, RelayService>();
         serviceCollection.AddSingleton<IRelayUrlBuilder>(sp =>
             new RelayUrlBuilder(

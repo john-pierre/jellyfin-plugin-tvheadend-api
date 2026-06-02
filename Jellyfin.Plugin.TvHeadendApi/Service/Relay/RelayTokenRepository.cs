@@ -241,29 +241,6 @@ internal sealed class RelayTokenRepository : IRelayTokenRepository, IDisposable
         return active.Count;
     }
 
-    /// <inheritdoc />
-    public async Task<RelayTokenRecord?> FindActiveImageTokenForUserAsync(string? userId, CancellationToken cancellationToken)
-    {
-        if (!_dbHealthService.IsAvailable)
-        {
-            return null;
-        }
-
-        var now = DateTime.UtcNow;
-        using var db = CreateContext();
-
-        // Find the most recently created, non-revoked, non-expired image token for this user.
-        return await db.RelayTokens
-            .AsNoTracking()
-            .Where(t => t.RelayType == "image"
-                && !t.Revoked
-                && t.ExpiresAtUtc > now
-                && t.UserId == userId)
-            .OrderByDescending(t => t.CreatedAtUtc)
-            .FirstOrDefaultAsync(cancellationToken)
-            .ConfigureAwait(false);
-    }
-
     private static DatabaseProvider CreateNullProvider()
     {
         return new DatabaseProvider(new Storage.DataFolderPathProvider(() => null));

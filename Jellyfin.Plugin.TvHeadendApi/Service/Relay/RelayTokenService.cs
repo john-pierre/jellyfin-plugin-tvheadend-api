@@ -14,6 +14,12 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 /// </summary>
 internal sealed class RelayTokenService : IRelayTokenService
 {
+    /// <summary>Scope prefix for the per-user, non-expiring reusable image relay token.</summary>
+    private const string ImageTokenScopePrefix = "image-user:";
+
+    /// <summary>Scope suffix used when no user id is available (anonymous requests).</summary>
+    private const string AnonymousUserScope = "anonymous";
+
     private readonly ILogger<RelayTokenService> _logger;
     private readonly RelayTokenHasher _hasher;
     private readonly IRelayTokenRepository _repository;
@@ -87,50 +93,77 @@ internal sealed class RelayTokenService : IRelayTokenService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(imageId);
 
-        // Per-user reuse: return the existing user-scoped image token if available.
-        // This prevents thousands of tokens accumulating (one per channel logo / EPG image).
-        if (_options.ImageTokenReusePerUser)
+        // When image tokens never expire (TTL 0 — the default), issue ONE stable token PER USER for
+        // every image, rather than a row per image. Jellyfin persists image URLs permanently, so the
+        // token must be stable; a never-expiring per-image token would grow the DB unbounded (it is
+        // never cleaned up). One row per user keeps it bounded and allows per-user revocation.
+        if (_options.ImageTokenNeverExpires)
         {
-            var existing = await _repository.FindActiveImageTokenForUserAsync(userId, cancellationToken).ConfigureAwait(false);
-            if (existing != null)
-            {
-                _logger.LogDebug(
-                    "Reusing existing image token {TokenId} for user {UserId} (created {CreatedAt})",
-                    existing.Id,
-                    userId ?? "(anonymous)",
-                    existing.CreatedAtUtc);
-
-                // We cannot return the raw token since only the hash is stored.
-                // Issue a new token but store it with the same scope key so the validator
-                // doesn't reject distinct tokens for different images.
-                // → Actually we need a new raw token. But we reuse across images.
-            }
+            return await EnsureReusableImageTokenAsync(userId, cancellationToken).ConfigureAwait(false);
         }
 
+        // Expiring image tokens: issue a fresh per-image token. These are bounded by their TTL and
+        // removed by the cleanup service, so they do not accumulate.
         var rawToken = RelayTokenHasher.GenerateRawToken();
-        var tokenHash = _hasher.HashToken(rawToken);
         var now = DateTime.UtcNow;
+        await _repository.InsertAsync(
+            new RelayTokenRecord
+            {
+                TokenHash = _hasher.HashToken(rawToken),
+                RelayType = "image",
+                ImageId = imageId,
+                MediaKind = mediaKind?.ToString(),
+                UserId = userId,
+                CreatedAtUtc = now,
+                ExpiresAtUtc = now.Add(_options.ImageTtl),
+                MaxUses = _options.ImageMaxUses > 0 ? _options.ImageMaxUses : null,
+            },
+            cancellationToken).ConfigureAwait(false);
 
-        var record = new RelayTokenRecord
+        _logger.LogDebug("Issued expiring image relay token for image {ImageId} (TTL={TtlMinutes}min)", imageId, _options.ImageTtlMinutes);
+        return rawToken;
+    }
+
+    /// <summary>
+    /// Ensures the per-user, non-expiring reusable image token exists and returns its stable raw value.
+    /// Idempotent and safe under concurrent first-issue: the unique index on <c>token_hash</c> keeps a
+    /// single row per user, and a losing concurrent insert is harmless (the token is valid regardless).
+    /// </summary>
+    /// <param name="userId">The Jellyfin user id, or null for anonymous requests.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    private async Task<string> EnsureReusableImageTokenAsync(string? userId, CancellationToken cancellationToken)
+    {
+        var rawToken = _hasher.DeriveDeterministicToken(ImageTokenScopePrefix + (userId ?? AnonymousUserScope));
+        var tokenHash = _hasher.HashToken(rawToken);
+
+        var existing = await _repository.FindByHashAsync(tokenHash, cancellationToken).ConfigureAwait(false);
+        if (existing == null)
         {
-            TokenHash = tokenHash,
-            RelayType = "image",
-            ImageId = _options.ImageTokenReusePerUser ? null : imageId,
-            MediaKind = mediaKind?.ToString(),
-            UserId = userId,
-            CreatedAtUtc = now,
-            ExpiresAtUtc = _options.ImageTokenNeverExpires ? DateTime.MaxValue : now.Add(_options.ImageTtl),
-            MaxUses = _options.ImageMaxUses > 0 ? _options.ImageMaxUses : null,
-        };
+            try
+            {
+                await _repository.InsertAsync(
+                    new RelayTokenRecord
+                    {
+                        TokenHash = tokenHash,
+                        RelayType = "image",
+                        ImageId = null,           // null scope = valid for any image
+                        MediaKind = null,
+                        UserId = userId,          // one stable token per user
+                        CreatedAtUtc = DateTime.UtcNow,
+                        ExpiresAtUtc = DateTime.MaxValue,
+                        MaxUses = null,           // unlimited
+                    },
+                    cancellationToken).ConfigureAwait(false);
 
-        await _repository.InsertAsync(record, cancellationToken).ConfigureAwait(false);
-
-        _logger.LogDebug(
-            "Issued image relay token for image {ImageId}, TTL={TtlMinutes}, maxUses={MaxUses}, perUserReuse={ReusePerUser}",
-            imageId,
-            _options.ImageTokenNeverExpires ? "∞" : $"{_options.ImageTtlMinutes}min",
-            _options.ImageMaxUses,
-            _options.ImageTokenReusePerUser);
+                _logger.LogInformation("Created the reusable image relay token for user {UserId} (stable, non-expiring).", userId ?? "(anonymous)");
+            }
+            catch (Exception ex)
+            {
+                // Concurrent first-issue race (unique token_hash) or a transient DB error — the token
+                // value is still valid and stable; a later request will retry persistence if needed.
+                _logger.LogDebug(ex, "Reusable image token insert raced or failed; returning stable token anyway.");
+            }
+        }
 
         return rawToken;
     }

@@ -1,6 +1,8 @@
 // Tests for RelayTokenHasher — token generation and HMAC hashing.
 
 using System;
+using System.Collections.Concurrent;
+using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 using Xunit;
 
@@ -112,6 +114,37 @@ public class RelayTokenHasherTests
         var tooLong = new string('a', RelayTokenHasher.MaxRawTokenLength + 1);
 
         Assert.Throws<ArgumentException>(() => hasher.HashToken(tooLong));
+    }
+
+    [Fact]
+    public void HashToken_IsThreadSafe_UnderConcurrentLoad()
+    {
+        // Regression: the hasher used to hold a single shared HMAC instance, which is NOT
+        // safe for concurrent use. Relay image pre-caching issues many parallel token
+        // validations; the shared instance threw
+        // "Concurrent operations from multiple threads on this type are not supported",
+        // surfacing as 500s on every image and tripping the TVHeadend circuit breaker.
+        using var hasher = new RelayTokenHasher(CreateTestSecret());
+        var rawToken = RelayTokenHasher.GenerateRawToken();
+        var expected = hasher.HashToken(rawToken);
+
+        var exceptions = new ConcurrentBag<Exception>();
+        var results = new ConcurrentBag<string>();
+
+        Parallel.For(0, 2000, new ParallelOptions { MaxDegreeOfParallelism = 32 }, _ =>
+        {
+            try
+            {
+                results.Add(hasher.HashToken(rawToken));
+            }
+            catch (Exception ex)
+            {
+                exceptions.Add(ex);
+            }
+        });
+
+        Assert.Empty(exceptions);
+        Assert.All(results, h => Assert.Equal(expected, h));
     }
 
     [Fact]

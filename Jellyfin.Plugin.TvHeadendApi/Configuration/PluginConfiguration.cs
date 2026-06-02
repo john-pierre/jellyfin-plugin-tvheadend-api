@@ -69,6 +69,8 @@ public class PluginConfiguration : BasePluginConfiguration
         this.ImageTokenTtlMinutes = 0;
         this.ImageTokenMaxUses = 0;
         this.ImageTokenReusePerUser = true;
+        this.EnableRelayImageCache = true;
+        this.RelayImageCacheRetentionDays = 30;
         this.EnableTokenReuse = true;
         this.StrictScopeValidation = true;
         this.CleanupExpiredTokensIntervalMinutes = 60;
@@ -415,6 +417,20 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Default: true (recommended).
     /// </summary>
     public bool ImageTokenReusePerUser { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether relayed TVHeadend images (channel logos, EPG artwork)
+    /// are cached on disk in the plugin's data folder. When enabled, repeated requests for the same
+    /// image are served from the cache instead of re-fetching from TVHeadend, which spares the backend
+    /// and keeps artwork available during brief TVHeadend outages. Default: true.
+    /// </summary>
+    public bool EnableRelayImageCache { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of days a cached relay image is retained before it is re-fetched and
+    /// the stale file is pruned. Minimum 1. Default: 30.
+    /// </summary>
+    public int RelayImageCacheRetentionDays { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether token reuse is enabled.

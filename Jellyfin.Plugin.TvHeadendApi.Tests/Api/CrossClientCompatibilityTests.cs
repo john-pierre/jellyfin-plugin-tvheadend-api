@@ -74,7 +74,8 @@ public sealed class CrossClientCompatibilityTests : IDisposable
             NullLogger<RelayService>.Instance,
             metricsService,
             activityTracker,
-            NullHealthService.Instance);
+            NullHealthService.Instance,
+            new RelayImageCache(NullLogger<RelayImageCache>.Instance, configProvider, () => null));
     }
 
     /// <inheritdoc />
@@ -672,7 +673,8 @@ public sealed class CrossClientCompatibilityTests : IDisposable
         var configProvider = new ConfigurationProvider(() => config);
         using var sut = new RelayService(
             new UrlBuilder(), configProvider, NullLogger<RelayService>.Instance,
-            new Mock<IRelayMetricsService>().Object, new RelayActivityTracker(), NullHealthService.Instance);
+            new Mock<IRelayMetricsService>().Object, new RelayActivityTracker(), NullHealthService.Instance,
+            new RelayImageCache(NullLogger<RelayImageCache>.Instance, configProvider, () => null));
 
         using var result = await sut.RelayStreamAsync("ch-down", null, CancellationToken.None);
 

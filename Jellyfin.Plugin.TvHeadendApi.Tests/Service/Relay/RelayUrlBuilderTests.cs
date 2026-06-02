@@ -36,7 +36,7 @@ public class RelayUrlBuilderTests
         var sut = new RelayUrlBuilder(CreateAppHost(), CreateConfigProvider());
         var url = sut.BuildImageRelayUrl("imagecache/123");
 
-        Assert.Equal("http://localhost:8096/api/tvheadend/images/imagecache%2F123", url);
+        Assert.Equal("http://localhost:8096/api/tvheadend/images/imagecache/123", url);
     }
 
     [Fact]
@@ -45,7 +45,20 @@ public class RelayUrlBuilderTests
         var sut = new RelayUrlBuilder(CreateAppHost(), CreateConfigProvider());
         var url = sut.BuildImageRelayUrl("/imagecache/123");
 
-        Assert.Equal("http://localhost:8096/api/tvheadend/images/imagecache%2F123", url);
+        Assert.Equal("http://localhost:8096/api/tvheadend/images/imagecache/123", url);
+    }
+
+    [Fact]
+    public void BuildImageRelayUrl_PreservesSlashes_NotPercentEncoded()
+    {
+        // Regression: encoding "/" as %2F produced a URL the ASP.NET {**path} catch-all could not
+        // match (HTTP 404), which is why channel logos / EPG artwork failed to load while streams
+        // (single-segment channel UUID) worked.
+        var sut = new RelayUrlBuilder(CreateAppHost(), CreateConfigProvider());
+        var url = sut.BuildImageRelayUrl("imagecache/1684");
+
+        Assert.DoesNotContain("%2F", url);
+        Assert.EndsWith("/api/tvheadend/images/imagecache/1684", url);
     }
 
     [Fact]

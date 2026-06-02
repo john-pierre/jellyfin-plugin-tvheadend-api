@@ -1,6 +1,7 @@
 // Builds Jellyfin-local relay URLs that point clients to the plugin's relay endpoints instead of TVHeadend.
 
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
@@ -58,7 +59,7 @@ internal sealed class RelayUrlBuilder : IRelayUrlBuilder
         ArgumentException.ThrowIfNullOrWhiteSpace(tvhImagePath);
         var baseUrl = GetEffectiveBaseUrl();
         var normalizedPath = tvhImagePath.TrimStart('/');
-        return $"{baseUrl}/api/tvheadend/images/{Uri.EscapeDataString(normalizedPath)}";
+        return $"{baseUrl}/api/tvheadend/images/{EscapeRelativePath(normalizedPath)}";
     }
 
     /// <inheritdoc />
@@ -157,8 +158,20 @@ internal sealed class RelayUrlBuilder : IRelayUrlBuilder
         var rawToken = await _tokenService.IssueImageTokenAsync(imageId, mediaKind, userId, cancellationToken).ConfigureAwait(false);
         var baseUrl = GetEffectiveBaseUrl();
         var normalizedPath = imageId.TrimStart('/');
-        return $"{baseUrl}/api/tvheadend/relay/images/{Uri.EscapeDataString(normalizedPath)}?token={Uri.EscapeDataString(rawToken)}";
+        return $"{baseUrl}/api/tvheadend/relay/images/{EscapeRelativePath(normalizedPath)}?token={Uri.EscapeDataString(rawToken)}";
     }
+
+    /// <summary>
+    /// Percent-escapes each segment of a relative path while preserving the "/" separators, so the URL
+    /// stays matchable by the ASP.NET <c>{**path}</c> catch-all route. Escaping the whole path with
+    /// <see cref="Uri.EscapeDataString"/> would encode "/" as "%2F", which Kestrel keeps literal and the
+    /// catch-all then fails to match (HTTP 404) — TVHeadend image paths like "imagecache/1684" must keep
+    /// real slashes. The relay forwards the decoded path to TVHeadend, which expects "/imagecache/1684".
+    /// </summary>
+    /// <param name="path">The relative path (already trimmed of any leading slash).</param>
+    /// <returns>The path with each segment escaped and slashes preserved.</returns>
+    private static string EscapeRelativePath(string path)
+        => string.Join('/', path.Split('/').Select(Uri.EscapeDataString));
 
     /// <summary>
     /// Returns the auto-detected Jellyfin base URL via <see cref="IServerApplicationHost"/>.
