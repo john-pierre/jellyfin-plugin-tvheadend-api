@@ -151,7 +151,12 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
     /// Parses the raw log line to extract timestamp, level, category, and clean message.
     /// </summary>
     /// <param name="rawLine">The raw TVHeadend log line.</param>
-    public void EnqueueTvHeadendLog(string rawLine)
+    /// <param name="receivedAtUtc">
+    /// The accurate UTC receipt time for real-time (Comet) logs. When provided it is used as the stored
+    /// timestamp instead of the line's embedded local-time timestamp (which has no offset and would skew
+    /// the dashboard). Null for the historical import path, which falls back to the parsed timestamp.
+    /// </param>
+    public void EnqueueTvHeadendLog(string rawLine, DateTime? receivedAtUtc = null)
     {
         var config = _configProvider.Configuration;
         if (config is not { StoreTvHeadendLogsInSqlite: true, TvHeadendLogImportEnabled: true })
@@ -175,7 +180,11 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
 
         var entry = new PluginLogEntry
         {
-            CreatedAtUtc = parsed.ParsedTimestampUtc ?? DateTime.UtcNow,
+            // Prefer the receipt time for real-time (Comet) logs — it is accurate and timezone-proof.
+            // TVHeadend embeds local-time timestamps with no offset, so trusting them risks a TZ skew
+            // (they previously appeared hours in the future). The parsed timestamp is a fallback for
+            // the historical import path only.
+            CreatedAtUtc = receivedAtUtc ?? parsed.ParsedTimestampUtc ?? DateTime.UtcNow,
             Source = "tvheadend",
             LogType = parsed.LogType,
             Level = parsed.Level,

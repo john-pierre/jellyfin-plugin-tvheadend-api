@@ -31,6 +31,8 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
     private readonly DatabaseWriteCoordinator _writeCoordinator;
     private readonly RelayActivityTracker _activityTracker;
     private readonly DatabaseProvider _databaseProvider;
+    private readonly RelayImageCache? _imageCache;
+    private readonly Guide.ChannelNameCache? _channelNameCache;
     private readonly object _dbContextOptionsLock = new();
     private DbContextOptions<RelayMetricsContext>? _lazyDbContextOptions;
 
@@ -40,7 +42,9 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         DatabaseHealthService dbHealthService,
         DatabaseWriteCoordinator writeCoordinator,
         RelayActivityTracker activityTracker,
-        DatabaseProvider databaseProvider)
+        DatabaseProvider databaseProvider,
+        RelayImageCache? imageCache = null,
+        Guide.ChannelNameCache? channelNameCache = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
@@ -48,6 +52,8 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         _writeCoordinator = writeCoordinator ?? throw new ArgumentNullException(nameof(writeCoordinator));
         _activityTracker = activityTracker ?? throw new ArgumentNullException(nameof(activityTracker));
         _databaseProvider = databaseProvider ?? throw new ArgumentNullException(nameof(databaseProvider));
+        _imageCache = imageCache;
+        _channelNameCache = channelNameCache;
     }
 
     /// <summary>
@@ -251,6 +257,17 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
             : 0;
         summary.NotModified304Count = imageRows.Count(r => r.WasNotModified304);
 
+        // On-disk image cache size + health (independent of the request rows).
+        if (_imageCache != null)
+        {
+            var cacheStats = _imageCache.GetStats();
+            summary.ImageCacheEnabled = cacheStats.Enabled;
+            summary.ImageCacheFileCount = cacheStats.FileCount;
+            summary.ImageCacheBytes = cacheStats.TotalBytes;
+            summary.ImageCacheRetentionDays = cacheStats.RetentionDays;
+            summary.ImageCacheErrors = cacheStats.WriteErrors + cacheStats.ReadErrors;
+        }
+
         // Errors — exclude ClientCancelled (normal user behavior, not a failure)
         summary.TopFailureReasons = rows
             .Where(r => r.FailureReason != nameof(RelayFailureReason.None)
@@ -300,9 +317,14 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
             })
             .ToList();
 
-        // Hourly trend
+        // Request trend — adapt the bucket granularity to the selected range so a 7d/30d view does not
+        // produce 168/720 hourly bars, and a 1h view is not a single bar. Driven entirely by `hours`.
+        var daily = hours == 0 || hours > 48;
+        summary.TrendGranularity = daily ? "day" : "hour";
         summary.HourlyTrend = rows
-            .GroupBy(r => new DateTime(r.CreatedAtUtc.Year, r.CreatedAtUtc.Month, r.CreatedAtUtc.Day, r.CreatedAtUtc.Hour, 0, 0, DateTimeKind.Utc))
+            .GroupBy(r => daily
+                ? new DateTime(r.CreatedAtUtc.Year, r.CreatedAtUtc.Month, r.CreatedAtUtc.Day, 0, 0, 0, DateTimeKind.Utc)
+                : new DateTime(r.CreatedAtUtc.Year, r.CreatedAtUtc.Month, r.CreatedAtUtc.Day, r.CreatedAtUtc.Hour, 0, 0, DateTimeKind.Utc))
             .OrderBy(g => g.Key)
             .Select(g =>
             {
@@ -312,6 +334,8 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
                 {
                     HourUtc = g.Key,
                     Requests = g.Count(),
+                    StreamRequests = g.Count(r => r.RelayType == "stream"),
+                    PeakConcurrentStreams = g.Max(r => r.ParallelActiveStreamCountAtStart ?? 0),
                     Failures = g.Count(r => r.FinalOutcome == "failure" && !r.ClientCancelled),
                     AvgStartupLatencyMs = SafeAverage(g.ToList(), r => r.StartupLatencyMs),
                     BytesTransferred = g.Sum(r => r.BytesSent),
@@ -320,6 +344,24 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
                         : null,
                 };
             })
+            .ToList();
+
+        // Problem channels — channels whose stream relays failed (excluding normal client cancels),
+        // worst first, with names resolved from the channel cache. Surfaces "which channels misbehave".
+        var channelStreamRows = rows.Where(r => r.RelayType == "stream" && !string.IsNullOrEmpty(r.ChannelId)).ToList();
+        summary.ProblemChannels = channelStreamRows
+            .Where(r => r.FinalOutcome == "failure" && !r.ClientCancelled)
+            .GroupBy(r => r.ChannelId!, StringComparer.Ordinal)
+            .Select(g => new ProblemChannel
+            {
+                ChannelId = g.Key,
+                ChannelName = _channelNameCache?.GetName(g.Key) ?? g.Key,
+                FailedRequests = g.Count(),
+                TotalRequests = channelStreamRows.Count(r => string.Equals(r.ChannelId, g.Key, StringComparison.Ordinal)),
+                LastFailureReason = g.OrderByDescending(r => r.CreatedAtUtc).First().FailureReason,
+            })
+            .OrderByDescending(p => p.FailedRequests)
+            .Take(20)
             .ToList();
 
         return summary;

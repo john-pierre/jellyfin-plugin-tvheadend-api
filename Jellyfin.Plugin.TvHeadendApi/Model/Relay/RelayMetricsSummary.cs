@@ -93,6 +93,21 @@ public sealed class RelayMetricsSummary
     /// <summary>Gets or sets cache hit ratio (0–100).</summary>
     public double CacheHitRatio { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether the on-disk image cache is enabled.</summary>
+    public bool ImageCacheEnabled { get; set; }
+
+    /// <summary>Gets or sets the number of image files currently in the on-disk cache.</summary>
+    public long ImageCacheFileCount { get; set; }
+
+    /// <summary>Gets or sets the total on-disk size of the image cache, in bytes.</summary>
+    public long ImageCacheBytes { get; set; }
+
+    /// <summary>Gets or sets the image-cache retention period in days.</summary>
+    public int ImageCacheRetentionDays { get; set; }
+
+    /// <summary>Gets or sets the number of image-cache write/read errors since startup (0 = healthy).</summary>
+    public long ImageCacheErrors { get; set; }
+
     /// <summary>Gets or sets 304 response count.</summary>
     public long NotModified304Count { get; set; }
 
@@ -115,7 +130,13 @@ public sealed class RelayMetricsSummary
     /// <summary>Gets or sets hourly trend buckets.</summary>
     public IReadOnlyList<RelayTrendBucket> HourlyTrend { get; set; } = Array.Empty<RelayTrendBucket>();
 
+    /// <summary>Gets or sets the trend bucket granularity for the selected range: "hour" or "day".</summary>
+    public string TrendGranularity { get; set; } = "hour";
+
     // ── Token Security ───────────────────────────────────────────────
+
+    /// <summary>Gets or sets channels that had stream failures in the selected range (worst first).</summary>
+    public IReadOnlyList<ProblemChannel> ProblemChannels { get; set; } = Array.Empty<ProblemChannel>();
 
     /// <summary>Gets or sets total relay tokens issued.</summary>
     public long TokensIssuedTotal { get; set; }
@@ -219,6 +240,12 @@ public sealed class RelayTrendBucket
     /// <summary>Gets or sets total requests in this hour.</summary>
     public long Requests { get; set; }
 
+    /// <summary>Gets or sets the number of stream relay requests in this bucket.</summary>
+    public long StreamRequests { get; set; }
+
+    /// <summary>Gets or sets the peak concurrent stream count observed in this bucket.</summary>
+    public int PeakConcurrentStreams { get; set; }
+
     /// <summary>Gets or sets failed requests in this hour.</summary>
     public long Failures { get; set; }
 
@@ -230,4 +257,25 @@ public sealed class RelayTrendBucket
 
     /// <summary>Gets or sets cache hit ratio (0–100).</summary>
     public double? CacheHitRatio { get; set; }
+}
+
+/// <summary>
+/// A channel that experienced stream relay failures, for the dashboard "problem channels" view.
+/// </summary>
+public sealed class ProblemChannel
+{
+    /// <summary>Gets or sets the channel display name (falls back to the UUID if not yet known).</summary>
+    public string ChannelName { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the TVHeadend channel UUID.</summary>
+    public string ChannelId { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the number of failed stream requests for this channel in the range.</summary>
+    public long FailedRequests { get; set; }
+
+    /// <summary>Gets or sets the total stream requests for this channel in the range.</summary>
+    public long TotalRequests { get; set; }
+
+    /// <summary>Gets or sets the most recent failure reason for this channel.</summary>
+    public string LastFailureReason { get; set; } = string.Empty;
 }

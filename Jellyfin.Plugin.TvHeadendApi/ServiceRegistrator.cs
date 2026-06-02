@@ -153,12 +153,15 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PluginLogService>());
         serviceCollection.AddSingleton<IPluginLogQueryService>(sp => sp.GetRequiredService<PluginLogService>());
 
-        // ── PluginLogPersistenceProvider — auto-captures plugin log entries to SQLite,
-        //    applying the configured plugin-specific log-level override ──
-        serviceCollection.AddSingleton<Microsoft.Extensions.Logging.ILoggerProvider>(sp =>
-            new PluginLogPersistenceProvider(
-                sp.GetRequiredService<PluginLogService>(),
-                sp.GetRequiredService<ConfigurationProvider>()));
+        // ── Plugin log capture ──
+        // Jellyfin builds its SerilogLoggerFactory with writeToProviders:false, so a plugin-registered
+        // ILoggerProvider is never wired into the logging pipeline and receives nothing. Instead we
+        // decorate ILogger<> at the DI level: the decorator forwards every call to the real logger and
+        // additionally persists plugin-namespace entries to SQLite for the dashboard. Host categories are
+        // forwarded only (never persisted), so host logging behaviour is unchanged.
+        serviceCollection.AddSingleton(
+            typeof(Microsoft.Extensions.Logging.ILogger<>),
+            typeof(PluginPersistingLogger<>));
 
         serviceCollection.AddSingleton<StatisticsService>(sp =>
             new StatisticsService(
@@ -175,6 +178,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ITokenService, TokenService>();
         serviceCollection.AddSingleton<IProfileResolver, ProfileResolver>();
         serviceCollection.AddSingleton<IDiagnosticService, DiagnosticService>();
+        serviceCollection.AddSingleton<Service.Guide.ChannelNameCache>();
         serviceCollection.AddSingleton<IGuideService, GuideService>();
         serviceCollection.AddSingleton<IDvrService, DvrService>();
         serviceCollection.AddSingleton<IMediaInfoCacheService, MediaInfoCacheService>();
@@ -219,7 +223,9 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 sp.GetRequiredService<DatabaseHealthService>(),
                 sp.GetRequiredService<DatabaseWriteCoordinator>(),
                 sp.GetRequiredService<RelayActivityTracker>(),
-                sp.GetRequiredService<DatabaseProvider>()));
+                sp.GetRequiredService<DatabaseProvider>(),
+                sp.GetRequiredService<RelayImageCache>(),
+                sp.GetRequiredService<Service.Guide.ChannelNameCache>()));
         serviceCollection.AddSingleton<IRelayMetricsService>(sp => sp.GetRequiredService<RelayMetricsService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<RelayMetricsService>());
 
@@ -235,7 +241,8 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             new SessionTracker(
                 sp.GetRequiredService<ActiveSessionStore>(),
                 sp.GetRequiredService<MetricsWriter>(),
-                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SessionTracker>>()));
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SessionTracker>>(),
+                sp.GetRequiredService<Service.Guide.ChannelNameCache>()));
         serviceCollection.AddSingleton<MetricsAggregator>(sp =>
             new MetricsAggregator(
                 sp.GetRequiredService<DatabaseHealthService>(),

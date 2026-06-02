@@ -129,6 +129,22 @@ public sealed class RelayImageCacheTests : IDisposable
 
     [Fact]
     [Trait("Category", "Unit")]
+    public void GetStats_ReportsFileCountBytesAndHealth()
+    {
+        _cache.Store("imagecache/1", new byte[100], "image/png");
+        _cache.Store("imagecache/2", new byte[200], "image/jpeg");
+
+        var s = _cache.GetStats();
+
+        Assert.True(s.Enabled);
+        Assert.Equal(2, s.FileCount);
+        Assert.Equal(300, s.TotalBytes);
+        Assert.Equal(30, s.RetentionDays);
+        Assert.Equal(0, s.WriteErrors + s.ReadErrors);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
     public void Enabled_FalseWhenNoCacheRoot()
     {
         var provider = new ConfigurationProvider(() => _config);

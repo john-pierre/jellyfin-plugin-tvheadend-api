@@ -511,15 +511,18 @@ public class DiagnosticServiceTests
     }
 
     [Fact]
-    public async Task DiagnoseAsync_WithEmptyAuthToken_AddsAuthTokenError()
+    public async Task DiagnoseAsync_EmptyAuthToken_InDirectMode_AddsAuthTokenError()
     {
+        // An empty auth token is only an error in Direct-to-TVHeadend mode (clients connect directly
+        // and cannot do HTTP digest auth). In the default Relay mode it is fine — see the next test.
         var sut = CreateSut(out var apiClient, out _, out _);
         var config = CreateConfig();
         config.AuthToken = string.Empty;
+        config.StreamDeliveryMode = StreamDeliveryMode.DirectToTvheadend;
+        config.AllowAnonymousAccess = false;
 
         apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
         apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
-
 
         apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
@@ -529,8 +532,29 @@ public class DiagnosticServiceTests
         Assert.Contains(result.Checks, check =>
             check.Category == "Authentication" &&
             check.Name == "Auth Token Format" &&
-            check.Status == "ERROR" &&
-            check.Message!.Contains("empty", StringComparison.OrdinalIgnoreCase));
+            check.Status == "ERROR");
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_EmptyAuthToken_InRelayMode_IsOk()
+    {
+        // Default delivery mode is Relay, where the relay authenticates with username/password — an
+        // empty auth token must NOT be reported as an error (regression for a misleading dashboard ❌).
+        var sut = CreateSut(out var apiClient, out _, out _);
+        var config = CreateConfig();
+        config.AuthToken = string.Empty;
+        config.StreamDeliveryMode = StreamDeliveryMode.Relay;
+
+        apiClient.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        apiClient.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient());
+
+        apiClient.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(GetJsonForUrl(url)));
+
+        var result = await sut.DiagnoseAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(result.Checks, check =>
+            check.Category == "Authentication" && check.Status == "ERROR");
     }
 
     [Fact]

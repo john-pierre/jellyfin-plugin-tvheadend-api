@@ -223,24 +223,27 @@
                             <div class="tvh-guide-steps">
                                 <span class="tvh-step-num">1</span>
                                 <div>
-                                    <strong>Create the "jellyfin" transcode profile</strong><br>
-                                    Click "Create jellyfin Profile" in the banner above. This outputs every channel as H.264 + AAC — a format Jellyfin can Direct Play.
+                                    <strong>Keep the default pass-through profile</strong><br>
+                                    Leave the Default profile as <code>pass</code>. TVHeadend forwards each channel's native stream unchanged — no transcoding, no GPU or encoder needed. This is the fastest and most compatible path and works on any TVHeadend.
                                 </div>
                                 <span class="tvh-step-num">2</span>
                                 <div>
-                                    <strong>Select the profile</strong><br>
-                                    In the Streaming section, set the Default profile to <code>jellyfin</code>.
+                                    <strong>Enable fast playback settings</strong><br>
+                                    In Playback Behaviour, enable: Direct Play, Direct Stream, Stream Probing, and Pre-create Probe Cache Files.
                                 </div>
                                 <span class="tvh-step-num">3</span>
                                 <div>
-                                    <strong>Enable fast playback settings</strong><br>
-                                    In Playback Behaviour, enable: Direct Play, Direct Stream, Stream Probing, and Pre-create Probe Cache Files.
+                                    <strong>Preload the cache (optional)</strong><br>
+                                    Click "Preload Cache" to probe all channels up front, so even the very first tune of each channel is instant.
                                 </div>
                             </div>
                             <details>
                                 <summary>How it works</summary>
                                 <p style="margin:0.4em 0 0 0; font-size:0.9em; opacity:0.8;">
-                                    TvHeadend transcodes every channel to a consistent format. The plugin pre-creates Jellyfin's mediainfo cache files with matching metadata. When you switch channels, Jellyfin finds the cache instantly, skips FFmpeg probing, and starts Direct Play.
+                                    The plugin keeps playback on Jellyfin's Direct Play path: TVHeadend forwards each channel's native stream (the <code>pass</code> profile — no transcoding), and the plugin pre-creates Jellyfin's mediainfo cache by probing each channel once. On a channel switch, Jellyfin finds the cache, skips its FFmpeg analysis wait, and starts Direct Play immediately.
+                                </p>
+                                <p style="margin:0.4em 0 0 0; font-size:0.9em; opacity:0.8;">
+                                    Only use a transcode profile (e.g. "jellyfin") if a specific client cannot play the native codec <em>and</em> your TVHeadend has a working video encoder. Check the <strong>Transcode Capability</strong> result above first — a VAAPI-only server with no configured GPU produces audio-only.
                                 </p>
                             </details>
                         </div>
@@ -667,7 +670,7 @@
                             <select id="RecordingProfile" name="RecordingProfile" is="emby-select">
                                 <option value="">-- Select a profile --</option>
                             </select>
-                            <div class="fieldDescription">TvHeadend DVR configuration profile. Must exist in your TvHeadend setup.</div>
+                            <div class="fieldDescription">TvHeadend DVR configuration profile. Leave empty to use TVHeadend's default DVR config — recording works out of the box. Set a name only to select a specific DVR config (it must then exist in TVHeadend).</div>
                         </div>
                         <div class="tvh-field inputContainer">
                             <label class="inputLabel" for="Priority">Priority</label>

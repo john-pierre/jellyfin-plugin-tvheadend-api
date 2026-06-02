@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Logging;
 
 /// <summary>
 /// Tests for <see cref="PluginLogLevelPolicy"/> — the plugin-specific log-level override
-/// applied by <see cref="PluginLogPersistenceProvider"/> when persisting plugin log entries.
+/// applied by <see cref="PluginPersistingLogger{T}"/> when persisting plugin log entries.
 /// </summary>
 public class PluginLogLevelOverrideTests
 {

@@ -407,12 +407,14 @@ public class DiagnosticServiceCoverageTests
         Assert.Contains(result.Checks, c => c.Category == "FFmpeg" && c.Status == "INFO");
     }
 
-    // ── Auth token empty → ERROR check ──────────────────────────────────
+    // ── Auth token empty → ERROR only in Direct mode (Relay mode authenticates via user/pass) ──
     [Fact]
-    public async Task DiagnoseAsync_EmptyAuthToken_ReturnsAuthError()
+    public async Task DiagnoseAsync_EmptyAuthToken_InDirectMode_ReturnsAuthError()
     {
         var config = DefaultConfig();
         config.AuthToken = "";
+        config.StreamDeliveryMode = Jellyfin.Plugin.TvHeadendApi.Configuration.StreamDeliveryMode.DirectToTvheadend;
+        config.AllowAnonymousAccess = false;
         var sut = CreateSut(out var api, out var resolver, out _, config: config);
         SetupStandardApiResponses(api, resolver);
 

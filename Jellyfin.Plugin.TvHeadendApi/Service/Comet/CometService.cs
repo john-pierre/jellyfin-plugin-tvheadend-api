@@ -461,8 +461,10 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         // Persist to legacy SQLite table asynchronously
         PersistLogEntry(now, text);
 
-        // Feed parsed TVHeadend log to the unified PluginLogService
-        _pluginLogService?.EnqueueTvHeadendLog(text);
+        // Feed parsed TVHeadend log to the unified PluginLogService. Pass the receipt time so the
+        // stored timestamp is accurate UTC — TVHeadend's embedded local timestamps have no offset and
+        // would otherwise be stored skewed (appearing hours in the future).
+        _pluginLogService?.EnqueueTvHeadendLog(text, now);
     }
 
     /// <summary>

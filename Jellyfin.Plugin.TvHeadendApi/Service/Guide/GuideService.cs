@@ -107,19 +107,22 @@ internal sealed class GuideService : IGuideService
     private readonly IUrlBuilder _tvheadendUrlBuilder;
     private readonly Relay.IRelayUrlBuilder _relayUrlBuilder;
     private readonly IHealthService _healthService;
+    private readonly ChannelNameCache? _channelNameCache;
 
     public GuideService(
         ILogger<GuideService> logger,
         IApiClient tvheadendApiClient,
         IUrlBuilder tvheadendUrlBuilder,
         Relay.IRelayUrlBuilder relayUrlBuilder,
-        IHealthService healthService)
+        IHealthService healthService,
+        ChannelNameCache? channelNameCache = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tvheadendApiClient = tvheadendApiClient ?? throw new ArgumentNullException(nameof(tvheadendApiClient));
         _tvheadendUrlBuilder = tvheadendUrlBuilder ?? throw new ArgumentNullException(nameof(tvheadendUrlBuilder));
         _relayUrlBuilder = relayUrlBuilder ?? throw new ArgumentNullException(nameof(relayUrlBuilder));
         _healthService = healthService ?? throw new ArgumentNullException(nameof(healthService));
+        _channelNameCache = channelNameCache;
     }
 
     public async Task<IEnumerable<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken)
@@ -176,6 +179,7 @@ internal sealed class GuideService : IGuideService
                         cancellationToken).ConfigureAwait(false);
                 }
 
+                _channelNameCache?.Set(channel.Uuid, channel.Name);
                 channels.Add(new ChannelInfo
                 {
                     Id = channel.Uuid,

@@ -21,15 +21,18 @@ public sealed class SessionTracker
     private readonly ActiveSessionStore _activeStore;
     private readonly MetricsWriter _metricsWriter;
     private readonly ILogger<SessionTracker> _logger;
+    private readonly Guide.ChannelNameCache? _channelNameCache;
 
     internal SessionTracker(
         ActiveSessionStore activeStore,
         MetricsWriter metricsWriter,
-        ILogger<SessionTracker> logger)
+        ILogger<SessionTracker> logger,
+        Guide.ChannelNameCache? channelNameCache = null)
     {
         _activeStore = activeStore ?? throw new ArgumentNullException(nameof(activeStore));
         _metricsWriter = metricsWriter ?? throw new ArgumentNullException(nameof(metricsWriter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _channelNameCache = channelNameCache;
     }
 
     /// <summary>Gets the number of currently active sessions.</summary>
@@ -61,6 +64,7 @@ public sealed class SessionTracker
             StartedAtUtc = now,
             LastUpdateUtc = now,
             ChannelId = channelId ?? string.Empty,
+            ChannelName = _channelNameCache?.GetName(channelId) ?? string.Empty,
             RequestMethod = requestMethod ?? "GET",
             UserAgent = SanitizeUserAgent(userAgent),
             ClientName = DeriveClientName(userAgent),

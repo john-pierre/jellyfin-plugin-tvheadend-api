@@ -448,7 +448,7 @@
                     <!-- Charts row: Hourly Trend + Latency Breakdown -->
                     <div class="tvh-grid">
                         <div class="tvh-card" style="grid-column:1/-1;">
-                            <h3>Hourly Request Trend</h3>
+                            <h3 id="tvhRelayTrendTitle">Request Trend (hourly)</h3>
                             <div id="tvhRelayTrendChart" style="height:180px; position:relative;"></div>
                         </div>
                     </div>
@@ -466,6 +466,7 @@
                         <div class="tvh-card">
                             <h3>Image Cache</h3>
                             <div id="tvhRelayCacheChart" style="height:180px; position:relative;"></div>
+                            <div id="tvhImageCacheStats" style="font-size:0.82em; opacity:0.8; margin-top:0.4em; text-align:center;"></div>
                         </div>
                         <div class="tvh-card">
                             <h3>Errors</h3>
@@ -482,6 +483,13 @@
                                 <tbody id="tvhRelayErrorsBody"></tbody>
                             </table>
                         </div>
+                    </div>
+
+                    <!-- Problem channels table -->
+                    <div class="tvh-card tvh-full" style="margin-top:1em;">
+                        <h3>Problem Channels</h3>
+                        <p class="tvh-hint" style="margin:0 0 .5em; opacity:0.7; font-size:0.85em;">Channels whose stream relays failed in the selected range (excludes normal client stops). Empty = no channel-level stream problems.</p>
+                        <div id="tvhProblemChannels"></div>
                     </div>
 
                     <!-- Slowest-to-start table -->
@@ -1605,8 +1613,12 @@
                 setText('rkpiCache', fmtPct(m.CacheHitRatio));
                 setText('rkpiFailures', m.FailedRequests);
 
-                // ── Hourly Trend Line Chart ──
-                renderTrendChart(m.HourlyTrend || []);
+                // ── Request Trend Line Chart (granularity adapts to the selected range) ──
+                renderTrendChart(m.HourlyTrend || [], m.TrendGranularity);
+                var trendTitle = document.getElementById('tvhRelayTrendTitle');
+                if (trendTitle) {
+                    trendTitle.textContent = (m.TrendGranularity === 'day') ? 'Request Trend (daily)' : 'Request Trend (hourly)';
+                }
 
                 // ── Latency Breakdown Bar Chart ──
                 renderLatencyChart(m);
@@ -1616,6 +1628,37 @@
 
                 // ── Image Cache Donut ──
                 renderCacheChart(m);
+
+                // ── Image Cache size + health ──
+                var icEl = document.getElementById('tvhImageCacheStats');
+                if (icEl) {
+                    if (m.ImageCacheEnabled === false) {
+                        icEl.innerHTML = '<span style="opacity:0.7;">Disk cache disabled</span>';
+                    } else {
+                        var icErr = m.ImageCacheErrors || 0;
+                        var health = icErr > 0
+                            ? '<span style="color:#e74c3c;">⚠ ' + icErr + ' error(s)</span>'
+                            : '<span style="color:#4caf50;">healthy</span>';
+                        icEl.innerHTML = (m.ImageCacheFileCount || 0) + ' files · ' + formatBytes(m.ImageCacheBytes || 0)
+                            + ' · retention ' + (m.ImageCacheRetentionDays || 0) + 'd · ' + health;
+                    }
+                }
+
+                // ── Problem Channels ──
+                var pcEl = document.getElementById('tvhProblemChannels');
+                if (pcEl) {
+                    var pc = m.ProblemChannels || [];
+                    if (pc.length === 0) {
+                        pcEl.innerHTML = '<div class="tvh-empty" style="color:#4caf50;">No channel stream failures in this range.</div>';
+                    } else {
+                        var pcHtml = '<div class="tvh-table-wrap"><table><thead><tr><th>Channel</th><th>Failed</th><th>Total</th><th>Last reason</th></tr></thead><tbody>';
+                        pc.forEach(function(c) {
+                            pcHtml += '<tr><td>' + esc(c.ChannelName) + '</td><td style="color:#e74c3c;font-weight:600;">' + c.FailedRequests + '</td><td>' + c.TotalRequests + '</td><td>' + esc(c.LastFailureReason || '') + '</td></tr>';
+                        });
+                        pcHtml += '</tbody></table></div>';
+                        pcEl.innerHTML = pcHtml;
+                    }
+                }
 
                 // Errors panel
                 var errDist = m.TopFailureReasons || {};
@@ -1660,12 +1703,13 @@
 
             // ── SVG Chart Helpers ──────────────────────────────────
 
-            function renderTrendChart(trend) {
+            function renderTrendChart(trend, granularity) {
                 var el = document.getElementById('tvhRelayTrendChart');
                 if (!trend || trend.length === 0) {
-                    el.innerHTML = '<div class="tvh-empty">No hourly data available</div>';
+                    el.innerHTML = '<div class="tvh-empty">No request data for the selected time range</div>';
                     return;
                 }
+                var daily = (granularity === 'day');
                 var W = el.offsetWidth || 600, H = 160, pad = { t: 10, r: 10, b: 30, l: 45 };
                 var cW = W - pad.l - pad.r, cH = H - pad.t - pad.b;
                 var maxReq = Math.max.apply(null, trend.map(function(b) { return b.Requests; })) || 1;
@@ -1691,8 +1735,14 @@
                     }
                     // X-axis labels (every few bars)
                     if (trend.length <= 24 || i % Math.ceil(trend.length / 12) === 0) {
-                        var hour = b.HourUtc ? new Date(b.HourUtc).getHours().toString().padStart(2, '0') + ':00' : '';
-                        svg += '<text x="' + (x + barW / 2) + '" y="' + (H - 5) + '" fill="rgba(255,255,255,0.5)" font-size="9" text-anchor="middle">' + hour + '</text>';
+                        var lbl = '';
+                        if (b.HourUtc) {
+                            var dt = new Date(b.HourUtc);
+                            lbl = daily
+                                ? ((dt.getMonth() + 1) + '-' + dt.getDate().toString().padStart(2, '0'))
+                                : (dt.getHours().toString().padStart(2, '0') + ':00');
+                        }
+                        svg += '<text x="' + (x + barW / 2) + '" y="' + (H - 5) + '" fill="rgba(255,255,255,0.5)" font-size="9" text-anchor="middle">' + lbl + '</text>';
                     }
                 });
                 // Startup latency line overlay
@@ -1711,6 +1761,16 @@
                         svg += '<circle cx="' + p.split(',')[0] + '" cy="' + p.split(',')[1] + '" r="2.5" fill="#f0ad4e" />';
                     });
                 }
+                // Peak concurrent streams line overlay (green)
+                var maxStr = Math.max.apply(null, trend.map(function(b) { return b.PeakConcurrentStreams || 0; })) || 1;
+                var strPoints = trend.map(function(b, i) {
+                    var x = pad.l + (cW / trend.length) * i + barW / 2;
+                    var y = pad.t + cH - ((b.PeakConcurrentStreams || 0) / maxStr * cH * 0.8);
+                    return x + ',' + y;
+                });
+                if (strPoints.length > 1) {
+                    svg += '<polyline points="' + strPoints.join(' ') + '" fill="none" stroke="#4caf50" stroke-width="2" opacity="0.9" />';
+                }
                 // Legend
                 svg += '<rect x="' + (pad.l + 5) + '" y="2" width="8" height="8" fill="#64b5f6" rx="1" />';
                 svg += '<text x="' + (pad.l + 16) + '" y="10" fill="rgba(255,255,255,0.7)" font-size="9">Requests</text>';
@@ -1718,6 +1778,8 @@
                 svg += '<text x="' + (pad.l + 86) + '" y="10" fill="rgba(255,255,255,0.7)" font-size="9">Failures</text>';
                 svg += '<line x1="' + (pad.l + 145) + '" y1="6" x2="' + (pad.l + 160) + '" y2="6" stroke="#f0ad4e" stroke-width="2" />';
                 svg += '<text x="' + (pad.l + 163) + '" y="10" fill="rgba(255,255,255,0.7)" font-size="9">Avg Startup (ms)</text>';
+                svg += '<line x1="' + (pad.l + 255) + '" y1="6" x2="' + (pad.l + 270) + '" y2="6" stroke="#4caf50" stroke-width="2" />';
+                svg += '<text x="' + (pad.l + 273) + '" y="10" fill="rgba(255,255,255,0.7)" font-size="9">Peak streams</text>';
                 svg += '</svg>';
                 el.innerHTML = svg;
             }

@@ -130,6 +130,7 @@ internal sealed class RelayService : IRelayService, IDisposable
         var cached = _imageCache.TryGet(upstreamPath);
         if (cached != null)
         {
+            timing.CacheStatus = RelayCacheStatus.Hit;
             return new RelayResult
             {
                 StatusCode = 200,
@@ -165,6 +166,7 @@ internal sealed class RelayService : IRelayService, IDisposable
                 var contentType = SniffImageContentType(bytes) ?? originalContentType;
                 if (_imageCache.Enabled)
                 {
+                    timing.CacheStatus = RelayCacheStatus.Miss; // served from upstream, now cached
                     _imageCache.Store(upstreamPath, bytes, contentType);
                 }
 

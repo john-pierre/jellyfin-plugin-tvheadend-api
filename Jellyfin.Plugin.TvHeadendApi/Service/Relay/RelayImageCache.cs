@@ -25,6 +25,9 @@ internal sealed class RelayImageCache
     private readonly ConfigurationProvider _configProvider;
     private readonly Func<string?> _cacheRootResolver;
 
+    private long _writeErrorCount;
+    private long _readErrorCount;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="RelayImageCache"/> class.
     /// </summary>
@@ -104,6 +107,7 @@ internal sealed class RelayImageCache
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            System.Threading.Interlocked.Increment(ref _readErrorCount);
             return null; // never let a cache read break the relay
         }
     }
@@ -146,8 +150,50 @@ internal sealed class RelayImageCache
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            System.Threading.Interlocked.Increment(ref _writeErrorCount);
             _logger.LogDebug(ex, "Failed to cache relayed image for {UpstreamPath}", upstreamPath);
         }
+    }
+
+    /// <summary>
+    /// Returns a snapshot of cache size and health for the dashboard.
+    /// </summary>
+    /// <returns>The current cache statistics.</returns>
+    public RelayImageCacheStats GetStats()
+    {
+        long files = 0;
+        long bytes = 0;
+        var dir = CacheDirectory();
+        if (dir != null && Directory.Exists(dir))
+        {
+            try
+            {
+                foreach (var f in Directory.EnumerateFiles(dir, "*.bin"))
+                {
+                    files++;
+                    try
+                    {
+                        bytes += new FileInfo(f).Length;
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        // ignore a single unreadable file in the size tally
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // directory enumeration failed — report what we have
+            }
+        }
+
+        return new RelayImageCacheStats(
+            Enabled,
+            files,
+            bytes,
+            RetentionDays,
+            System.Threading.Interlocked.Read(ref _writeErrorCount),
+            System.Threading.Interlocked.Read(ref _readErrorCount));
     }
 
     /// <summary>
@@ -215,3 +261,14 @@ internal sealed class RelayImageCache
 /// <param name="Bytes">The image bytes.</param>
 /// <param name="ContentType">The original content type, or <c>null</c> if unknown.</param>
 internal sealed record CachedImage(byte[] Bytes, string? ContentType);
+
+/// <summary>
+/// A snapshot of relay image-cache size and health for the dashboard.
+/// </summary>
+/// <param name="Enabled">Whether image caching is currently enabled.</param>
+/// <param name="FileCount">Number of cached image files.</param>
+/// <param name="TotalBytes">Total size of the cache on disk, in bytes.</param>
+/// <param name="RetentionDays">Configured retention period in days.</param>
+/// <param name="WriteErrors">Count of cache-write errors since startup.</param>
+/// <param name="ReadErrors">Count of cache-read errors since startup.</param>
+internal sealed record RelayImageCacheStats(bool Enabled, long FileCount, long TotalBytes, int RetentionDays, long WriteErrors, long ReadErrors);
