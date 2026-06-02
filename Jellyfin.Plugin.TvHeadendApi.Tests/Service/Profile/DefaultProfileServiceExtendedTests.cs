@@ -102,8 +102,12 @@ public class DefaultProfileServiceExtendedTests
         // Video + audio codec profiles created, plus the streaming profile.
         Assert.Contains(posts, p => p.Url.Contains("codec_profile/create")
             && p.Form.Any(f => f.Key == "class" && f.Value == "libx264"));
-        Assert.Contains(posts, p => p.Url.Contains("codec_profile/create")
-            && p.Form.Any(f => f.Key == "class" && f.Value == "aac"));
+        // AAC codec profile must force AAC-LC (profile 1, browsers cannot decode AAC Main) and a fixed
+        // CBR bitrate (avoids oversized frames that trip the mpegts muxer).
+        var aacConf = posts.Single(p => p.Url.Contains("codec_profile/create")
+            && p.Form.Any(f => f.Key == "class" && f.Value == "aac")).Form.Single(f => f.Key == "conf").Value;
+        Assert.Contains("\"profile\":1", aacConf);
+        Assert.Contains("\"bit_rate\":160", aacConf);
 
         // Full transcode: MPEG-TS container, ALL source codecs transcoded (H264/AAC included — no copy/transcode mixing).
         var stream = posts.Single(p => p.Url.Contains("api/profile/create"));

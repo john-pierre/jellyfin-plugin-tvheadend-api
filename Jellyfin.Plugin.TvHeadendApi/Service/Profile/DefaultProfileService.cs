@@ -387,7 +387,13 @@ internal sealed class DefaultProfileService : IDefaultProfileService
     }
 
     /// <summary>
-    /// Builds the AAC audio codec-profile configuration (single stereo track, encoder defaults).
+    /// Builds the AAC audio codec-profile configuration (single stereo track).
+    /// <para>
+    /// <c>profile = 1</c> forces <strong>AAC-LC</strong> (Low Complexity). This is critical: the
+    /// encoder otherwise emits AAC Main (profile 0), which browser MSE decoders (Chrome/Firefox)
+    /// cannot decode — playback dies with <c>PIPELINE_ERROR_DECODE</c> on the audio packets. AAC-LC
+    /// is the universally supported profile, so this is also the safe default for every backend.
+    /// </para>
     /// </summary>
     private static JsonObject BuildAacCodecConf(string name)
     {
@@ -396,7 +402,11 @@ internal sealed class DefaultProfileService : IDefaultProfileService
             ["name"] = name,
             ["description"] = "Managed by the Jellyfin TVHeadend plugin — do not rename.",
             ["tracks"] = 1,
-            ["bit_rate"] = 0,
+            ["profile"] = 1, // AAC-LC (browsers cannot decode AAC Main = 0).
+            // Explicit CBR bitrate (kb/s). With bit_rate=0 (auto/VBR) the encoder emits oversized AAC
+            // frames (> the 1536-byte/2ch AAC maximum) → "muxer reported errors" and the stream restarts.
+            // A fixed 160 kb/s keeps every frame well within the limit while preserving good quality.
+            ["bit_rate"] = 160,
             ["sample_rate"] = 0,
             ["channel_layout"] = 0,
             ["coder"] = "twoloop",
