@@ -105,18 +105,59 @@ public class PluginController : ControllerBase
     }
 
     /// <summary>
-    /// Creates an optimised set of profiles in TVHeadend for fast channel switching:
-    /// 1. A video codec profile "jellyfin-h264" (H.264 / libx264, 5 Mbps cap, faster preset, zerolatency tune, deinterlace)
-    /// 2. An audio codec profile "jellyfin-aac" (AAC, 128 kbps)
-    /// 3. A streaming transcode profile "jellyfin" that references both codec profiles in an MP4 container.
-    /// If any of these already exist, they are skipped.
+    /// Provisions the plugin-managed TVHeadend streaming profile for fast, deterministic playback:
+    /// 1. A video codec profile "jellyfin-h264" using the backend's best detected H.264 encoder
+    ///    (libx264 / VAAPI / QuickSync / NVENC / V4L2 …), with auto profile/level and no bitrate cap.
+    /// 2. An audio codec profile "jellyfin-aac".
+    /// 3. A "smart-copy" transcode profile "jellyfin" (MPEG-TS) that copies streams already in the
+    ///    target codec and transcodes only foreign codecs, yielding a fixed H.264/AAC output.
+    /// Existing profiles are updated in place. On success the plugin's streaming profile is set to
+    /// "jellyfin" and stale mediainfo caches are cleared so the deterministic cache rebuilds correctly.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A status message indicating success or failure.</returns>
     [HttpPost("CreateProfile")]
     public async Task<ActionResult<ProfileDetectionResult>> CreateProfile(CancellationToken cancellationToken)
     {
-        return Ok(await _defaultProfileService.CreateProfileAsync(cancellationToken).ConfigureAwait(false));
+        var result = await _defaultProfileService.CreateProfileAsync(cancellationToken).ConfigureAwait(false);
+
+        // On success, make the managed profile the active default. The effective profile is resolved
+        // from StreamingProfileSettings first: in Auto/TvHeadendTranscode mode the resolver reads
+        // DefaultTvHeadendProfile, falling back to the legacy StreamingProfile only when it is empty.
+        // We must set DefaultTvHeadendProfile (it is often "pass") AND the legacy field. Per-channel,
+        // client and user rules still override this global default.
+        if (result.Success && !string.IsNullOrWhiteSpace(result.ProfileName))
+        {
+            var plugin = Plugin.Instance;
+            if (plugin != null)
+            {
+                var config = plugin.Configuration;
+                var settings = config.StreamingProfileSettings;
+                var changed = false;
+
+                if (!string.Equals(settings.DefaultTvHeadendProfile, result.ProfileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    settings.DefaultTvHeadendProfile = result.ProfileName;
+                    changed = true;
+                }
+
+                if (!string.Equals(config.StreamingProfile, result.ProfileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    config.StreamingProfile = result.ProfileName;
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    plugin.UpdateConfiguration(config);
+
+                    // Drop caches written for the previous profile so they rebuild against the new one.
+                    await _cacheService.InvalidateAllCachesAsync().ConfigureAwait(false);
+                }
+            }
+        }
+
+        return Ok(result);
     }
 
     /// <summary>

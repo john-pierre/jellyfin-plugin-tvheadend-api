@@ -84,7 +84,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         }
 
         AddPluginSettingsToReport(report, config);
-        scoreDeductions += AuthTokenChecker.Check(report, config.AuthToken);
+        scoreDeductions += AuthTokenChecker.Check(report, config);
 
         HttpClient httpClient;
         string baseUrl;
@@ -361,7 +361,7 @@ internal sealed class DiagnosticService : IDiagnosticService
                 var className = entry.TryGetProperty("class", out var k) && k.ValueKind == JsonValueKind.String ? k.GetString() ?? string.Empty : string.Empty;
                 var id = (caption + " " + className).ToLowerInvariant();
 
-                var isVideo = id.Contains("h264", StringComparison.Ordinal) || id.Contains("hevc", StringComparison.Ordinal) || id.Contains("h265", StringComparison.Ordinal)
+                var isVideo = id.Contains("264", StringComparison.Ordinal) || id.Contains("hevc", StringComparison.Ordinal) || id.Contains("265", StringComparison.Ordinal)
                     || id.Contains("mpeg2video", StringComparison.Ordinal) || id.Contains("mpeg4", StringComparison.Ordinal)
                     || id.Contains("vp8", StringComparison.Ordinal) || id.Contains("vp9", StringComparison.Ordinal) || id.Contains("av1", StringComparison.Ordinal) || id.Contains("theora", StringComparison.Ordinal);
                 if (!isVideo)
