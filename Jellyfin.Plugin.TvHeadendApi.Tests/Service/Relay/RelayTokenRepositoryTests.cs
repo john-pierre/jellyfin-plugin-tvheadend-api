@@ -1,6 +1,7 @@
 // In-memory SQLite tests for RelayTokenRepository — covers all CRUD operations and edge cases.
 
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
@@ -120,39 +121,75 @@ public class RelayTokenRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task IncrementUseCountAsync_IncrementsAndSetsTimestamps()
+    public async Task TryConsumeUseAsync_IncrementsAndSetsTimestamps()
     {
         var record = CreateStreamRecord("inc-hash");
         await _repo.InsertAsync(record, CancellationToken.None);
         var inserted = await _repo.FindByHashAsync("inc-hash", CancellationToken.None);
 
-        await _repo.IncrementUseCountAsync(inserted!.Id, CancellationToken.None);
+        var consumed = await _repo.TryConsumeUseAsync(inserted!.Id, CancellationToken.None);
         var updated = await _repo.FindByHashAsync("inc-hash", CancellationToken.None);
 
+        Assert.True(consumed);
         Assert.Equal(1, updated!.UseCount);
         Assert.NotNull(updated.FirstUsedAtUtc);
         Assert.NotNull(updated.LastUsedAtUtc);
     }
 
     [Fact]
-    public async Task IncrementUseCountAsync_MultipleIncrements()
+    public async Task TryConsumeUseAsync_MultipleConsumes()
     {
         var record = CreateStreamRecord("multi-inc");
         await _repo.InsertAsync(record, CancellationToken.None);
         var inserted = await _repo.FindByHashAsync("multi-inc", CancellationToken.None);
 
-        await _repo.IncrementUseCountAsync(inserted!.Id, CancellationToken.None);
-        await _repo.IncrementUseCountAsync(inserted.Id, CancellationToken.None);
-        await _repo.IncrementUseCountAsync(inserted.Id, CancellationToken.None);
+        Assert.True(await _repo.TryConsumeUseAsync(inserted!.Id, CancellationToken.None));
+        Assert.True(await _repo.TryConsumeUseAsync(inserted.Id, CancellationToken.None));
+        Assert.True(await _repo.TryConsumeUseAsync(inserted.Id, CancellationToken.None));
 
         var updated = await _repo.FindByHashAsync("multi-inc", CancellationToken.None);
         Assert.Equal(3, updated!.UseCount);
     }
 
     [Fact]
-    public async Task IncrementUseCountAsync_NonExistentId_DoesNotThrow()
+    public async Task TryConsumeUseAsync_NonExistentId_ReturnsFalse()
     {
-        await _repo.IncrementUseCountAsync(999999, CancellationToken.None);
+        Assert.False(await _repo.TryConsumeUseAsync(999999, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task TryConsumeUseAsync_StopsExactlyAtMaxUses()
+    {
+        // Regression: check-then-increment used to be two separate operations (TOCTOU) —
+        // the conditional UPDATE must never let the use count exceed MaxUses.
+        var record = CreateStreamRecord("limited");
+        record.MaxUses = 2;
+        await _repo.InsertAsync(record, CancellationToken.None);
+        var inserted = await _repo.FindByHashAsync("limited", CancellationToken.None);
+
+        Assert.True(await _repo.TryConsumeUseAsync(inserted!.Id, CancellationToken.None));
+        Assert.True(await _repo.TryConsumeUseAsync(inserted.Id, CancellationToken.None));
+        Assert.False(await _repo.TryConsumeUseAsync(inserted.Id, CancellationToken.None));
+
+        var updated = await _repo.FindByHashAsync("limited", CancellationToken.None);
+        Assert.Equal(2, updated!.UseCount);
+    }
+
+    [Fact]
+    public async Task TryConsumeUseAsync_ConcurrentConsumers_NeverExceedMaxUses()
+    {
+        var record = CreateStreamRecord("race");
+        record.MaxUses = 5;
+        await _repo.InsertAsync(record, CancellationToken.None);
+        var inserted = await _repo.FindByHashAsync("race", CancellationToken.None);
+
+        var results = await Task.WhenAll(
+            Enumerable.Range(0, 20).Select(_ => _repo.TryConsumeUseAsync(inserted!.Id, CancellationToken.None)));
+
+        var updated = await _repo.FindByHashAsync("race", CancellationToken.None);
+        Assert.Equal(5, updated!.UseCount);
+        Assert.Equal(5, results.Count(r => r));
+        Assert.Equal(15, results.Count(r => !r));
     }
 
     [Fact]

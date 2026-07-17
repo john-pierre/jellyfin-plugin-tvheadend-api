@@ -30,7 +30,7 @@ public class RelayTokenOptionsTests
 
         Assert.True(opts.Enabled);
         Assert.Equal(120, opts.StreamTtlSeconds);
-        Assert.Equal(5, opts.StreamMaxUses);
+        Assert.Equal(25, opts.StreamMaxUses);
         Assert.Equal(0, opts.ImageTtlMinutes);
         Assert.Equal(0, opts.ImageMaxUses);
         Assert.True(opts.ImageTokenNeverExpires);

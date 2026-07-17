@@ -18,9 +18,12 @@ internal static class ProfileMappingHelper
 {
     /// <summary>
     /// Maps TVHeadend container values (numeric enum or string) to FFmpeg container names.
+    /// Unknown values map to <see cref="string.Empty"/> so callers fall back to deriving the
+    /// container from the profile class instead of propagating a raw value that FFmpeg/Jellyfin
+    /// cannot use (which would break Direct Play container detection).
     /// </summary>
     /// <param name="raw">Raw container value from TVHeadend profile data.</param>
-    /// <returns>Normalized container name used by FFmpeg/Jellyfin.</returns>
+    /// <returns>Normalized container name used by FFmpeg/Jellyfin, or <see cref="string.Empty"/> for unknown values.</returns>
     public static string MapContainer(string raw)
     {
         return raw.ToLowerInvariant() switch
@@ -31,9 +34,16 @@ internal static class ProfileMappingHelper
             "3" or "mpegps" or "ps" => "mpegps",
             // MC_PASS (4) is pass-through — no re-mux container; treat as mpegts
             "4" or "pass" => "mpegts",
+            // MC_WEBM (6) and MC_AVWEBM (8) are the WebM muxers
+            "6" or "8" or "webm" or "avwebm" => "webm",
+            // MC_AVMATROSKA (7) is the libav Matroska muxer
+            "7" or "avmatroska" => "matroska",
             // MC_AVMP4 (9) is the libav MP4 muxer
             "9" or "mp4" => "mp4",
-            _ => raw.ToLowerInvariant()
+            // Anything else (e.g. MC_RAW (5), the audio-only muxers 10-15, or values added by newer
+            // TVHeadend versions) is unknown: signal it via string.Empty so the profile-class-based
+            // fallback applies, exactly like the "not set" case above.
+            _ => string.Empty
         };
     }
 

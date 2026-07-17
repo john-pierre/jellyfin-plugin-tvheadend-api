@@ -4,7 +4,8 @@
 # Prerequisites: docker, docker compose, dotnet SDK 8.0+
 
 param(
-    [int]$MaxBootstrapWait = 120
+    # Bootstrap includes a fail-closed EPG wait of up to 300s (two XMLTV grab passes).
+    [int]$MaxBootstrapWait = 720
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,10 +64,15 @@ try {
     Log "Running live integration tests..."
     $env:TVHEADEND_LIVE_TESTS = "true"
     $env:JELLYFIN_URL = "http://localhost:18096"
+    $env:TVHEADEND_URL = "http://localhost:19981"
     # TVH_HOST/PORT: The hostname Jellyfin uses to reach TVHeadend.
     # Jellyfin runs INSIDE the Docker network, so use the Docker service name + internal port.
     $env:TVH_HOST = "tvheadend"
     $env:TVH_PORT = "9981"
+    $env:TVH_USER = "testuser"
+    $env:TVH_PASS = "testpass"
+    # Full-length soak in CI/e2e runs (the suite default is a fast 60s).
+    if (-not $env:E2E_SOAK_SECONDS) { $env:E2E_SOAK_SECONDS = "300" }
     $TestProject = Join-Path (Join-Path $ProjectRoot "Jellyfin.Plugin.TvHeadendApi.Tests") "Jellyfin.Plugin.TvHeadendApi.Tests.csproj"
     dotnet test $TestProject `
         -c Release `

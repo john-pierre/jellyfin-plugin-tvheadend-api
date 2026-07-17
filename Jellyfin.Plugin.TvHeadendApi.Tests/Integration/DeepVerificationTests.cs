@@ -184,33 +184,45 @@ public sealed class DeepVerificationTests
     {
         SkipIfUnavailable();
 
-        using var originalConfig = await ReadPluginConfigAsync();
-        var originalProfile = originalConfig.RootElement.GetProperty("StreamingProfile").GetString() ?? "pass";
+        // The legacy StreamingProfile field is only the FALLBACK: when
+        // StreamingProfileSettings.DefaultTvHeadendProfile is non-empty (e.g. after the managed
+        // "jellyfin" profile was provisioned), it wins. Control both levels explicitly so this
+        // test is independent of what earlier suites persisted.
+        var original = System.Text.Json.Nodes.JsonNode.Parse(
+            await _fixture.Client.GetStringAsync($"/Plugins/{PluginId}/Configuration"))!;
+        var originalJson = original.ToJsonString();
 
         try
         {
-            // Change to "test-pass".
-            await SavePluginConfigAsync(originalConfig, OverrideField(
-                "StreamingProfile",
-                w => w.WriteString("StreamingProfile", "test-pass")));
+            var modified = System.Text.Json.Nodes.JsonNode.Parse(originalJson)!;
+            modified["StreamingProfile"] = "test-pass";
+            if (modified["StreamingProfileSettings"] is System.Text.Json.Nodes.JsonObject settings)
+            {
+                settings["DefaultTvHeadendProfile"] = string.Empty;
+            }
+
+            var saveResp = await _fixture.Client.PostAsync(
+                $"/Plugins/{PluginId}/Configuration",
+                new StringContent(modified.ToJsonString(), System.Text.Encoding.UTF8, "application/json"));
+            saveResp.EnsureSuccessStatusCode();
 
             // Re-read config and assert.
             using var updatedConfig = await ReadPluginConfigAsync();
             var storedProfile = updatedConfig.RootElement.GetProperty("StreamingProfile").GetString();
             Assert.Equal("test-pass", storedProfile);
 
-            // Verify the Resolve endpoint reflects the effective profile.
+            // With the settings default cleared, the legacy field must drive resolution.
             using var resolveDoc = await GetJsonAsync("/TvHeadendApi/StreamingProfiles/Resolve");
             var effective = resolveDoc.RootElement.GetProperty("EffectiveTvHeadendProfile").GetString();
             Assert.Equal("test-pass", effective);
         }
         finally
         {
-            // Restore original profile.
-            using var restoreBase = await ReadPluginConfigAsync();
-            await SavePluginConfigAsync(restoreBase, OverrideField(
-                "StreamingProfile",
-                w => w.WriteString("StreamingProfile", originalProfile)));
+            // Restore the exact original configuration (both levels).
+            var restoreResp = await _fixture.Client.PostAsync(
+                $"/Plugins/{PluginId}/Configuration",
+                new StringContent(originalJson, System.Text.Encoding.UTF8, "application/json"));
+            restoreResp.EnsureSuccessStatusCode();
         }
     }
 
@@ -224,10 +236,9 @@ public sealed class DeepVerificationTests
         SkipIfUnavailable();
 
         var channelId = await TryGetFirstChannelUuidAsync();
-        if (channelId == null)
-        {
-            return; // TVH unreachable — skip gracefully.
-        }
+        Assert.False(
+            string.IsNullOrEmpty(channelId),
+            "Bootstrap guarantees 5 channels — a null channel id means the plugin lost connectivity to TVHeadend.");
 
         using var doc = await GetJsonAsync("/TvHeadendApi/StreamingProfiles/Channels");
         var channels = doc.RootElement.EnumerateArray().ToList();
@@ -261,10 +272,9 @@ public sealed class DeepVerificationTests
         SkipIfUnavailable();
 
         var channelId = await TryGetFirstChannelUuidAsync();
-        if (channelId == null)
-        {
-            return; // TVH unreachable — skip gracefully.
-        }
+        Assert.False(
+            string.IsNullOrEmpty(channelId),
+            "Bootstrap guarantees 5 channels — a null channel id means the plugin lost connectivity to TVHeadend.");
 
         using var doc = await GetJsonAsync("/TvHeadendApi/StreamingProfiles/ChannelGroups");
         var groups = doc.RootElement.EnumerateArray().ToList();
@@ -293,10 +303,9 @@ public sealed class DeepVerificationTests
         SkipIfUnavailable();
 
         var response = await _fixture.Client.GetAsync("/TvHeadendApi/Diagnose");
-        if (!response.IsSuccessStatusCode)
-        {
-            return; // TVH unreachable — skip gracefully.
-        }
+        Assert.True(
+            response.IsSuccessStatusCode,
+            $"/TvHeadendApi/Diagnose must succeed against the bootstrapped stack, got {(int)response.StatusCode}.");
 
         var body = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(body);
@@ -403,10 +412,9 @@ public sealed class DeepVerificationTests
         SkipIfUnavailable();
 
         var response = await _fixture.Client.GetAsync("/TvHeadendApi/Diagnose");
-        if (!response.IsSuccessStatusCode)
-        {
-            return; // TVH unreachable — skip gracefully.
-        }
+        Assert.True(
+            response.IsSuccessStatusCode,
+            $"/TvHeadendApi/Diagnose must succeed against the bootstrapped stack, got {(int)response.StatusCode}.");
 
         var body = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(body);
@@ -487,10 +495,9 @@ public sealed class DeepVerificationTests
         SkipIfUnavailable();
 
         var channelId = await TryGetFirstChannelUuidAsync();
-        if (channelId == null)
-        {
-            return; // TVH unreachable — skip gracefully.
-        }
+        Assert.False(
+            string.IsNullOrEmpty(channelId),
+            "Bootstrap guarantees 5 channels — a null channel id means the plugin lost connectivity to TVHeadend.");
 
         var response = await _fixture.AnonymousClient.GetAsync(
             $"/api/tvheadend/relay/stream/{channelId}?token=definitely-not-valid");
@@ -514,10 +521,9 @@ public sealed class DeepVerificationTests
         SkipIfUnavailable();
 
         var channelId = await TryGetFirstChannelUuidAsync();
-        if (channelId == null)
-        {
-            return; // TVH unreachable — skip gracefully.
-        }
+        Assert.False(
+            string.IsNullOrEmpty(channelId),
+            "Bootstrap guarantees 5 channels — a null channel id means the plugin lost connectivity to TVHeadend.");
 
         var response = await _fixture.AnonymousClient.GetAsync(
             $"/api/tvheadend/relay/stream/{channelId}");
@@ -541,10 +547,9 @@ public sealed class DeepVerificationTests
         SkipIfUnavailable();
 
         var response = await _fixture.Client.GetAsync("/TvHeadendApi/StreamingProfiles/Discovered");
-        if (!response.IsSuccessStatusCode)
-        {
-            return; // TVH unreachable — skip gracefully.
-        }
+        Assert.True(
+            response.IsSuccessStatusCode,
+            $"/TvHeadendApi/StreamingProfiles/Discovered must succeed against the bootstrapped stack, got {(int)response.StatusCode}.");
 
         var body = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(body);
@@ -615,10 +620,9 @@ public sealed class DeepVerificationTests
         SkipIfUnavailable();
 
         var response = await _fixture.Client.PostAsync("/TvHeadendApi/GenerateAuthToken", null);
-        if (!response.IsSuccessStatusCode)
-        {
-            return; // TVH unreachable — skip gracefully.
-        }
+        Assert.True(
+            response.IsSuccessStatusCode,
+            $"/TvHeadendApi/GenerateAuthToken must succeed against the bootstrapped stack, got {(int)response.StatusCode}.");
 
         var body = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(body);
@@ -651,7 +655,9 @@ public sealed class DeepVerificationTests
         Assert.True(root.TryGetProperty("Entries", out var entries), "Response must have Entries array.");
         Assert.True(entries.ValueKind == JsonValueKind.Array, "Entries must be an array.");
 
-        // Filter entries where source contains "TvHeadend" and level is "Error" or "Critical".
+        // Count only PLUGIN-emitted errors. Entries with Source == "tvheadend" are TVHeadend's own
+        // log lines imported by the comet importer — negative-path tests in this very suite
+        // legitimately produce those (e.g. intentional 404 probes), so they must not fail this test.
         var errorEntries = entries.EnumerateArray()
             .Where(e =>
             {
@@ -669,6 +675,7 @@ public sealed class DeepVerificationTests
                 }
 
                 return source.Contains("TvHeadend", StringComparison.OrdinalIgnoreCase) &&
+                       !source.Equals("tvheadend", StringComparison.OrdinalIgnoreCase) &&
                        (level.Equals("Error", StringComparison.OrdinalIgnoreCase) ||
                         level.Equals("Critical", StringComparison.OrdinalIgnoreCase));
             })

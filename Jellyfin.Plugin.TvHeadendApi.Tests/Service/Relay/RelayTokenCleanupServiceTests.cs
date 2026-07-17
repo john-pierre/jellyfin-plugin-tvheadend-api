@@ -80,4 +80,22 @@ public class RelayTokenCleanupServiceTests
         Assert.Throws<ArgumentNullException>(() => new RelayTokenCleanupService(
             NullLogger<RelayTokenCleanupService>.Instance, Mock.Of<IRelayTokenService>(), null!));
     }
+
+    [Fact]
+    public void GetEffectiveInterval_CapsLongConfiguredIntervals()
+    {
+        // Expired tokens are worthless — a 60-minute configured interval must be clamped
+        // down to the cap so they never linger for hours.
+        Assert.Equal(
+            RelayTokenCleanupService.MaxCleanupInterval,
+            RelayTokenCleanupService.GetEffectiveInterval(TimeSpan.FromMinutes(60)));
+    }
+
+    [Fact]
+    public void GetEffectiveInterval_HonorsShorterConfiguredIntervals()
+    {
+        Assert.Equal(
+            TimeSpan.FromMinutes(2),
+            RelayTokenCleanupService.GetEffectiveInterval(TimeSpan.FromMinutes(2)));
+    }
 }

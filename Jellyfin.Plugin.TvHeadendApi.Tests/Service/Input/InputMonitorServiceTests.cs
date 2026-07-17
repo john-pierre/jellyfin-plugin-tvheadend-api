@@ -79,4 +79,18 @@ public class InputMonitorServiceTests
 
         Assert.Empty(result);
     }
+
+    [Fact]
+    public async Task GetInputStatusAsync_WhenCircuitOpen_ReturnsEmptyWithoutCallingApi()
+    {
+        var api = new Mock<IApiClient>();
+        var health = new Mock<IHealthService>();
+        health.Setup(h => h.ShouldBlockRequest()).Returns(true);
+
+        var sut = new InputMonitorService(NullLogger<InputMonitorService>.Instance, api.Object, new Mock<IUrlBuilder>().Object, health.Object);
+        var result = await sut.GetInputStatusAsync(CancellationToken.None);
+
+        Assert.Empty(result);
+        api.Verify(x => x.GetCurrentConfiguration(), Times.Never);
+    }
 }

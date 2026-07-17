@@ -13,6 +13,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.LiveTv;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -166,12 +167,82 @@ public class DvrServiceTests
     }
 
     [Fact]
-    public async Task CreateTimerAsync_WithProgramId_UsesCreateByEventEndpoint()
+    public async Task CreateTimerAsync_WithProgramId_VerifiesEventThenUsesCreateByEventEndpoint()
+    {
+        var start = DateTime.UtcNow.AddMinutes(10);
+        var stop = DateTime.UtcNow.AddMinutes(40);
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, """
+                                         { "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }
+                                         """);
+        handler.Enqueue(HttpStatusCode.OK, $$"""
+                                         { "entries": [ { "eventId": 456, "channelUuid": "ch-1", "start": {{new DateTimeOffset(start).ToUnixTimeSeconds()}}, "stop": {{new DateTimeOffset(stop).ToUnixTimeSeconds()}} } ] }
+                                         """);
+        handler.Enqueue(HttpStatusCode.OK, "{}");
+
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+        var timer = new TimerInfo
+        {
+            ChannelId = "ch-1",
+            ProgramId = "456",
+            Name = "News",
+            StartDate = start,
+            EndDate = stop
+        };
+
+        await sut.CreateTimerAsync(timer, CancellationToken.None);
+
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.Contains("api/dvr/config/grid", handler.Requests[0].Url);
+        Assert.Contains("api/epg/events/load", handler.Requests[1].Url);
+        Assert.Contains("eventId=456", handler.Requests[1].Body);
+        Assert.Contains("api/dvr/entry/create_by_event", handler.Requests[2].Url);
+        Assert.Contains("config_uuid=profile-uuid", handler.Requests[2].Body);
+        Assert.Contains("event_id=456", handler.Requests[2].Body);
+    }
+
+    [Fact]
+    public async Task CreateTimerAsync_WithStaleEventId_FallsBackToTimeBasedCreate()
+    {
+        var start = DateTime.UtcNow.AddMinutes(10);
+        var stop = DateTime.UtcNow.AddMinutes(40);
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, """
+                                         { "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }
+                                         """);
+
+        // TVHeadend renumbered its EPG events: the id now points at a DIFFERENT channel.
+        handler.Enqueue(HttpStatusCode.OK, $$"""
+                                         { "entries": [ { "eventId": 456, "channelUuid": "other-channel", "start": {{new DateTimeOffset(start).ToUnixTimeSeconds()}}, "stop": {{new DateTimeOffset(stop).ToUnixTimeSeconds()}} } ] }
+                                         """);
+        handler.Enqueue(HttpStatusCode.OK, "{}");
+
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+        var timer = new TimerInfo
+        {
+            ChannelId = "ch-1",
+            ProgramId = "456",
+            Name = "News",
+            StartDate = start,
+            EndDate = stop
+        };
+
+        await sut.CreateTimerAsync(timer, CancellationToken.None);
+
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.Contains("api/dvr/entry/create", handler.Requests[2].Url);
+        Assert.DoesNotContain("create_by_event", handler.Requests[2].Url);
+        Assert.Contains("%22channel%22%3A%22ch-1%22", handler.Requests[2].Body);
+    }
+
+    [Fact]
+    public async Task CreateTimerAsync_WhenEventLookupFails_FallsBackToTimeBasedCreate()
     {
         var handler = new QueueHttpMessageHandler();
         handler.Enqueue(HttpStatusCode.OK, """
                                          { "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }
                                          """);
+        handler.Enqueue(HttpStatusCode.InternalServerError, "epg down");
         handler.Enqueue(HttpStatusCode.OK, "{}");
 
         var sut = CreateSut(handler, out _, out _, CreateConfig());
@@ -186,11 +257,43 @@ public class DvrServiceTests
 
         await sut.CreateTimerAsync(timer, CancellationToken.None);
 
-        Assert.Equal(2, handler.Requests.Count);
-        Assert.Contains("api/dvr/config/grid", handler.Requests[0].Url);
-        Assert.Contains("api/dvr/entry/create_by_event", handler.Requests[1].Url);
-        Assert.Contains("config_uuid=profile-uuid", handler.Requests[1].Body);
-        Assert.Contains("event_id=456", handler.Requests[1].Body);
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.Contains("api/dvr/entry/create", handler.Requests[2].Url);
+        Assert.DoesNotContain("create_by_event", handler.Requests[2].Url);
+    }
+
+    [Fact]
+    public async Task CreateTimerAsync_WithCustomizedTimeWindow_FallsBackToTimeBasedCreate()
+    {
+        var start = DateTime.UtcNow.AddMinutes(10);
+        var stop = DateTime.UtcNow.AddMinutes(40);
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, """
+                                         { "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }
+                                         """);
+
+        // Event exists on the right channel, but the user requested a different window —
+        // create_by_event would silently ignore it, so the time-based path must win.
+        handler.Enqueue(HttpStatusCode.OK, $$"""
+                                         { "entries": [ { "eventId": 456, "channelUuid": "ch-1", "start": {{new DateTimeOffset(start.AddMinutes(30)).ToUnixTimeSeconds()}}, "stop": {{new DateTimeOffset(stop.AddMinutes(30)).ToUnixTimeSeconds()}} } ] }
+                                         """);
+        handler.Enqueue(HttpStatusCode.OK, "{}");
+
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+        var timer = new TimerInfo
+        {
+            ChannelId = "ch-1",
+            ProgramId = "456",
+            Name = "News",
+            StartDate = start,
+            EndDate = stop
+        };
+
+        await sut.CreateTimerAsync(timer, CancellationToken.None);
+
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.Contains("api/dvr/entry/create", handler.Requests[2].Url);
+        Assert.DoesNotContain("create_by_event", handler.Requests[2].Url);
     }
 
     [Fact]
@@ -576,16 +679,43 @@ public class DvrServiceTests
     }
 
     [Fact]
-    public async Task CreateSeriesTimerAsync_WhenRecordingProfileMissing_ThrowsInvalidOperationException()
+    public async Task CreateSeriesTimerAsync_WhenCreateRequestFails_ThrowsInvalidOperationException()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, """
+                                         { "entries": [ { "name": "default", "uuid": "profile-uuid" } ] }
+                                         """);
+        handler.Enqueue(HttpStatusCode.BadRequest, "bad create");
+        var sut = CreateSut(handler, out _, out _, CreateConfig(recordingProfile: "default"));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.CreateSeriesTimerAsync(new SeriesTimerInfo { Name = "Series", ChannelId = "ch-1" }, CancellationToken.None));
+
+        Assert.Contains("Failed to create series timer", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateSeriesTimerAsync_WhenProfileNameUnmatched_OmitsProfileFromPayload()
     {
         var handler = new QueueHttpMessageHandler();
         handler.Enqueue(HttpStatusCode.OK, """
                                          { "entries": [ { "name": "other", "uuid": "x" } ] }
                                          """);
-        var sut = CreateSut(handler, out _, out _, CreateConfig(recordingProfile: "default"));
+        handler.Enqueue(HttpStatusCode.OK, """
+                                         { "uuid": "series-no-profile" }
+                                         """);
+        var sut = CreateSut(handler, out _, out _, CreateConfig(recordingProfile: "does-not-exist"));
+        var info = new SeriesTimerInfo { Name = "Series", ChannelId = "ch-1" };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            sut.CreateSeriesTimerAsync(new SeriesTimerInfo { Name = "Series", ChannelId = "ch-1" }, CancellationToken.None));
+        await sut.CreateSeriesTimerAsync(info, CancellationToken.None);
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Contains("api/dvr/autorec/create", handler.Requests[1].Url);
+        // The stale profile name must not silently redirect to an arbitrary profile;
+        // omitting config_name lets TVHeadend apply its default DVR configuration.
+        Assert.DoesNotContain("config_name", handler.Requests[1].Body);
+        Assert.DoesNotContain("%22x%22", handler.Requests[1].Body);
+        Assert.Equal("series-no-profile", info.Id);
     }
 
     [Fact]
@@ -905,11 +1035,323 @@ public class DvrServiceTests
         Assert.False(string.IsNullOrWhiteSpace(info.Id));
     }
 
+    [Fact]
+    public async Task GetTimersAsync_KeepsFinishedRecordings_MapsStatusPriorityAndRecordingPath()
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var responseJson = $$"""
+                             {
+                               "entries": [
+                                 {
+                                   "uuid": "rec-done",
+                                   "channel": "ch-1",
+                                   "disp_title": "Finished Show",
+                                   "start": {{now - 7200}},
+                                   "stop": {{now - 3600}},
+                                   "enabled": true,
+                                   "fileremoved": 0,
+                                   "sched_status": "completed",
+                                   "filename": "/recordings/show.ts",
+                                   "pri": 4
+                                 },
+                                 {
+                                   "uuid": "rec-error",
+                                   "channel": "ch-1",
+                                   "start": {{now - 7200}},
+                                   "stop": {{now - 3600}},
+                                   "enabled": true,
+                                   "fileremoved": 0,
+                                   "sched_status": "completedError"
+                                 },
+                                 {
+                                   "uuid": "rec-missed",
+                                   "channel": "ch-1",
+                                   "start": {{now - 7200}},
+                                   "stop": {{now - 3600}},
+                                   "enabled": true,
+                                   "fileremoved": 0,
+                                   "sched_status": "missed"
+                                 },
+                                 {
+                                   "uuid": "rec-future",
+                                   "channel": "ch-1",
+                                   "start": {{now + 600}},
+                                   "stop": {{now + 3600}},
+                                   "enabled": true,
+                                   "fileremoved": 0,
+                                   "sched_status": "scheduled"
+                                 }
+                               ]
+                             }
+                             """;
+
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, responseJson);
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        var result = (await sut.GetTimersAsync(CancellationToken.None)).ToList();
+
+        // Finished recordings must not vanish once their stop time passes; entries that
+        // never produced a recording ("missed") stay excluded.
+        Assert.Equal(3, result.Count);
+        Assert.DoesNotContain(result, timer => timer.Id == "rec-missed");
+
+        var completed = Assert.Single(result, timer => timer.Id == "rec-done");
+        Assert.Equal(RecordingStatus.Completed, completed.Status);
+        Assert.Equal("/recordings/show.ts", completed.RecordingPath);
+        Assert.Equal(4, completed.Priority);
+
+        var failed = Assert.Single(result, timer => timer.Id == "rec-error");
+        Assert.Equal(RecordingStatus.Error, failed.Status);
+
+        var scheduled = Assert.Single(result, timer => timer.Id == "rec-future");
+        Assert.Equal(RecordingStatus.New, scheduled.Status);
+        Assert.Null(scheduled.RecordingPath);
+    }
+
+    [Fact]
+    public async Task GetTimersAsync_LinksAutorecAndTimerecChildrenToParentRule()
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var responseJson = $$"""
+                             {
+                               "entries": [
+                                 {
+                                   "uuid": "child-autorec",
+                                   "channel": "ch-1",
+                                   "start": {{now}},
+                                   "stop": {{now + 3600}},
+                                   "enabled": true,
+                                   "fileremoved": 0,
+                                   "autorec": "ar-1",
+                                   "timerec": ""
+                                 },
+                                 {
+                                   "uuid": "child-timerec",
+                                   "channel": "ch-1",
+                                   "start": {{now}},
+                                   "stop": {{now + 3600}},
+                                   "enabled": true,
+                                   "fileremoved": 0,
+                                   "autorec": "",
+                                   "timerec": "tr-1"
+                                 },
+                                 {
+                                   "uuid": "child-both",
+                                   "channel": "ch-1",
+                                   "start": {{now}},
+                                   "stop": {{now + 3600}},
+                                   "enabled": true,
+                                   "fileremoved": 0,
+                                   "autorec": "ar-2",
+                                   "timerec": "tr-2"
+                                 },
+                                 {
+                                   "uuid": "one-off",
+                                   "channel": "ch-1",
+                                   "start": {{now}},
+                                   "stop": {{now + 3600}},
+                                   "enabled": true,
+                                   "fileremoved": 0,
+                                   "autorec": "",
+                                   "timerec": ""
+                                 }
+                               ]
+                             }
+                             """;
+
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, responseJson);
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        var result = (await sut.GetTimersAsync(CancellationToken.None)).ToList();
+
+        Assert.Equal(4, result.Count);
+        Assert.Equal("ar-1", Assert.Single(result, timer => timer.Id == "child-autorec").SeriesTimerId);
+        // Children of time-based recurring rules (timerec) must link to their parent as well.
+        Assert.Equal("tr-1", Assert.Single(result, timer => timer.Id == "child-timerec").SeriesTimerId);
+        Assert.Equal("ar-2", Assert.Single(result, timer => timer.Id == "child-both").SeriesTimerId);
+        Assert.Null(Assert.Single(result, timer => timer.Id == "one-off").SeriesTimerId);
+    }
+
+    [Fact]
+    public async Task UpdateTimerAsync_WithZeroPriority_SendsPriorityToTvHeadend()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, "{}");
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        // Priority 0 is a legitimate TVHeadend value and must not be treated as "unset".
+        await sut.UpdateTimerAsync(
+            new TimerInfo { Id = "timer-zero-pri", Priority = 0, PrePaddingSeconds = 0, PostPaddingSeconds = 0 },
+            CancellationToken.None);
+
+        Assert.Single(handler.Requests);
+        Assert.Contains("%22pri%22%3A0", handler.Requests[0].Body);
+    }
+
+    [Fact]
+    public async Task GetSeriesTimersAsync_DecodesConfiguredRecordingWindow()
+    {
+        var responseJson = """
+                           {
+                             "entries": [
+                               {
+                                 "uuid": "series-window",
+                                 "name": "Evening Show",
+                                 "channel": "ch-1",
+                                 "start": "18:00",
+                                 "start_window": "19:30",
+                                 "weekdays": [1, 2, 3, 4, 5]
+                               }
+                             ]
+                           }
+                           """;
+
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, responseJson);
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        var result = (await sut.GetSeriesTimersAsync(CancellationToken.None)).ToList();
+
+        var series = Assert.Single(result);
+        Assert.False(series.RecordAnyTime);
+        Assert.Equal(new TimeSpan(18, 0, 0), series.StartDate.TimeOfDay);
+        Assert.Equal(new TimeSpan(19, 30, 0), series.EndDate.TimeOfDay);
+        Assert.Equal(TimeSpan.FromMinutes(90), series.EndDate - series.StartDate);
+    }
+
+    [Fact]
+    public async Task GetSeriesTimersAsync_DecodesWindowWrappingPastMidnight()
+    {
+        var responseJson = """
+                           {
+                             "entries": [
+                               {
+                                 "uuid": "series-latenight",
+                                 "name": "Late Night",
+                                 "channel": "ch-1",
+                                 "start": "23:30",
+                                 "start_window": "00:30",
+                                 "weekdays": []
+                               }
+                             ]
+                           }
+                           """;
+
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, responseJson);
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        var result = (await sut.GetSeriesTimersAsync(CancellationToken.None)).ToList();
+
+        var series = Assert.Single(result);
+        Assert.False(series.RecordAnyTime);
+        Assert.Equal(new TimeSpan(23, 30, 0), series.StartDate.TimeOfDay);
+        Assert.Equal(TimeSpan.FromHours(1), series.EndDate - series.StartDate);
+    }
+
+    [Fact]
+    public async Task GetSeriesTimersAsync_ParsesMinutesFromMidnightTimeFormat()
+    {
+        var responseJson = """
+                           {
+                             "entries": [
+                               {
+                                 "uuid": "series-minutes",
+                                 "name": "Minutes Format",
+                                 "channel": "ch-1",
+                                 "start": "1080",
+                                 "weekdays": []
+                               }
+                             ]
+                           }
+                           """;
+
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, responseJson);
+        var sut = CreateSut(handler, out _, out _, CreateConfig());
+
+        var result = (await sut.GetSeriesTimersAsync(CancellationToken.None)).ToList();
+
+        var series = Assert.Single(result);
+        Assert.False(series.RecordAnyTime);
+        Assert.Equal(new TimeSpan(18, 0, 0), series.StartDate.TimeOfDay);
+        Assert.Equal(TimeSpan.FromHours(1), series.EndDate - series.StartDate);
+    }
+
+    [Fact]
+    public async Task CreateTimerAsync_WhenProfileNameUnmatched_OmitsConfigNameAndLogsWarning()
+    {
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, """
+                                         { "entries": [ { "name": "other", "uuid": "x" } ] }
+                                         """);
+        handler.Enqueue(HttpStatusCode.OK, "{}");
+        var loggerMock = new Mock<ILogger<DvrService>>();
+        var sut = CreateSut(handler, out _, out _, CreateConfig(recordingProfile: "does-not-exist"), loggerMock.Object);
+
+        await sut.CreateTimerAsync(
+            new TimerInfo
+            {
+                ChannelId = "ch-1",
+                Name = "Show",
+                StartDate = DateTime.UtcNow.AddMinutes(10),
+                EndDate = DateTime.UtcNow.AddMinutes(40)
+            },
+            CancellationToken.None);
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Contains("api/dvr/entry/create", handler.Requests[1].Url);
+        Assert.DoesNotContain("config_name", handler.Requests[1].Body);
+        loggerMock.Verify(
+            l => l.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTimerAsync_WithProgramId_WhenProfileNameUnmatched_OmitsConfigUuid()
+    {
+        var start = DateTime.UtcNow.AddMinutes(10);
+        var stop = DateTime.UtcNow.AddMinutes(40);
+        var handler = new QueueHttpMessageHandler();
+        handler.Enqueue(HttpStatusCode.OK, """
+                                         { "entries": [ { "name": "other", "uuid": "x" } ] }
+                                         """);
+        handler.Enqueue(HttpStatusCode.OK, $$"""
+                                         { "entries": [ { "eventId": 456, "channelUuid": "ch-1", "start": {{new DateTimeOffset(start).ToUnixTimeSeconds()}}, "stop": {{new DateTimeOffset(stop).ToUnixTimeSeconds()}} } ] }
+                                         """);
+        handler.Enqueue(HttpStatusCode.OK, "{}");
+        var sut = CreateSut(handler, out _, out _, CreateConfig(recordingProfile: "does-not-exist"));
+
+        await sut.CreateTimerAsync(
+            new TimerInfo
+            {
+                ChannelId = "ch-1",
+                ProgramId = "456",
+                Name = "Show",
+                StartDate = start,
+                EndDate = stop
+            },
+            CancellationToken.None);
+
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.Contains("api/dvr/entry/create_by_event", handler.Requests[2].Url);
+        Assert.Contains("event_id=456", handler.Requests[2].Body);
+        Assert.DoesNotContain("config_uuid", handler.Requests[2].Body);
+    }
+
     private static DvrService CreateSut(
         QueueHttpMessageHandler handler,
         out Mock<IUrlBuilder> urlBuilder,
         out Mock<IApiClient> apiClient,
-        PluginConfiguration? configuration)
+        PluginConfiguration? configuration,
+        ILogger<DvrService>? logger = null)
     {
         urlBuilder = new Mock<IUrlBuilder>();
         apiClient = new Mock<IApiClient>();
@@ -942,7 +1384,7 @@ public class DvrServiceTests
                     return client.PostAsync(url, content, ct);
                 });
 
-        return new DvrService(NullLogger<DvrService>.Instance, apiClient.Object, urlBuilder.Object);
+        return new DvrService(logger ?? NullLogger<DvrService>.Instance, apiClient.Object, urlBuilder.Object);
     }
 
     private static PluginConfiguration CreateConfig(int priority = 5, string recordingProfile = "default")

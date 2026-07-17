@@ -54,6 +54,24 @@ public class ProfileContainerResolverTests
     }
 
     [Fact]
+    public async Task InvalidateCache_ForcesFreshResolutionOnNextCall()
+    {
+        var apiClient = new FakeApiClient();
+        var profileResolver = new FakeProfileResolver();
+        using var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
+
+        var config = new PluginConfiguration { StreamingProfile = "jellyfin" };
+
+        // Populate the snapshot cache, then invalidate it (as the managed-profile creation flow
+        // does after rewriting profiles in TVHeadend) — the next call must re-resolve.
+        _ = await sut.ResolveContainerAsync(config, CancellationToken.None);
+        sut.InvalidateCache();
+        _ = await sut.ResolveContainerAsync(config, CancellationToken.None);
+
+        Assert.Equal(2, profileResolver.ResolveCalls);
+    }
+
+    [Fact]
     public async Task ResolveProfileSnapshotAsync_WithBlankProfileName_ReturnsFallbackContainer()
     {
         var apiClient = new FakeApiClient();
@@ -217,9 +235,6 @@ public class ProfileContainerResolverTests
 
         public Task<string> GetStringAsync(HttpClient httpClient, string url, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Not used by this resolver test.");
-
-        public Task<Stream> GetStreamAsync(HttpClient httpClient, string url, CancellationToken cancellationToken)
-            => Task.FromResult<Stream>(new MemoryStream());
 
         public Task<HttpResponseMessage> PostFormAsync(HttpClient httpClient, string url, IEnumerable<KeyValuePair<string, string>> formValues, CancellationToken cancellationToken)
             => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));

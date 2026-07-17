@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Model.Statistic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Database;
@@ -685,5 +686,241 @@ public class StatisticsServiceTests
         Assert.Empty(sut.AllSessions);
 
         sut.Dispose();
+    }
+
+    // ── Channel zapping / orphaned sessions ──────────────────────────
+
+    [Fact]
+    public async Task PlaybackStart_OnChannelSwitch_ClosesPreviousOpenSession()
+    {
+        var sm = new Mock<ISessionManager>();
+        var sut = CreateSut(sm);
+        await sut.StartAsync(CancellationToken.None);
+
+        var channelA = new LiveTvChannel { Id = Guid.NewGuid(), Name = "ChannelA" };
+        var channelB = new LiveTvChannel { Id = Guid.NewGuid(), Name = "ChannelB" };
+
+        sm.Raise(m => m.PlaybackStart += null, new MediaBrowser.Controller.Library.PlaybackProgressEventArgs
+        {
+            Item = channelA,
+            PlaySessionId = "zap-1",
+            DeviceName = "Dev",
+            ClientName = "Client",
+        });
+
+        // Zap to channel B without a stop event for channel A
+        sm.Raise(m => m.PlaybackStart += null, new MediaBrowser.Controller.Library.PlaybackProgressEventArgs
+        {
+            Item = channelB,
+            PlaySessionId = "zap-2",
+            DeviceName = "Dev",
+            ClientName = "Client",
+        });
+
+        var stats = sut.GetStatistics(0);
+        Assert.Equal(1, stats.ActiveCount);
+        Assert.Equal("ChannelB", stats.ActiveSessions.Single().ChannelName);
+        var completed = Assert.Single(stats.Sessions);
+        Assert.Equal("ChannelA", completed.ChannelName);
+        Assert.NotNull(completed.EndTimeUtc);
+
+        sut.Dispose();
+    }
+
+    [Fact]
+    public async Task PlaybackStart_WhenReAnnouncedForSamePlayback_DoesNotDuplicateSession()
+    {
+        var sm = new Mock<ISessionManager>();
+        var sut = CreateSut(sm);
+        await sut.StartAsync(CancellationToken.None);
+
+        var channel = new LiveTvChannel { Id = Guid.NewGuid(), Name = "TestChannel" };
+        for (var i = 0; i < 2; i++)
+        {
+            sm.Raise(m => m.PlaybackStart += null, new MediaBrowser.Controller.Library.PlaybackProgressEventArgs
+            {
+                Item = channel,
+                PlaySessionId = "retry-session",
+                DeviceName = "Dev",
+                ClientName = "Client",
+            });
+        }
+
+        var stats = sut.GetStatistics(0);
+        Assert.Equal(1, stats.ActiveCount);
+        Assert.Empty(stats.Sessions);
+
+        sut.Dispose();
+    }
+
+    [Fact]
+    public void CloseOrphanedSessions_ClosesStaleChannelRow_WhileDeviceStillActiveOnOtherChannel()
+    {
+        var sm = new Mock<ISessionManager>();
+        var options = new DbContextOptionsBuilder<ViewingSessionContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        var channelAId = Guid.NewGuid().ToString("N");
+        var channelB = Guid.NewGuid();
+        var channelBId = channelB.ToString("N");
+
+        // Seed two open rows directly: channel A is stale, channel B is still playing.
+        using (var seed = new ViewingSessionContext(options))
+        {
+            seed.ViewingSessions.Add(new ViewingSession
+            {
+                UserName = "User",
+                DeviceName = "Dev",
+                ClientName = "Client",
+                ChannelName = "ChannelA",
+                ChannelId = channelAId,
+                PlayMethod = "DirectPlay",
+                StartTimeUtc = DateTime.UtcNow.AddHours(-2),
+                PlaySessionId = "orphan-a",
+            });
+            seed.ViewingSessions.Add(new ViewingSession
+            {
+                UserName = "User",
+                DeviceName = "Dev",
+                ClientName = "Client",
+                ChannelName = "ChannelB",
+                ChannelId = channelBId,
+                PlayMethod = "DirectPlay",
+                StartTimeUtc = DateTime.UtcNow.AddMinutes(-5),
+                PlaySessionId = "active-b",
+            });
+            seed.SaveChanges();
+        }
+
+        // Jellyfin reports the device as actively playing channel B only.
+        var jellyfinSession = new SessionInfo(Mock.Of<ISessionManager>(), NullLogger<SessionInfo>.Instance)
+        {
+            UserName = "User",
+            DeviceName = "Dev",
+            Client = "Client",
+            NowPlayingItem = new MediaBrowser.Model.Dto.BaseItemDto { Id = channelB },
+        };
+        sm.Setup(m => m.Sessions).Returns(new[] { jellyfinSession });
+
+        var sut = new StatisticsService(
+            NullLogger<StatisticsService>.Instance,
+            sm.Object,
+            new ConfigurationProvider(() => null),
+            CreateTestDbHealth(),
+            new DatabaseWriteCoordinator(),
+            options);
+
+        sut.CloseOrphanedSessions();
+
+        using var verify = new ViewingSessionContext(options);
+        var rowA = verify.ViewingSessions.Single(s => s.ChannelId == channelAId);
+        var rowB = verify.ViewingSessions.Single(s => s.ChannelId == channelBId);
+        Assert.NotNull(rowA.EndTimeUtc);
+        Assert.Null(rowB.EndTimeUtc);
+
+        sut.Dispose();
+    }
+
+    // ── Event handler resilience ─────────────────────────────────────
+
+    [Fact]
+    public async Task PlaybackStart_WhenDatabaseWriteFails_DoesNotThrow()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tvh-stats-broken-{Guid.NewGuid():N}.db");
+        try
+        {
+            var sm = new Mock<ISessionManager>();
+
+            // SQLite database whose schema was never created — every DB operation throws.
+            var options = new DbContextOptionsBuilder<ViewingSessionContext>()
+                .UseSqlite($"Data Source={dbPath}")
+                .Options;
+
+            var sut = new StatisticsService(
+                NullLogger<StatisticsService>.Instance,
+                sm.Object,
+                new ConfigurationProvider(() => null),
+                CreateTestDbHealth(),
+                new DatabaseWriteCoordinator(),
+                options);
+
+            await sut.StartAsync(CancellationToken.None);
+
+            var channel = new LiveTvChannel { Id = Guid.NewGuid(), Name = "TestChannel" };
+            var exception = Record.Exception(() => sm.Raise(m => m.PlaybackStart += null, new MediaBrowser.Controller.Library.PlaybackProgressEventArgs
+            {
+                Item = channel,
+                PlaySessionId = "broken-start",
+                DeviceName = "Dev",
+                ClientName = "Client",
+            }));
+
+            Assert.Null(exception);
+            sut.Dispose();
+        }
+        finally
+        {
+            DeleteSqliteFiles(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task PlaybackStopped_WhenDatabaseWriteFails_DoesNotThrow()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tvh-stats-broken-{Guid.NewGuid():N}.db");
+        try
+        {
+            var sm = new Mock<ISessionManager>();
+
+            // SQLite database whose schema was never created — every DB operation throws.
+            var options = new DbContextOptionsBuilder<ViewingSessionContext>()
+                .UseSqlite($"Data Source={dbPath}")
+                .Options;
+
+            var sut = new StatisticsService(
+                NullLogger<StatisticsService>.Instance,
+                sm.Object,
+                new ConfigurationProvider(() => null),
+                CreateTestDbHealth(),
+                new DatabaseWriteCoordinator(),
+                options);
+
+            await sut.StartAsync(CancellationToken.None);
+
+            var channel = new LiveTvChannel { Id = Guid.NewGuid(), Name = "TestChannel" };
+            var exception = Record.Exception(() => sm.Raise(m => m.PlaybackStopped += null, new MediaBrowser.Controller.Library.PlaybackStopEventArgs
+            {
+                Item = channel,
+                PlaySessionId = "broken-stop",
+                DeviceName = "Dev",
+                ClientName = "Client",
+            }));
+
+            Assert.Null(exception);
+            sut.Dispose();
+        }
+        finally
+        {
+            DeleteSqliteFiles(dbPath);
+        }
+    }
+
+    private static void DeleteSqliteFiles(string dbPath)
+    {
+        foreach (var file in new[] { dbPath, dbPath + "-shm", dbPath + "-wal" })
+        {
+            try
+            {
+                if (File.Exists(file))
+                {
+                    File.Delete(file);
+                }
+            }
+            catch (IOException)
+            {
+                // Ignore transient cleanup failures on Windows when SQLite releases the file slightly later.
+            }
+        }
     }
 }

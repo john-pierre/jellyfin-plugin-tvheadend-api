@@ -1,6 +1,7 @@
 // Unit tests for StreamEndedBy and StreamFinalOutcome enum coverage and edge cases.
 
 using Jellyfin.Plugin.TvHeadendApi.Model.Metrics;
+using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Metrics;
 using Xunit;
 
@@ -8,7 +9,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Metrics;
 
 /// <summary>
 /// Tests verifying the complete coverage of stream lifecycle model enums
-/// and edge cases in outcome classification.
+/// and edge cases in outcome classification (merged vocabulary in Model/Relay).
 /// </summary>
 public sealed class StreamLifecycleModelTests
 {
@@ -41,23 +42,6 @@ public sealed class StreamLifecycleModelTests
         Assert.False(session.RangeSupported);
         Assert.False(session.ContentRangePresent);
         Assert.False(session.AcceptRangesPresent);
-    }
-
-    [Fact]
-    public void CompletedStreamSession_RangeFields_Persist()
-    {
-        var session = new CompletedStreamSession
-        {
-            RangeRequested = true,
-            RangeSupported = true,
-            ContentRangePresent = true,
-            AcceptRangesPresent = true,
-        };
-
-        Assert.True(session.RangeRequested);
-        Assert.True(session.RangeSupported);
-        Assert.True(session.ContentRangePresent);
-        Assert.True(session.AcceptRangesPresent);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -107,13 +91,12 @@ public sealed class StreamLifecycleModelTests
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // End reason → Outcome exhaustive mapping
+    // End reason → Outcome exhaustive mapping (all merged enum values)
     // ═══════════════════════════════════════════════════════════════════
 
     [Theory]
     [InlineData(StreamEndedBy.UpstreamEof, true, StreamFinalOutcome.Completed)]
     [InlineData(StreamEndedBy.ClientDisconnectAfterFirstByte, true, StreamFinalOutcome.NormalDisconnect)]
-    [InlineData(StreamEndedBy.UserStopOrChannelSwitch, true, StreamFinalOutcome.NormalDisconnect)]
     [InlineData(StreamEndedBy.StartupCancelledBeforeFirstByte, false, StreamFinalOutcome.StartupFailed)]
     [InlineData(StreamEndedBy.UpstreamTimeout, false, StreamFinalOutcome.UpstreamFailed)]
     [InlineData(StreamEndedBy.UpstreamHttpError, false, StreamFinalOutcome.UpstreamFailed)]
@@ -122,7 +105,7 @@ public sealed class StreamLifecycleModelTests
     [InlineData(StreamEndedBy.Unknown, true, StreamFinalOutcome.Failed)]
     public void ClassifyOutcome_ExhaustiveMapping(StreamEndedBy endedBy, bool firstByteSent, StreamFinalOutcome expected)
     {
-        var result = SessionTracker.ClassifyOutcome(endedBy, firstByteSent);
+        var result = StreamOutcomeClassifier.ClassifyOutcome(endedBy, firstByteSent);
         Assert.Equal(expected, result);
     }
 
@@ -139,8 +122,6 @@ public sealed class StreamLifecycleModelTests
     [InlineData(StreamFinalOutcome.Failed, false)]
     public void NormalDisconnect_CorrectlyClassified(StreamFinalOutcome outcome, bool expectedNormal)
     {
-        var isNormal = outcome is StreamFinalOutcome.Completed or StreamFinalOutcome.NormalDisconnect;
-        Assert.Equal(expectedNormal, isNormal);
+        Assert.Equal(expectedNormal, StreamOutcomeClassifier.IsNormalDisconnect(outcome));
     }
 }
-

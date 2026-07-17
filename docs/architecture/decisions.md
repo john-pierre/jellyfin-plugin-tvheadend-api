@@ -61,6 +61,12 @@ This document records significant architecture decisions for the plugin using li
 - Cache files become stale if the TVHeadend profile changes (mitigated by validation option).
 - Tight coupling to Jellyfin's internal cache format (not a public API).
 
+**Update (2026-07):** Cache management now lives in `MediaInfoCacheService` and was extended:
+- A per-(channel × profile) store under `cache/mediainfo/profiles/<channel>.<profileKey>.json` preserves the outgoing cache file before a profile switch replaces it and restores it when a rule switches the channel back, so expensive probed data survives profile ping-pong.
+- Cache warmup pre-seeds the store for every profile reachable via configured streaming-profile rules (client/user rules plus the channel's effective profile).
+- On every stream start the cached `Path` is refreshed with the current stream URL (fresh relay token, current delivery-mode URL shape) — Jellyfin hands that path verbatim to Direct Play clients.
+- Cache pre-creation is coupled to `SupportsProbing`; the former `EnableMediaInfoCacheWrite`/`EnableMediaInfoCacheValidation` toggles are deprecated (hidden in the UI, ignored by the stream path).
+
 ---
 
 ## ADR-004: Auth Token for Direct Play URLs
@@ -160,3 +166,23 @@ Services receive these via constructor injection instead of accessing `Plugin.In
 - Services are fully testable without a live plugin instance.
 - The singleton bridge is isolated to `ServiceRegistrator` registrations.
 - `PluginController` remains the only direct `Plugin.Instance` consumer (documented as framework constraint).
+
+---
+
+## ADR-009: Managed "jellyfin" Transcode Profile with Self-Verification
+
+**Status:** Accepted
+
+**Context:** Deterministic output codecs are the prerequisite for pre-created mediainfo caches (ADR-003). TVHeadend's `profile-transcode` cannot mix a copied stream with a transcoded stream in one profile, and an encoder listed by `api/codec/list` can still be non-functional at stream time (e.g. VAAPI without a usable render device).
+
+**Decision:** The plugin creates and maintains a managed TVHeadend transcode profile named `jellyfin` (H.264 + AAC in MPEG-TS) via `DefaultProfileService`:
+
+- The H.264 encoder is auto-detected from the backend's actual capabilities; hardware encoders (VAAPI/QSV/NVENC/…) with a detected device are preferred, software libx264 is next.
+- Both video AND audio are always transcoded (never copy+transcode mixed).
+- After creation, the profile is **self-verified** by reading a short test stream from a mapped channel. If it delivers no data, the video codec profile is rebuilt on software libx264 and verified again.
+- The MPEG-TS muxer is configured with `sid=1` and `rewrite_nit=true` — with `sid == 0` TVHeadend's service-id rewriting can emit "Failed to write mpegts header" and 0 bytes.
+
+**Consequences:**
+- The profile works out of the box on unknown backends; failures surface as explicit warnings in the create-profile response instead of silent audio-only/empty streams.
+- Profile creation invalidates the profile snapshot and discovery caches so playback never resolves stale pre-change metadata.
+- Verification is skipped (treated as verified) when no channel is mapped yet or the user lacks streaming permission.

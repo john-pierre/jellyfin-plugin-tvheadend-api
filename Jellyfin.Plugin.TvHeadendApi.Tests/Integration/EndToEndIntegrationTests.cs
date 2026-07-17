@@ -128,12 +128,10 @@ public sealed class EndToEndIntegrationTests : IDisposable
         var programs = (await sut.GetProgramsAsync(channelId, now.AddHours(-1), now.AddHours(2), CancellationToken.None)).ToList();
 
         Assert.NotNull(programs);
-        // EPG data depends on XMLTV URL grabber availability in the TVH image.
-        // Skip assertion if no EPG data was loaded (grabber module may not exist).
-        if (programs.Count == 0)
-        {
-            return;
-        }
+
+        // The bootstrap fails closed when the XMLTV grabber imported no events,
+        // so an empty EPG window here is a real plugin/mapping defect.
+        Assert.True(programs.Count > 0, $"Expected EPG entries for channel {channelId} — the bootstrap guarantees imported events.");
 
         var first = programs.First();
         Assert.False(string.IsNullOrEmpty(first.Name), "Programme title should not be empty");
@@ -226,13 +224,9 @@ public sealed class EndToEndIntegrationTests : IDisposable
             allPrograms.AddRange(programs);
         }
 
-        // With IPTV simulator + XMLTV grabber, we expect some EPG data (but gracefully skip if not available).
-        if (allPrograms.Count == 0)
-        {
-            return;
-        }
-
-        Assert.True(allPrograms.Count > 0, "Expected at least some future EPG programs across all channels");
+        // The bootstrap fails closed when the XMLTV grabber imported no events, and the
+        // simulator publishes a ~48h programme window — future data must exist.
+        Assert.True(allPrograms.Count > 0, "Expected at least some future EPG programs across all channels — the bootstrap guarantees imported events.");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1174,6 +1168,19 @@ public sealed class EndToEndIntegrationTests : IDisposable
                 }
 
                 return Task.FromResult(url);
+            });
+        mock.Setup(x => x.BuildTokenizedStreamRelayUrlDetailedAsync(
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string?, string?, string?, string?, CancellationToken>((ch, profile, _, _, _, _) =>
+            {
+                var url = $"http://jellyfin:8096/api/tvheadend/relay/stream/{ch}";
+                if (!string.IsNullOrEmpty(profile))
+                {
+                    url += $"?profile={Uri.EscapeDataString(profile)}";
+                }
+
+                return Task.FromResult(new Jellyfin.Plugin.TvHeadendApi.Model.Relay.TokenizedStreamUrl(url, null));
             });
         mock.Setup(x => x.BuildTokenizedImageRelayUrlAsync(It.IsAny<string>(), It.IsAny<Jellyfin.Plugin.TvHeadendApi.Model.Relay.MediaKind?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Returns<string, Jellyfin.Plugin.TvHeadendApi.Model.Relay.MediaKind?, string?, CancellationToken>((path, _, _, _) => Task.FromResult($"http://jellyfin:8096/api/tvheadend/images/{path}"));

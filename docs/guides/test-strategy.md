@@ -212,6 +212,26 @@ Streams are generated live by ffmpeg. To change resolution, bitrate, or overlay 
 
 The `BASE_URL` environment variable controls the URL prefix in M3U/EPG. Inside Docker Compose, it defaults to `http://iptv-simulator` (the service name).
 
+### Browser End-to-End Tests (Playwright)
+
+A separate JavaScript Playwright suite in `tests/playwright/` (11 spec files, ~55 tests) drives a real
+Chromium browser against the running Jellyfin + TVHeadend docker stack. It covers config-page and
+dashboard rendering/round-trips, playback-decision matrices (Direct Play/Direct Stream/Transcode)
+across impersonated clients, relay delivery and token security (TTL, max uses, on/off), streaming-profile
+rule resolution, dashboard metrics truthfulness, and the zapping-performance budget (cache warmup,
+first-start latency, median zap time).
+
+```bash
+cd tests/playwright
+npm ci
+npm run setup         # installs the Chromium browser
+npm test              # default run (soak test excluded; run via npm run test:soak)
+```
+
+The suite runs serially (`workers: 1`) and expects the docker test stack to be up. See
+`tests/playwright/playwright.config.js` and `tests/playwright/fixtures/jellyfin.js` for
+configuration and shared helpers.
+
 ### Live Integration Tests
 
 Opt-in tests against a real TVHeadend instance. **Run in CI** as a separate job (see `.github/workflows/build-release.yaml`, `integration` job) and also available for local runs.
@@ -266,7 +286,8 @@ docker compose -f docker/docker-compose.test.yaml down -v
 | `OrchestratorService` | All delegation paths |
 | `GuideService` | Channel mapping, EPG mapping, content types, tags |
 | `DvrService` | Timer CRUD, series timer CRUD, recording profile lookup |
-| `MediaSourceService` | Stream URL construction, media source building, cache read/write/validation |
+| `MediaSourceService` | Stream URL construction, media source building |
+| `MediaInfoCacheService` | Cache read/write/validation/invalidation, per-profile store restore/seed, warmup |
 | `LifecycleService` | Stream close, tuner reset |
 | `TokenService` | Token generation, validation, retry behavior |
 | `DiagnosticService` | Diagnostic report construction |

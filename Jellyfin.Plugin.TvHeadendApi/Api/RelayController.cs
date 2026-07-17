@@ -14,10 +14,13 @@ using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using MetricsStreamEndedBy = global::Jellyfin.Plugin.TvHeadendApi.Model.Metrics.StreamEndedBy;
+using ActiveStreamSession = global::Jellyfin.Plugin.TvHeadendApi.Model.Metrics.ActiveStreamSession;
 using RelayFailureReason = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.RelayFailureReason;
+using RelayTimingContext = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.RelayTimingContext;
+using RelayTokenRecord = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.RelayTokenRecord;
 using RelayTokenValidationResult = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.RelayTokenValidationResult;
 using RelayType = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.RelayType;
+using StreamEndedBy = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.StreamEndedBy;
 
 #pragma warning disable SA1117 // Parameters should be on same line or each on own line
 
@@ -148,9 +151,10 @@ public class RelayController : ControllerBase
         }
         else
         {
-            // Unknown — no health data yet. Report as "checking".
+            // Unknown — no TVHeadend request has been observed yet (e.g. right after startup).
+            // Keep the wording neutral: this is a "not checked yet" state, not a problem.
             status = "unknown";
-            message = "No health data available yet. TVHeadend connectivity has not been verified.";
+            message = "Checking TVHeadend connectivity — no requests have been recorded yet.";
         }
 
         return Ok(new
@@ -177,6 +181,7 @@ public class RelayController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
     public async Task<IActionResult> GetImage(string path, CancellationToken cancellationToken)
     {
@@ -185,18 +190,29 @@ public class RelayController : ControllerBase
             return BadRequest("Image path is required.");
         }
 
+        var config = _configProvider.Configuration;
+        if (config == null || !config.RelayEnabled)
+        {
+            // Relay is disabled in plugin configuration — refuse to proxy images too,
+            // mirroring the stream endpoints so the setting acts as a full kill-switch.
+            return StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+
         RelayResult? result = null;
         try
         {
             result = await _relay.RelayImageAsync(path, cancellationToken).ConfigureAwait(false);
+            if (result.TimingContext != null)
+            {
+                // Record the real request method instead of a hard-coded "GET".
+                result.TimingContext.RequestMethod = Request.Method;
+            }
 
             if (result.Body == null)
             {
                 RecordAndDispose(result);
                 return StatusCode(result.StatusCode);
             }
-
-            result.TimingContext?.MarkFirstByteToClient();
 
             var wrappedStream = new MetricsRelayStreamWrapper(result.Body, result, _metrics);
             SetPassthroughHeaders(result);
@@ -271,7 +287,7 @@ public class RelayController : ControllerBase
             return;
         }
 
-        await StreamChannelCoreAsync(channelId, ResolveEffectiveProfile(validation, profile), cancellationToken).ConfigureAwait(false);
+        await StreamChannelCoreAsync(channelId, ResolveEffectiveProfile(validation, profile), validation?.TokenRecord, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -316,55 +332,50 @@ public class RelayController : ControllerBase
     /// <summary>
     /// Streams a live TV channel from TVHeadend to the client. Assumes the request is already
     /// authorized (token-validated, or token security disabled) and that the method is GET.
+    /// <para>
+    /// SINGLE MEASUREMENT POINT: the in-memory session tracker only feeds the live dashboard
+    /// view; the one persistent record per stream request is the relay timing context, which
+    /// is stamped with the session identity and token telemetry here and persisted exactly
+    /// once in the <c>finally</c> block (or by the relay service on aborted connects).
+    /// </para>
     /// </summary>
     /// <param name="channelId">TVHeadend channel UUID.</param>
     /// <param name="profile">Optional streaming profile override.</param>
+    /// <param name="tokenRecord">The validated relay token record carrying the stream-setup telemetry, if any.</param>
     /// <param name="cancellationToken">Cancellation token — triggers upstream cancellation on disconnect.</param>
     /// <returns>A <see cref="Task"/> representing the streaming operation.</returns>
-    private async Task StreamChannelCoreAsync(string channelId, string? profile, CancellationToken cancellationToken)
+    private async Task StreamChannelCoreAsync(string channelId, string? profile, RelayTokenRecord? tokenRecord, CancellationToken cancellationToken)
     {
         // Start telemetry session immediately — visible in dashboard from this point.
         var hasRange = Request.Headers.ContainsKey("Range");
         var userAgent = Request.Headers.UserAgent.ToString();
         var remoteIp = HttpContext.Connection.RemoteIpAddress?.ToString();
-        var sessionId = _sessionTracker.StartSession(channelId, Request.Method, userAgent, remoteIp, hasRange);
+        var session = _sessionTracker.StartSession(channelId, Request.Method, userAgent, remoteIp, hasRange);
+        var sessionId = session.SessionId;
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
+        var bitrates = new StreamBitrateTracker();
         RelayResult? result = null;
         long totalBytes = 0;
         bool firstByteSent = false;
+        var endedBy = StreamEndedBy.Unknown;
 
         try
         {
             // RelayStreamAsync increments the active-stream counter as its first step. Keeping the
             // call INSIDE this try guarantees the finally always releases that slot and finalizes the
-            // session — even when the client cancels during the upstream connect (the call re-throws).
+            // session — even when the client cancels during the upstream connect (the call re-throws;
+            // the relay service persists the aborted metric itself on that path).
             result = await _relay.RelayStreamAsync(channelId, profile, cancellationToken).ConfigureAwait(false);
+            StampStreamTelemetry(result.TimingContext, session, tokenRecord, profile);
 
             if (result.Body == null)
             {
+                // Upstream failed before any data — classify from the timing context.
                 Response.StatusCode = result.StatusCode;
-                // Finalize session — upstream failed before any data.
-                var endReason = SessionTracker.ClassifyEndReason(null, false, result.TimingContext?.UpstreamStatusCode);
-                _sessionTracker.FinalizeSession(
-                    sessionId,
-                    0,
-                    sw.Elapsed.TotalMilliseconds,
-                    0,
-                    endReason,
-                    false,
-                    0,
-                    null,
-                    null,
-                    null,
-                    0,
-                    0,
-                    0,
-                    $"HTTP {result.StatusCode}",
-                    null,
-                    false,
-                    false,
-                    false);
+                endedBy = result.TimingContext?.UpstreamTimedOut == true
+                    ? StreamEndedBy.UpstreamTimeout
+                    : StreamEndedBy.UpstreamHttpError;
                 return;
             }
 
@@ -377,7 +388,6 @@ public class RelayController : ControllerBase
             // Startup latency is recorded when the FIRST byte is actually written to the client
             // (inside the loop below), not at header time, so the metric reflects real
             // time-to-first-byte rather than time-to-headers.
-            double startupLatencyMs = 0;
 
             // Stream directly from TVHeadend to client — zero intermediate buffering.
             var buffer = new byte[StreamCopyBufferSize];
@@ -385,93 +395,66 @@ public class RelayController : ControllerBase
             int bytesRead;
             while ((bytesRead = await result.Body.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
             {
+                if (!firstByteSent)
+                {
+                    // Mark BEFORE the client write: this is the instant the first byte arrived
+                    // from upstream. The to-client mark below fires only after the write completes,
+                    // so the delta between the two reflects real downstream write latency.
+                    result.TimingContext?.MarkFirstByteFromUpstream();
+                }
+
                 await Response.Body.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
                 totalBytes += bytesRead;
 
                 if (!firstByteSent)
                 {
-                    result.TimingContext?.MarkFirstByteFromUpstream();
                     result.TimingContext?.MarkFirstByteToClient();
-                    startupLatencyMs = sw.Elapsed.TotalMilliseconds;
-                    _sessionTracker.MarkFirstByteSent(sessionId, startupLatencyMs);
+                    _sessionTracker.MarkFirstByteSent(sessionId, sw.Elapsed.TotalMilliseconds);
                     firstByteSent = true;
                 }
 
                 // Periodic session update every ~5 seconds — no DB write per packet.
+                // Rolling = last ~10s window, Peak = max rolling sample, Average = cumulative.
                 var elapsed = sw.ElapsedMilliseconds;
                 if (elapsed - lastUpdateTime >= 5000)
                 {
-                    var durationSec = elapsed / 1000.0;
-                    var avgBitrate = durationSec > 0 ? (totalBytes * 8.0) / durationSec : 0;
-                    _sessionTracker.UpdateSession(sessionId, totalBytes, avgBitrate, avgBitrate, avgBitrate);
+                    var rolling = bitrates.AddSample(elapsed, totalBytes);
+                    var average = ComputeAverageBitrate(totalBytes, sw.Elapsed);
+                    _sessionTracker.UpdateSession(sessionId, totalBytes, rolling, average, bitrates.PeakBitrate);
                     lastUpdateTime = elapsed;
                 }
             }
 
-            if (result.TimingContext != null)
-            {
-                result.TimingContext.BytesSent = totalBytes;
-                result.TimingContext.EndedBy = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.StreamEndedBy.Completed;
-            }
-
             // Normal upstream EOF — stream completed.
-            var eofBitrate = ComputeAverageBitrate(totalBytes, sw.Elapsed);
-            _sessionTracker.FinalizeSession(
-                sessionId, totalBytes, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds,
-                MetricsStreamEndedBy.UpstreamEof, firstByteSent, startupLatencyMs,
-                null, null, null, eofBitrate, eofBitrate, eofBitrate,
-                "OK", "OK",
-                !string.IsNullOrEmpty(result.AcceptRanges), false, !string.IsNullOrEmpty(result.AcceptRanges));
+            endedBy = StreamEndedBy.UpstreamEof;
         }
         catch (OperationCanceledException)
         {
+            // Correct classification: disconnect after first byte = normal Live TV behavior.
+            endedBy = firstByteSent
+                ? StreamEndedBy.ClientDisconnectAfterFirstByte
+                : StreamEndedBy.StartupCancelledBeforeFirstByte;
             if (result?.TimingContext != null)
             {
-                result.TimingContext.BytesSent = totalBytes;
                 result.TimingContext.ClientCancelled = true;
                 result.TimingContext.FailureReason = RelayFailureReason.ClientCancelled;
-                result.TimingContext.EndedBy = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.StreamEndedBy.ClientCancelled;
             }
-
-            // Correct classification: disconnect after first byte = normal Live TV behavior.
-            var endReason = firstByteSent
-                ? MetricsStreamEndedBy.ClientDisconnectAfterFirstByte
-                : MetricsStreamEndedBy.StartupCancelledBeforeFirstByte;
-            var cancelBitrate = ComputeAverageBitrate(totalBytes, sw.Elapsed);
-            _sessionTracker.FinalizeSession(
-                sessionId, totalBytes, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds,
-                endReason, firstByteSent, 0, null, null, null, cancelBitrate, cancelBitrate, cancelBitrate,
-                null, "ClientDisconnected", false, false, false);
         }
         catch (IOException)
         {
+            endedBy = StreamEndedBy.DownstreamWriteError;
             if (result?.TimingContext != null)
             {
-                result.TimingContext.BytesSent = totalBytes;
                 result.TimingContext.FailureReason = RelayFailureReason.DownstreamWriteFailed;
-                result.TimingContext.EndedBy = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.StreamEndedBy.DownstreamError;
             }
-
-            _sessionTracker.FinalizeSession(
-                sessionId, totalBytes, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds,
-                MetricsStreamEndedBy.DownstreamWriteError, firstByteSent, 0,
-                null, null, null, 0, 0, 0,
-                null, "DownstreamWriteError", false, false, false);
         }
         catch (Exception)
         {
+            endedBy = StreamEndedBy.UnexpectedException;
             if (result?.TimingContext != null)
             {
-                result.TimingContext.BytesSent = totalBytes;
                 result.TimingContext.FailureReason = RelayFailureReason.UnexpectedException;
-                result.TimingContext.EndedBy = global::Jellyfin.Plugin.TvHeadendApi.Model.Relay.StreamEndedBy.Unknown;
             }
-
-            _sessionTracker.FinalizeSession(
-                sessionId, totalBytes, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds,
-                MetricsStreamEndedBy.UnexpectedException, firstByteSent, 0,
-                null, null, null, 0, 0, 0,
-                null, "UnexpectedException", false, false, false);
         }
         finally
         {
@@ -480,8 +463,55 @@ public class RelayController : ControllerBase
             // connect — must release exactly once. DecrementStreams floors at 0.
             _activityTracker.DecrementStreams();
 
+            // Final rolling sample so short sessions still yield an honest peak value.
+            if (totalBytes > 0)
+            {
+                bitrates.AddSample(sw.Elapsed.TotalMilliseconds, totalBytes);
+            }
+
+            // Remove the in-memory session (live view only — no persistence here).
+            _sessionTracker.FinalizeSession(sessionId, endedBy, firstByteSent);
+
+            if (result?.TimingContext != null)
+            {
+                result.TimingContext.BytesSent = totalBytes;
+                result.TimingContext.EndedBy = endedBy;
+                result.TimingContext.PeakBitrate = totalBytes > 0 ? bitrates.PeakBitrate : null;
+            }
+
             RecordAndDispose(result);
         }
+    }
+
+    /// <summary>
+    /// Copies the session identity and the token-carried stream-setup telemetry onto the
+    /// relay timing context — the single persistent record of the stream request.
+    /// </summary>
+    /// <param name="timing">The timing context created by the relay service.</param>
+    /// <param name="session">The in-memory session started for this request.</param>
+    /// <param name="tokenRecord">The validated relay token record, if any.</param>
+    /// <param name="requestedProfile">The effective profile passed to the relay (query/token resolved).</param>
+    private static void StampStreamTelemetry(
+        RelayTimingContext? timing,
+        ActiveStreamSession session,
+        RelayTokenRecord? tokenRecord,
+        string? requestedProfile)
+    {
+        if (timing == null)
+        {
+            return;
+        }
+
+        timing.SessionId = session.SessionId;
+        timing.ChannelName = session.ChannelName;
+        timing.ClientName = session.ClientName;
+        timing.UserAgent = session.UserAgent;
+        timing.RequestMethod = session.RequestMethod;
+        timing.WasRangeRequest = session.RangeRequested;
+        timing.EffectiveProfile = tokenRecord?.SelectedProfile ?? requestedProfile;
+        timing.ResolutionSource = tokenRecord?.ResolutionSource;
+        timing.MediaInfoCacheStatus = tokenRecord?.MediaInfoCacheStatus ?? "unknown";
+        timing.StreamSetupMs = tokenRecord?.StreamSetupMs;
     }
 
     /// <summary>
@@ -533,7 +563,7 @@ public class RelayController : ControllerBase
 
         // Delegate to the shared streaming core. Use the profile issued in the token (rule-resolved)
         // so a client cannot override it by tampering with ?profile=.
-        await StreamChannelCoreAsync(channelId, ResolveEffectiveProfile(validation, profile), cancellationToken).ConfigureAwait(false);
+        await StreamChannelCoreAsync(channelId, ResolveEffectiveProfile(validation, profile), validation.TokenRecord, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -550,11 +580,20 @@ public class RelayController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status410Gone)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> GetTokenSecuredImage(string path, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
             return BadRequest("Image path is required.");
+        }
+
+        var config = _configProvider.Configuration;
+        if (config == null || !config.RelayEnabled)
+        {
+            // Relay is disabled in plugin configuration — refuse before token validation,
+            // mirroring GetTokenSecuredStream.
+            return StatusCode(StatusCodes.Status503ServiceUnavailable);
         }
 
         // Validate relay token
@@ -574,8 +613,7 @@ public class RelayController : ControllerBase
     }
 
     /// <summary>
-    /// Computes the average bitrate (bits/second) for a completed stream so the persisted
-    /// history reflects real throughput instead of zero.
+    /// Computes the cumulative average bitrate in bits per second since stream start.
     /// </summary>
     private static double ComputeAverageBitrate(long totalBytes, TimeSpan elapsed)
         => elapsed.TotalSeconds > 0.001 ? (totalBytes * 8.0) / elapsed.TotalSeconds : 0;
@@ -690,8 +728,12 @@ public class RelayController : ControllerBase
                 _totalBytes += read;
                 if (!_firstByte)
                 {
+                    // Reads from this wrapper are performed by ASP.NET's FileStreamResult writer
+                    // copying bytes into the client response, so the first successful read is the
+                    // moment the first byte flows to the client. The first-byte-from-upstream mark
+                    // is recorded by the relay service when upstream bytes actually arrive.
                     _firstByte = true;
-                    _result.TimingContext?.MarkFirstByteFromUpstream();
+                    _result.TimingContext?.MarkFirstByteToClient();
                 }
             }
         }

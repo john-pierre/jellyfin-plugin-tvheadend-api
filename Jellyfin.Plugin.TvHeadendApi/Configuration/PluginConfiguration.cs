@@ -65,7 +65,7 @@ public class PluginConfiguration : BasePluginConfiguration
         // Relay token security
         this.EnableRelayTokenSecurity = true;
         this.StreamTokenTtlSeconds = 120;
-        this.StreamTokenMaxUses = 5;
+        this.StreamTokenMaxUses = 25;
         this.ImageTokenTtlMinutes = 0;
         this.ImageTokenMaxUses = 0;
         this.ImageTokenReusePerUser = true;
@@ -219,10 +219,10 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets a value indicating whether Jellyfin should probe the stream
     /// to detect codec, resolution and other properties before playback.
     /// <para>
-    /// <strong>Recommended: <c>true</c></strong> when using the "jellyfin" transcode profile
-    /// together with <see cref="EnableMediaInfoCacheWrite"/>. The plugin pre-creates cache files
-    /// so Jellyfin finds probe data instantly without actually running FFmpeg — resulting in
-    /// channel switching under 3 seconds even on the very first tune.
+    /// <strong>Recommended: <c>true</c></strong> when using the "jellyfin" transcode profile.
+    /// Enabling probing also activates the plugin's proactive mediainfo cache: cache files are
+    /// pre-created so Jellyfin finds probe data instantly without actually running FFmpeg —
+    /// resulting in channel switching under 3 seconds even on the very first tune.
     /// </para>
     /// <para>
     /// <strong>Jellyfin core behaviour when enabled:</strong>
@@ -271,9 +271,11 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets a value indicating whether the plugin should pre-create Jellyfin mediainfo
     /// cache files when no cache entry exists for a channel.
     /// <para>
-    /// When enabled, the plugin queries the selected TVHeadend streaming profile for its actual
-    /// codec and container settings and writes a matching cache file so that Jellyfin can skip
-    /// FFmpeg probing. This makes even the very first tune to a channel fast.
+    /// DEPRECATED, NO EFFECT — the media source build activates the mediainfo cache solely
+    /// from <see cref="SupportsProbing"/>; this flag is never read by the backend. It cannot
+    /// carry <c>[Obsolete]</c> because <c>XmlSerializer</c> skips obsolete members and the
+    /// value must keep round-tripping in existing configuration XML (verified by
+    /// <c>PluginConfigurationSerializationTests</c>).
     /// </para>
     /// </summary>
     public bool EnableMediaInfoCacheWrite { get; set; }
@@ -282,10 +284,11 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets a value indicating whether the plugin should validate existing mediainfo
     /// cache files against the currently selected TVHeadend streaming profile.
     /// <para>
-    /// When enabled, the plugin compares the cached codec/container metadata with the active
-    /// profile on every channel access. If the profile has changed (e.g. switched from "pass"
-    /// to "jellyfin"), the outdated cache file is deleted and — if
-    /// <see cref="EnableMediaInfoCacheWrite"/> is also enabled — replaced with a correct one.
+    /// DEPRECATED, NO EFFECT — cache validation runs whenever <see cref="SupportsProbing"/>
+    /// is enabled; this flag is never read by the backend. It cannot carry <c>[Obsolete]</c>
+    /// because <c>XmlSerializer</c> skips obsolete members and the value must keep
+    /// round-tripping in existing configuration XML (verified by
+    /// <c>PluginConfigurationSerializationTests</c>).
     /// </para>
     /// </summary>
     public bool EnableMediaInfoCacheValidation { get; set; }
@@ -377,9 +380,10 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>
     /// Gets or sets the maximum number of times a stream relay token may be used.
-    /// Supports Jellyfin/FFmpeg probing, retries, and the final playback request.
-    /// A value of 5 is recommended for compatibility. Set to 0 for unlimited.
-    /// Default: 5.
+    /// Jellyfin's own playback flow consumes several uses per start (live-stream open,
+    /// FFmpeg probe, HLS transcoder starts, and player retries all reuse one token), so the
+    /// limit must leave room for legitimate bursts; tokens additionally expire via their TTL.
+    /// Set to 0 for unlimited. Default: 25 (raised from 5, which broke browser playback).
     /// </summary>
     public int StreamTokenMaxUses { get; set; }
 

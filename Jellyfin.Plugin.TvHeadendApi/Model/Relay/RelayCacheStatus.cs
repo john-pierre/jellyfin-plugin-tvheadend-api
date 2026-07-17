@@ -4,6 +4,8 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 
 /// <summary>
 /// Describes the cache outcome for an image relay request.
+/// Only states the on-disk image cache actually produces are listed —
+/// it performs no conditional revalidation and no negative caching.
 /// </summary>
 public enum RelayCacheStatus
 {
@@ -15,10 +17,4 @@ public enum RelayCacheStatus
 
     /// <summary>Cache miss — fetched from upstream.</summary>
     Miss,
-
-    /// <summary>Cache revalidated with upstream (conditional request).</summary>
-    Revalidated,
-
-    /// <summary>Negative cache hit (cached upstream error/404).</summary>
-    NegativeHit,
 }

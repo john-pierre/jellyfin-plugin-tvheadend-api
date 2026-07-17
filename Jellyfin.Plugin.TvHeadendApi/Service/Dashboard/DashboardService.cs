@@ -34,6 +34,7 @@ internal sealed class DashboardService : IDashboardService
     private readonly DatabaseHealthService _dbHealthService;
     private readonly ConfigurationProvider _configProvider;
     private readonly ILogger<DashboardService> _logger;
+    private readonly Stream.IMediaInfoCacheService? _mediaInfoCacheService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DashboardService"/> class.
@@ -48,6 +49,7 @@ internal sealed class DashboardService : IDashboardService
     /// <param name="dbHealthService">Database health monitoring service.</param>
     /// <param name="configProvider">Plugin configuration provider.</param>
     /// <param name="logger">Logger for diagnostics.</param>
+    /// <param name="mediaInfoCacheService">Mediainfo cache service exposing the since-start cache counters.</param>
     public DashboardService(
         IDiagnosticService diagnosticService,
         IStatusService statusService,
@@ -58,8 +60,10 @@ internal sealed class DashboardService : IDashboardService
         IHealthService healthService,
         DatabaseHealthService dbHealthService,
         ConfigurationProvider configProvider,
-        ILogger<DashboardService> logger)
+        ILogger<DashboardService> logger,
+        Stream.IMediaInfoCacheService? mediaInfoCacheService = null)
     {
+        _mediaInfoCacheService = mediaInfoCacheService;
         _diagnosticService = diagnosticService ?? throw new ArgumentNullException(nameof(diagnosticService));
         _statusService = statusService ?? throw new ArgumentNullException(nameof(statusService));
         _inputMonitorService = inputMonitorService ?? throw new ArgumentNullException(nameof(inputMonitorService));
@@ -81,6 +85,7 @@ internal sealed class DashboardService : IDashboardService
         {
             PluginVersion = typeof(Plugin).Assembly.GetName().Version?.ToString() ?? "unknown",
             Timestamp = DateTimeOffset.UtcNow,
+            MediaInfoCache = _mediaInfoCacheService?.GetCounters(),
         };
 
         // Short-circuit: if TVHeadend credentials are not configured, return immediately

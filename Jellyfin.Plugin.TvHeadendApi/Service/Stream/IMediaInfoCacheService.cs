@@ -23,14 +23,28 @@ public interface IMediaInfoCacheService
     /// <param name="proactiveCacheEnabled">When <c>true</c>, missing or stale cache files are (re)written.</param>
     /// <param name="validationEnabled">When <c>true</c>, existing cache files are validated against the profile snapshot.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A task that completes when the cache state has been reconciled.</returns>
-    Task EnsureMediaInfoCacheStateAsync(
+    /// <returns>The reconciliation outcome (hit/miss/mismatch/restored/unknown) for telemetry.</returns>
+    Task<MediaInfoCacheStatus> EnsureMediaInfoCacheStateAsync(
         string channelId,
         string streamUrl,
         ProfileSnapshot profileSnapshot,
         bool proactiveCacheEnabled,
         bool validationEnabled,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns a snapshot of the in-process cache counters (hits/misses/mismatches/invalidations)
+    /// accumulated since plugin start, for the dashboard.
+    /// </summary>
+    /// <returns>The counter snapshot.</returns>
+    MediaInfoCacheCounters GetCounters();
+
+    /// <summary>
+    /// Records a cache hit caused by the media source build reuse window: the recently
+    /// built artifacts (including the reconciled cache state) were reused, so the cache
+    /// was effectively used without a fresh reconciliation.
+    /// </summary>
+    void RecordStreamBuildReuseHit();
 
     /// <summary>
     /// Builds the deterministic cache file name that Jellyfin uses for a given media source.

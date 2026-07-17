@@ -12,7 +12,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.test.yaml"
 PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
 PROJECT_NAME="tvh-test"
-MAX_BOOTSTRAP_WAIT="${MAX_BOOTSTRAP_WAIT:-120}"
+# Bootstrap includes a fail-closed EPG wait of up to 300s (two XMLTV grab passes).
+MAX_BOOTSTRAP_WAIT="${MAX_BOOTSTRAP_WAIT:-720}"
 TEST_PROJECT="${PROJECT_ROOT}/Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj"
 
 # Fail-closed: any early exit before tests run reports failure.
@@ -67,6 +68,8 @@ export TVH_HOST="tvheadend"
 export TVH_PORT="9981"
 export TVH_USER="testuser"
 export TVH_PASS="testpass"
+# Full-length soak in CI/e2e runs (the suite default is a fast 60s).
+export E2E_SOAK_SECONDS="${E2E_SOAK_SECONDS:-300}"
 
 set +e
 dotnet test "$TEST_PROJECT" \

@@ -39,8 +39,21 @@ public sealed class RelayMetricsSummary
     /// <summary>Gets or sets latency percentiles for startup latency (streams).</summary>
     public LatencyPercentiles StartupLatency { get; set; } = new();
 
-    /// <summary>Gets or sets average upstream connect duration in ms.</summary>
-    public double? AvgUpstreamConnectMs { get; set; }
+    /// <summary>
+    /// Gets or sets startup latency percentiles grouped by mediainfo cache status
+    /// (<c>hit</c>, <c>miss</c>, <c>mismatch</c>, <c>restored</c>, <c>unknown</c>) —
+    /// the warm-vs-cold-cache zapping breakdown.
+    /// </summary>
+    public Dictionary<string, LatencyPercentiles> StartupLatencyByCacheStatus { get; set; } = new();
+
+    /// <summary>Gets or sets startup latency percentiles grouped by effective TVHeadend profile.</summary>
+    public Dictionary<string, LatencyPercentiles> StartupLatencyByProfile { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the percentage (0–100) of Live TV sessions in the last 24 hours that
+    /// played via Direct Play (from Jellyfin viewing statistics). Null when no sessions.
+    /// </summary>
+    public double? DirectPlayPercent24h { get; set; }
 
     /// <summary>Gets or sets average upstream headers duration in ms.</summary>
     public double? AvgUpstreamHeadersMs { get; set; }
@@ -83,12 +96,6 @@ public sealed class RelayMetricsSummary
 
     /// <summary>Gets or sets cache miss count.</summary>
     public long CacheMisses { get; set; }
-
-    /// <summary>Gets or sets cache revalidated count.</summary>
-    public long CacheRevalidated { get; set; }
-
-    /// <summary>Gets or sets negative cache hit count.</summary>
-    public long NegativeCacheHits { get; set; }
 
     /// <summary>Gets or sets cache hit ratio (0–100).</summary>
     public double CacheHitRatio { get; set; }
@@ -133,28 +140,11 @@ public sealed class RelayMetricsSummary
     /// <summary>Gets or sets the trend bucket granularity for the selected range: "hour" or "day".</summary>
     public string TrendGranularity { get; set; } = "hour";
 
-    // ── Token Security ───────────────────────────────────────────────
-
     /// <summary>Gets or sets channels that had stream failures in the selected range (worst first).</summary>
     public IReadOnlyList<ProblemChannel> ProblemChannels { get; set; } = Array.Empty<ProblemChannel>();
 
-    /// <summary>Gets or sets total relay tokens issued.</summary>
-    public long TokensIssuedTotal { get; set; }
-
-    /// <summary>Gets or sets stream tokens issued.</summary>
-    public long StreamTokensIssued { get; set; }
-
-    /// <summary>Gets or sets image tokens issued.</summary>
-    public long ImageTokensIssued { get; set; }
-
-    /// <summary>Gets or sets total token validations.</summary>
-    public long TokenValidationsTotal { get; set; }
-
-    /// <summary>Gets or sets total token validation failures.</summary>
-    public long TokenValidationFailures { get; set; }
-
-    /// <summary>Gets or sets token failures grouped by reason.</summary>
-    public Dictionary<string, long> TokenFailuresByReason { get; set; } = new();
+    // Token statistics intentionally live in RelayTokenStatistics (GET /TvHeadendApi/Dashboard/Tokens);
+    // the token counter fields that used to sit here were never written by any code path.
 }
 
 /// <summary>

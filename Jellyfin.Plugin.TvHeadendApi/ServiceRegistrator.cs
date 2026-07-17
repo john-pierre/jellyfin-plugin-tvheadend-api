@@ -149,7 +149,8 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PluginLogService>>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
                 sp.GetRequiredService<DatabaseHealthService>(),
-                sp.GetRequiredService<DatabaseProvider>()));
+                sp.GetRequiredService<DatabaseProvider>(),
+                sp.GetRequiredService<DatabaseWriteCoordinator>()));
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PluginLogService>());
         serviceCollection.AddSingleton<IPluginLogQueryService>(sp => sp.GetRequiredService<PluginLogService>());
 
@@ -179,6 +180,10 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IProfileResolver, ProfileResolver>();
         serviceCollection.AddSingleton<IDiagnosticService, DiagnosticService>();
         serviceCollection.AddSingleton<Service.Guide.ChannelNameCache>();
+
+        // Warms the channel-name cache at startup so telemetry recorded before the first guide
+        // refresh carries display names instead of raw channel UUIDs.
+        serviceCollection.AddSingleton<IHostedService, Service.Guide.ChannelNameCacheWarmupService>();
         serviceCollection.AddSingleton<IGuideService, GuideService>();
         serviceCollection.AddSingleton<IDvrService, DvrService>();
         serviceCollection.AddSingleton<IMediaInfoCacheService, MediaInfoCacheService>();
@@ -189,7 +194,16 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IStreamingProfileResolver, StreamingProfileResolver>();
         serviceCollection.AddSingleton<IPlaybackContextAccessor, PlaybackContextAccessor>();
         serviceCollection.AddSingleton<IProfileDiscoveryService, ProfileDiscoveryService>();
-        serviceCollection.AddSingleton<IApiClient, ApiClient>();
+
+        // Aggregates Jellyfin users, client names, and device names so the configuration UI
+        // can offer selectable values for streaming-profile rules instead of free text.
+        serviceCollection.AddSingleton<IKnownClientsService, KnownClientsService>();
+        // The health-service accessor is deferred: IHealthService itself depends on IApiClient,
+        // so ApiClient resolves it lazily the first time an authenticated handler chain is built.
+        serviceCollection.AddSingleton<IApiClient>(sp => new ApiClient(
+            sp.GetRequiredService<IHttpClientFactory>(),
+            sp.GetRequiredService<ConfigurationProvider>(),
+            () => sp.GetService<IHealthService>()));
         serviceCollection.AddSingleton<IHealthService>(sp =>
             new HealthService(
                 sp.GetRequiredService<IApiClient>(),
@@ -225,22 +239,18 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 sp.GetRequiredService<RelayActivityTracker>(),
                 sp.GetRequiredService<DatabaseProvider>(),
                 sp.GetRequiredService<RelayImageCache>(),
-                sp.GetRequiredService<Service.Guide.ChannelNameCache>()));
+                sp.GetRequiredService<Service.Guide.ChannelNameCache>(),
+                sp.GetRequiredService<IStatisticsService>()));
         serviceCollection.AddSingleton<IRelayMetricsService>(sp => sp.GetRequiredService<RelayMetricsService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<RelayMetricsService>());
 
-        // ── Streaming Telemetry — real-time session tracking and dashboard ──
+        // ── Streaming Telemetry — in-memory session tracking and dashboard reads ──
+        // Persistence happens exactly once per stream request via RelayMetricsService
+        // (relay_request_metric); the session tracker only feeds the live view.
         serviceCollection.AddSingleton<ActiveSessionStore>();
-        serviceCollection.AddSingleton<MetricsWriter>(sp =>
-            new MetricsWriter(
-                sp.GetRequiredService<DatabaseHealthService>(),
-                sp.GetRequiredService<DatabaseConnectionFactory>(),
-                sp.GetRequiredService<DatabaseWriteCoordinator>(),
-                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MetricsWriter>>()));
         serviceCollection.AddSingleton<SessionTracker>(sp =>
             new SessionTracker(
                 sp.GetRequiredService<ActiveSessionStore>(),
-                sp.GetRequiredService<MetricsWriter>(),
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SessionTracker>>(),
                 sp.GetRequiredService<Service.Guide.ChannelNameCache>()));
         serviceCollection.AddSingleton<MetricsAggregator>(sp =>
@@ -286,7 +296,8 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 sp.GetRequiredService<IUrlBuilder>(),
                 sp.GetRequiredService<ConfigurationProvider>(),
                 sp.GetRequiredService<DatabaseProvider>(),
-                sp.GetRequiredService<PluginLogService>()));
+                sp.GetRequiredService<PluginLogService>(),
+                sp.GetRequiredService<DatabaseWriteCoordinator>()));
         serviceCollection.AddSingleton<ICometSnapshotReader>(sp => sp.GetRequiredService<CometService>());
         serviceCollection.AddSingleton<IHostedService>(sp => sp.GetRequiredService<CometService>());
 

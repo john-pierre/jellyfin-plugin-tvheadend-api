@@ -318,10 +318,9 @@ public sealed class ExtendedE2ETests
         SkipIfUnavailable();
 
         var channelId = await TryGetFirstChannelUuidAsync();
-        if (channelId == null)
-        {
-            return; // TVH unreachable — skip gracefully.
-        }
+        Assert.False(
+            string.IsNullOrEmpty(channelId),
+            "Bootstrap guarantees >= 5 channels — a null channel id means the plugin lost connectivity to TVHeadend.");
 
         using var doc = await GetJsonAsync($"/TvHeadendApi/StreamingProfiles/Resolve?channelId={channelId}");
         var root = doc.RootElement;
@@ -510,12 +509,10 @@ public sealed class ExtendedE2ETests
     {
         SkipIfUnavailable();
 
-        using var originalConfig = await ReadPluginConfigAsync();
-        var originalPort = originalConfig.RootElement.GetProperty("Port").GetInt32();
-
         try
         {
             // Save config with unreachable port.
+            using var originalConfig = await ReadPluginConfigAsync();
             await SavePluginConfigAsync(originalConfig, OverrideField(
                 "Port",
                 w => w.WriteNumber("Port", 1)));
@@ -539,11 +536,10 @@ public sealed class ExtendedE2ETests
         }
         finally
         {
-            // Restore original port.
-            using var restoreBase = await ReadPluginConfigAsync();
-            await SavePluginConfigAsync(restoreBase, OverrideField(
-                "Port",
-                w => w.WriteNumber("Port", originalPort)));
+            // An unreachable port trips the plugin's resilience circuit breaker, which would
+            // otherwise poison every later test in this shared collection. Re-apply the known-good
+            // TVH connection settings and wait for the breaker to recover before returning control.
+            await _fixture.EnsureConfiguredAndHealthyAsync();
         }
     }
 
@@ -557,10 +553,9 @@ public sealed class ExtendedE2ETests
         SkipIfUnavailable();
 
         var channelId = await TryGetFirstChannelUuidAsync();
-        if (channelId == null)
-        {
-            return; // No channels — skip gracefully.
-        }
+        Assert.False(
+            string.IsNullOrEmpty(channelId),
+            "Bootstrap guarantees >= 5 channels — a null channel id means the plugin lost connectivity to TVHeadend.");
 
         // Note initial ActiveStreams count.
         int initialActive;
@@ -572,25 +567,44 @@ public sealed class ExtendedE2ETests
             initialActive = statusDoc.RootElement.GetProperty("ActiveStreams").GetInt32();
         }
 
-        // Start a relay stream with ResponseHeadersRead.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        // The open /stream endpoint requires a token when relay token security is enabled.
+        // Disable it for the duration of this check, then restore it in the finally
+        // (mirrors DeepVerificationTests.StreamRelay_ActuallyStreamsBytes).
+        using var originalConfig = await ReadPluginConfigAsync();
+        var hadSecurity = originalConfig.RootElement.TryGetProperty("EnableRelayTokenSecurity", out var secProp) && secProp.GetBoolean();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         HttpResponseMessage? streamResponse = null;
         try
         {
+            if (hadSecurity)
+            {
+                await SavePluginConfigAsync(originalConfig, OverrideField(
+                    "EnableRelayTokenSecurity",
+                    w => w.WriteBoolean("EnableRelayTokenSecurity", false)));
+            }
+
+            // Start a real relay stream with ResponseHeadersRead — the activity tracker increments
+            // as the very first step of RelayStreamAsync, so a 200 response already means the slot
+            // is held by the time we get here.
             streamResponse = await _fixture.Client.GetAsync(
                 $"/api/tvheadend/stream/{channelId}?profile=pass",
                 HttpCompletionOption.ResponseHeadersRead,
                 cts.Token);
 
-            if (!streamResponse.IsSuccessStatusCode)
+            Assert.Equal(HttpStatusCode.OK, streamResponse.StatusCode);
+
+            // Read some bytes to prove the relay actually attached to the upstream before we
+            // check the tracked status.
+            using (var stream = await streamResponse.Content.ReadAsStreamAsync(cts.Token))
             {
-                return; // Stream didn't start — skip stream-dependent assertions.
+                var buffer = new byte[4096];
+                var bytesRead = await stream.ReadAsync(buffer.AsMemory(), cts.Token);
+                Assert.True(bytesRead > 0, "Expected to read at least some bytes from the active relay stream.");
             }
 
-            // Small delay to let the activity tracker register the stream.
-            await Task.Delay(500);
-
-            // Check ActiveStreams during stream.
+            // Check ActiveStreams while the stream is still open — must reflect this specific
+            // stream, not merely be non-zero because of unrelated pre-existing activity.
             var duringResp = await _fixture.AnonymousClient.GetAsync("/api/tvheadend/status");
             Assert.Equal(HttpStatusCode.OK, duringResp.StatusCode);
             var duringBody = await duringResp.Content.ReadAsStringAsync();
@@ -598,22 +612,20 @@ public sealed class ExtendedE2ETests
             var duringActive = duringDoc.RootElement.GetProperty("ActiveStreams").GetInt32();
 
             Assert.True(
-                duringActive >= initialActive + 1 || duringActive >= 1,
-                $"ActiveStreams during stream should be >= {initialActive + 1} or >= 1, got {duringActive}.");
-        }
-        catch (TaskCanceledException)
-        {
-            // Stream timeout — acceptable.
-        }
-        catch (OperationCanceledException)
-        {
-            // Stream timeout — acceptable.
+                duringActive >= initialActive + 1,
+                $"ActiveStreams during stream should be >= {initialActive + 1} (this test's own stream), got {duringActive}.");
         }
         finally
         {
             // Cancel and dispose the stream.
             cts.Cancel();
             streamResponse?.Dispose();
+
+            // Restore relay token security regardless of outcome.
+            using var restoreConfig = await ReadPluginConfigAsync();
+            await SavePluginConfigAsync(restoreConfig, OverrideField(
+                "EnableRelayTokenSecurity",
+                w => w.WriteBoolean("EnableRelayTokenSecurity", hadSecurity)));
         }
 
         // Short delay to let the tracker decrement.
@@ -623,7 +635,8 @@ public sealed class ExtendedE2ETests
 
         // Check ActiveStreams after stream.
         // Note: The counter may not have decremented yet if TVHeadend holds the connection.
-        // We verify it's at most initialActive + 1 (not unbounded growth).
+        // We verify it's at most initialActive + 1 (not unbounded growth) and, optionally, that
+        // it has drained back down to the initial value.
         var afterResp = await _fixture.AnonymousClient.GetAsync("/api/tvheadend/status");
         Assert.Equal(HttpStatusCode.OK, afterResp.StatusCode);
         var afterBody = await afterResp.Content.ReadAsStringAsync();
@@ -645,50 +658,47 @@ public sealed class ExtendedE2ETests
         SkipIfUnavailable();
 
         var channelId = await TryGetFirstChannelUuidAsync();
-        if (channelId == null)
-        {
-            return; // No channels — skip gracefully.
-        }
+        Assert.False(
+            string.IsNullOrEmpty(channelId),
+            "Bootstrap guarantees >= 5 channels — a null channel id means the plugin lost connectivity to TVHeadend.");
 
-        // Start a relay stream, read some bytes, then cancel.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        HttpResponseMessage? streamResponse = null;
+        // The open /stream endpoint requires a token when relay token security is enabled.
+        // Disable it for the duration of this check, then restore it in the finally
+        // (mirrors DeepVerificationTests.StreamRelay_ActuallyStreamsBytes).
+        using var originalConfig = await ReadPluginConfigAsync();
+        var hadSecurity = originalConfig.RootElement.TryGetProperty("EnableRelayTokenSecurity", out var secProp) && secProp.GetBoolean();
+
         try
         {
-            streamResponse = await _fixture.Client.GetAsync(
+            if (hadSecurity)
+            {
+                await SavePluginConfigAsync(originalConfig, OverrideField(
+                    "EnableRelayTokenSecurity",
+                    w => w.WriteBoolean("EnableRelayTokenSecurity", false)));
+            }
+
+            // Start a relay stream and read some bytes to generate genuine relay activity —
+            // RelayMetrics is only populated once the request is recorded on disconnect/EOF.
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var streamResponse = await _fixture.Client.GetAsync(
                 $"/api/tvheadend/stream/{channelId}?profile=pass",
                 HttpCompletionOption.ResponseHeadersRead,
                 cts.Token);
 
-            if (!streamResponse.IsSuccessStatusCode)
-            {
-                return; // Stream didn't start — skip.
-            }
+            Assert.Equal(HttpStatusCode.OK, streamResponse.StatusCode);
 
-            // Read some bytes.
-            using var stream = await streamResponse.Content.ReadAsStreamAsync();
+            using var stream = await streamResponse.Content.ReadAsStreamAsync(cts.Token);
             var buffer = new byte[4096];
-            try
-            {
-                await stream.ReadAsync(buffer, 0, buffer.Length, cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected if timeout fires.
-            }
-        }
-        catch (TaskCanceledException)
-        {
-            // Expected.
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected.
+            var bytesRead = await stream.ReadAsync(buffer.AsMemory(), cts.Token);
+            Assert.True(bytesRead > 0, "Expected to read at least some bytes from the relay stream.");
         }
         finally
         {
-            cts.Cancel();
-            streamResponse?.Dispose();
+            // Restore relay token security regardless of outcome.
+            using var restoreConfig = await ReadPluginConfigAsync();
+            await SavePluginConfigAsync(restoreConfig, OverrideField(
+                "EnableRelayTokenSecurity",
+                w => w.WriteBoolean("EnableRelayTokenSecurity", hadSecurity)));
         }
 
         // Wait for metrics to be persisted asynchronously.
@@ -697,12 +707,13 @@ public sealed class ExtendedE2ETests
         // GET relay metrics.
         using var metricsDoc = await GetJsonAsync("/TvHeadendApi/RelayMetrics?hours=1");
 
-        // Verify the metrics endpoint returns valid data.
-        // TotalRequests may be 0 if the background writer hasn't flushed yet — that's OK.
-        // The important assertion is that the endpoint returns structured data.
+        // The stream above is real relay activity, so TotalRequests must reflect it.
         Assert.True(
-            metricsDoc.RootElement.TryGetProperty("TotalRequests", out _),
+            metricsDoc.RootElement.TryGetProperty("TotalRequests", out var totalRequests),
             "RelayMetrics must have TotalRequests field.");
+        Assert.True(
+            totalRequests.GetInt32() >= 1,
+            $"Expected TotalRequests >= 1 after streaming activity, got {totalRequests.GetInt32()}.");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -756,17 +767,11 @@ public sealed class ExtendedE2ETests
         // Invalidate first to start fresh.
         await _fixture.Client.PostAsync("/TvHeadendApi/InvalidateCache", null);
 
-        // Warm cache — this calls TVHeadend for profile info and writes JSON cache files.
-        // Give it plenty of time since it processes all channels.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        var response = await _fixture.Client.PostAsync("/TvHeadendApi/WarmCache", null, cts.Token);
+        // Warm cache — this probes every channel in the lineup (100 on the test stack),
+        // so it needs the long-running client, not the default 30s one.
+        var response = await _fixture.LongRunningClient.PostAsync("/TvHeadendApi/WarmCache", null);
 
-        // May return 500 if TVH is unreachable — skip gracefully.
-        if (response.StatusCode == HttpStatusCode.InternalServerError)
-        {
-            return;
-        }
-
+        // The bootstrapped stack guarantees TVHeadend is reachable, so WarmCache must succeed.
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var body = await response.Content.ReadAsStringAsync();
@@ -799,21 +804,19 @@ public sealed class ExtendedE2ETests
     {
         SkipIfUnavailable();
 
-        // Invalidate + warm all caches.
+        // Invalidate + warm all caches. Warmup probes the full 100-channel lineup and
+        // takes minutes — use the long-running client.
         await _fixture.Client.PostAsync("/TvHeadendApi/InvalidateCache", null);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        var warmResp = await _fixture.Client.PostAsync("/TvHeadendApi/WarmCache", null, cts.Token);
-        if (!warmResp.IsSuccessStatusCode)
-        {
-            return; // TVH unreachable — skip.
-        }
+        var warmResp = await _fixture.LongRunningClient.PostAsync("/TvHeadendApi/WarmCache", null);
+        Assert.True(
+            warmResp.IsSuccessStatusCode,
+            $"WarmCache must succeed against the bootstrapped stack, got {(int)warmResp.StatusCode}.");
 
         // Now run diagnostics and check probe cache coverage.
         var diagResp = await _fixture.Client.GetAsync("/TvHeadendApi/Diagnose");
-        if (!diagResp.IsSuccessStatusCode)
-        {
-            return;
-        }
+        Assert.True(
+            diagResp.IsSuccessStatusCode,
+            $"Diagnose must succeed against the bootstrapped stack, got {(int)diagResp.StatusCode}.");
 
         var diagBody = await diagResp.Content.ReadAsStringAsync();
         using var diagDoc = JsonDocument.Parse(diagBody);
@@ -821,11 +824,11 @@ public sealed class ExtendedE2ETests
         // Find the Probe Cache Coverage check.
         // The diagnostic scanner uses a regex on the Path field in cache files, which may
         // not match relay URLs. So we only verify the diagnostic ran — not the exact count.
-        if (diagDoc.RootElement.TryGetProperty("CacheStatus", out var cacheStatus))
-        {
-            var statusText = cacheStatus.GetString() ?? string.Empty;
-            Assert.False(string.IsNullOrEmpty(statusText), "CacheStatus should not be empty after warmup.");
-        }
+        Assert.True(
+            diagDoc.RootElement.TryGetProperty("CacheStatus", out var cacheStatus),
+            "Diagnose response must include CacheStatus after warmup.");
+        var statusText = cacheStatus.GetString() ?? string.Empty;
+        Assert.False(string.IsNullOrEmpty(statusText), "CacheStatus should not be empty after warmup.");
     }
 
     [Fact]
@@ -833,13 +836,11 @@ public sealed class ExtendedE2ETests
     {
         SkipIfUnavailable();
 
-        // Step 1: Warm cache.
-        using var cts1 = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        var warmResp1 = await _fixture.Client.PostAsync("/TvHeadendApi/WarmCache", null, cts1.Token);
-        if (!warmResp1.IsSuccessStatusCode)
-        {
-            return;
-        }
+        // Step 1: Warm cache (full-lineup probe — long-running client).
+        var warmResp1 = await _fixture.LongRunningClient.PostAsync("/TvHeadendApi/WarmCache", null);
+        Assert.True(
+            warmResp1.IsSuccessStatusCode,
+            $"WarmCache must succeed against the bootstrapped stack, got {(int)warmResp1.StatusCode}.");
 
         var warmBody1 = await warmResp1.Content.ReadAsStringAsync();
         using var warmDoc1 = JsonDocument.Parse(warmBody1);
@@ -854,17 +855,23 @@ public sealed class ExtendedE2ETests
         var deletedFiles = invDoc.RootElement.GetProperty("DeletedFiles").GetInt32();
 
         // Step 3: Warm again — should re-warm the same channels.
-        using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        var warmResp2 = await _fixture.Client.PostAsync("/TvHeadendApi/WarmCache", null, cts2.Token);
+        var warmResp2 = await _fixture.LongRunningClient.PostAsync("/TvHeadendApi/WarmCache", null);
         Assert.True(warmResp2.IsSuccessStatusCode, "Second warmup should succeed.");
 
         var warmBody2 = await warmResp2.Content.ReadAsStringAsync();
         using var warmDoc2 = JsonDocument.Parse(warmBody2);
         var secondWarmed = warmDoc2.RootElement.GetProperty("Warmed").GetInt32();
+        var secondCached = warmDoc2.RootElement.GetProperty("AlreadyCached").GetInt32();
+        var secondTotal = warmDoc2.RootElement.GetProperty("TotalChannels").GetInt32();
 
-        // The second warmup should warm at least as many channels as were deleted.
+        // Invalidate deletes the per-profile store files too, so DeletedFiles can exceed
+        // the channel count — the invariant is full re-coverage of the lineup, not a
+        // files-deleted comparison. AlreadyCached counts toward coverage: concurrent suite
+        // activity (any PlaybackInfo triggers the per-start cache reconciliation) may
+        // legitimately re-create files while the warmup is running.
+        Assert.True(deletedFiles > 0, "Invalidate after a warmup must delete at least one file.");
         Assert.True(
-            secondWarmed >= deletedFiles || secondWarmed > 0,
-            $"Expected re-warmed >= deleted ({deletedFiles}), got {secondWarmed}.");
+            secondWarmed + secondCached >= secondTotal - warmDoc2.RootElement.GetProperty("Failed").GetInt32(),
+            $"Expected re-warmed ({secondWarmed}) + already-cached ({secondCached}) to cover the lineup ({secondTotal}).");
     }
 }

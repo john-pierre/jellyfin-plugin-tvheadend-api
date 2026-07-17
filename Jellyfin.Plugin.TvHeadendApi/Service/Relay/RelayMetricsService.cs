@@ -33,6 +33,7 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
     private readonly DatabaseProvider _databaseProvider;
     private readonly RelayImageCache? _imageCache;
     private readonly Guide.ChannelNameCache? _channelNameCache;
+    private readonly Statistic.IStatisticsService? _statisticsService;
     private readonly object _dbContextOptionsLock = new();
     private DbContextOptions<RelayMetricsContext>? _lazyDbContextOptions;
 
@@ -44,7 +45,8 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         RelayActivityTracker activityTracker,
         DatabaseProvider databaseProvider,
         RelayImageCache? imageCache = null,
-        Guide.ChannelNameCache? channelNameCache = null)
+        Guide.ChannelNameCache? channelNameCache = null,
+        Statistic.IStatisticsService? statisticsService = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
@@ -54,6 +56,7 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         _databaseProvider = databaseProvider ?? throw new ArgumentNullException(nameof(databaseProvider));
         _imageCache = imageCache;
         _channelNameCache = channelNameCache;
+        _statisticsService = statisticsService;
     }
 
     /// <summary>
@@ -66,14 +69,16 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
     /// <param name="writeCoordinator">Write coordinator.</param>
     /// <param name="activityTracker">Relay activity tracker.</param>
     /// <param name="dbContextOptions">Pre-built EF Core context options.</param>
+    /// <param name="statisticsService">Optional viewing statistics service for the Direct Play KPI.</param>
     internal RelayMetricsService(
         ILogger<RelayMetricsService> logger,
         ConfigurationProvider configProvider,
         DatabaseHealthService dbHealthService,
         DatabaseWriteCoordinator writeCoordinator,
         RelayActivityTracker activityTracker,
-        DbContextOptions<RelayMetricsContext> dbContextOptions)
-        : this(logger, configProvider, dbHealthService, writeCoordinator, activityTracker, CreateNullProvider())
+        DbContextOptions<RelayMetricsContext> dbContextOptions,
+        Statistic.IStatisticsService? statisticsService = null)
+        : this(logger, configProvider, dbHealthService, writeCoordinator, activityTracker, CreateNullProvider(), null, null, statisticsService)
     {
         _lazyDbContextOptions = dbContextOptions;
     }
@@ -239,19 +244,30 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
         // Stream health
         var streamRows = rows.Where(r => r.RelayType == "stream").ToList();
         summary.StartupFailuresWithin5s = rows.Count(r => r.StartupFailedWithin5Seconds);
-        summary.AvgStreamSessionDurationMs = SafeAverage(streamRows, r => r.SessionDurationMs);
+        summary.AvgStreamSessionDurationMs = streamRows.Count > 0
+            ? Math.Round(streamRows.Average(r => r.TotalDurationMs), 1)
+            : null;
         summary.StreamEndedByDistribution = streamRows
             .Where(r => !string.IsNullOrEmpty(r.EndedBy))
             .GroupBy(r => r.EndedBy!)
             .ToDictionary(g => g.Key, g => (long)g.Count());
+
+        // Zapping: startup latency warm vs cold mediainfo cache, and per effective profile.
+        summary.StartupLatencyByCacheStatus = GroupStartupLatency(
+            streamRows,
+            r => string.IsNullOrEmpty(r.MediaInfoCacheStatus) ? "unknown" : r.MediaInfoCacheStatus!);
+        summary.StartupLatencyByProfile = GroupStartupLatency(
+            streamRows,
+            r => string.IsNullOrEmpty(r.EffectiveProfile) ? "(none)" : r.EffectiveProfile!);
+
+        // Direct Play share over the last 24h from Jellyfin viewing statistics (PlayMethod).
+        summary.DirectPlayPercent24h = ComputeDirectPlayPercent24h();
 
         // Image cache
         var imageRows = rows.Where(r => r.RelayType == "image").ToList();
         summary.ImageRequests = imageRows.Count;
         summary.CacheHits = imageRows.Count(r => r.CacheStatus == nameof(RelayCacheStatus.Hit));
         summary.CacheMisses = imageRows.Count(r => r.CacheStatus == nameof(RelayCacheStatus.Miss));
-        summary.CacheRevalidated = imageRows.Count(r => r.CacheStatus == nameof(RelayCacheStatus.Revalidated));
-        summary.NegativeCacheHits = imageRows.Count(r => r.CacheStatus == nameof(RelayCacheStatus.NegativeHit));
         summary.CacheHitRatio = summary.ImageRequests > 0
             ? Math.Round(summary.CacheHits * 100.0 / summary.ImageRequests, 1)
             : 0;
@@ -365,6 +381,55 @@ internal sealed class RelayMetricsService : IRelayMetricsService, IHostedService
             .ToList();
 
         return summary;
+    }
+
+    /// <summary>
+    /// Groups stream rows by the given key and computes startup latency percentiles per group.
+    /// Only rows that actually delivered a first byte (StartupLatencyMs set) contribute.
+    /// </summary>
+    private static Dictionary<string, LatencyPercentiles> GroupStartupLatency(
+        List<RelayRequestMetric> streamRows,
+        Func<RelayRequestMetric, string> keySelector)
+    {
+        return streamRows
+            .Where(r => r.StartupLatencyMs.HasValue)
+            .GroupBy(keySelector, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => ComputePercentiles(g.Select(r => r.StartupLatencyMs!.Value).OrderBy(d => d).ToList()),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Computes the Direct Play share (0–100) of Live TV sessions started in the last 24 hours,
+    /// from the viewing statistics (Jellyfin PlayMethod). Null when unavailable or empty.
+    /// </summary>
+    private double? ComputeDirectPlayPercent24h()
+    {
+        if (_statisticsService == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var stats = _statisticsService.GetStatistics(1);
+            var sessions = stats.Sessions.Concat(stats.ActiveSessions)
+                .Where(s => !string.IsNullOrEmpty(s.PlayMethod) && s.PlayMethod != "Unknown")
+                .ToList();
+            if (sessions.Count == 0)
+            {
+                return null;
+            }
+
+            var directPlay = sessions.Count(s => string.Equals(s.PlayMethod, "DirectPlay", StringComparison.OrdinalIgnoreCase));
+            return Math.Round(directPlay * 100.0 / sessions.Count, 1);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to compute Direct Play percentage from viewing statistics.");
+            return null;
+        }
     }
 
     private static LatencyPercentiles ComputePercentiles(List<double> sorted)

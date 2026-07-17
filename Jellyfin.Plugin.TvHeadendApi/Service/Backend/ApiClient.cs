@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
 using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Backend;
@@ -16,9 +15,10 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 /// Provides centralized HTTP client creation and request execution for TVHeadend API calls.
 /// <para>
 /// Anonymous requests use factory-managed clients (connection pooling, resilience).
-/// Authenticated requests create an explicit <see cref="HttpClientHandler"/> with
-/// <see cref="CredentialCache"/> for Basic+Digest support, wrapped in a
-/// <see cref="ResilienceHandler"/> for retry and circuit-breaker behavior.
+/// Authenticated requests share a cached handler chain (<see cref="ResilienceHandler"/> →
+/// <see cref="DigestAuthHandler"/> → <see cref="HttpClientHandler"/>) keyed by the connection
+/// settings, so the TCP connection pool, the Digest session, and the circuit-breaker state
+/// survive across the per-operation <see cref="HttpClient"/> instances that callers dispose.
 /// The handler is created intentionally — no casting of factory-internal handlers —
 /// so this remains safe under .NET 9 where <c>SocketsHttpHandler</c> is the default.
 /// </para>
@@ -37,18 +37,30 @@ internal sealed class ApiClient : IApiClient
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ConfigurationProvider _configProvider;
+    private readonly Func<IHealthService?>? _healthServiceFactory;
+    private readonly object _authChainLock = new();
+    private ResilienceHandler? _authChain;
+    private string? _authChainFingerprint;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ApiClient"/> class.
     /// </summary>
     /// <param name="httpClientFactory">The HTTP client factory for creating managed client instances.</param>
     /// <param name="configProvider">Provider for the current plugin configuration.</param>
-    public ApiClient(IHttpClientFactory httpClientFactory, ConfigurationProvider configProvider)
+    /// <param name="healthServiceFactory">
+    /// Deferred accessor for the central health service (deferred because <see cref="IHealthService"/>
+    /// itself depends on <see cref="IApiClient"/>). Optional for tests.
+    /// </param>
+    public ApiClient(
+        IHttpClientFactory httpClientFactory,
+        ConfigurationProvider configProvider,
+        Func<IHealthService?>? healthServiceFactory = null)
     {
         ArgumentNullException.ThrowIfNull(httpClientFactory);
         ArgumentNullException.ThrowIfNull(configProvider);
         _httpClientFactory = httpClientFactory;
         _configProvider = configProvider;
+        _healthServiceFactory = healthServiceFactory;
     }
 
     /// <inheritdoc />
@@ -62,11 +74,8 @@ internal sealed class ApiClient : IApiClient
     {
         ArgumentNullException.ThrowIfNull(config);
 
-        // When credentials are configured, create a dedicated HttpClientHandler with
-        // CredentialCache so .NET automatically responds to the server's 401 challenge
-        // with the correct auth scheme (Basic, Digest, or both).
-        // The handler is wrapped in a ResilienceHandler for retry/circuit-breaker parity
-        // with factory-managed clients.
+        // When credentials are configured, use the shared authenticated handler chain with
+        // DigestAuthHandler so .NET-unsupported Digest auth works against TVHeadend.
         // This bypasses IHttpClientFactory because the factory-registered handlers
         // cannot accept per-request credentials, and casting factory handlers to
         // HttpClientHandler is unsafe in .NET 9 where SocketsHttpHandler is the default.
@@ -101,29 +110,44 @@ internal sealed class ApiClient : IApiClient
         return await httpClient.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
-    public async Task<global::System.IO.Stream> GetStreamAsync(HttpClient httpClient, string url, CancellationToken cancellationToken)
-    {
-        using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-
-        using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        var target = new MemoryStream();
-        await source.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
-        target.Position = 0;
-        return target;
-    }
-
     /// <summary>
-    /// Creates an authenticated <see cref="HttpClient"/> with Digest and Basic auth support.
+    /// Returns an authenticated <see cref="HttpClient"/> backed by the shared handler chain.
     /// <para>
     /// .NET's <see cref="SocketsHttpHandler"/> (default since .NET Core) does not support
     /// HTTP Digest Authentication. TVHeadend defaults to Digest auth, so a custom
     /// <see cref="DigestAuthHandler"/> intercepts 401 challenges and computes the Digest
     /// response. The handler chain is: <c>ResilienceHandler → DigestAuthHandler → HttpClientHandler</c>.
+    /// The chain is cached and shared across calls: callers dispose their per-operation
+    /// <see cref="HttpClient"/> (created with <c>disposeHandler: false</c>) while the pooled
+    /// connections, the Digest session, and the circuit-breaker state stay alive. A new chain
+    /// is only built when the connection-relevant configuration changes.
     /// </para>
     /// </summary>
-    private static HttpClient CreateAuthenticatedClient(PluginConfiguration config)
+    private HttpClient CreateAuthenticatedClient(PluginConfiguration config)
+    {
+        const char Sep = '\u001f';
+        var fingerprint = FormattableString.Invariant(
+            $"{config.Host}{Sep}{config.Port}{Sep}{config.UseSSL}{Sep}{config.IgnoreCertificateErrors}{Sep}{config.Username}{Sep}{config.Password}");
+
+        ResilienceHandler chain;
+        lock (_authChainLock)
+        {
+            if (_authChain is null || !string.Equals(_authChainFingerprint, fingerprint, StringComparison.Ordinal))
+            {
+                // The previous chain (if any) is intentionally not disposed: in-flight requests
+                // may still be using it. Replaced chains are reclaimed once their pooled
+                // connections idle out; chains only change when connection settings change.
+                _authChain = BuildAuthenticatedChain(config);
+                _authChainFingerprint = fingerprint;
+            }
+
+            chain = _authChain;
+        }
+
+        return new HttpClient(chain, disposeHandler: false);
+    }
+
+    private ResilienceHandler BuildAuthenticatedChain(PluginConfiguration config)
     {
 #pragma warning disable CA5400 // User explicitly opted into ignoring certificate errors via config
         var innerHandler = new HttpClientHandler
@@ -144,8 +168,12 @@ internal sealed class ApiClient : IApiClient
             InnerHandler = innerHandler,
         };
 
-        // Wrap in ResilienceHandler for retry + circuit-breaker parity with factory-managed clients.
-        var resilienceHandler = new ResilienceHandler { InnerHandler = digestHandler };
-        return new HttpClient(resilienceHandler);
+        // Shared ResilienceHandler: cumulative circuit-breaker state and central health reporting,
+        // matching the factory-managed clients.
+        return new ResilienceHandler
+        {
+            InnerHandler = digestHandler,
+            HealthService = _healthServiceFactory?.Invoke(),
+        };
     }
 }

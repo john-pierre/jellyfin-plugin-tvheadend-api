@@ -15,7 +15,15 @@ internal sealed class UrlBuilder : IUrlBuilder
     public string GetBaseUrl(PluginConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        return $"{(config.UseSSL ? "https" : "http")}://{config.Host}:{config.Port}";
+
+        // IPv6 literals must be bracketed to form a valid URI authority.
+        var host = config.Host;
+        if (!string.IsNullOrEmpty(host) && host.Contains(':', StringComparison.Ordinal) && host[0] != '[')
+        {
+            host = $"[{host}]";
+        }
+
+        return $"{(config.UseSSL ? "https" : "http")}://{host}:{config.Port}";
     }
 
     /// <inheritdoc />
@@ -64,37 +72,28 @@ internal sealed class UrlBuilder : IUrlBuilder
         ArgumentNullException.ThrowIfNull(config);
 
         var output = input;
+        output = MaskValue(output, config.AuthToken);
+        output = MaskValue(output, config.Password);
+        output = MaskValue(output, config.Username);
+        return output;
+    }
 
-        // Mask both raw and URL-encoded forms of sensitive values.
-        // URL-encoded credentials can appear in logged URLs when special characters are present.
-        if (!string.IsNullOrWhiteSpace(config.AuthToken))
+    /// <summary>
+    /// Masks both the raw and URL-encoded forms of a sensitive value.
+    /// URL-encoded credentials can appear in logged URLs when special characters are present.
+    /// </summary>
+    private static string MaskValue(string output, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
         {
-            output = output.Replace(config.AuthToken, MaskReplacement, StringComparison.Ordinal);
-            var encoded = Uri.EscapeDataString(config.AuthToken);
-            if (!string.Equals(encoded, config.AuthToken, StringComparison.Ordinal))
-            {
-                output = output.Replace(encoded, MaskReplacement, StringComparison.Ordinal);
-            }
+            return output;
         }
 
-        if (!string.IsNullOrWhiteSpace(config.Password))
+        output = output.Replace(value, MaskReplacement, StringComparison.Ordinal);
+        var encoded = Uri.EscapeDataString(value);
+        if (!string.Equals(encoded, value, StringComparison.Ordinal))
         {
-            output = output.Replace(config.Password, MaskReplacement, StringComparison.Ordinal);
-            var encoded = Uri.EscapeDataString(config.Password);
-            if (!string.Equals(encoded, config.Password, StringComparison.Ordinal))
-            {
-                output = output.Replace(encoded, MaskReplacement, StringComparison.Ordinal);
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(config.Username))
-        {
-            output = output.Replace(config.Username, MaskReplacement, StringComparison.Ordinal);
-            var encoded = Uri.EscapeDataString(config.Username);
-            if (!string.Equals(encoded, config.Username, StringComparison.Ordinal))
-            {
-                output = output.Replace(encoded, MaskReplacement, StringComparison.Ordinal);
-            }
+            output = output.Replace(encoded, MaskReplacement, StringComparison.Ordinal);
         }
 
         return output;

@@ -42,21 +42,26 @@ internal sealed class RelayMetricsContext : DbContext
         entity.Property(e => e.MediaKind).HasColumnName("media_kind").IsRequired().HasMaxLength(32);
         entity.Property(e => e.ImageSourceType).HasColumnName("image_source_type").HasMaxLength(32);
         entity.Property(e => e.ChannelId).HasColumnName("channel_id").HasMaxLength(256);
+        entity.Property(e => e.SessionId).HasColumnName("session_id").HasMaxLength(32);
+        entity.Property(e => e.ChannelName).HasColumnName("channel_name").HasMaxLength(256);
+        entity.Property(e => e.ClientName).HasColumnName("client_name").HasMaxLength(64);
+        entity.Property(e => e.UserAgent).HasColumnName("user_agent").HasMaxLength(256);
         entity.Property(e => e.TotalDurationMs).HasColumnName("total_duration_ms");
-        entity.Property(e => e.UpstreamConnectDurationMs).HasColumnName("upstream_connect_duration_ms");
         entity.Property(e => e.UpstreamHeadersDurationMs).HasColumnName("upstream_headers_duration_ms");
         entity.Property(e => e.FirstByteFromUpstreamDurationMs).HasColumnName("first_byte_from_upstream_duration_ms");
         entity.Property(e => e.FirstByteToClientDurationMs).HasColumnName("first_byte_to_client_duration_ms");
         entity.Property(e => e.StartupLatencyMs).HasColumnName("startup_latency_ms");
-        entity.Property(e => e.SessionDurationMs).HasColumnName("session_duration_ms");
         entity.Property(e => e.BytesSent).HasColumnName("bytes_sent");
         entity.Property(e => e.AverageBytesPerSecond).HasColumnName("average_bytes_per_second");
+        entity.Property(e => e.PeakBitrate).HasColumnName("peak_bitrate");
         entity.Property(e => e.UpstreamStatusCode).HasColumnName("upstream_status_code");
         entity.Property(e => e.ClientStatusCode).HasColumnName("client_status_code");
         entity.Property(e => e.FinalOutcome).HasColumnName("final_outcome").IsRequired().HasMaxLength(16);
         entity.Property(e => e.FailureReason).HasColumnName("failure_reason").IsRequired().HasMaxLength(32);
         entity.Property(e => e.ClientCancelled).HasColumnName("client_cancelled");
         entity.Property(e => e.UpstreamTimedOut).HasColumnName("upstream_timed_out");
+        entity.Property(e => e.StreamFinalOutcome).HasColumnName("stream_final_outcome").HasMaxLength(32);
+        entity.Property(e => e.NormalDisconnect).HasColumnName("normal_disconnect");
         entity.Property(e => e.CacheStatus).HasColumnName("cache_status").IsRequired().HasMaxLength(24);
         entity.Property(e => e.CacheLookupDurationMs).HasColumnName("cache_lookup_duration_ms");
         entity.Property(e => e.HadEtag).HasColumnName("had_etag");
@@ -70,6 +75,10 @@ internal sealed class RelayMetricsContext : DbContext
         entity.Property(e => e.EndedBy).HasColumnName("ended_by").HasMaxLength(32);
         entity.Property(e => e.StartupFailedWithin5Seconds).HasColumnName("startup_failed_within_5_seconds");
         entity.Property(e => e.ParallelActiveStreamCountAtStart).HasColumnName("parallel_active_stream_count_at_start");
+        entity.Property(e => e.EffectiveProfile).HasColumnName("effective_profile").HasMaxLength(128);
+        entity.Property(e => e.ResolutionSource).HasColumnName("resolution_source").HasMaxLength(32);
+        entity.Property(e => e.MediaInfoCacheStatus).HasColumnName("mediainfo_cache_status").HasMaxLength(16);
+        entity.Property(e => e.StreamSetupMs).HasColumnName("stream_setup_ms");
 
         // Indexes
         entity.HasIndex(e => e.CreatedAtUtc).HasDatabaseName("ix_relay_request_metric_created_at_utc");

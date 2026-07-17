@@ -522,6 +522,45 @@ internal sealed class DatabaseMigrationService
             """CREATE INDEX IF NOT EXISTS "ix_relay_events_timestamp" ON "relay_events" ("timestamp_utc")""",
             """CREATE INDEX IF NOT EXISTS "ix_relay_events_event_type" ON "relay_events" ("event_type")""",
         }),
+
+        // 010 — Consolidate stream telemetry into relay_request_metric.
+        // The parallel completed_stream_sessions / relay_events / active_stream_sessions
+        // pipeline is removed (telemetry data loss is acceptable per design); the metric
+        // table gains the session identity/outcome fields plus zapping telemetry, and
+        // loses the never-populated upstream_connect_duration_ms and the redundant
+        // session_duration_ms (always identical to total_duration_ms for streams).
+        new(10, "consolidate_stream_telemetry_into_relay_request_metric", new[]
+        {
+            """DROP TABLE IF EXISTS "active_stream_sessions" """,
+            """DROP TABLE IF EXISTS "completed_stream_sessions" """,
+            """DROP TABLE IF EXISTS "relay_events" """,
+            """ALTER TABLE "relay_request_metric" DROP COLUMN "upstream_connect_duration_ms" """,
+            """ALTER TABLE "relay_request_metric" DROP COLUMN "session_duration_ms" """,
+            """ALTER TABLE "relay_request_metric" ADD COLUMN "session_id" TEXT NULL""",
+            """ALTER TABLE "relay_request_metric" ADD COLUMN "channel_name" TEXT NULL""",
+            """ALTER TABLE "relay_request_metric" ADD COLUMN "client_name" TEXT NULL""",
+            """ALTER TABLE "relay_request_metric" ADD COLUMN "user_agent" TEXT NULL""",
+            """ALTER TABLE "relay_request_metric" ADD COLUMN "stream_final_outcome" TEXT NULL""",
+            """ALTER TABLE "relay_request_metric" ADD COLUMN "normal_disconnect" INTEGER NULL""",
+            """ALTER TABLE "relay_request_metric" ADD COLUMN "peak_bitrate" REAL NULL""",
+            """ALTER TABLE "relay_request_metric" ADD COLUMN "effective_profile" TEXT NULL""",
+            """ALTER TABLE "relay_request_metric" ADD COLUMN "resolution_source" TEXT NULL""",
+            """ALTER TABLE "relay_request_metric" ADD COLUMN "mediainfo_cache_status" TEXT NULL""",
+            """ALTER TABLE "relay_request_metric" ADD COLUMN "stream_setup_ms" REAL NULL""",
+            """CREATE INDEX IF NOT EXISTS "ix_relay_request_metric_session_id" ON "relay_request_metric" ("session_id")""",
+            """CREATE INDEX IF NOT EXISTS "ix_relay_request_metric_stream_final_outcome" ON "relay_request_metric" ("stream_final_outcome")""",
+        }),
+
+        // 011 — Zapping telemetry on relay tokens: the media source build records the
+        // profile resolution source, mediainfo cache outcome, and setup duration on the
+        // issued stream token so the relay controller can copy them into the request
+        // metric when the stream actually starts.
+        new(11, "add_relay_token_stream_telemetry_columns", new[]
+        {
+            """ALTER TABLE "relay_token" ADD COLUMN "resolution_source" TEXT NULL""",
+            """ALTER TABLE "relay_token" ADD COLUMN "mediainfo_cache_status" TEXT NULL""",
+            """ALTER TABLE "relay_token" ADD COLUMN "stream_setup_ms" REAL NULL""",
+        }),
     };
 }
 

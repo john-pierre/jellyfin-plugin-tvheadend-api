@@ -3,15 +3,16 @@
 using System;
 using System.IO;
 using System.Net.Http;
-using System.Threading.Tasks;
-using Jellyfin.Plugin.TvHeadendApi.Model.Metrics;
+using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Metrics;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Tests.Service.Metrics;
 
 /// <summary>
-/// Tests for the streaming session lifecycle classification logic.
+/// Tests for the streaming session lifecycle classification logic (merged
+/// <see cref="StreamEndedBy"/> vocabulary in Model/Relay).
 /// Verifies correct outcome assignment for Live TV disconnect patterns.
 /// </summary>
 public sealed class SessionTrackerClassificationTests
@@ -164,21 +165,35 @@ public sealed class SessionTrackerClassificationTests
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // 8. Plugin shutdown with sent bytes → NormalDisconnect
+    // 8. FinalizeSession — in-memory removal + classified result, no persistence
     // ═══════════════════════════════════════════════════════════════════
 
     [Fact]
-    public void ClassifyOutcome_PluginShutdown_AfterFirstByte_ReturnsNormalDisconnect()
+    public void FinalizeSession_KnownSession_RemovesFromStore_AndClassifies()
     {
-        var outcome = SessionTracker.ClassifyOutcome(StreamEndedBy.PluginShutdown, firstByteSent: true);
-        Assert.Equal(StreamFinalOutcome.NormalDisconnect, outcome);
+        var store = new ActiveSessionStore();
+        var tracker = new SessionTracker(store, NullLogger<SessionTracker>.Instance);
+        var session = tracker.StartSession("ch-1", "GET", "VLC/3.0.18 LibVLC/3.0.18", "10.0.0.5", rangeRequested: false);
+        Assert.Equal(1, store.Count);
+
+        var finalized = tracker.FinalizeSession(session.SessionId, StreamEndedBy.ClientDisconnectAfterFirstByte, firstByteSent: true);
+
+        Assert.NotNull(finalized);
+        Assert.Equal(0, store.Count);
+        Assert.Equal(StreamFinalOutcome.NormalDisconnect, finalized!.FinalOutcome);
+        Assert.True(finalized.NormalDisconnect);
+        Assert.Equal("VLC", finalized.Session.ClientName);
     }
 
     [Fact]
-    public void ClassifyOutcome_PluginShutdown_BeforeFirstByte_ReturnsFailed()
+    public void FinalizeSession_UnknownSession_ReturnsNull()
     {
-        var outcome = SessionTracker.ClassifyOutcome(StreamEndedBy.PluginShutdown, firstByteSent: false);
-        Assert.Equal(StreamFinalOutcome.Failed, outcome);
+        var store = new ActiveSessionStore();
+        var tracker = new SessionTracker(store, NullLogger<SessionTracker>.Instance);
+
+        var finalized = tracker.FinalizeSession("does-not-exist", StreamEndedBy.UpstreamEof, firstByteSent: true);
+
+        Assert.Null(finalized);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -204,4 +219,3 @@ public sealed class SessionTrackerClassificationTests
         Assert.Equal(expectedName, result);
     }
 }
-

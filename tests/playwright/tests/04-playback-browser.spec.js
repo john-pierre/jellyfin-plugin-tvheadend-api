@@ -12,7 +12,11 @@ test.describe('Real-browser live playback', () => {
     serverId = await JF.getServerId(api);
     channel = await JF.pickChannel(api, token, userId);
   });
-  test.afterAll(async () => { await api.dispose(); });
+  test.afterAll(async () => {
+    // Release TVHeadend tuner slots held by lingering web-client transcodes.
+    await JF.stopAllPlaybackSessions(api, token);
+    await api.dispose();
+  });
 
   test('channel plays without fatal media/decode error', async ({ page }) => {
     const fatal = JF.captureMediaErrors(page);
@@ -27,11 +31,21 @@ test.describe('Real-browser live playback', () => {
     const played = await JF.playChannel(page, channel.id, serverId);
     expect(played, 'play button was triggered').toBeTruthy();
 
-    // Give the player time to start and run for a bit.
-    await page.waitForTimeout(25000);
+    // Wait for playback to actually start (a cold stack needs to spin up the TVHeadend
+    // subscription + ffmpeg HLS transcode first), then let it run to prove sustained decode.
+    const start = await JF.waitForPlaybackStart(page, 90000);
+    expect(start.v, 'a <video> element exists and starts playing').toBeTruthy();
+    await page.waitForTimeout(8000);
 
     const v = await JF.readVideo(page);
     console.log(`[${channel.name}] decision(s): ${decisions.join(',') || 'n/a'} | video: ${JSON.stringify(v)}`);
+
+    // The PlaybackInfo decision must actually have been captured. Browsers always go
+    // through Jellyfin's HLS transcode for live mpegts, so the expected decision here
+    // is Transcode — a DirectPlay result in Chromium would mean the captured data is
+    // bogus; 03-playback-methods covers the per-method decision matrix.
+    expect(decisions.length, 'PlaybackInfo decision captured').toBeGreaterThan(0);
+    expect(decisions[decisions.length - 1], 'browser playback uses HLS transcode').toBe('Transcode');
 
     expect(v, 'a <video> element exists').toBeTruthy();
     expect(v.errorCode, `media error ${v && v.errorCode}: ${v && v.errorMsg}`).toBeNull();

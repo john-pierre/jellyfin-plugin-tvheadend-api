@@ -183,75 +183,81 @@ internal sealed class DatabaseHealthService
     /// <returns>A snapshot of the current database health.</returns>
     public DatabaseHealthSnapshot GetSnapshot()
     {
-        lock (_lock)
+        // Gather file sizes and table statistics OUTSIDE the lock. This method performs
+        // blocking file and SQL I/O, while RecordError/RecordSuccess/IsAvailable/Status take
+        // the same lock for O(1) field updates from nearly every DB-touching code path in the
+        // plugin — holding the lock across snapshot I/O would stall all of them.
+        var dbPath = _provider.DatabasePath;
+        var dbName = Path.GetFileName(dbPath) ?? string.Empty;
+        var parentFolder = Path.GetFileName(Path.GetDirectoryName(dbPath) ?? string.Empty);
+
+        long? dbSize = null;
+        long? walSize = null;
+        long? shmSize = null;
+
+        try
         {
-            var dbPath = _provider.DatabasePath;
-            var dbName = Path.GetFileName(dbPath) ?? string.Empty;
-            var parentFolder = Path.GetFileName(Path.GetDirectoryName(dbPath) ?? string.Empty);
+            if (File.Exists(dbPath))
+            {
+                dbSize = new FileInfo(dbPath).Length;
+            }
 
-            long? dbSize = null;
-            long? walSize = null;
-            long? shmSize = null;
+            var walPath = dbPath + "-wal";
+            if (File.Exists(walPath))
+            {
+                walSize = new FileInfo(walPath).Length;
+            }
 
+            var shmPath = dbPath + "-shm";
+            if (File.Exists(shmPath))
+            {
+                shmSize = new FileInfo(shmPath).Length;
+            }
+        }
+        catch
+        {
+            // File access failed — leave sizes as null
+        }
+
+        int? totalTables = null;
+        long? viewingSessionCount = null;
+        long? pluginLogEntryCount = null;
+        long? tvheadendLogEntryCount = null;
+        long? relayRequestMetricCount = null;
+        long? relayTokenCount = null;
+        long? expiredRelayTokenCount = null;
+        long? healthTransitionCount = null;
+        DateTime? oldestLogEntry = null;
+        DateTime? newestLogEntry = null;
+        var pending = 0;
+
+        // IsAvailable acquires the lock only briefly (and triggers lazy initialization).
+        if (IsAvailable)
+        {
             try
             {
-                if (File.Exists(dbPath))
-                {
-                    dbSize = new FileInfo(dbPath).Length;
-                }
-
-                var walPath = dbPath + "-wal";
-                if (File.Exists(walPath))
-                {
-                    walSize = new FileInfo(walPath).Length;
-                }
-
-                var shmPath = dbPath + "-shm";
-                if (File.Exists(shmPath))
-                {
-                    shmSize = new FileInfo(shmPath).Length;
-                }
+                using var conn = _connectionFactory.CreateReadOnlyConnection();
+                totalTables = CountTables(conn);
+                viewingSessionCount = SafeCount(conn, "viewing_session");
+                pluginLogEntryCount = SafeCount(conn, "plugin_log_entry");
+                tvheadendLogEntryCount = SafeCount(conn, "tvheadend_log_entry");
+                relayRequestMetricCount = SafeCount(conn, "relay_request_metric");
+                relayTokenCount = SafeCount(conn, "relay_token");
+                expiredRelayTokenCount = SafeCountWhere(conn, "relay_token", "\"expires_at_utc\" < @cutoff", ("@cutoff", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)));
+                healthTransitionCount = SafeCount(conn, "health_transition");
+                oldestLogEntry = SafeMinDate(conn, "plugin_log_entry", "created_at_utc");
+                newestLogEntry = SafeMaxDate(conn, "plugin_log_entry", "created_at_utc");
+                pending = _migrationService.GetPendingMigrationCount(conn);
             }
-            catch
+            catch (Exception ex)
             {
-                // File access failed — leave sizes as null
+                _logger.LogDebug(ex, "Failed to gather database statistics for health snapshot.");
             }
+        }
 
-            int? totalTables = null;
-            long? viewingSessionCount = null;
-            long? pluginLogEntryCount = null;
-            long? tvheadendLogEntryCount = null;
-            long? relayRequestMetricCount = null;
-            long? relayTokenCount = null;
-            long? expiredRelayTokenCount = null;
-            long? healthTransitionCount = null;
-            DateTime? oldestLogEntry = null;
-            DateTime? newestLogEntry = null;
-            var pending = 0;
-
-            if (IsAvailable)
-            {
-                try
-                {
-                    using var conn = _connectionFactory.CreateReadOnlyConnection();
-                    totalTables = CountTables(conn);
-                    viewingSessionCount = SafeCount(conn, "viewing_session");
-                    pluginLogEntryCount = SafeCount(conn, "plugin_log_entry");
-                    tvheadendLogEntryCount = SafeCount(conn, "tvheadend_log_entry");
-                    relayRequestMetricCount = SafeCount(conn, "relay_request_metric");
-                    relayTokenCount = SafeCount(conn, "relay_token");
-                    expiredRelayTokenCount = SafeCountWhere(conn, "relay_token", "\"expires_at_utc\" < @cutoff", ("@cutoff", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)));
-                    healthTransitionCount = SafeCount(conn, "health_transition");
-                    oldestLogEntry = SafeMinDate(conn, "plugin_log_entry", "created_at_utc");
-                    newestLogEntry = SafeMaxDate(conn, "plugin_log_entry", "created_at_utc");
-                    pending = _migrationService.GetPendingMigrationCount(conn);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Failed to gather database statistics for health snapshot.");
-                }
-            }
-
+        // Only the mutable health state is read under the lock.
+        lock (_lock)
+        {
             string? warningMessage = null;
             if (_status != DatabaseHealthStatus.Healthy && _status != DatabaseHealthStatus.Unknown)
             {
@@ -289,7 +295,9 @@ internal sealed class DatabaseHealthService
                 LastErrorMessage = _lastErrorMessage,
                 LastRecoveryUtc = _recoveryService.LastRecoveryUtc,
                 RecoveryCount = _recoveryService.RecoveryCount,
-                IsAvailable = IsAvailable,
+                IsAvailable = _status is DatabaseHealthStatus.Healthy
+                    or DatabaseHealthStatus.Degraded
+                    or DatabaseHealthStatus.Recovered,
                 IsDegraded = _status is DatabaseHealthStatus.Degraded or DatabaseHealthStatus.Recovered,
                 TotalTables = totalTables,
                 ViewingSessionCount = viewingSessionCount,

@@ -49,4 +49,12 @@ public interface IProfileContainerResolver
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Resolved profile snapshot.</returns>
     Task<ProfileSnapshot> ResolveProfileSnapshotAsync(PluginConfiguration config, string? effectiveProfileName, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Drops all cached profile snapshots so the next resolution fetches fresh data from TVHeadend.
+    /// Must be called whenever streaming or codec profiles are created or rewritten (e.g. by the
+    /// managed-profile provisioning flow); otherwise stale snapshots are served until the TTL expires
+    /// and the MediaInfo cache is rebuilt with outdated container/codec metadata.
+    /// </summary>
+    void InvalidateCache();
 }

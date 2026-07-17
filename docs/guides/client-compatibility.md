@@ -35,8 +35,7 @@ Use this table to document results for your deployment:
 ### 1. Prepare
 
 - Set Streaming Profile to `jellyfin` (or whichever profile you want to test).
-- Enable Direct Play, Direct Stream, and Probing in plugin settings.
-- Enable mediainfo cache pre-creation.
+- Enable Direct Play, Direct Stream, and Probing in plugin settings (probing also enables mediainfo cache pre-creation).
 - Run Diagnose — confirm compatibility score ≥80.
 - Note the TVHeadend and Jellyfin versions.
 
@@ -72,10 +71,10 @@ Use this table to document results for your deployment:
 
 | Scenario | Expected Behavior |
 |---|---|
-| Client → TVHeadend directly | Best case: Direct Play works, fastest switching |
-| Client → Jellyfin → TVHeadend | Jellyfin is in the stream path; remux/transcode more likely |
+| Client → TVHeadend directly | Best case with `Direct to TVHeadend` delivery mode: Direct Play works, fastest switching |
+| Client → Jellyfin relay → TVHeadend | Default (`Relay` delivery mode): client plays the token-secured relay URL; Direct Play still possible, clients only need to reach Jellyfin |
 | Client → Reverse Proxy → TVHeadend | Works if proxy passes auth headers; verify stream URL reachability |
-| Client on different subnet/VLAN | May need routing/firewall rules for direct TVHeadend access |
+| Client on different subnet/VLAN | May need routing/firewall rules for direct TVHeadend access (not needed in `Relay` mode) |
 
 ## Reporting Results
 

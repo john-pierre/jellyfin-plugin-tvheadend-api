@@ -71,4 +71,18 @@ public sealed class RelayTokenRecord
 
     /// <summary>Gets or sets the last validation failure reason if rejected.</summary>
     public string? LastValidationFailureReason { get; set; }
+
+    // ── Zapping telemetry (stream tokens) ──────────────────────────────
+
+    /// <summary>Gets or sets which level of the profile hierarchy resolved the selected profile.</summary>
+    public string? ResolutionSource { get; set; }
+
+    /// <summary>
+    /// Gets or sets the mediainfo cache outcome recorded during the media source build
+    /// (<c>hit</c>, <c>miss</c>, <c>mismatch</c>, <c>restored</c>, or <c>unknown</c>).
+    /// </summary>
+    public string? MediaInfoCacheStatus { get; set; }
+
+    /// <summary>Gets or sets the media source build (stream setup) duration in ms.</summary>
+    public double? StreamSetupMs { get; set; }
 }

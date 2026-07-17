@@ -212,6 +212,30 @@ public class RelayTokenServiceTests
     }
 
     [Fact]
+    public async Task CleanupExpiredTokensAsync_UsesShortGracePeriodCutoff()
+    {
+        // Expired tokens are worthless — the cleanup cutoff must trail "now" only by the
+        // short shared grace period (minutes), not by days.
+        DateTime? capturedCutoff = null;
+        var repo = new Mock<IRelayTokenRepository>();
+        using var hasher = CreateHasher();
+        repo.Setup(r => r.CleanupExpiredAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .Callback<DateTime, CancellationToken>((cutoff, _) => capturedCutoff = cutoff)
+            .ReturnsAsync(0);
+
+        var sut = new RelayTokenService(
+            NullLogger<RelayTokenService>.Instance, hasher, repo.Object, CreateOptions());
+
+        await sut.CleanupExpiredTokensAsync(CancellationToken.None);
+
+        Assert.NotNull(capturedCutoff);
+        var expected = DateTime.UtcNow - Jellyfin.Plugin.TvHeadendApi.Service.Database.DatabaseCleanupService.RelayTokenRetentionGrace;
+        Assert.True(
+            Math.Abs((capturedCutoff.Value - expected).TotalSeconds) < 60,
+            $"Cutoff {capturedCutoff:O} should be about {expected:O}.");
+    }
+
+    [Fact]
     public async Task IssueStreamTokenAsync_SetsOptionalFields()
     {
         var repo = new Mock<IRelayTokenRepository>();

@@ -44,6 +44,19 @@ public interface IRelayTokenService
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Attaches stream-setup telemetry to an already issued stream token. Called by the
+    /// media source build after the mediainfo cache outcome and setup duration are known
+    /// (both happen after token issuance because the cache embeds the tokenized URL).
+    /// </summary>
+    /// <param name="rawToken">The raw token returned by <see cref="IssueStreamTokenAsync"/>.</param>
+    /// <param name="resolutionSource">Which level of the profile hierarchy resolved the profile.</param>
+    /// <param name="mediaInfoCacheStatus">The mediainfo cache outcome (hit/miss/mismatch/restored/unknown).</param>
+    /// <param name="streamSetupMs">The media source build duration in ms.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task representing the async operation.</returns>
+    Task AttachStreamTelemetryAsync(string rawToken, string? resolutionSource, string? mediaInfoCacheStatus, double? streamSetupMs, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Revokes an existing token by its raw value.
     /// </summary>
     /// <param name="rawToken">The raw token to revoke.</param>

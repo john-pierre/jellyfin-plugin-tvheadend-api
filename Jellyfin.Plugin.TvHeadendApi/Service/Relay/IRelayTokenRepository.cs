@@ -29,12 +29,15 @@ public interface IRelayTokenRepository
     Task<RelayTokenRecord?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Atomically increments the use count and updates first/last used timestamps.
+    /// Atomically consumes one use of the token: increments the use count and updates
+    /// first/last used timestamps, but only while the max-uses limit is not yet reached.
+    /// The check and increment happen in a single conditional UPDATE so concurrent
+    /// validations cannot exceed the limit.
     /// </summary>
     /// <param name="id">The token record ID.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A task representing the async operation.</returns>
-    Task IncrementUseCountAsync(long id, CancellationToken cancellationToken);
+    /// <returns><c>true</c> when a use was consumed; <c>false</c> when the limit was already reached (or the record is gone).</returns>
+    Task<bool> TryConsumeUseAsync(long id, CancellationToken cancellationToken);
 
     /// <summary>
     /// Revokes a token by setting the revoked flag, timestamp, and reason.
@@ -62,6 +65,19 @@ public interface IRelayTokenRepository
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task representing the async operation.</returns>
     Task UpdateValidationMetadataAsync(long id, string result, string? failureReason, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Attaches stream-setup telemetry (profile resolution source, mediainfo cache outcome,
+    /// setup duration) to an issued stream token, identified by its HMAC hash. The relay
+    /// controller copies these values into the request metric when the stream starts.
+    /// </summary>
+    /// <param name="tokenHash">The HMAC hash of the issued token.</param>
+    /// <param name="resolutionSource">Which level of the profile hierarchy resolved the profile.</param>
+    /// <param name="mediaInfoCacheStatus">The mediainfo cache outcome (hit/miss/mismatch/restored/unknown).</param>
+    /// <param name="streamSetupMs">The media source build duration in ms.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task representing the async operation.</returns>
+    Task UpdateStreamTelemetryAsync(string tokenHash, string? resolutionSource, string? mediaInfoCacheStatus, double? streamSetupMs, CancellationToken cancellationToken);
 
     /// <summary>
     /// Returns token counts grouped by relay type and status (active / expired / revoked).

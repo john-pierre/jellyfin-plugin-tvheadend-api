@@ -153,4 +153,12 @@ public sealed class DashboardStatus
     /// Gets or sets the plugin database health snapshot.
     /// </summary>
     public DatabaseHealthSnapshot? DatabaseHealth { get; set; }
+
+    // ── MediaInfo Cache ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Gets or sets the mediainfo cache counters (hits/misses/mismatches/invalidations)
+    /// accumulated since plugin start.
+    /// </summary>
+    public Stream.MediaInfoCacheCounters? MediaInfoCache { get; set; }
 }

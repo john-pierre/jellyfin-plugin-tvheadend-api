@@ -76,8 +76,11 @@ internal sealed class RelayTokenValidatorService : IRelayTokenValidator
                 return RelayTokenValidationResult.Failure(RelayTokenFailureReason.TokenNotFound);
             }
 
-            // Step 4: Check expiry (with clock skew)
-            var effectiveExpiry = record.ExpiresAtUtc.Add(_options.ClockSkew);
+            // Step 4: Check expiry (with clock skew). Never-expiring tokens are persisted with
+            // DateTime.MaxValue; adding the skew to those would overflow DateTime.
+            var effectiveExpiry = record.ExpiresAtUtc >= DateTime.MaxValue - _options.ClockSkew
+                ? DateTime.MaxValue
+                : record.ExpiresAtUtc.Add(_options.ClockSkew);
             if (DateTime.UtcNow > effectiveExpiry)
             {
                 _logger.LogDebug("Relay token {TokenId} expired at {ExpiresAt}", record.Id, record.ExpiresAtUtc);
@@ -133,13 +136,21 @@ internal sealed class RelayTokenValidatorService : IRelayTokenValidator
                 }
             }
 
-            // Steps 9-10: For tokens with a usage limit, increment the use count and record validation
-            // metadata. Unlimited tokens (notably the global, non-expiring image token shared by every
-            // image request from every concurrent user) skip both writes — otherwise every request
-            // would serialize on a single hot row and bottleneck under load.
+            // Steps 9-10: For tokens with a usage limit, atomically consume one use and record
+            // validation metadata. The conditional-update consume closes the race between the
+            // snapshot check in step 6 and the increment. Unlimited tokens (notably the global,
+            // non-expiring image token shared by every image request from every concurrent user)
+            // skip both writes — otherwise every request would serialize on a single hot row and
+            // bottleneck under load.
             if (record.MaxUses.HasValue && record.MaxUses.Value > 0)
             {
-                await _repository.IncrementUseCountAsync(record.Id, cancellationToken).ConfigureAwait(false);
+                if (!await _repository.TryConsumeUseAsync(record.Id, cancellationToken).ConfigureAwait(false))
+                {
+                    _logger.LogDebug("Relay token {TokenId} reached max uses concurrently ({MaxUses})", record.Id, record.MaxUses);
+                    await UpdateMetadataAsync(record.Id, "rejected", RelayTokenFailureReason.MaxUsesExceeded, cancellationToken).ConfigureAwait(false);
+                    return RelayTokenValidationResult.Failure(RelayTokenFailureReason.MaxUsesExceeded);
+                }
+
                 await UpdateMetadataAsync(record.Id, "valid", null, cancellationToken).ConfigureAwait(false);
             }
 

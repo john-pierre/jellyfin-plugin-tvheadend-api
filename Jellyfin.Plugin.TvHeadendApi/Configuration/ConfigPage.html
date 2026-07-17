@@ -323,10 +323,12 @@
                             <div class="fieldDescription">TvHeadend password for HTTP Basic Auth. Required when anonymous access is disabled.</div>
                         </div>
                         <div class="tvh-field inputContainer">
-                            <label class="inputLabel" for="AuthToken">Auth Token <span class="tvh-required">*</span></label>
+                            <label class="inputLabel" for="AuthToken">Auth Token</label>
                             <input id="AuthToken" name="AuthToken" type="password" is="emby-input" />
                             <div class="fieldDescription">
-                                Persistent access token appended as <code>?auth=…</code> to stream and image URLs, allowing clients to play channels without additional authentication.
+                                Persistent access token appended as <code>?auth=…</code> to TVHeadend stream and image URLs.
+                                Required for the "Direct to TVHeadend" stream delivery mode (without it, direct mode falls back to relay);
+                                with the default Relay mode the plugin authenticates server-side with the credentials above.
                                 Allowed format: letters and digits only (<code>A-Z</code>, <code>a-z</code>, <code>0-9</code>).
                             </div>
                             <div class="tvh-btn-row" style="margin-top:0.6em;">
@@ -359,7 +361,7 @@
                             <label class="inputLabel" for="RelayHostOverride">Jellyfin Host Override</label>
                             <input id="RelayHostOverride" name="RelayHostOverride" type="text" is="emby-input" placeholder="e.g. http://192.168.1.10:8096" />
                             <div class="fieldDescription">
-                                Override the Jellyfin base URL used in relay URLs. Leave empty to use the auto-detected host.
+                                Usually leave empty: relay URLs automatically use the host each client reached Jellyfin through (honoring Jellyfin's Published Server URLs and reverse-proxy headers). Set only if auto-detection picks an unreachable address — e.g. Jellyfin in a Docker bridge network without a Published Server URL.
                             </div>
                             <div id="RelayAutoDetectedHost" style="margin-top:0.4em; font-size:0.85em; opacity:0.6;"></div>
                         </div>
@@ -390,8 +392,8 @@
                         </div>
                         <div class="tvh-field inputContainer">
                             <label class="inputLabel" for="StreamTokenMaxUses">Stream Token Max Uses</label>
-                            <input id="StreamTokenMaxUses" name="StreamTokenMaxUses" type="number" min="0" is="emby-input" placeholder="5" />
-                            <div class="fieldDescription">Allows probing, retries, and the final playback request. A value of 5 is recommended for Jellyfin/FFmpeg compatibility. Set to 0 for unlimited.</div>
+                            <input id="StreamTokenMaxUses" name="StreamTokenMaxUses" type="number" min="0" is="emby-input" placeholder="25" />
+                            <div class="fieldDescription">Maximum number of requests a single stream token may authorize. Jellyfin consumes several uses per playback start (stream open, FFmpeg probe, transcoder starts, player retries), so keep headroom — values below ~10 have broken browser playback. Set to 0 for unlimited. Default: 25.</div>
                         </div>
                         <div id="StreamTokenWarnings" style="display:none; padding:0.6em; margin-bottom:1em; background:rgba(241,196,15,0.15); border-radius:6px; font-size:0.85em; color:#f1c40f;"></div>
                         <h3>Image Tokens</h3>
@@ -482,6 +484,10 @@
                         <p style="font-size:0.85em; opacity:0.6; margin-top:0; margin-bottom:0.8em;">
                             First match wins. Rules are evaluated top-to-bottom by type priority (Channel &gt; Group &gt; Client/Device &gt; User &gt; Default), then by priority number within the same type.
                         </p>
+                        <!-- Suggestions for rule match values, filled from TvHeadendApi/KnownClients. -->
+                        <datalist id="KnownClientNamesList"></datalist>
+                        <datalist id="KnownDeviceNamesList"></datalist>
+                        <datalist id="KnownUserIdsList"></datalist>
                         <div style="overflow-x:auto;">
                             <table class="tvh-profile-table" id="ProfileAssignmentsTable">
                                 <thead>
@@ -505,20 +511,37 @@
                         <details class="tvh-collapsible">
                             <summary>Advanced Profile Settings</summary>
                             <div class="tvh-collapsible-body">
+                                <p style="font-size:0.88em; opacity:0.65; margin-top:0;">
+                                    Edge-case safety nets only. The effective profile normally comes from the Profile Assignments
+                                    table above (rules first, then the Default row) — most setups never need to change anything here.
+                                </p>
+                                <div class="tvh-field inputContainer">
+                                    <label class="inputLabel" for="SPS_FallbackTvHeadendProfile">Fallback Profile</label>
+                                    <input id="SPS_FallbackTvHeadendProfile" type="text" is="emby-input" placeholder="pass" />
+                                    <div class="fieldDescription">
+                                        Safety net for when profile resolution comes up <em>empty</em>: used when a matched rule
+                                        (or the global default) carries no explicit profile name and the Default row above is empty
+                                        as well. It does <strong>not</strong> correct misspelled or unknown profile names
+                                        (use "Validate Profiles" below to find those). Empty = <code>pass</code>.
+                                    </div>
+                                </div>
                                 <div class="tvh-field inputContainer">
                                     <label class="inputLabel" for="SPS_PassThroughProfile">Pass Through Profile</label>
                                     <input id="SPS_PassThroughProfile" type="text" is="emby-input" placeholder="pass" />
-                                    <div class="fieldDescription">TVHeadend profile used for Pass Through mode. Typically "pass" (no transcoding).</div>
+                                    <div class="fieldDescription">
+                                        Only consulted for a rule or default whose playback mode is "Pass Through" <em>and</em> that
+                                        has no explicit profile name. Rules created on this page always store an explicit profile,
+                                        so this value is normally never used. Empty = <code>pass</code>.
+                                    </div>
                                 </div>
                                 <div class="tvh-field inputContainer">
                                     <label class="inputLabel" for="SPS_JellyfinTranscodeProfile">Jellyfin Transcode Profile</label>
                                     <input id="SPS_JellyfinTranscodeProfile" type="text" is="emby-input" placeholder="matroska" />
-                                    <div class="fieldDescription">TVHeadend profile used for Jellyfin Transcode mode. Should provide a probing-friendly container.</div>
-                                </div>
-                                <div class="tvh-field inputContainer">
-                                    <label class="inputLabel" for="SPS_FallbackTvHeadendProfile">Fallback Profile</label>
-                                    <input id="SPS_FallbackTvHeadendProfile" type="text" is="emby-input" placeholder="pass" />
-                                    <div class="fieldDescription">Last-resort profile when a resolved profile name turns out to be empty or invalid.</div>
+                                    <div class="fieldDescription">
+                                        Only consulted for a rule or default whose playback mode is "Jellyfin Transcode" <em>and</em> that
+                                        has no explicit profile name — same edge case as above, for the mode where Jellyfin itself
+                                        transcodes and wants a probing-friendly container. Empty = <code>matroska</code>.
+                                    </div>
                                 </div>
                                 <div class="tvh-checkbox">
                                     <label>
@@ -538,9 +561,9 @@
                         <div class="tvh-rule-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:0.5em 0.8em; margin-bottom:0.6em;">
                             <div><label style="font-size:0.82em; opacity:0.7;">Channel</label><select id="TestChannelId" is="emby-select"><option value="">-- Select Channel --</option></select></div>
                             <div><label style="font-size:0.82em; opacity:0.7;">Channel Group</label><select id="TestChannelGroup" is="emby-select"><option value="">-- Select Group --</option></select></div>
-                            <div><label style="font-size:0.82em; opacity:0.7;">Client Name</label><input id="TestClientName" type="text" is="emby-input" placeholder="e.g. Jellyfin Web" /></div>
-                            <div><label style="font-size:0.82em; opacity:0.7;">Device Name</label><input id="TestDeviceName" type="text" is="emby-input" placeholder="e.g. iPhone 15" /></div>
-                            <div><label style="font-size:0.82em; opacity:0.7;">User ID</label><input id="TestUserId" type="text" is="emby-input" placeholder="e.g. user-guid" /></div>
+                            <div><label style="font-size:0.82em; opacity:0.7;">Client Name</label><input id="TestClientName" type="text" is="emby-input" list="KnownClientNamesList" placeholder="e.g. Jellyfin Web" /></div>
+                            <div><label style="font-size:0.82em; opacity:0.7;">Device Name</label><input id="TestDeviceName" type="text" is="emby-input" list="KnownDeviceNamesList" placeholder="e.g. iPhone 15" /></div>
+                            <div><label style="font-size:0.82em; opacity:0.7;">User ID</label><input id="TestUserId" type="text" is="emby-input" list="KnownUserIdsList" placeholder="e.g. user-guid" /></div>
                         </div>
                         <div class="tvh-btn-row" style="margin-bottom:0.6em;">
                             <button id="TestResolutionBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-primary" style="font-size:0.85em;">Test Resolution</button>
@@ -626,7 +649,7 @@
                                 <input id="IgnoreDts" name="IgnoreDts" type="checkbox" is="emby-checkbox" />
                                 <span>Ignore DTS Timestamps</span>
                             </label>
-                            <div class="fieldDescription">Ignore Decode Time Stamps. Can fix playback glitches with some MPEG-TS streams.</div>
+                            <div class="fieldDescription">Ignore Decode Time Stamps. Can fix playback glitches with some MPEG-TS streams. Default: enabled.</div>
                         </div>
                         <div class="tvh-checkbox">
                             <label>
@@ -668,24 +691,24 @@
                         <div class="tvh-field inputContainer">
                             <label class="inputLabel" for="RecordingProfile">Recording Profile</label>
                             <select id="RecordingProfile" name="RecordingProfile" is="emby-select">
-                                <option value="">-- Select a profile --</option>
+                                <option value="">TVHeadend default (recommended)</option>
                             </select>
-                            <div class="fieldDescription">TvHeadend DVR configuration profile. Leave empty to use TVHeadend's default DVR config — recording works out of the box. Set a name only to select a specific DVR config (it must then exist in TVHeadend).</div>
+                            <div class="fieldDescription">TvHeadend DVR configuration used for recordings. "TVHeadend default (recommended)" uses TVHeadend's built-in default DVR configuration — recording works out of the box, nothing to configure. Only pick a specific entry if you created additional DVR configurations in TVHeadend (the entry must exist there).</div>
                         </div>
                         <div class="tvh-field inputContainer">
                             <label class="inputLabel" for="Priority">Priority</label>
-                            <input id="Priority" name="Priority" type="number" is="emby-input" placeholder="5" />
-                            <div class="fieldDescription">Recording priority (lower = higher priority). Default: 5.</div>
+                            <input id="Priority" name="Priority" type="number" is="emby-input" min="0" max="6" placeholder="5" />
+                            <div class="fieldDescription">TVHeadend DVR priority passed to new timers: 0 = important, 1 = high, 2 = normal, 3 = low, 4 = unimportant, 5 = not set (TVHeadend decides). Lower = higher priority. Default: 5.</div>
                         </div>
                         <div class="tvh-field inputContainer">
                             <label class="inputLabel" for="PrePaddingSeconds">Pre-Padding (minutes)</label>
-                            <input id="PrePaddingSeconds" name="PrePaddingSeconds" type="number" is="emby-input" min="0" placeholder="5" />
-                            <div class="fieldDescription">Minutes to start recording before the scheduled time.</div>
+                            <input id="PrePaddingSeconds" name="PrePaddingSeconds" type="number" is="emby-input" min="0" placeholder="0" />
+                            <div class="fieldDescription">Whole minutes to start recording before the scheduled start (TVHeadend accepts minute granularity). Default: 0 minutes (no pre-padding).</div>
                         </div>
                         <div class="tvh-field inputContainer">
                             <label class="inputLabel" for="PostPaddingSeconds">Post-Padding (minutes)</label>
-                            <input id="PostPaddingSeconds" name="PostPaddingSeconds" type="number" is="emby-input" min="0" placeholder="5" />
-                            <div class="fieldDescription">Minutes to continue recording after the scheduled end.</div>
+                            <input id="PostPaddingSeconds" name="PostPaddingSeconds" type="number" is="emby-input" min="0" placeholder="0" />
+                            <div class="fieldDescription">Whole minutes to continue recording after the scheduled end (TVHeadend accepts minute granularity). Default: 0 minutes (no post-padding).</div>
                         </div>
                     </div>
 
@@ -739,7 +762,7 @@
                                 <option value="TwoYears">2 years</option>
                                 <option value="Forever">Forever</option>
                             </select>
-                            <div class="fieldDescription">How long viewing statistics are retained before automatic pruning.</div>
+                            <div class="fieldDescription">How long viewing statistics are retained before automatic pruning. Default: 30 days.</div>
                         </div>
                     </div>
                 </div>
@@ -833,9 +856,27 @@
                 return Number.isNaN(v) ? fallback : v;
             }
 
+            // The padding config fields store seconds while the UI edits whole minutes.
+            // Remember the exact loaded seconds on the element so an untouched field
+            // round-trips unchanged on save (e.g. the 5-second default must not be
+            // silently rewritten to 0 just because 5 s rounds down to 0 min).
+            function setMinutesFromSeconds(selector, seconds) {
+                var el = $(selector);
+                var sec = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+                el.value = secondsToMinutes(sec);
+                el.setAttribute('data-loaded-seconds', String(sec));
+            }
+
             function minutesToSeconds(selector, fallbackSec) {
-                var mins = parseInt_(selector, Number.isFinite(fallbackSec) ? Math.round(fallbackSec / 60) : 0);
-                return Math.max(0, mins) * 60;
+                var el = $(selector);
+                var loadedSec = parseInt(el.getAttribute('data-loaded-seconds') || '', 10);
+                if (Number.isNaN(loadedSec)) loadedSec = Number.isFinite(fallbackSec) ? Math.max(0, fallbackSec) : 0;
+                var mins = parseInt(el.value, 10);
+                if (Number.isNaN(mins)) mins = secondsToMinutes(loadedSec);
+                mins = Math.max(0, mins);
+                // Unchanged at minute granularity → keep the exact stored seconds.
+                if (mins === secondsToMinutes(loadedSec)) return loadedSec;
+                return mins * 60;
             }
 
             // ── Relay token security warnings ─────────────────────
@@ -1002,8 +1043,9 @@
                     config.MaxDashboardLogEntries = parseInt_('#MaxDashboardLogEntries', config.MaxDashboardLogEntries);
                     config.LogRetentionDays = parseInt_('#LogRetentionDays', config.LogRetentionDays);
 
-                    var rp = $('#RecordingProfile').value;
-                    if (rp) config.RecordingProfile = rp;
+                    // Always assign so selecting the blank "-- Select a profile --"
+                    // option clears the value (fall back to TVHeadend's default DVR config).
+                    config.RecordingProfile = $('#RecordingProfile').value;
 
                     // Streaming profile settings — collect from unified table
                     var sps = config.StreamingProfileSettings || {};
@@ -1043,7 +1085,7 @@
                 // Relay token security
                 $('#EnableRelayTokenSecurity').checked = config.EnableRelayTokenSecurity !== false;
                 $('#StreamTokenTtlSeconds').value = config.StreamTokenTtlSeconds || 120;
-                $('#StreamTokenMaxUses').value = config.StreamTokenMaxUses != null ? config.StreamTokenMaxUses : 5;
+                $('#StreamTokenMaxUses').value = config.StreamTokenMaxUses != null ? config.StreamTokenMaxUses : 25;
                 $('#ImageTokenTtlMinutes').value = config.ImageTokenTtlMinutes != null ? config.ImageTokenTtlMinutes : 0;
                 $('#ImageTokenMaxUses').value = config.ImageTokenMaxUses != null ? config.ImageTokenMaxUses : 0;
                 $('#EnableTokenReuse').checked = config.EnableTokenReuse !== false;
@@ -1067,9 +1109,22 @@
                 $('#AuthTokenMaxAttempts').value = config.AuthTokenMaxAttempts || '';
                 $('#StatisticsRetentionPeriod').value = config.StatisticsRetentionPeriod || 'ThirtyDays';
                 $('#Priority').value = config.Priority || '';
-                $('#PrePaddingSeconds').value = secondsToMinutes(config.PrePaddingSeconds);
-                $('#PostPaddingSeconds').value = secondsToMinutes(config.PostPaddingSeconds);
-                $('#RecordingProfile').value = config.RecordingProfile || '';
+                setMinutesFromSeconds('#PrePaddingSeconds', config.PrePaddingSeconds);
+                setMinutesFromSeconds('#PostPaddingSeconds', config.PostPaddingSeconds);
+                // Seed the saved recording profile as a real option immediately: the
+                // full option list is loaded separately (and may fail if TVHeadend is
+                // unreachable), and a <select> silently resets to "" when its value
+                // has no matching option — which would wipe the setting on save.
+                var recSel = $('#RecordingProfile');
+                var recSaved = config.RecordingProfile || '';
+                recSel.innerHTML = '<option value="">TVHeadend default (recommended)</option>';
+                if (recSaved) {
+                    var recOpt = document.createElement('option');
+                    recOpt.value = recSaved;
+                    recOpt.textContent = recSaved;
+                    recSel.appendChild(recOpt);
+                }
+                recSel.value = recSaved;
                 $('#SeriesRecordNewOnly').checked = config.SeriesRecordNewOnly !== false;
                 $('#SeriesRecordAnyTime').checked = config.SeriesRecordAnyTime !== false;
                 $('#SeriesRecordAnyChannel').checked = config.SeriesRecordAnyChannel || false;
@@ -1113,7 +1168,7 @@
 
                     function eq(a, b) { return (a || '').toLowerCase() === (b || '').toLowerCase(); }
 
-                    recordingSel.innerHTML = '<option value="">-- Select a profile --</option>';
+                    recordingSel.innerHTML = '<option value="">TVHeadend default (recommended)</option>';
                     Array.from(recording).sort().forEach(function (p) {
                         var o = document.createElement('option');
                         o.value = p; o.textContent = p;
@@ -1429,7 +1484,7 @@
                 loadPluginInfo();
                 loadRelayStatus();
                 Dashboard.showLoadingMsg();
-                Promise.all([loadDiscoveredProfiles(), loadDiscoveredChannels(), loadDiscoveredChannelGroups()]).then(function () {
+                Promise.all([loadDiscoveredProfiles(), loadDiscoveredChannels(), loadDiscoveredChannelGroups(), loadKnownClients()]).then(function () {
                     populateTestResolutionSelects();
                     return ApiClient.getPluginConfiguration(pluginId);
                 }).then(function (config) {
@@ -1460,6 +1515,64 @@
             var discoveredProfiles = [];
             var discoveredChannels = [];    // [{Id, Name}]
             var discoveredChannelGroups = []; // [{Id, Name}]
+            var knownClients = { Users: [], Clients: [], Devices: [] }; // from TvHeadendApi/KnownClients
+
+            function loadKnownClients() {
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/KnownClients'), dataType: 'json' })
+                    .then(function (r) {
+                        knownClients = {
+                            Users: (r && r.Users) || [],
+                            Clients: (r && r.Clients) || [],
+                            Devices: (r && r.Devices) || []
+                        };
+                        populateKnownClientDatalists();
+                    })
+                    .catch(function () { /* endpoint unavailable — rule fields stay free-text */ });
+            }
+
+            function populateKnownClientDatalists() {
+                function fill(id, values) {
+                    var dl = document.getElementById(id);
+                    if (!dl) return;
+                    dl.innerHTML = '';
+                    (values || []).forEach(function (v) {
+                        var o = document.createElement('option');
+                        o.value = v;
+                        dl.appendChild(o);
+                    });
+                }
+                fill('KnownClientNamesList', knownClients.Clients);
+                fill('KnownDeviceNamesList', knownClients.Devices);
+                var userDl = document.getElementById('KnownUserIdsList');
+                if (userDl) {
+                    userDl.innerHTML = '';
+                    knownClients.Users.forEach(function (u) {
+                        var o = document.createElement('option');
+                        o.value = u.Id;
+                        o.textContent = u.Name;
+                        userDl.appendChild(o);
+                    });
+                }
+            }
+
+            // The resolver tolerates dashed/compact/braced GUID formats, so option matching must too.
+            function normalizeGuid(v) {
+                return (v || '').replace(/[{}\-]/g, '').toLowerCase();
+            }
+
+            function buildUserSelect(selectedValue) {
+                if (knownClients.Users.length === 0) return null; // fallback to text input
+                var html = '<option value="">-- Select User --</option>';
+                var selNorm = normalizeGuid(selectedValue);
+                var found = !selectedValue;
+                knownClients.Users.forEach(function (u) {
+                    var isSelected = selNorm !== '' && normalizeGuid(u.Id) === selNorm;
+                    if (isSelected) found = true;
+                    html += '<option value="' + esc(u.Id) + '"' + (isSelected ? ' selected' : '') + '>' + esc(u.Name) + '</option>';
+                });
+                if (!found) html += buildMissingOption(selectedValue);
+                return html;
+            }
 
             function loadDiscoveredProfiles() {
                 return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/StreamingProfiles/Discovered'), dataType: 'json' })
@@ -1492,34 +1605,52 @@
                 });
             }
 
+            // Appended when a saved value is missing from the freshly discovered list
+            // (e.g. TVHeadend unreachable, channel disabled, profile renamed). Keeping
+            // it as an explicit selected option prevents the auto-save from silently
+            // wiping the stored value or dropping the whole rule.
+            function buildMissingOption(selectedValue) {
+                return '<option value="' + esc(selectedValue) + '" selected>' + esc(selectedValue) + ' (saved, currently unavailable)</option>';
+            }
+
             function buildProfileSelect(selectedValue) {
                 if (discoveredProfiles.length === 0) return null; // fallback to text input
                 var html = '<option value="">-- Select --</option>';
+                var found = !selectedValue;
                 discoveredProfiles.forEach(function (p) {
                     var name = typeof p === 'string' ? p : (p.Name || p.name || '');
                     if (!name) return;
-                    html += '<option value="' + esc(name) + '"' + (name === selectedValue ? ' selected' : '') + '>' + esc(name) + '</option>';
+                    var isSelected = name === selectedValue;
+                    if (isSelected) found = true;
+                    html += '<option value="' + esc(name) + '"' + (isSelected ? ' selected' : '') + '>' + esc(name) + '</option>';
                 });
+                if (!found) html += buildMissingOption(selectedValue);
                 return html;
             }
 
             function buildChannelSelect(selectedValue) {
                 if (discoveredChannels.length === 0) return null; // fallback to text input
                 var html = '<option value="">-- Select Channel --</option>';
+                var found = !selectedValue;
                 discoveredChannels.forEach(function (ch) {
-                    var sel = (ch.Id === selectedValue || ch.Name === selectedValue) ? ' selected' : '';
-                    html += '<option value="' + esc(ch.Id) + '"' + sel + '>' + esc(ch.Name) + '</option>';
+                    var isSelected = ch.Id === selectedValue || ch.Name === selectedValue;
+                    if (isSelected) found = true;
+                    html += '<option value="' + esc(ch.Id) + '"' + (isSelected ? ' selected' : '') + '>' + esc(ch.Name) + '</option>';
                 });
+                if (!found) html += buildMissingOption(selectedValue);
                 return html;
             }
 
             function buildChannelGroupSelect(selectedValue) {
                 if (discoveredChannelGroups.length === 0) return null;
                 var html = '<option value="">-- Select Group --</option>';
+                var found = !selectedValue;
                 discoveredChannelGroups.forEach(function (g) {
-                    var sel = (g.Id === selectedValue || g.Name === selectedValue) ? ' selected' : '';
-                    html += '<option value="' + esc(g.Name) + '"' + sel + '>' + esc(g.Name) + '</option>';
+                    var isSelected = g.Id === selectedValue || g.Name === selectedValue;
+                    if (isSelected) found = true;
+                    html += '<option value="' + esc(g.Name) + '"' + (isSelected ? ' selected' : '') + '>' + esc(g.Name) + '</option>';
                 });
+                if (!found) html += buildMissingOption(selectedValue);
                 return html;
             }
 
@@ -1594,9 +1725,20 @@
                         if (grpOpts) {
                             matchHtml = '<select is="emby-select" data-field="match">' + grpOpts + '</select>';
                         }
+                    } else if (type === 'user') {
+                        // User rules match by id — offer the registered Jellyfin users by name.
+                        var userOpts = buildUserSelect(match);
+                        if (userOpts) {
+                            matchHtml = '<select is="emby-select" data-field="match">' + userOpts + '</select>';
+                        }
                     }
                     if (!matchHtml) {
-                        matchHtml = '<input type="text" is="emby-input" data-field="match" value="' + esc(match || '') + '" placeholder="' + esc(meta.placeholder) + '" />';
+                        // Client/device names stay editable free text ("Contains" match types need
+                        // substrings), but get datalist suggestions from known sessions/devices.
+                        var listAttr = type === 'client' ? ' list="KnownClientNamesList"'
+                            : type === 'device' ? ' list="KnownDeviceNamesList"'
+                            : '';
+                        matchHtml = '<input type="text" is="emby-input" data-field="match" value="' + esc(match || '') + '" placeholder="' + esc(meta.placeholder) + '"' + listAttr + ' />';
                     }
                     tdMatch.innerHTML = matchHtml;
                 } else {

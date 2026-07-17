@@ -306,4 +306,127 @@ public class PluginLogServiceTests : IDisposable
 
         await hosted.StopAsync(CancellationToken.None);
     }
+
+    [Fact]
+    public async Task FlushBatch_AfterTransientFailure_ResumesAfterRetryDelay()
+    {
+        var dbPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"pluginlog-suspend-{Guid.NewGuid():N}.db");
+        var options = new DbContextOptionsBuilder<ViewingSessionContext>()
+            .UseSqlite($"DataSource={dbPath};Pooling=False")
+            .Options;
+        using (var db = new ViewingSessionContext(options))
+        {
+            db.Database.EnsureCreated();
+        }
+
+        using var sut = new PluginLogService(
+            NullLogger<PluginLogService>.Instance,
+            new ConfigurationProvider(() => _config),
+            _dbHealth,
+            options)
+        {
+            DbLoggingRetryDelay = TimeSpan.FromMilliseconds(300),
+        };
+        var hosted = (IHostedService)sut;
+        await hosted.StartAsync(CancellationToken.None);
+
+        // Make the database unwritable: the first flush fails and suspends DB logging.
+        System.IO.File.SetAttributes(dbPath, System.IO.FileAttributes.ReadOnly);
+        sut.EnqueuePluginLog("Information", "Cat", "lost during suspension");
+        await Task.Delay(700);
+        System.IO.File.SetAttributes(dbPath, System.IO.FileAttributes.Normal);
+        Assert.Empty(sut.QueryLogs(limit: 10));
+
+        // One transient failure must NOT silence logging for the whole session: once the
+        // retry window elapses, the next batch persists again.
+        IReadOnlyList<PluginLogEntry> logs = Array.Empty<PluginLogEntry>();
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            sut.EnqueuePluginLog("Information", "Cat", "after recovery");
+            await Task.Delay(200);
+            logs = sut.QueryLogs(limit: 10);
+            if (logs.Count > 0)
+            {
+                break;
+            }
+        }
+
+        Assert.NotEmpty(logs);
+        await hosted.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task FlushBatch_WithWriteCoordinator_WaitsForWriteLock()
+    {
+        using var coordinator = new DatabaseWriteCoordinator();
+        using var sut = new PluginLogService(
+            NullLogger<PluginLogService>.Instance,
+            new ConfigurationProvider(() => _config),
+            _dbHealth,
+            _dbOptions,
+            coordinator);
+
+        var hosted = (IHostedService)sut;
+        await hosted.StartAsync(CancellationToken.None);
+
+        // Hold the write lock: the background writer must block on the coordinator
+        // instead of writing to SQLite concurrently with other writers.
+        var writeLock = coordinator.AcquireWrite();
+        sut.EnqueuePluginLog("Information", "Cat1", "coordinated message");
+        await Task.Delay(500);
+
+        Assert.Empty(sut.QueryLogs(limit: 10));
+
+        writeLock.Dispose();
+
+        // Poll until the writer has flushed after acquiring the lock.
+        IReadOnlyList<PluginLogEntry> logs = Array.Empty<PluginLogEntry>();
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            logs = sut.QueryLogs(limit: 10);
+            if (logs.Count > 0)
+            {
+                break;
+            }
+
+            await Task.Delay(100);
+        }
+
+        Assert.Single(logs);
+
+        await hosted.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ClearAll_WithWriteCoordinator_RemovesAllEntries()
+    {
+        using var coordinator = new DatabaseWriteCoordinator();
+        using var sut = new PluginLogService(
+            NullLogger<PluginLogService>.Instance,
+            new ConfigurationProvider(() => _config),
+            _dbHealth,
+            _dbOptions,
+            coordinator);
+
+        var hosted = (IHostedService)sut;
+        await hosted.StartAsync(CancellationToken.None);
+
+        sut.EnqueuePluginLog("Information", "Cat1", "to be cleared");
+
+        // Poll until the background writer has flushed the entry.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (sut.GetTotalCount() < 1 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+        }
+
+        var cleared = sut.ClearAll();
+
+        Assert.Equal(1, cleared);
+        Assert.Empty(sut.QueryLogs(limit: 10));
+
+        await hosted.StopAsync(CancellationToken.None);
+    }
 }

@@ -331,6 +331,146 @@ public class DatabaseHealthServiceTests : IDisposable
         Assert.NotNull(snapshot.WarningMessage);
         Assert.Contains("degraded", snapshot.WarningMessage, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async System.Threading.Tasks.Task GetSnapshot_RunsConcurrentlyWithHealthRecording()
+    {
+        _healthService.Initialize();
+
+        // Regression guard: GetSnapshot performs file/SQL I/O outside the health lock, so
+        // concurrent O(1) health updates must complete promptly alongside snapshot polling.
+        var tasks = new[]
+        {
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                for (var i = 0; i < 25; i++)
+                {
+                    _ = _healthService.GetSnapshot();
+                }
+            }),
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                for (var i = 0; i < 200; i++)
+                {
+                    _healthService.RecordError(new InvalidOperationException("test"));
+                    _healthService.RecordSuccess();
+                    _ = _healthService.IsAvailable;
+                }
+            }),
+        };
+
+        await System.Threading.Tasks.Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Equal(DatabaseHealthStatus.Healthy, _healthService.Status);
+    }
+}
+
+public class DatabaseCleanupServiceTests : IDisposable
+{
+    private readonly string _tempDir;
+    private readonly DatabaseConnectionFactory _connectionFactory;
+    private readonly DatabaseHealthService _healthService;
+    private readonly DatabaseWriteCoordinator _writeCoordinator = new();
+
+    public DatabaseCleanupServiceTests()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), "tvh_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_tempDir);
+
+        var pathProvider = new DataFolderPathProvider(() => _tempDir);
+        var provider = new DatabaseProvider(pathProvider);
+        _connectionFactory = new DatabaseConnectionFactory(provider);
+        var migrationService = new DatabaseMigrationService(
+            _connectionFactory,
+            NullLogger<DatabaseMigrationService>.Instance);
+        var recoveryService = new DatabaseRecoveryService(
+            provider,
+            migrationService,
+            _connectionFactory,
+            NullLogger<DatabaseRecoveryService>.Instance);
+        _healthService = new DatabaseHealthService(
+            provider,
+            _connectionFactory,
+            migrationService,
+            recoveryService,
+            NullLogger<DatabaseHealthService>.Instance);
+        _healthService.Initialize();
+    }
+
+    public void Dispose()
+    {
+        _writeCoordinator.Dispose();
+        SqliteConnection.ClearAllPools();
+        try { Directory.Delete(_tempDir, true); } catch { /* cleanup */ }
+    }
+
+    [Fact]
+    public void RunCleanup_RetainsExpiredTokensWithinGracePeriod()
+    {
+        // A token expired 5 minutes ago is inside the short retention grace; one expired
+        // well past the grace window is removed. Expired tokens are worthless, so the grace
+        // is only minutes (clock skew / diagnostics), not days.
+        InsertToken("hash-recent", DateTime.UtcNow.AddMinutes(-5));
+        InsertToken("hash-old", DateTime.UtcNow - DatabaseCleanupService.RelayTokenRetentionGrace - TimeSpan.FromMinutes(5));
+
+        var cleanup = new DatabaseCleanupService(
+            _healthService,
+            _connectionFactory,
+            _writeCoordinator,
+            NullLogger<DatabaseCleanupService>.Instance);
+
+        cleanup.RunCleanup();
+
+        using var conn = _connectionFactory.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT \"token_hash\" FROM \"relay_token\";";
+        using var reader = cmd.ExecuteReader();
+        Assert.True(reader.Read());
+        Assert.Equal("hash-recent", reader.GetString(0));
+        Assert.False(reader.Read());
+    }
+
+    [Fact]
+    public void RunCleanup_RemovesRevokedTokensPastGracePeriod()
+    {
+        // Not yet expired, but revoked well past the grace window — must be removed.
+        InsertToken(
+            "hash-revoked",
+            DateTime.UtcNow.AddHours(1),
+            revokedAtUtc: DateTime.UtcNow - DatabaseCleanupService.RelayTokenRetentionGrace - TimeSpan.FromMinutes(5));
+
+        var cleanup = new DatabaseCleanupService(
+            _healthService,
+            _connectionFactory,
+            _writeCoordinator,
+            NullLogger<DatabaseCleanupService>.Instance);
+
+        cleanup.RunCleanup();
+
+        using var conn = _connectionFactory.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM \"relay_token\";";
+        Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
+    }
+
+    private void InsertToken(string tokenHash, DateTime expiresAtUtc, DateTime? revokedAtUtc = null)
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO "relay_token" ("token_hash", "relay_type", "created_at_utc", "expires_at_utc", "revoked", "revoked_at_utc")
+            VALUES (@hash, 'stream', @created, @expires, @revoked, @revokedAt);
+            """;
+        cmd.Parameters.AddWithValue("@hash", tokenHash);
+        cmd.Parameters.AddWithValue("@created", DateTime.UtcNow.AddDays(-30).ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("@expires", expiresAtUtc.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("@revoked", revokedAtUtc.HasValue ? 1 : 0);
+        cmd.Parameters.AddWithValue(
+            "@revokedAt",
+            revokedAtUtc.HasValue
+                ? revokedAtUtc.Value.ToString("o", System.Globalization.CultureInfo.InvariantCulture)
+                : (object)DBNull.Value);
+        cmd.ExecuteNonQuery();
+    }
 }
 
 public class DatabaseProviderTests

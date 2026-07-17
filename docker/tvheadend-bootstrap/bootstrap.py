@@ -230,12 +230,16 @@ while elapsed < MAX_WAIT:
 # ===========================================================================
 # 5. Verify channels (bouquet auto-mapping or manual fallback)
 # ===========================================================================
-log("Checking channels (waiting for bouquet auto-mapping)...")
-time.sleep(10)
+# The stack can simulate a production-sized lineup (CHANNEL_COUNT on the simulator);
+# scanning that many IPTV muxes takes a while, so poll instead of a fixed sleep and
+# fail closed when the expected lineup never materializes.
+EXPECTED_CHANNELS = int(os.environ.get("EXPECTED_CHANNELS", "5"))
+
+log(f"Checking channels (expecting >= {EXPECTED_CHANNELS}; waiting for mux scan + mapping)...")
 
 
 def get_channel_total() -> int:
-    resp = tvh_get("/api/channel/grid?limit=50")
+    resp = tvh_get("/api/channel/grid?limit=1")
     if resp:
         try:
             return json.loads(resp).get("total", 0)
@@ -244,21 +248,27 @@ def get_channel_total() -> int:
     return 0
 
 
-ch_total = get_channel_total()
-
-if ch_total == 0:
-    log("  No channels from bouquet. Trying manual service mapper...")
-    svc_resp = tvh_get("/api/mpegts/service/grid?limit=50")
-    svc_uuids: list[str] = []
-    if svc_resp:
+def get_service_uuids() -> list[str]:
+    resp = tvh_get("/api/mpegts/service/grid?limit=500")
+    if resp:
         try:
-            svc_data = json.loads(svc_resp)
-            svc_uuids = [e["uuid"] for e in svc_data.get("entries", []) if "uuid" in e]
-            log(f"  Found {len(svc_uuids)} services to map.")
+            return [e["uuid"] for e in json.loads(resp).get("entries", []) if "uuid" in e]
         except json.JSONDecodeError:
             log("  WARN: Could not parse service grid response.")
+    return []
 
+
+scan_deadline = time.time() + max(MAX_WAIT, 240)
+ch_total = 0
+mapped_uuids: set[str] = set()
+while time.time() < scan_deadline:
+    ch_total = get_channel_total()
+    if ch_total >= EXPECTED_CHANNELS:
+        break
+
+    svc_uuids = [u for u in get_service_uuids() if u not in mapped_uuids]
     if svc_uuids:
+        log(f"  Mapping {len(svc_uuids)} newly discovered services (channels so far: {ch_total})...")
         mapper_node = {
             "services": svc_uuids,
             "encrypted": False,
@@ -269,10 +279,15 @@ if ch_total == 0:
             "network_tags": False,
         }
         tvh_post("/api/service/mapper/save", {"node": json.dumps(mapper_node)})
-        time.sleep(5)
-        ch_total = get_channel_total()
+        mapped_uuids.update(svc_uuids)
 
+    time.sleep(5)
+
+ch_total = get_channel_total()
 log(f"  Channels available: {ch_total}")
+if ch_total < EXPECTED_CHANNELS:
+    log(f"  ERROR: only {ch_total}/{EXPECTED_CHANNELS} channels mapped — failing bootstrap (fail-closed).")
+    sys.exit(1)
 
 # ===========================================================================
 # 6. Configure XMLTV URL grabber for EPG
@@ -284,6 +299,11 @@ epg_config = {
     "channel_renumber": False,
     "channel_reicon": False,
     "epgdb_periodicsave": 3600,
+    # Internal grabber cron: every minute. The XMLTV import needs two grab
+    # passes (pass 1 registers/links channels, pass 2 imports events); the
+    # TVHeadend default cron (twice daily) would leave the EPG empty for the
+    # whole test run.
+    "cron": "* * * * *",
     "int_initial": True,
     "ota_initial": False,
     "ota_cron": "0 */12 * * *",
@@ -346,43 +366,6 @@ else:
     log("  WARNING: XMLTV URL grabber module not found via any method.")
 
 # ===========================================================================
-# 7. Trigger EPG grab and wait for data
-# ===========================================================================
-# The XMLTV URL grabber needs at least two grab passes: the first pass discovers
-# and auto-maps the XMLTV channels to TVHeadend channels, and a subsequent pass
-# imports the actual programme events onto those mapped channels. Triggering the
-# grab only once (before mapping settles) leaves the EPG empty, so we re-trigger
-# the internal re-run periodically until events appear.
-log("Triggering EPG grab and waiting for events...")
-
-EPG_MAX_WAIT = max(MAX_WAIT, 90)
-epg_elapsed = 0
-epg_total = 0
-last_rerun = -1000
-while epg_elapsed < EPG_MAX_WAIT:
-    # Re-trigger the internal grabber every ~12s — the first pass maps channels,
-    # later passes import events onto them.
-    if epg_elapsed - last_rerun >= 12:
-        tvh_post("/api/epggrab/internal/rerun", {"rerun": "1"})
-        last_rerun = epg_elapsed
-
-    epg_resp = tvh_get("/api/epg/events/grid?limit=1")
-    if epg_resp:
-        try:
-            epg_total = json.loads(epg_resp).get("totalCount", 0)
-        except json.JSONDecodeError:
-            epg_total = 0
-    log(f"  EPG check: events={epg_total}, elapsed={epg_elapsed}s")
-    if epg_total >= 1:
-        log(f"  EPG loaded: {epg_total} events.")
-        break
-    time.sleep(4)
-    epg_elapsed += 4
-
-if epg_total < 1:
-    log(f"  WARNING: EPG still empty after {EPG_MAX_WAIT}s — events were not imported.")
-
-# ===========================================================================
 # 8. Create a test streaming profile
 # ===========================================================================
 log("Creating test streaming profile...")
@@ -412,6 +395,77 @@ dvr_conf = {
     "directory_permissions": "0775",
 }
 tvh_post("/api/dvr/config/create", {"conf": json.dumps(dvr_conf)})
+
+# Schedule a short manual recording so DVR timer/recording e2e tests always have
+# data: it shows as an upcoming timer immediately, records for 3 minutes starting
+# 2 minutes after bootstrap, and then persists as a completed recording.
+log("Scheduling test recording...")
+rec_channel = None
+ch_resp = tvh_get("/api/channel/grid?limit=1")
+if ch_resp:
+    try:
+        ch_entries = json.loads(ch_resp).get("entries", [])
+        if ch_entries:
+            rec_channel = ch_entries[0].get("uuid")
+    except json.JSONDecodeError:
+        pass
+
+if not rec_channel:
+    log("  ERROR: No channel available to schedule the test recording — failing bootstrap.")
+    sys.exit(1)
+
+now_epoch = int(time.time())
+rec_conf = {
+    "enabled": True,
+    "start": now_epoch + 120,
+    "stop": now_epoch + 300,
+    "channel": rec_channel,
+    "title": {"eng": "E2E Scheduled Recording"},
+    "comment": "Created by bootstrap for DVR e2e tests",
+}
+rec_result = tvh_post("/api/dvr/entry/create", {"conf": json.dumps(rec_conf)})
+if not rec_result or "uuid" not in rec_result:
+    log(f"  ERROR: DVR entry creation failed (response: {rec_result!r}) — failing bootstrap.")
+    sys.exit(1)
+log(f"  Scheduled test recording on channel {rec_channel}.")
+
+# ===========================================================================
+# 10. Wait for EPG data (fail-closed)
+# ===========================================================================
+# The XMLTV URL grabber needs at least two grab passes: the first pass discovers
+# and auto-maps the XMLTV channels to TVHeadend channels, and a subsequent pass
+# imports the actual programme events onto those mapped channels. The internal
+# grabber cron is set to every minute (see epg_config above), so two passes
+# complete within ~2-3 minutes. /api/epggrab/internal/rerun only takes effect
+# once the first scheduled grab has already run, so it merely accelerates
+# later passes. This wait runs last so profile/DVR setup overlaps with it.
+log("Waiting for EPG events (two grab passes needed)...")
+
+EPG_MAX_WAIT = max(MAX_WAIT, 300)
+epg_elapsed = 0
+epg_total = 0
+last_rerun = -1000
+while epg_elapsed < EPG_MAX_WAIT:
+    if epg_elapsed - last_rerun >= 20:
+        tvh_post("/api/epggrab/internal/rerun", {"rerun": "1"})
+        last_rerun = epg_elapsed
+
+    epg_resp = tvh_get("/api/epg/events/grid?limit=1")
+    if epg_resp:
+        try:
+            epg_total = json.loads(epg_resp).get("totalCount", 0)
+        except json.JSONDecodeError:
+            epg_total = 0
+    log(f"  EPG check: events={epg_total}, elapsed={epg_elapsed}s")
+    if epg_total >= 1:
+        log(f"  EPG loaded: {epg_total} events.")
+        break
+    time.sleep(5)
+    epg_elapsed += 5
+
+if epg_total < 1:
+    log(f"  ERROR: EPG still empty after {EPG_MAX_WAIT}s — failing bootstrap (fail-closed).")
+    sys.exit(1)
 
 log("Bootstrap complete.")
 

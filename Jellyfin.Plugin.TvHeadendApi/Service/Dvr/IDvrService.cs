@@ -86,6 +86,9 @@ public interface IDvrService
     /// </summary>
     /// <param name="profileName">Profile name.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The profile UUID.</returns>
-    Task<string> GetRecordingProfileUuidAsync(string profileName, CancellationToken cancellationToken);
+    /// <returns>
+    /// The profile UUID, or <c>null</c> when the name does not match any TVHeadend DVR
+    /// configuration; callers should then omit the profile so TVHeadend applies its default.
+    /// </returns>
+    Task<string?> GetRecordingProfileUuidAsync(string profileName, CancellationToken cancellationToken);
 }

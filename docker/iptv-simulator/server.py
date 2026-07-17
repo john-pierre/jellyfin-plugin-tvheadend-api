@@ -28,13 +28,33 @@ PORT = int(os.environ.get("PORT", "80"))
 BASE_URL = os.environ.get("BASE_URL", "http://iptv-simulator")
 FONT_PATH = "/usr/share/fonts/ttf-dejavu/DejaVuSans-Bold.ttf"
 
-CHANNELS = [
+# Number of simulated channels. The first five keep their historic names (tests reference
+# them); additional channels are generated so the stack can mirror real-world lineups
+# (e.g. CHANNEL_COUNT=100 to exercise warmup/zapping at production scale).
+CHANNEL_COUNT = max(1, int(os.environ.get("CHANNEL_COUNT", "5")))
+
+_BASE_CHANNELS = [
     {"id": "test-ch1", "name": "Test Channel 1", "group": "News",          "color": (180, 30,  30)},
     {"id": "test-ch2", "name": "Test Channel 2", "group": "Entertainment", "color": (30,  100, 180)},
     {"id": "test-ch3", "name": "Test Channel 3", "group": "Sports",        "color": (30,  150, 60)},
     {"id": "test-ch4", "name": "Test Channel 4", "group": "Documentary",   "color": (160, 90,  0)},
     {"id": "test-ch5", "name": "Test Channel 5", "group": "Music",         "color": (120, 30,  160)},
 ]
+
+_EXTRA_GROUPS = ["News", "Entertainment", "Sports", "Documentary", "Music", "Movies", "Kids", "Science"]
+_EXTRA_COLORS = [
+    (180, 30, 30), (30, 100, 180), (30, 150, 60), (160, 90, 0),
+    (120, 30, 160), (0, 130, 130), (90, 90, 90), (200, 120, 40),
+]
+
+CHANNELS = list(_BASE_CHANNELS[:min(CHANNEL_COUNT, len(_BASE_CHANNELS))])
+for _n in range(len(CHANNELS) + 1, CHANNEL_COUNT + 1):
+    CHANNELS.append({
+        "id": f"test-ch{_n}",
+        "name": f"Test Channel {_n}",
+        "group": _EXTRA_GROUPS[(_n - 1) % len(_EXTRA_GROUPS)],
+        "color": _EXTRA_COLORS[(_n - 1) % len(_EXTRA_COLORS)],
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +79,7 @@ def make_logo(channel: dict, size: int = 256) -> bytes:
     draw.ellipse([m, m, size - m, size - m], fill=(255, 255, 255))
 
     # Channel number centered in circle
-    num = channel["id"][-1]
+    num = channel["id"].removeprefix("test-ch")
     font_big = _load_font(size // 2)
     bb = draw.textbbox((0, 0), num, font=font_big)
     tw, th = bb[2] - bb[0], bb[3] - bb[1]
@@ -112,7 +132,7 @@ def make_thumb(channel: dict, hour: int) -> bytes:
 
     # Small channel number badge (top right)
     badge_font = _load_font(28)
-    num = channel["id"][-1]
+    num = channel["id"].removeprefix("test-ch")
     bb = draw.textbbox((0, 0), num, badge_font)
     bw, bh = bb[2] - bb[0] + 16, bb[3] - bb[1] + 10
     draw.rounded_rectangle([320 - bw - 10, 10, 320 - 10, 10 + bh], radius=6,
@@ -133,7 +153,7 @@ def make_index() -> str:
 
     rows = []
     for ch in CHANNELS:
-        n = ch["id"][-1]
+        n = ch["id"].removeprefix("test-ch")
         r, g, b = ch["color"]
         rows.append(f"""
         <tr>
@@ -221,7 +241,7 @@ def make_index() -> str:
 def make_playlist() -> str:
     lines = ["#EXTM3U"]
     for ch in CHANNELS:
-        n = ch["id"][-1]
+        n = ch["id"].removeprefix("test-ch")
         lines.append(
             f'#EXTINF:-1 tvg-id="{ch["id"]}" tvg-name="{ch["name"]}" '
             f'tvg-logo="{BASE_URL}/logo{n}.png" group-title="{ch["group"]}",{ch["name"]}'
@@ -241,7 +261,7 @@ def make_epg() -> str:
     ]
 
     for ch in CHANNELS:
-        n = ch["id"][-1]
+        n = ch["id"].removeprefix("test-ch")
         lines += [
             f'  <channel id="{ch["id"]}">',
             f'    <display-name>{ch["name"]}</display-name>',
@@ -281,7 +301,7 @@ def stream_channel(channel: dict, wfile) -> None:
     Video: testsrc2 with channel name overlay and running wall-clock.
     Audio: 880 Hz tick for 50 ms every second.
     """
-    n = channel["id"][-1]
+    n = channel["id"].removeprefix("test-ch")
     name = channel["name"].replace("'", "\\'").replace(":", "\\:")
     r, g, b = channel["color"]
     color_hex = f"#{r:02x}{g:02x}{b:02x}"

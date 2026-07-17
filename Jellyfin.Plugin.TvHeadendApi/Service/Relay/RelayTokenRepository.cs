@@ -96,27 +96,34 @@ internal sealed class RelayTokenRepository : IRelayTokenRepository, IDisposable
     }
 
     /// <inheritdoc />
-    public async Task IncrementUseCountAsync(long id, CancellationToken cancellationToken)
+    public async Task<bool> TryConsumeUseAsync(long id, CancellationToken cancellationToken)
     {
         if (!_dbHealthService.IsAvailable)
         {
-            return;
+            // Fail-open: max-uses is a defense-in-depth soft limit; when the database is down
+            // the validator has already checked the (unavailable) snapshot and streaming must
+            // not break because usage accounting is offline.
+            return true;
         }
 
         var now = DateTime.UtcNow;
 
         using var writeLock = await _writeCoordinator.AcquireWriteAsync(cancellationToken).ConfigureAwait(false);
         using var db = CreateContext();
-        var record = await db.RelayTokens.FindAsync(new object[] { id }, cancellationToken).ConfigureAwait(false);
-        if (record == null)
-        {
-            return;
-        }
 
-        record.UseCount++;
-        record.LastUsedAtUtc = now;
-        record.FirstUsedAtUtc ??= now;
-        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        // Single conditional UPDATE: the max-uses check and the increment are atomic,
+        // so concurrent validations of the same token cannot exceed the limit.
+        var affected = await db.RelayTokens
+            .Where(t => t.Id == id && (t.MaxUses == null || t.MaxUses <= 0 || t.UseCount < t.MaxUses))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(t => t.UseCount, t => t.UseCount + 1)
+                    .SetProperty(t => t.LastUsedAtUtc, now)
+                    .SetProperty(t => t.FirstUsedAtUtc, t => t.FirstUsedAtUtc ?? now),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return affected > 0;
     }
 
     /// <inheritdoc />
@@ -163,6 +170,29 @@ internal sealed class RelayTokenRepository : IRelayTokenRepository, IDisposable
         }
 
         return expired.Count;
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateStreamTelemetryAsync(string tokenHash, string? resolutionSource, string? mediaInfoCacheStatus, double? streamSetupMs, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tokenHash);
+
+        if (!_dbHealthService.IsAvailable)
+        {
+            return;
+        }
+
+        using var writeLock = await _writeCoordinator.AcquireWriteAsync(cancellationToken).ConfigureAwait(false);
+        using var db = CreateContext();
+        await db.RelayTokens
+            .Where(t => t.TokenHash == tokenHash)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(t => t.ResolutionSource, resolutionSource)
+                    .SetProperty(t => t.MediaInfoCacheStatus, mediaInfoCacheStatus)
+                    .SetProperty(t => t.StreamSetupMs, streamSetupMs),
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />

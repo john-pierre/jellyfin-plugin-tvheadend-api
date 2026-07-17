@@ -553,6 +553,111 @@ public class DiagnosticServiceCoverageTests
         Assert.Contains(result.Checks, c => c.Category == "Cache" && c.Status == "INFO");
     }
 
+    // ── Probe cache coverage scoring ────────────────────────────────────
+    [Fact]
+    public async Task DiagnoseAsync_ProbeCachePartialCoverage_WarnsAndLowersScore()
+    {
+        var full = await RunProbeCacheDiagnosisAsync(totalChannels: 4, cachedChannels: 4);
+        var partial = await RunProbeCacheDiagnosisAsync(totalChannels: 4, cachedChannels: 1);
+
+        Assert.Contains(full.Checks, c => c.Name == "Probe Cache Coverage" && c.Status == "OK");
+        var check = partial.Checks.First(c => c.Name == "Probe Cache Coverage");
+        Assert.Equal("WARNING", check.Status);
+        Assert.Contains("warm-up", check.Recommendation, StringComparison.OrdinalIgnoreCase);
+
+        // 3 of 4 channels uncovered → 75% of the 25-point weight = 19 points.
+        Assert.Equal(19, full.CompatibilityScore - partial.CompatibilityScore);
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_ProbeCacheVeryLowCoverage_ErrorsAndLowersScoreProportionally()
+    {
+        var full = await RunProbeCacheDiagnosisAsync(totalChannels: 20, cachedChannels: 20);
+        var sparse = await RunProbeCacheDiagnosisAsync(totalChannels: 20, cachedChannels: 1);
+
+        var check = sparse.Checks.First(c => c.Name == "Probe Cache Coverage");
+        Assert.Equal("ERROR", check.Status);
+
+        // 19 of 20 channels uncovered → 95% of the 25-point weight = 24 points.
+        Assert.Equal(24, full.CompatibilityScore - sparse.CompatibilityScore);
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_ProbeCacheZeroCoverage_ErrorsWithFullDeduction()
+    {
+        var full = await RunProbeCacheDiagnosisAsync(totalChannels: 5, cachedChannels: 5);
+        var none = await RunProbeCacheDiagnosisAsync(totalChannels: 5, cachedChannels: 0);
+
+        var check = none.Checks.First(c => c.Name == "Probe Cache Coverage");
+        Assert.Equal("ERROR", check.Status);
+        Assert.Equal(
+            DiagnosticService.ProbeCacheMaxScoreDeduction,
+            full.CompatibilityScore - none.CompatibilityScore);
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_ProbeCacheCoverage_CacheWriteDisabled_IsInformationalOnly()
+    {
+        var full = await RunProbeCacheDiagnosisAsync(totalChannels: 4, cachedChannels: 4, cacheWriteEnabled: false);
+        var partial = await RunProbeCacheDiagnosisAsync(totalChannels: 4, cachedChannels: 1, cacheWriteEnabled: false);
+
+        var check = partial.Checks.First(c => c.Name == "Probe Cache Coverage");
+        Assert.Equal("INFO", check.Status);
+
+        // The user explicitly disabled cache pre-creation — the score must not be punished.
+        Assert.Equal(full.CompatibilityScore, partial.CompatibilityScore);
+    }
+
+    /// <summary>
+    /// Runs a full diagnosis against a synthetic channel grid where <paramref name="cachedChannels"/>
+    /// of <paramref name="totalChannels"/> channels have a probe cache file on disk.
+    /// </summary>
+    private static async Task<Jellyfin.Plugin.TvHeadendApi.Model.Diagnostic.DiagnoseResult> RunProbeCacheDiagnosisAsync(
+        int totalChannels,
+        int cachedChannels,
+        bool cacheWriteEnabled = true)
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "diag_cov_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var mediaInfoDir = Path.Combine(tempDir, "mediainfo");
+            Directory.CreateDirectory(mediaInfoDir);
+
+            var uuids = Enumerable.Range(0, totalChannels).Select(i => $"chan{i:D3}").ToList();
+            foreach (var uuid in uuids.Take(cachedChannels))
+            {
+                File.WriteAllText(Path.Combine(mediaInfoDir, uuid + ".json"), "{}");
+            }
+
+            var entriesJson = string.Join(",", uuids.Select(u => $$"""{"uuid":"{{u}}"}"""));
+            var gridJson = $$"""{"total":{{totalChannels}},"entries":[{{entriesJson}}]}""";
+
+            var config = DefaultConfig();
+            config.SupportsProbing = cacheWriteEnabled;
+            var sut = CreateSut(out var api, out var resolver, out _, config: config, cachePath: tempDir);
+
+            api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .Returns<HttpClient, string, CancellationToken>((_, url, _) =>
+                {
+                    if (url.Contains("api/serverinfo")) return Task.FromResult(ServerInfoJson());
+                    if (url.Contains("api/channel/grid")) return Task.FromResult(gridJson);
+                    if (url.Contains("api/dvr/entry/grid")) return Task.FromResult("""{"total":0,"entries":[]}""");
+                    return Task.FromResult("{}");
+                });
+
+            resolver.Setup(x => x.GetProfilesAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<ProfileReference> { new("p1", "pass") });
+            resolver.Setup(x => x.GetProfileDetailsByUuidAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<string>(), "p1", "pass", It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ProfileDetails?)null);
+
+            return await sut.DiagnoseAsync(CancellationToken.None);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static PluginConfiguration DefaultConfig() => new()

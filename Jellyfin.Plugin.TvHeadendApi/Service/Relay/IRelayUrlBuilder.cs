@@ -52,6 +52,26 @@ public interface IRelayUrlBuilder
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Builds a tokenized relay URL for a live TV stream and also returns the raw token,
+    /// so the caller can attach stream-setup telemetry to it after the media source build
+    /// completes. Returns a <c>null</c> token when token security is disabled.
+    /// </summary>
+    /// <param name="channelId">TVHeadend channel UUID.</param>
+    /// <param name="profile">Optional streaming profile name.</param>
+    /// <param name="userId">Optional Jellyfin user ID.</param>
+    /// <param name="deviceId">Optional device/client identifier.</param>
+    /// <param name="playbackMode">Optional playback mode.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The relay URL together with the raw token (if any).</returns>
+    Task<TokenizedStreamUrl> BuildTokenizedStreamRelayUrlDetailedAsync(
+        string channelId,
+        string? profile,
+        string? userId,
+        string? deviceId,
+        string? playbackMode,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Builds a tokenized relay URL for an image resource.
     /// Issues a scoped token and appends it to the URL.
     /// </summary>

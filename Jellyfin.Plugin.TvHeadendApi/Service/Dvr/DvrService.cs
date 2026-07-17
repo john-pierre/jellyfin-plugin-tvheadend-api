@@ -51,7 +51,7 @@ internal sealed class DvrService : IDvrService
     internal IUrlBuilder UrlBuilder => _urlBuilder;
 
     /// <inheritdoc />
-    public async Task<string> GetRecordingProfileUuidAsync(string profileName, CancellationToken cancellationToken)
+    public async Task<string?> GetRecordingProfileUuidAsync(string profileName, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(profileName);
 
@@ -68,17 +68,18 @@ internal sealed class DvrService : IDvrService
         var matchingProfile = result?.Entries?.FirstOrDefault(profile =>
             string.Equals(profile.Name, profileName, StringComparison.OrdinalIgnoreCase));
 
-        if (matchingProfile == null && result?.Entries?.Count > 0)
+        if (!string.IsNullOrWhiteSpace(matchingProfile?.Uuid))
         {
-            matchingProfile = result.Entries[0];
+            return matchingProfile.Uuid;
         }
 
-        if (string.IsNullOrWhiteSpace(matchingProfile?.Uuid))
-        {
-            throw new InvalidOperationException($"No matching recording profile found for '{profileName}' in TVHeadend.");
-        }
-
-        return matchingProfile.Uuid;
+        // Never fall back to an arbitrary profile: a stale or renamed profile name must not
+        // silently redirect recordings to a different quality/storage profile. Surface the
+        // mismatch and let TVHeadend apply its own default DVR configuration instead.
+        _logger.LogWarning(
+            "Configured recording profile '{ProfileName}' was not found in TVHeadend; recordings will use TVHeadend's default DVR configuration.",
+            profileName);
+        return null;
     }
 
     /// <summary>Gets the current plugin configuration or throws.</summary>

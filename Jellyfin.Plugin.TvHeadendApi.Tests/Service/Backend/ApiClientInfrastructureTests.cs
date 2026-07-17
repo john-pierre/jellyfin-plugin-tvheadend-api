@@ -336,48 +336,6 @@ public class ApiClientTests
     }
 
     [Fact]
-    public async Task GetStreamAsync_WithValidResponse_ReturnsStream()
-    {
-        // Arrange
-        var client = CreateApiClient();
-        var mockHandler = new MockHttpMessageHandler
-        {
-            Response = new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new ByteArrayContent(new byte[] { 1, 2, 3, 4, 5 })
-            }
-        };
-        var httpClient = new HttpClient(mockHandler);
-        var cts = new CancellationTokenSource();
-
-        // Act
-        var result = await client.GetStreamAsync(httpClient, "http://localhost:9981/api/stream", cts.Token);
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.True(result.CanRead);
-        Assert.Equal(5, result.Length);
-    }
-
-    [Fact]
-    public async Task GetStreamAsync_WithFailedResponse_ThrowsHttpRequestException()
-    {
-        // Arrange
-        var client = CreateApiClient();
-        var mockHandler = new MockHttpMessageHandler
-        {
-            Response = new HttpResponseMessage(HttpStatusCode.NotFound)
-        };
-        var httpClient = new HttpClient(mockHandler);
-        var cts = new CancellationTokenSource();
-
-        // Act & Assert
-        await Assert.ThrowsAsync<HttpRequestException>(async () =>
-            await client.GetStreamAsync(httpClient, "http://localhost:9981/api/notfound", cts.Token)
-        );
-    }
-
-    [Fact]
     public void BuildUrl_WithDifferentEndpoints_ReturnsDifferentUrls()
     {
         // Arrange

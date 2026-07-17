@@ -226,32 +226,78 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
         var sessionId = e.PlaySessionId ?? Guid.NewGuid().ToString("N");
         var userName = e.Users?.FirstOrDefault()?.Username ?? "Unknown";
         var playMethod = e.Session?.PlayState?.PlayMethod?.ToString() ?? "Unknown";
+        var deviceName = e.DeviceName ?? "Unknown";
+        var clientName = e.ClientName ?? "Unknown";
+        var channelName = e.Item.Name ?? "Unknown";
+        var channelId = e.Item.Id.ToString("N");
 
-        var session = new ViewingSession
+        try
         {
-            UserName = userName,
-            DeviceName = e.DeviceName ?? "Unknown",
-            ClientName = e.ClientName ?? "Unknown",
-            ChannelName = e.Item.Name ?? "Unknown",
-            ChannelId = e.Item.Id.ToString("N"),
-            PlayMethod = playMethod,
-            StartTimeUtc = DateTime.UtcNow,
-            PlaySessionId = sessionId,
-        };
+            using var writeLock = _writeCoordinator.AcquireWrite();
+            using var dbContext = CreateDbContext();
 
-        using var writeLock = _writeCoordinator.AcquireWrite();
-        using var dbContext = CreateDbContext();
-        dbContext.ViewingSessions.Add(session);
-        dbContext.SaveChanges();
+            // A device/client plays one live stream at a time, so a new start implies any
+            // session still open for the same user/device/client has ended. Clients zapping
+            // channels do not always send a stop for the previous channel, so close such
+            // rows here to keep them from lingering and inflating viewing statistics.
+            var openSessions = dbContext.ViewingSessions
+                .Where(s => !s.EndTimeUtc.HasValue &&
+                    s.UserName == userName &&
+                    s.DeviceName == deviceName &&
+                    s.ClientName == clientName)
+                .ToList();
 
-        _logger.LogDebug(
-            "Live TV playback started: User={User}, Device={Device}, Client={Client}, Channel={Channel}, PlaySessionId={PlaySessionId}, PlayMethod={PlayMethod}",
-            session.UserName,
-            session.DeviceName,
-            session.ClientName,
-            session.ChannelName,
-            sessionId,
-            session.PlayMethod);
+            var alreadyTracked = false;
+            foreach (var openSession in openSessions)
+            {
+                if (openSession.ChannelId == channelId && openSession.PlaySessionId == sessionId)
+                {
+                    // The same playback was re-announced (client retry) — keep the existing
+                    // open row instead of inserting a duplicate of the unique composite key.
+                    alreadyTracked = true;
+                    continue;
+                }
+
+                openSession.EndTimeUtc = DateTime.UtcNow;
+                _logger.LogDebug(
+                    "Closed previous open session on new playback start: User={User}, Device={Device}, Channel={Channel}",
+                    openSession.UserName,
+                    openSession.DeviceName,
+                    openSession.ChannelName);
+            }
+
+            if (!alreadyTracked)
+            {
+                dbContext.ViewingSessions.Add(new ViewingSession
+                {
+                    UserName = userName,
+                    DeviceName = deviceName,
+                    ClientName = clientName,
+                    ChannelName = channelName,
+                    ChannelId = channelId,
+                    PlayMethod = playMethod,
+                    StartTimeUtc = DateTime.UtcNow,
+                    PlaySessionId = sessionId,
+                });
+            }
+
+            dbContext.SaveChanges();
+
+            _logger.LogDebug(
+                "Live TV playback started: User={User}, Device={Device}, Client={Client}, Channel={Channel}, PlaySessionId={PlaySessionId}, PlayMethod={PlayMethod}",
+                userName,
+                deviceName,
+                clientName,
+                channelName,
+                sessionId,
+                playMethod);
+        }
+        catch (Exception ex)
+        {
+            // Never throw out of a Jellyfin playback event handler — log and degrade.
+            _logger.LogWarning(ex, "Failed to record live TV playback start for PlaySessionId={PlaySessionId}.", sessionId);
+            _dbHealthService.RecordError(ex);
+        }
     }
 
     private void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
@@ -280,86 +326,103 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
             string.IsNullOrEmpty(sessionId) ? "<empty>" : sessionId,
             e.PlaybackPositionTicks.HasValue ? TimeSpan.FromTicks(e.PlaybackPositionTicks.Value).TotalMilliseconds : 0);
 
-        ViewingSession? session;
-        using var writeLock = _writeCoordinator.AcquireWrite();
-        using var dbContext = CreateDbContext();
-
-        // Tier 1: exact match User+Device+Client+ChannelId+PlaySessionId
-        session = dbContext.ViewingSessions.FirstOrDefault(s =>
-            !s.EndTimeUtc.HasValue &&
-            s.UserName == userName &&
-            s.DeviceName == deviceName &&
-            s.ClientName == clientName &&
-            s.ChannelId == channelId &&
-            s.PlaySessionId == sessionId);
-
-        // Tier 2: PlaySessionId only (if provided)
-        if (session == null && !string.IsNullOrEmpty(sessionId))
+        try
         {
-            session = dbContext.ViewingSessions.FirstOrDefault(s =>
-                !s.EndTimeUtc.HasValue && s.PlaySessionId == sessionId);
+            using var writeLock = _writeCoordinator.AcquireWrite();
+            using var dbContext = CreateDbContext();
 
-            if (session != null)
+            // Tier 1: exact match User+Device+Client+ChannelId+PlaySessionId
+            var session = dbContext.ViewingSessions.FirstOrDefault(s =>
+                !s.EndTimeUtc.HasValue &&
+                s.UserName == userName &&
+                s.DeviceName == deviceName &&
+                s.ClientName == clientName &&
+                s.ChannelId == channelId &&
+                s.PlaySessionId == sessionId);
+
+            // Tier 2: PlaySessionId only (if provided)
+            if (session == null && !string.IsNullOrEmpty(sessionId))
             {
-                _logger.LogInformation(
-                    "Playback stopped: PlaySessionId fallback match: Channel={Channel}",
-                    session.ChannelName);
+                session = dbContext.ViewingSessions.FirstOrDefault(s =>
+                    !s.EndTimeUtc.HasValue && s.PlaySessionId == sessionId);
+
+                if (session != null)
+                {
+                    _logger.LogInformation(
+                        "Playback stopped: PlaySessionId fallback match: Channel={Channel}",
+                        session.ChannelName);
+                }
             }
-        }
 
-        // Tier 3: User+Device+Client+ChannelId (Swiftfin sends different PlaySessionId on stop)
-        if (session == null)
-        {
-            session = dbContext.ViewingSessions
-                .Where(s =>
-                    !s.EndTimeUtc.HasValue &&
-                    s.UserName == userName &&
-                    s.DeviceName == deviceName &&
-                    s.ClientName == clientName &&
-                    s.ChannelId == channelId)
-                .OrderByDescending(s => s.StartTimeUtc)
-                .FirstOrDefault();
-
-            if (session != null)
+            // Tier 3: User+Device+Client+ChannelId (Swiftfin sends different PlaySessionId on stop)
+            if (session == null)
             {
-                _logger.LogInformation(
-                    "Playback stopped: User+Device+Client+Channel fallback match: User={User}, Device={Device}, Channel={Channel}",
-                    session.UserName,
-                    session.DeviceName,
-                    session.ChannelName);
-            }
-        }
+                session = dbContext.ViewingSessions
+                    .Where(s =>
+                        !s.EndTimeUtc.HasValue &&
+                        s.UserName == userName &&
+                        s.DeviceName == deviceName &&
+                        s.ClientName == clientName &&
+                        s.ChannelId == channelId)
+                    .OrderByDescending(s => s.StartTimeUtc)
+                    .FirstOrDefault();
 
-        if (session == null)
+                if (session != null)
+                {
+                    _logger.LogInformation(
+                        "Playback stopped: User+Device+Client+Channel fallback match: User={User}, Device={Device}, Channel={Channel}",
+                        session.UserName,
+                        session.DeviceName,
+                        session.ChannelName);
+                }
+            }
+
+            if (session == null)
+            {
+                _logger.LogWarning(
+                    "Playback stopped: no matching active session: User={User}, Device={Device}, Client={Client}, ChannelId={ChannelId}, PlaySessionId={PlaySessionId}",
+                    userName,
+                    deviceName,
+                    clientName,
+                    channelId,
+                    string.IsNullOrEmpty(sessionId) ? "<empty>" : sessionId);
+                return;
+            }
+
+            session.EndTimeUtc = DateTime.UtcNow;
+            var currentPlayMethod = e.Session?.PlayState?.PlayMethod?.ToString();
+            if (!string.IsNullOrEmpty(currentPlayMethod))
+            {
+                session.PlayMethod = currentPlayMethod;
+            }
+
+            dbContext.SaveChanges();
+
+            _logger.LogDebug(
+                "Live TV playback stopped: User={User}, Device={Device}, Channel={Channel}, Duration={Duration:F1}min",
+                session.UserName,
+                session.DeviceName,
+                session.ChannelName,
+                session.DurationMinutes ?? 0);
+        }
+        catch (Exception ex)
         {
+            // Never throw out of a Jellyfin playback event handler — log and degrade.
             _logger.LogWarning(
-                "Playback stopped: no matching active session: User={User}, Device={Device}, Client={Client}, ChannelId={ChannelId}, PlaySessionId={PlaySessionId}",
-                userName,
-                deviceName,
-                clientName,
-                channelId,
+                ex,
+                "Failed to record live TV playback stop for PlaySessionId={PlaySessionId}.",
                 string.IsNullOrEmpty(sessionId) ? "<empty>" : sessionId);
-            return;
+            _dbHealthService.RecordError(ex);
         }
-
-        session.EndTimeUtc = DateTime.UtcNow;
-        var currentPlayMethod = e.Session?.PlayState?.PlayMethod?.ToString();
-        if (!string.IsNullOrEmpty(currentPlayMethod))
-        {
-            session.PlayMethod = currentPlayMethod;
-        }
-
-        dbContext.SaveChanges();
-
-        _logger.LogDebug(
-            "Live TV playback stopped: User={User}, Device={Device}, Channel={Channel}, Duration={Duration:F1}min",
-            session.UserName,
-            session.DeviceName,
-            session.ChannelName,
-            session.DurationMinutes ?? 0);
     }
 
-    private void CloseOrphanedSessions()
+    /// <summary>
+    /// Closes open viewing sessions whose user/device/client is no longer playing the recorded
+    /// channel in Jellyfin. The key includes the channel so that a stale row left behind by a
+    /// channel switch is reaped even while the same device is actively watching another channel.
+    /// Normally invoked by the hourly timer; exposed internally for testing.
+    /// </summary>
+    internal void CloseOrphanedSessions()
     {
         try
         {
@@ -378,13 +441,17 @@ internal sealed class StatisticsService : IStatisticsService, IHostedService, ID
 
             var activeKeys = _sessionManager.Sessions
                 .Where(s => s.NowPlayingItem != null)
-                .Select(s => (s.UserName ?? string.Empty, s.DeviceName ?? string.Empty, s.Client ?? string.Empty))
+                .Select(s => (
+                    User: s.UserName ?? string.Empty,
+                    Device: s.DeviceName ?? string.Empty,
+                    Client: s.Client ?? string.Empty,
+                    ChannelId: s.NowPlayingItem?.Id.ToString("N") ?? string.Empty))
                 .ToHashSet();
 
             var closedCount = 0;
             foreach (var session in openSessions)
             {
-                if (activeKeys.Contains((session.UserName, session.DeviceName, session.ClientName)))
+                if (activeKeys.Contains((session.UserName, session.DeviceName, session.ClientName, session.ChannelId)))
                 {
                     continue;
                 }

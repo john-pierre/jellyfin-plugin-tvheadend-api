@@ -19,6 +19,7 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
 
     private HttpClient? _authClient;
     private HttpClient? _anonClient;
+    private HttpClient? _longClient;
 
     /// <summary>
     /// Gets the authenticated HTTP client with <c>X-Emby-Token</c> header set.
@@ -29,6 +30,12 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
     /// Gets an anonymous HTTP client with no authentication headers.
     /// </summary>
     public HttpClient AnonymousClient => _anonClient ?? throw new InvalidOperationException("Fixture not initialized.");
+
+    /// <summary>
+    /// Gets an authenticated HTTP client with a 10-minute timeout for endpoints whose
+    /// duration scales with the lineup size (e.g. cache warmup probing 100 channels).
+    /// </summary>
+    public HttpClient LongRunningClient => _longClient ?? throw new InvalidOperationException("Fixture not initialized.");
 
     /// <summary>
     /// Gets the Jellyfin base URL.
@@ -99,6 +106,13 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
                 Timeout = TimeSpan.FromSeconds(30),
             };
 
+            _longClient = new HttpClient
+            {
+                BaseAddress = new Uri(BaseUrl),
+                Timeout = TimeSpan.FromMinutes(10),
+            };
+            _longClient.DefaultRequestHeaders.Add("X-Emby-Token", AccessToken);
+
             // ── Step 4: Configure the plugin ───────────────────────────────────
             await ConfigurePluginAsync(_authClient, tvhHost, tvhPort, tvhUser, tvhPass).ConfigureAwait(false);
 
@@ -106,6 +120,13 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
             RelayAuthToken = await GenerateAuthTokenAsync(_authClient).ConfigureAwait(false);
 
             IsAvailable = true;
+
+            // ── Step 6: Wait for the plugin to actually reach TVHeadend ────────
+            // A freshly booted Jellyfin starts the plugin with default settings; its hosted
+            // services fail against the wrong host and open the circuit breaker BEFORE this
+            // fixture applies the correct configuration. Without this wait, the first test
+            // classes run inside the ~30s open window and fail with bogus connectivity errors.
+            await EnsureConfiguredAndHealthyAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -120,6 +141,7 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
     {
         _authClient?.Dispose();
         _anonClient?.Dispose();
+        _longClient?.Dispose();
         return Task.CompletedTask;
     }
 
@@ -230,14 +252,19 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
     /// reset configuration or intentionally break connectivity must call this in their <c>finally</c>
     /// so they leave the shared fixture in a known-good state for subsequent tests in the collection.
     /// </summary>
-    /// <returns>A task that completes when the connection is healthy or the timeout elapses.</returns>
-    public async Task EnsureConfiguredAndHealthyAsync()
+    /// <returns><c>true</c> when the plugin reports a healthy TVHeadend connection (ChannelCount &gt; 0);
+    /// <c>false</c> when it never became healthy within the timeout. Tests that REQUIRE a healthy
+    /// backend should assert on this; finally-block callers may ignore it.</returns>
+    public async Task<bool> EnsureConfiguredAndHealthyAsync()
     {
         if (!IsAvailable || _authClient == null)
         {
-            return;
+            return false;
         }
 
+        // NOTE: on WSL with the Windows dotnet SDK these env vars only arrive when listed in
+        // WSLENV with the /w flag — otherwise the localhost fallbacks silently misconfigure
+        // the in-container plugin (ConnectionRefused for everything).
         var tvhHost = Environment.GetEnvironmentVariable("TVH_HOST") ?? "localhost";
         var tvhPortStr = Environment.GetEnvironmentVariable("TVH_PORT") ?? "19981";
         var tvhUser = Environment.GetEnvironmentVariable("TVH_USER") ?? "testuser";
@@ -262,7 +289,7 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
                     using var doc = JsonDocument.Parse(body);
                     if (doc.RootElement.TryGetProperty("ChannelCount", out var cc) && cc.GetInt32() > 0)
                     {
-                        return;
+                        return true;
                     }
                 }
             }
@@ -272,6 +299,77 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
             }
 
             await Task.Delay(2000).ConfigureAwait(false);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Ensures Jellyfin's own Live TV channel cache is populated. When the plugin was
+    /// unreachable for a while (e.g. after a misconfiguration), Jellyfin's cached channel list
+    /// stays empty until the next scheduled guide refresh — this triggers the "RefreshGuide"
+    /// scheduled task and polls until channel items appear.
+    /// </summary>
+    /// <returns><c>true</c> when Jellyfin exposes at least one Live TV channel item.</returns>
+    public async Task<bool> EnsureLiveTvChannelsAsync()
+    {
+        if (!IsAvailable || _authClient == null)
+        {
+            return false;
+        }
+
+        if (await CountLiveTvChannelsAsync().ConfigureAwait(false) > 0)
+        {
+            return true;
+        }
+
+        // Find and trigger the guide-refresh scheduled task.
+        var tasksResp = await _authClient.GetAsync("/ScheduledTasks").ConfigureAwait(false);
+        if (tasksResp.IsSuccessStatusCode)
+        {
+            var tasksJson = await tasksResp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            using var tasksDoc = JsonDocument.Parse(tasksJson);
+            foreach (var task in tasksDoc.RootElement.EnumerateArray())
+            {
+                if (task.TryGetProperty("Key", out var key)
+                    && string.Equals(key.GetString(), "RefreshGuide", StringComparison.OrdinalIgnoreCase)
+                    && task.TryGetProperty("Id", out var idProp))
+                {
+                    await _authClient.PostAsync($"/ScheduledTasks/Running/{idProp.GetString()}", null).ConfigureAwait(false);
+                    break;
+                }
+            }
+        }
+
+        for (var attempt = 0; attempt < 30; attempt++)
+        {
+            await Task.Delay(3000).ConfigureAwait(false);
+            if (await CountLiveTvChannelsAsync().ConfigureAwait(false) > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private async Task<int> CountLiveTvChannelsAsync()
+    {
+        try
+        {
+            var resp = await _authClient!.GetAsync("/LiveTv/Channels?limit=1").ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+            {
+                return 0;
+            }
+
+            var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty("Items", out var items) ? items.GetArrayLength() : 0;
+        }
+        catch (HttpRequestException)
+        {
+            return 0;
         }
     }
 

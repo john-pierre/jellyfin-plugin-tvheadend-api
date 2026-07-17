@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -78,32 +79,41 @@ internal sealed class SeriesTimerService
         if (!string.IsNullOrWhiteSpace(info.ProgramId))
         {
             path = "api/dvr/autorec/create_by_series";
-            var pairs = new[]
+            var pairs = new List<KeyValuePair<string, string>>();
+
+            // Omit the profile when the configured name matched nothing so TVHeadend applies its default.
+            if (configUuid is not null)
             {
-                new KeyValuePair<string, string>("config_uuid", configUuid),
-                new KeyValuePair<string, string>("event_id", info.ProgramId),
-            };
+                pairs.Add(new KeyValuePair<string, string>("config_uuid", configUuid));
+            }
+
+            pairs.Add(new KeyValuePair<string, string>("event_id", info.ProgramId));
             requestBodyJson = JsonSerializer.Serialize(pairs);
             formValues = pairs;
         }
         else
         {
             path = "api/dvr/autorec/create";
-            var seriesTimerJson = new
+            var seriesTimerJson = new Dictionary<string, object?>
             {
-                channel = info.RecordAnyChannel ? null : info.ChannelId,
-                name = info.Name,
-                title = info.Name,
-                comment = info.Overview,
-                record = info.RecordNewOnly ? 1 : 0,
-                start = info.RecordAnyTime ? "Any" : null,
-                start_window = info.RecordAnyTime ? "Any" : null,
-                pri = config.Priority,
-                start_extra = (int)Math.Round((double)info.PrePaddingSeconds / 60),
-                stop_extra = (int)Math.Round((double)info.PostPaddingSeconds / 60),
-                weekdays = BuildWeekdaysPayload(info.Days),
-                config_name = configUuid,
+                ["channel"] = info.RecordAnyChannel ? null : info.ChannelId,
+                ["name"] = info.Name,
+                ["title"] = info.Name,
+                ["comment"] = info.Overview,
+                ["record"] = info.RecordNewOnly ? 1 : 0,
+                ["start"] = info.RecordAnyTime ? "Any" : null,
+                ["start_window"] = info.RecordAnyTime ? "Any" : null,
+                ["pri"] = config.Priority,
+                ["start_extra"] = (int)Math.Round((double)info.PrePaddingSeconds / 60),
+                ["stop_extra"] = (int)Math.Round((double)info.PostPaddingSeconds / 60),
+                ["weekdays"] = BuildWeekdaysPayload(info.Days),
             };
+
+            // Omit the profile when the configured name matched nothing so TVHeadend applies its default.
+            if (configUuid is not null)
+            {
+                seriesTimerJson["config_name"] = configUuid;
+            }
 
             requestBodyJson = JsonSerializer.Serialize(seriesTimerJson, JsonDefaults.Api);
             formValues = new[] { new KeyValuePair<string, string>("conf", requestBodyJson) };
@@ -238,24 +248,32 @@ internal sealed class SeriesTimerService
                 r => r.Total,
                 _logger,
                 cancellationToken).ConfigureAwait(false);
-            return result?.Entries?.Select(entry => new SeriesTimerInfo
+            return result?.Entries?.Select(entry =>
             {
-                Id = entry.Uuid,
-                Name = entry.Name,
-                ChannelId = string.IsNullOrEmpty(entry.Channel) ? null : entry.Channel,
-                Priority = entry.Priority,
-                Overview = entry.Comment,
-                Days = entry.Weekdays?.Where(day => day >= 1 && day <= 7)
-                    // TVH: 1=Mon..6=Sat, 7=Sun; DayOfWeek: 0=Sun, 1=Mon..6=Sat
-                    .Select(day => day == 7 ? DayOfWeek.Sunday : (DayOfWeek)day)
-                    .ToList() ?? new List<DayOfWeek>(),
-                RecordNewOnly = entry.RecordMode is not 0 and not 15,
-                RecordAnyTime = string.IsNullOrEmpty(entry.Start) || string.Equals(entry.Start, "Any", StringComparison.OrdinalIgnoreCase),
-                RecordAnyChannel = string.IsNullOrEmpty(entry.Channel),
-                PrePaddingSeconds = entry.StartExtra * 60,
-                PostPaddingSeconds = entry.StopExtra * 60,
-                StartDate = DateTime.UtcNow,
-                EndDate = DateTime.UtcNow.AddHours(1),
+                // TVHeadend reports the per-day recording window as time-of-day strings
+                // ("HH:MM" or minutes from midnight) or "Any" when unrestricted.
+                var windowStart = TryParseTimeOfDay(entry.Start);
+                var (startDate, endDate) = DecodeRecordingWindow(windowStart, TryParseTimeOfDay(entry.StartWindow));
+
+                return new SeriesTimerInfo
+                {
+                    Id = entry.Uuid,
+                    Name = entry.Name,
+                    ChannelId = string.IsNullOrEmpty(entry.Channel) ? null : entry.Channel,
+                    Priority = entry.Priority,
+                    Overview = entry.Comment,
+                    Days = entry.Weekdays?.Where(day => day >= 1 && day <= 7)
+                        // TVH: 1=Mon..6=Sat, 7=Sun; DayOfWeek: 0=Sun, 1=Mon..6=Sat
+                        .Select(day => day == 7 ? DayOfWeek.Sunday : (DayOfWeek)day)
+                        .ToList() ?? new List<DayOfWeek>(),
+                    RecordNewOnly = entry.RecordMode is not 0 and not 15,
+                    RecordAnyTime = windowStart is null,
+                    RecordAnyChannel = string.IsNullOrEmpty(entry.Channel),
+                    PrePaddingSeconds = entry.StartExtra * 60,
+                    PostPaddingSeconds = entry.StopExtra * 60,
+                    StartDate = startDate,
+                    EndDate = endDate,
+                };
             }).ToList() ?? Enumerable.Empty<SeriesTimerInfo>();
         }
         catch (Exception ex)
@@ -263,6 +281,77 @@ internal sealed class SeriesTimerService
             _logger.LogError(ex, "Error occurred while fetching series timers from TVHeadEnd.");
             return Enumerable.Empty<SeriesTimerInfo>();
         }
+    }
+
+    /// <summary>
+    /// Parses a TVHeadend autorec time-of-day value. TVHeadend emits either a formatted
+    /// "HH:MM" string, plain minutes from midnight (e.g. "1080" for 18:00), or "Any" when
+    /// the rule is not time-restricted.
+    /// </summary>
+    /// <param name="value">The raw field value from the autorec grid.</param>
+    /// <returns>The parsed time of day, or <c>null</c> when unrestricted or unparsable.</returns>
+    private static TimeSpan? TryParseTimeOfDay(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var separatorIndex = value.IndexOf(':', StringComparison.Ordinal);
+        if (separatorIndex > 0)
+        {
+            if (int.TryParse(value[..separatorIndex], NumberStyles.None, CultureInfo.InvariantCulture, out var hours)
+                && int.TryParse(value[(separatorIndex + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out var minutes)
+                && hours < 24
+                && minutes < 60)
+            {
+                return new TimeSpan(hours, minutes, 0);
+            }
+
+            return null;
+        }
+
+        if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var totalMinutes)
+            && totalMinutes < 24 * 60)
+        {
+            return TimeSpan.FromMinutes(totalMinutes);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Converts a TVHeadend recording window (earliest and latest allowed start time of day)
+    /// into concrete dates anchored on the current UTC day, so Jellyfin displays the actual
+    /// configured window instead of the moment the request happened to run.
+    /// </summary>
+    /// <param name="windowStart">Earliest start time of day, or <c>null</c> when unrestricted.</param>
+    /// <param name="windowEnd">Latest start time of day, or <c>null</c> when unrestricted.</param>
+    /// <returns>The start and end dates representing the recording window.</returns>
+    private static (DateTime StartDate, DateTime EndDate) DecodeRecordingWindow(TimeSpan? windowStart, TimeSpan? windowEnd)
+    {
+        if (windowStart is null)
+        {
+            // Not time-restricted ("Any"): keep a generic one-hour placeholder.
+            var fallback = DateTime.UtcNow;
+            return (fallback, fallback.AddHours(1));
+        }
+
+        var today = DateTime.UtcNow.Date;
+        var startDate = today.Add(windowStart.Value);
+        if (windowEnd is null)
+        {
+            return (startDate, startDate.AddHours(1));
+        }
+
+        var endDate = today.Add(windowEnd.Value);
+        if (endDate < startDate)
+        {
+            // The window wraps past midnight (e.g. 23:30 - 00:30).
+            endDate = endDate.AddDays(1);
+        }
+
+        return (startDate, endDate);
     }
 
     private static List<int> BuildWeekdaysPayload(List<DayOfWeek>? days)

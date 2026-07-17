@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using Jellyfin.Plugin.TvHeadendApi.Api;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
-using Jellyfin.Plugin.TvHeadendApi.Model.Metrics;
 using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
@@ -61,12 +60,9 @@ public sealed class RelayControllerStreamTests
         // Default: return Unknown health snapshot.
         _healthServiceMock.Setup(x => x.GetSnapshot()).Returns(new HealthSnapshot());
 
-        // Create a SessionTracker with no-op dependencies for unit tests.
+        // Create a SessionTracker for unit tests — it is in-memory only (no persistence).
         var activeSessionStore = new ActiveSessionStore();
-        var sessionTracker = new SessionTracker(
-            activeSessionStore,
-            new NullMetricsWriter(),
-            NullLogger<SessionTracker>.Instance);
+        var sessionTracker = new SessionTracker(activeSessionStore, NullLogger<SessionTracker>.Instance);
 
         _urlBuilderMock.Setup(x => x.GetEffectiveBaseUrl()).Returns("http://localhost:8096");
 
@@ -100,7 +96,7 @@ public sealed class RelayControllerStreamTests
         var activityTracker = new RelayActivityTracker();
         var tokenOptions = new RelayTokenOptions(configProvider);
         var activeSessionStore = new ActiveSessionStore();
-        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+        var sessionTracker = new SessionTracker(activeSessionStore, NullLogger<SessionTracker>.Instance);
 
         var act = () => new RelayController(
             null!,
@@ -124,7 +120,7 @@ public sealed class RelayControllerStreamTests
         var activityTracker = new RelayActivityTracker();
         var tokenOptions = new RelayTokenOptions(configProvider);
         var activeSessionStore = new ActiveSessionStore();
-        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+        var sessionTracker = new SessionTracker(activeSessionStore, NullLogger<SessionTracker>.Instance);
 
         var act = () => new RelayController(
             _relayServiceMock.Object,
@@ -147,7 +143,7 @@ public sealed class RelayControllerStreamTests
         var configProvider = new ConfigurationProvider(() => config);
         var tokenOptions = new RelayTokenOptions(configProvider);
         var activeSessionStore = new ActiveSessionStore();
-        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+        var sessionTracker = new SessionTracker(activeSessionStore, NullLogger<SessionTracker>.Instance);
 
         var act = () => new RelayController(
             _relayServiceMock.Object,
@@ -193,7 +189,7 @@ public sealed class RelayControllerStreamTests
         var activityTracker = new RelayActivityTracker();
         var tokenOptions = new RelayTokenOptions(configProvider);
         var activeSessionStore = new ActiveSessionStore();
-        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+        var sessionTracker = new SessionTracker(activeSessionStore, NullLogger<SessionTracker>.Instance);
 
         var act = () => new RelayController(
             _relayServiceMock.Object,
@@ -217,7 +213,7 @@ public sealed class RelayControllerStreamTests
         var activityTracker = new RelayActivityTracker();
         var tokenOptions = new RelayTokenOptions(configProvider);
         var activeSessionStore = new ActiveSessionStore();
-        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+        var sessionTracker = new SessionTracker(activeSessionStore, NullLogger<SessionTracker>.Instance);
 
         var act = () => new RelayController(
             _relayServiceMock.Object,
@@ -240,7 +236,7 @@ public sealed class RelayControllerStreamTests
         var configProvider = new ConfigurationProvider(() => config);
         var activityTracker = new RelayActivityTracker();
         var activeSessionStore = new ActiveSessionStore();
-        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+        var sessionTracker = new SessionTracker(activeSessionStore, NullLogger<SessionTracker>.Instance);
 
         var act = () => new RelayController(
             _relayServiceMock.Object,
@@ -264,7 +260,7 @@ public sealed class RelayControllerStreamTests
         var activityTracker = new RelayActivityTracker();
         var tokenOptions = new RelayTokenOptions(configProvider);
         var activeSessionStore = new ActiveSessionStore();
-        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+        var sessionTracker = new SessionTracker(activeSessionStore, NullLogger<SessionTracker>.Instance);
 
         var act = () => new RelayController(
             _relayServiceMock.Object,
@@ -288,7 +284,7 @@ public sealed class RelayControllerStreamTests
         var activityTracker = new RelayActivityTracker();
         var tokenOptions = new RelayTokenOptions(configProvider);
         var activeSessionStore = new ActiveSessionStore();
-        var sessionTracker = new SessionTracker(activeSessionStore, new NullMetricsWriter(), NullLogger<SessionTracker>.Instance);
+        var sessionTracker = new SessionTracker(activeSessionStore, NullLogger<SessionTracker>.Instance);
 
         var act = () => new RelayController(
             _relayServiceMock.Object,
@@ -674,7 +670,91 @@ public sealed class RelayControllerStreamTests
         ((MemoryStream)_controller.Response.Body).Length.Should().Be(0, "HEAD must not write body");
     }
 
+    // ── Timing Mark Ordering Tests ──────────────────────────────────────────
+
+    [Fact]
+    public async Task GetStream_MarksFirstByteFromUpstream_BeforeClientWriteCompletes()
+    {
+        _controller.HttpContext.Request.Method = HttpMethods.Get;
+
+        // Response body whose writes take a measurable amount of time, so the gap between
+        // the upstream-read mark and the client-write mark becomes observable.
+        _controller.HttpContext.Response.Body = new SlowWriteStream(TimeSpan.FromMilliseconds(50));
+
+        var timing = new RelayTimingContext { RelayType = RelayType.Stream, ChannelId = "ch-timing" };
+        var relayResult = new RelayResult
+        {
+            StatusCode = 200,
+            ContentType = "video/mp2t",
+            Body = new MemoryStream(new byte[] { 0x47, 0x11, 0x22, 0x33 }),
+            TimingContext = timing,
+        };
+
+        _relayServiceMock
+            .Setup(x => x.RelayStreamAsync("ch-timing", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(relayResult);
+
+        await _controller.GetStream("ch-timing", null, CancellationToken.None);
+
+        timing.FirstByteFromUpstreamTicks.Should().NotBeNull();
+        timing.FirstByteToClientTicks.Should().NotBeNull();
+
+        var deltaMs = (timing.FirstByteToClientTicks!.Value - timing.FirstByteFromUpstreamTicks!.Value)
+            / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0;
+        deltaMs.Should().BeGreaterThanOrEqualTo(30,
+            "first-byte-to-client must be marked only after the client write completed, " +
+            "so the delta to first-byte-from-upstream reflects real downstream write latency");
+    }
+
+    [Fact]
+    public async Task GetImage_MarksFirstByteToClient_OnlyWhenResponseBodyIsRead()
+    {
+        var timing = new RelayTimingContext { RelayType = RelayType.Image };
+        var relayResult = new RelayResult
+        {
+            StatusCode = 200,
+            ContentType = "image/png",
+            Body = new MemoryStream(new byte[] { 0x89, 0x50, 0x4E, 0x47 }),
+            TimingContext = timing,
+        };
+
+        _relayServiceMock
+            .Setup(x => x.RelayImageAsync("imagecache/timing", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(relayResult);
+
+        var result = await _controller.GetImage("imagecache/timing", CancellationToken.None);
+
+        // The action returned, but nothing was streamed to the client yet — the mark must not be set.
+        timing.FirstByteToClientTicks.Should().BeNull(
+            "first-byte-to-client must not be marked before the response pipeline streams any byte");
+
+        // ASP.NET's FileStreamResult writer reads from the wrapper to copy bytes to the client.
+        var fileResult = result.Should().BeOfType<FileStreamResult>().Subject;
+        var buffer = new byte[8];
+        _ = await fileResult.FileStream.ReadAsync(buffer);
+
+        timing.FirstByteToClientTicks.Should().NotBeNull(
+            "the first successful read towards the client must set the to-client mark");
+        timing.FirstByteFromUpstreamTicks.Should().BeNull(
+            "the controller must not fabricate an upstream mark — the relay service records it when upstream bytes arrive");
+    }
+
     // ── Image Relay Tests ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetImage_WithRelayDisabled_ReturnsServiceUnavailable()
+    {
+        _config.RelayEnabled = false;
+
+        var result = await _controller.GetImage("imagecache/disabled", CancellationToken.None);
+
+        result.Should().BeOfType<StatusCodeResult>()
+            .Which.StatusCode.Should().Be(503);
+        _relayServiceMock.Verify(
+            x => x.RelayImageAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "a disabled relay must not proxy images");
+    }
 
     [Fact]
     public async Task GetImage_EmptyPath_ReturnsBadRequest()
@@ -801,6 +881,25 @@ public sealed class RelayControllerStreamTests
     }
 
     // ── Token-Secured Image Endpoint ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetTokenSecuredImage_WithRelayDisabled_ReturnsServiceUnavailable()
+    {
+        _config.RelayEnabled = false;
+
+        var result = await _controller.GetTokenSecuredImage("imagecache/disabled", CancellationToken.None);
+
+        result.Should().BeOfType<StatusCodeResult>()
+            .Which.StatusCode.Should().Be(503);
+        _tokenValidatorMock.Verify(
+            x => x.ValidateAsync(It.IsAny<string?>(), It.IsAny<RelayType>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "the disabled-relay gate must run before token validation, mirroring the stream endpoint");
+        _relayServiceMock.Verify(
+            x => x.RelayImageAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "a disabled relay must not proxy token-secured images");
+    }
 
     [Fact]
     public async Task GetTokenSecuredImage_EmptyPath_ReturnsBadRequest()
@@ -1277,19 +1376,20 @@ public sealed class RelayControllerStreamTests
 
     // ── Helper Types ────────────────────────────────────────────────────────
 
-    /// <summary>No-op MetricsWriter for unit tests — all writes are silently discarded.</summary>
-    private sealed class NullMetricsWriter : MetricsWriter
+    /// <summary>Response stream whose writes take a fixed delay — makes downstream write latency observable.</summary>
+    private sealed class SlowWriteStream : MemoryStream
     {
-        public override void WriteCompletedSession(CompletedStreamSession session)
+        private readonly TimeSpan _delay;
+
+        public SlowWriteStream(TimeSpan delay)
         {
+            _delay = delay;
         }
 
-        public override void WriteEvent(RelayEvent relayEvent)
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
-        }
-
-        public override void WriteActiveSessionSnapshot(ActiveStreamSession session)
-        {
+            await Task.Delay(_delay, cancellationToken);
+            await base.WriteAsync(buffer, cancellationToken);
         }
     }
 

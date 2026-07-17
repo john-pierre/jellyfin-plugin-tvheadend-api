@@ -233,6 +233,7 @@ public class RelayTokenValidatorServiceTests : IDisposable
             MaxUses = 5,
         };
         _repo.Setup(r => r.FindByHashAsync(hash, It.IsAny<CancellationToken>())).ReturnsAsync(record);
+        _repo.Setup(r => r.TryConsumeUseAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
         var sut = CreateSut();
         var result = await sut.ValidateAsync(rawToken, RelayType.Stream, "ch-1", CancellationToken.None);
@@ -240,7 +241,35 @@ public class RelayTokenValidatorServiceTests : IDisposable
         Assert.True(result.IsValid);
         Assert.Equal(RelayTokenFailureReason.None, result.FailureReason);
         Assert.NotNull(result.TokenRecord);
-        _repo.Verify(r => r.IncrementUseCountAsync(1, It.IsAny<CancellationToken>()), Times.Once);
+        _repo.Verify(r => r.TryConsumeUseAsync(1, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ConcurrentMaxUsesRace_ConsumeFails_ReturnsMaxUsesExceeded()
+    {
+        // The snapshot check passes (UseCount < MaxUses) but another request consumes the
+        // last use before this one — the atomic consume must reject the request.
+        var rawToken = RelayTokenHasher.GenerateRawToken();
+        var hash = _hasher.HashToken(rawToken);
+        var record = new RelayTokenRecord
+        {
+            Id = 1,
+            TokenHash = hash,
+            RelayType = "stream",
+            ChannelId = "ch-1",
+            CreatedAtUtc = DateTime.UtcNow,
+            ExpiresAtUtc = DateTime.UtcNow.AddHours(1),
+            UseCount = 4,
+            MaxUses = 5,
+        };
+        _repo.Setup(r => r.FindByHashAsync(hash, It.IsAny<CancellationToken>())).ReturnsAsync(record);
+        _repo.Setup(r => r.TryConsumeUseAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        var sut = CreateSut();
+        var result = await sut.ValidateAsync(rawToken, RelayType.Stream, "ch-1", CancellationToken.None);
+
+        Assert.False(result.IsValid);
+        Assert.Equal(RelayTokenFailureReason.MaxUsesExceeded, result.FailureReason);
     }
 
     [Fact]
@@ -278,6 +307,33 @@ public class RelayTokenValidatorServiceTests : IDisposable
 
         Assert.False(result.IsValid);
         Assert.Equal(RelayTokenFailureReason.UnexpectedError, result.FailureReason);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_NeverExpiringImageToken_MaxValueExpiryWithClockSkew_ReturnsSuccess()
+    {
+        // Regression: the reusable image token is persisted with ExpiresAtUtc = DateTime.MaxValue
+        // (default ImageTokenTtlMinutes = 0). Adding the default 5s clock skew to DateTime.MaxValue
+        // overflowed and every relay image request failed with UnexpectedError (HTTP 500).
+        var rawToken = RelayTokenHasher.GenerateRawToken();
+        var hash = _hasher.HashToken(rawToken);
+        var record = new RelayTokenRecord
+        {
+            Id = 1,
+            TokenHash = hash,
+            RelayType = "image",
+            ImageId = null,
+            CreatedAtUtc = DateTime.UtcNow,
+            ExpiresAtUtc = DateTime.MaxValue,
+            MaxUses = null,
+        };
+        _repo.Setup(r => r.FindByHashAsync(hash, It.IsAny<CancellationToken>())).ReturnsAsync(record);
+
+        var sut = CreateSut();
+        var result = await sut.ValidateAsync(rawToken, RelayType.Image, "imagecache/42", CancellationToken.None);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(RelayTokenFailureReason.None, result.FailureReason);
     }
 
     [Fact]

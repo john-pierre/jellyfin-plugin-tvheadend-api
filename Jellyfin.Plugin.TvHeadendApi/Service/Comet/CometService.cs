@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.WebSockets;
@@ -25,11 +26,15 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Comet;
 /// Manages the TVHeadend Comet WebSocket connection and buffers operational snapshots for the admin UI.
 /// Implements exponential backoff reconnect and persists TVHeadend logs to SQLite.
 /// </summary>
-internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisposable
+internal sealed class CometService : IHostedService, ICometSnapshotReader, IAsyncDisposable, IDisposable
 {
     private const int MaxBufferSize = 200;
     private const int MaxLogTextLength = 2048;
+    private const int MaxPersistQueueSize = 1000;
+    private const int PersistFlushBatchSize = 100;
     internal const string WebSocketSubProtocol = "tvheadend-comet";
+
+    private static readonly TimeSpan DisposeTimeout = TimeSpan.FromSeconds(10);
 
     private readonly ILogger<CometService> _logger;
     private readonly IApiClient _apiClient;
@@ -37,14 +42,19 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     private readonly ConfigurationProvider _configProvider;
     private readonly DatabaseProvider? _databaseProvider;
     private readonly PluginLogService? _pluginLogService;
+    private readonly DatabaseWriteCoordinator? _writeCoordinator;
     private readonly List<LogMessage> _logBuffer = new();
     private readonly object _logLock = new();
     private readonly object _diskLock = new();
+    private readonly ConcurrentQueue<TvheadendLogEntry> _persistQueue = new();
 
     private DbContextOptions<ViewingSessionContext>? _lazyDbContextOptions;
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _receiveLoopTask;
+    private Task _persistFlushTask = Task.CompletedTask;
+    private int _persistFlushScheduled;
     private int _reconnectAttempt;
+    private int _stopped;
 
     // Buffers (thread-safe, bounded)
     private DiskSpaceUpdate? _lastDiskSpaceUpdate;
@@ -55,7 +65,8 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         IUrlBuilder urlBuilder,
         ConfigurationProvider configProvider,
         DatabaseProvider? databaseProvider = null,
-        PluginLogService? pluginLogService = null)
+        PluginLogService? pluginLogService = null,
+        DatabaseWriteCoordinator? writeCoordinator = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
@@ -63,6 +74,7 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _databaseProvider = databaseProvider;
         _pluginLogService = pluginLogService;
+        _writeCoordinator = writeCoordinator;
     }
 
     /// <summary>
@@ -75,17 +87,24 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     /// <param name="configProvider">Configuration provider.</param>
     /// <param name="dbContextOptions">Pre-built EF Core context options.</param>
     /// <param name="pluginLogService">Optional plugin log service.</param>
+    /// <param name="writeCoordinator">Optional coordinator serializing SQLite writes across services.</param>
     internal CometService(
         ILogger<CometService> logger,
         IApiClient apiClient,
         IUrlBuilder urlBuilder,
         ConfigurationProvider configProvider,
         DbContextOptions<ViewingSessionContext>? dbContextOptions,
-        PluginLogService? pluginLogService)
-        : this(logger, apiClient, urlBuilder, configProvider, (DatabaseProvider?)null, pluginLogService)
+        PluginLogService? pluginLogService,
+        DatabaseWriteCoordinator? writeCoordinator = null)
+        : this(logger, apiClient, urlBuilder, configProvider, (DatabaseProvider?)null, pluginLogService, writeCoordinator)
     {
         _lazyDbContextOptions = dbContextOptions;
     }
+
+    /// <summary>
+    /// Gets the current reconnect attempt counter. Exposed for unit testing the backoff policy.
+    /// </summary>
+    internal int ReconnectAttempt => _reconnectAttempt;
 
     private DbContextOptions<ViewingSessionContext>? GetDbContextOptions()
     {
@@ -209,10 +228,12 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
                     continue;
                 }
 
-                await ConnectAndReceiveAsync(config, cancellationToken).ConfigureAwait(false);
+                var receivedAnyMessage = await ConnectAndReceiveAsync(config, cancellationToken).ConfigureAwait(false);
 
-                // Normal close — reset backoff
-                _reconnectAttempt = 0;
+                // A graceful close is only "normal" when the session actually delivered data.
+                // A close straight after the handshake must back off like a failure, otherwise
+                // the loop spins against the endpoint with zero delay.
+                await ApplyPostSessionBackoffAsync(receivedAnyMessage, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -240,6 +261,35 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         }
     }
 
+    /// <summary>
+    /// Applies the reconnect backoff policy after a WebSocket session ended without an exception.
+    /// A graceful close received before any application message is treated as a failure: peers that
+    /// accept the handshake but immediately close (proxy subprotocol mismatch, post-handshake auth
+    /// rejection, load shedding) would otherwise cause a tight, unthrottled connect/close loop.
+    /// </summary>
+    /// <param name="receivedAnyMessage">Whether the session delivered at least one application message.</param>
+    /// <param name="cancellationToken">Cancellation token observed while delaying.</param>
+    /// <returns>The delay that was awaited before the next reconnect attempt.</returns>
+    internal async Task<TimeSpan> ApplyPostSessionBackoffAsync(bool receivedAnyMessage, CancellationToken cancellationToken)
+    {
+        if (receivedAnyMessage)
+        {
+            // Healthy session ended with a graceful close — reset backoff and reconnect promptly.
+            _reconnectAttempt = 0;
+            return TimeSpan.Zero;
+        }
+
+        _reconnectAttempt++;
+        var delay = CalculateBackoffDelay();
+        _logger.LogWarning(
+            "Comet WebSocket closed before any message was received (attempt {Attempt}). Reconnecting in {Delay}s",
+            _reconnectAttempt,
+            delay.TotalSeconds);
+
+        await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+        return delay;
+    }
+
     private TimeSpan CalculateBackoffDelay()
     {
         var config = _configProvider.Configuration;
@@ -250,18 +300,34 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
             ? config.CometReconnectMaxDelaySeconds
             : 120;
 
+        return CalculateBackoffDelay(_reconnectAttempt, baseDelay, maxDelay);
+    }
+
+    /// <summary>
+    /// Calculates the exponential backoff delay with jitter for the given reconnect attempt.
+    /// </summary>
+    /// <param name="reconnectAttempt">The 1-based reconnect attempt counter.</param>
+    /// <param name="baseDelaySeconds">Base delay in seconds.</param>
+    /// <param name="maxDelaySeconds">Upper bound for the delay in seconds.</param>
+    /// <returns>The bounded delay to wait before the next reconnect attempt.</returns>
+    internal static TimeSpan CalculateBackoffDelay(int reconnectAttempt, int baseDelaySeconds, int maxDelaySeconds)
+    {
         // Exponential backoff with jitter: base * 2^attempt + random jitter
-        var exponentialSeconds = baseDelay * Math.Pow(2, Math.Min(_reconnectAttempt - 1, 6));
-        var jitter = Random.Shared.NextDouble() * baseDelay;
-        var totalSeconds = Math.Min(exponentialSeconds + jitter, maxDelay);
+        var exponentialSeconds = baseDelaySeconds * Math.Pow(2, Math.Min(reconnectAttempt - 1, 6));
+        var jitter = Random.Shared.NextDouble() * baseDelaySeconds;
+        var totalSeconds = Math.Min(exponentialSeconds + jitter, maxDelaySeconds);
 
         return TimeSpan.FromSeconds(totalSeconds);
     }
 
     /// <summary>
     /// Connects and runs the receive loop. Returns on disconnect/error.
+    /// The reconnect attempt counter is intentionally NOT reset on a successful handshake:
+    /// a peer that accepts the handshake but closes before sending data would otherwise
+    /// defeat the exponential backoff. The counter resets on the first received message.
     /// </summary>
-    private async Task ConnectAndReceiveAsync(PluginConfiguration config, CancellationToken cancellationToken)
+    /// <returns><c>true</c> when at least one application message was received during the session.</returns>
+    private async Task<bool> ConnectAndReceiveAsync(PluginConfiguration config, CancellationToken cancellationToken)
     {
         var wsUri = BuildWebSocketUri(config, _urlBuilder);
         using var socket = new ClientWebSocket();
@@ -270,12 +336,11 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         using var httpClient = _apiClient.CreateApiHttpClient(config);
         await socket.ConnectAsync(wsUri, httpClient, cancellationToken).ConfigureAwait(false);
 
-        _reconnectAttempt = 0;
         _logger.LogInformation(
             "TVHeadend Comet service connected to {WebSocketUrl}",
             _urlBuilder.MaskSensitiveData(wsUri.ToString(), config));
 
-        await ReceiveLoopAsync(socket, cancellationToken).ConfigureAwait(false);
+        return await ReceiveLoopAsync(socket, cancellationToken).ConfigureAwait(false);
     }
 
     internal static Uri BuildWebSocketUri(PluginConfiguration config, IUrlBuilder urlBuilder)
@@ -299,10 +364,17 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
 
     /// <summary>
     /// Stops the WebSocket connection and cancels the receive loop.
+    /// Idempotent: the host runs <see cref="IHostedService.StopAsync(CancellationToken)"/> before
+    /// container disposal triggers <see cref="Dispose"/>, so subsequent invocations are no-ops.
     /// </summary>
     /// <returns>A task representing the asynchronous stop operation.</returns>
     public async Task StopAsync()
     {
+        if (Interlocked.Exchange(ref _stopped, 1) == 1)
+        {
+            return;
+        }
+
         try
         {
             if (_cancellationTokenSource != null)
@@ -320,7 +392,13 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
                 {
                     // Expected when cancelling the token
                 }
+
+                _receiveLoopTask = null;
             }
+
+            // Best-effort: let an in-flight legacy log flush finish so queued entries are not lost.
+            // The flush task never faults — all failures are caught and logged inside it.
+            await _persistFlushTask.ConfigureAwait(false);
 
             _cancellationTokenSource?.Dispose();
             _cancellationTokenSource = null;
@@ -338,11 +416,12 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     /// </summary>
     /// <param name="socket">The connected WebSocket.</param>
     /// <param name="cancellationToken">Cancellation token to stop the receive loop.</param>
-    /// <returns>A task representing the background receive operation.</returns>
-    private async Task ReceiveLoopAsync(ClientWebSocket socket, CancellationToken cancellationToken)
+    /// <returns><c>true</c> when at least one application message was received before the loop ended.</returns>
+    private async Task<bool> ReceiveLoopAsync(ClientWebSocket socket, CancellationToken cancellationToken)
     {
         var buffer = new byte[4096];
         var stringBuilder = new StringBuilder();
+        var receivedAnyMessage = false;
 
         while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
         {
@@ -371,16 +450,25 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
                             CancellationToken.None).ConfigureAwait(false);
                     }
 
-                    return;
+                    return receivedAnyMessage;
                 }
             }
             while (result != null && !result.EndOfMessage);
 
             if (stringBuilder.Length > 0)
             {
+                if (!receivedAnyMessage)
+                {
+                    // First application message proves a working end-to-end Comet channel — reset backoff.
+                    receivedAnyMessage = true;
+                    _reconnectAttempt = 0;
+                }
+
                 ProcessMessage(stringBuilder.ToString());
             }
         }
+
+        return receivedAnyMessage;
     }
 
     /// <summary>
@@ -435,8 +523,10 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
 
     /// <summary>
     /// Adds a log message to the in-memory buffer and persists to SQLite.
+    /// Internal for unit testing of the persistence pipeline.
     /// </summary>
-    private void AddLog(string text)
+    /// <param name="text">The raw TVHeadend log line.</param>
+    internal void AddLog(string text)
     {
         // TVHeadend comet log lines can embed a persistent ?auth=<token>; sanitize once here so the
         // token never reaches the in-memory buffer, the legacy SQLite table, or the admin dashboard.
@@ -468,7 +558,10 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
     }
 
     /// <summary>
-    /// Persists a log entry to SQLite in a fire-and-forget manner.
+    /// Queues a log entry for persistence to the legacy SQLite table. The hot path only enqueues;
+    /// a single background flusher batches entries and serializes writes through the
+    /// <see cref="DatabaseWriteCoordinator"/> so bursts of Comet log lines no longer spawn one
+    /// uncoordinated connection per line.
     /// </summary>
     private void PersistLogEntry(DateTime timestampUtc, string text)
     {
@@ -478,23 +571,89 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
             return;
         }
 
-        _ = Task.Run(() =>
+        // Bounded queue: drop new entries when full — the legacy table is a best-effort mirror.
+        if (_persistQueue.Count >= MaxPersistQueueSize)
         {
-            try
-            {
-                using var db = new ViewingSessionContext(dbOpts);
-                db.TvheadendLogEntries.Add(new TvheadendLogEntry
-                {
-                    TimestampUtc = timestampUtc,
-                    Text = text.Length > MaxLogTextLength ? text[..MaxLogTextLength] : text,
-                });
-                db.SaveChanges();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Failed to persist TVHeadend log entry to SQLite");
-            }
+            return;
+        }
+
+        _persistQueue.Enqueue(new TvheadendLogEntry
+        {
+            TimestampUtc = timestampUtc,
+            Text = text.Length > MaxLogTextLength ? text[..MaxLogTextLength] : text,
         });
+
+        SchedulePersistFlush(dbOpts);
+    }
+
+    /// <summary>
+    /// Schedules the single-flight background flush of the persistence queue.
+    /// Only one flusher runs at a time; producers merely enqueue.
+    /// </summary>
+    private void SchedulePersistFlush(DbContextOptions<ViewingSessionContext> dbOpts)
+    {
+        if (Interlocked.CompareExchange(ref _persistFlushScheduled, 1, 0) == 0)
+        {
+            _persistFlushTask = Task.Run(() => FlushPersistQueueAsync(dbOpts));
+        }
+    }
+
+    /// <summary>
+    /// Drains the persistence queue in batches, serializing each write through the
+    /// <see cref="DatabaseWriteCoordinator"/> when available so this path cannot race
+    /// other plugin writers on the shared SQLite file.
+    /// </summary>
+    private async Task FlushPersistQueueAsync(DbContextOptions<ViewingSessionContext> dbOpts)
+    {
+        try
+        {
+            while (!_persistQueue.IsEmpty)
+            {
+                var batch = new List<TvheadendLogEntry>(PersistFlushBatchSize);
+                while (batch.Count < PersistFlushBatchSize && _persistQueue.TryDequeue(out var entry))
+                {
+                    batch.Add(entry);
+                }
+
+                if (batch.Count == 0)
+                {
+                    break;
+                }
+
+                IDisposable? writeLock = null;
+                if (_writeCoordinator != null)
+                {
+                    writeLock = await _writeCoordinator.AcquireWriteAsync().ConfigureAwait(false);
+                }
+
+                try
+                {
+                    using var db = new ViewingSessionContext(dbOpts);
+                    db.TvheadendLogEntries.AddRange(batch);
+                    await db.SaveChangesAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    writeLock?.Dispose();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to persist TVHeadend log entries to SQLite");
+        }
+        finally
+        {
+            Volatile.Write(ref _persistFlushScheduled, 0);
+
+            // Close the race where a producer enqueued after the drain but before the
+            // single-flight flag was cleared: that producer saw the flag set and skipped
+            // scheduling, so re-check here.
+            if (!_persistQueue.IsEmpty)
+            {
+                SchedulePersistFlush(dbOpts);
+            }
+        }
     }
 
     /// <summary>
@@ -526,8 +685,23 @@ internal sealed class CometService : IHostedService, ICometSnapshotReader, IDisp
         }
     }
 
+    /// <summary>
+    /// Asynchronously stops the service. Preferred over <see cref="Dispose"/> because it avoids
+    /// blocking the disposing thread with a sync-over-async bridge.
+    /// </summary>
+    /// <returns>A task representing the asynchronous dispose operation.</returns>
+    public async ValueTask DisposeAsync()
+    {
+        await StopAsync().ConfigureAwait(false);
+    }
+
     public void Dispose()
     {
-        StopAsync().GetAwaiter().GetResult();
+        // Normal host shutdown already ran IHostedService.StopAsync, so this is a guarded no-op.
+        // The bounded wait protects the disposing thread from blocking indefinitely otherwise.
+        if (!StopAsync().Wait(DisposeTimeout))
+        {
+            _logger.LogWarning("Timed out waiting for the Comet service to stop during dispose");
+        }
     }
 }

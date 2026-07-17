@@ -26,7 +26,9 @@ Compared to the official TVHeadend plugin path many users know, this plugin is o
 - Very fast channel switching when configured correctly.
 - Better direct play behavior by combining profile strategy and probe-cache workflow.
 - Built-in diagnostics to explain why playback is fast or slow.
-- Guided setup helpers from the plugin UI (profile creation, token generation, diagnostics).
+- Token-secured stream relay (default delivery mode) so clients never see TVHeadend credentials or internal URLs.
+- Profile-aware probe-cache store: cached stream metadata is kept per (channel × TVHeadend profile) and survives profile switches.
+- Guided setup helpers from the plugin UI (profile creation with self-verification, token generation, cache warmup, diagnostics).
 - Active-channel focused guide loading (disabled TVHeadend channels are skipped).
 - Better channel grouping/tag metadata mapping for Jellyfin Live TV views.
 - Richer EPG mapping (for example repeat/premiere/live hints and original air date).
@@ -90,15 +92,16 @@ For non-Direct-Play paths (Direct Stream or Transcoding), Jellyfin core introduc
    - `Username` and `Password`.
    - Generate and save an `Auth Token` (button in auth section).
 
-4. Click `Create "jellyfin" Profile` in the plugin page.
+4. Click `Create "jellyfin" Profile` in the plugin page. The plugin auto-detects the best available
+   H.264 encoder (hardware preferred), verifies the profile by reading a short test stream, and
+   automatically falls back to software libx264 if the chosen encoder delivers no data.
 
 5. Set `Streaming Profile` to `jellyfin`.
 
 6. Enable:
    - `Supports Direct Play`
    - `Supports Direct Stream`
-   - `Supports Probing`
-   - `Enable MediaInfo Cache Write`
+   - `Supports Probing` (mediainfo cache pre-creation is coupled to this setting)
 
 7. Save config, run `Diagnose`, then open Live TV channels.
 
@@ -158,8 +161,13 @@ This combination helps Jellyfin stay on direct play/direct stream paths more oft
 
 For fast zapping, this plugin should be configured so that Direct Play is used whenever technically possible.
 
-- Direct Play: TVHeadend URL is forwarded to the client, and the client connects directly to TVHeadend.
+- Direct Play: the stream URL is forwarded to the client as-is and Jellyfin's processing path is bypassed.
 - Non-Direct-Play: Jellyfin processing path is used, and hard-coded live TV wait/probe timings in Jellyfin core apply.
+
+Which URL the client receives depends on the `Stream Delivery Mode` setting:
+
+- `Relay` (default): the client plays a plugin-hosted relay URL secured with a short-lived scoped token. TVHeadend credentials and internal URLs stay server-side; clients only need to reach Jellyfin.
+- `Direct to TVHeadend`: the client receives the TVHeadend stream URL (with `auth=` token) and connects directly to TVHeadend — fastest path, but requires clients to reach TVHeadend and a configured auth token (falls back to relay otherwise).
 
 As a practical rule: **anything that is not Direct Play usually implies at least about 6 seconds channel-switch time** in Jellyfin live TV flows.
 
@@ -226,8 +234,7 @@ Important token format in this plugin:
 | `Supports Direct Play` | On | Fastest path |
 | `Supports Direct Stream` | On | Useful fallback |
 | `Supports Transcoding` | On or Off by your policy | Compatibility fallback |
-| `Supports Probing` | On | Better stream decision quality |
-| `Enable MediaInfo Cache Write` | On (with `jellyfin` profile) | Faster startup |
+| `Supports Probing` | On | Better stream decision quality; also enables mediainfo cache pre-creation (the old `Enable MediaInfo Cache Write` toggle is deprecated) |
 | `FallbackMaxStreamingBitrate` | Keep default first | Tune only if needed |
 | `AnalyzeDurationMs` | Keep default first | Tune later based on diagnostics |
 | `BufferMs` | `0` initially | Add only if unstable network |
@@ -242,9 +249,8 @@ If your goal is sub-2s switching, use this checklist:
 
 - Use `jellyfin` TVHeadend stream profile.
 - Keep `Direct Play` and `Direct Stream` enabled.
-- Keep probing enabled for reliable stream decisions.
-- Keep media info cache writing enabled.
-- Run channels once to warm cache.
+- Keep probing enabled for reliable stream decisions (this also enables mediainfo cache pre-creation).
+- Use the `Warm Cache` action in the plugin page to pre-create cache files for the whole channel lineup; the plugin also pre-seeds cache entries for every profile reachable via configured streaming-profile rules.
 - Avoid unnecessary transcoding policies on clients.
 - Check diagnostics after every major config change.
 
@@ -310,7 +316,7 @@ Check:
 
 1. Is `Streaming Profile` set to `jellyfin`?
 2. Is direct play allowed by client policy?
-3. Is probing enabled and cache write enabled?
+3. Is probing enabled (this also controls mediainfo cache pre-creation)?
 4. Is the selected client forcing transcoding?
 5. Does diagnostics show profile mismatch/warnings?
 6. If playback mode is not Direct Play, treat >=6s switching as expected behavior in Jellyfin core live TV path.

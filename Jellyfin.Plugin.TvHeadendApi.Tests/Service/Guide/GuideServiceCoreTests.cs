@@ -821,30 +821,34 @@ public class GuideServiceCoreTests
     }
 
     [Fact]
-    public async Task GetChannelsAsync_WithBouquet_UsesBouquetAsChannelGroup()
+    public async Task GetChannelsAsync_WithBouquet_ResolvesBouquetNameAsChannelGroup()
     {
         var config = new PluginConfiguration();
         var api = new Mock<IApiClient>();
         var urlBuilder = new Mock<IUrlBuilder>();
 
+        // TVHeadend's channel grid carries the bouquet's opaque idnode UUID, not its name.
         var json = """
                    {
                      "entries": [
-                       { "uuid": "ch-1", "name": "BBC One", "number": 1, "enabled": true, "bouquet": "Freeview", "tags": ["tag-1"] }
+                       { "uuid": "ch-1", "name": "BBC One", "number": 1, "enabled": true, "bouquet": "de1a9c4fb033626f7e8e08d4c04083ea", "tags": ["tag-1"] }
                      ],
                      "total": 1
                    }
                    """;
 
-        // channel tag lookup uses a separate HTTP call; use a multi-response handler
+        // Tag and bouquet lookups use separate HTTP calls; use a multi-response handler.
         var responses = new Queue<HttpResponseMessage>();
         responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
         responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[{"key":"tag-1","val":"Entertainment"}]}""") });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[{"uuid":"de1a9c4fb033626f7e8e08d4c04083ea","name":"Freeview"}],"total":1}""") });
 
         var handler = new QueueResponseHandler(responses);
 
         api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
-        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        // A fresh client per call: three sequential requests are made (grid, tags, bouquets)
+        // and the service disposes each client after use.
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(() => new HttpClient(handler));
         urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
         urlBuilder.Setup(x => x.BuildResourceUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
         urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
@@ -854,6 +858,142 @@ public class GuideServiceCoreTests
 
         Assert.Single(result);
         Assert.Equal("Freeview", result[0].ChannelGroup);
+        urlBuilder.Verify(x => x.BuildApiUrl(config, It.Is<string>(ep => ep.StartsWith("api/bouquet/grid", StringComparison.Ordinal))), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetChannelsAsync_WithUnresolvableBouquet_FallsBackToFirstTagName()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+
+        var json = """
+                   {
+                     "entries": [
+                       { "uuid": "ch-1", "name": "BBC One", "number": 1, "enabled": true, "bouquet": "bq-unknown", "tags": ["tag-1"] }
+                     ],
+                     "total": 1
+                   }
+                   """;
+
+        var responses = new Queue<HttpResponseMessage>();
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[{"key":"tag-1","val":"Entertainment"}]}""") });
+        // Bouquet grid does not know the UUID → fall back to the tag name, never the raw UUID.
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[],"total":0}""") });
+
+        var handler = new QueueResponseHandler(responses);
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(() => new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+        var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
+
+        Assert.Single(result);
+        Assert.Equal("Entertainment", result[0].ChannelGroup);
+    }
+
+    [Fact]
+    public async Task GetChannelsAsync_WhenBouquetLookupFailsAndNoTags_ChannelGroupIsNull()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+
+        var json = """
+                   {
+                     "entries": [
+                       { "uuid": "ch-1", "name": "BBC One", "number": 1, "enabled": true, "bouquet": "bq-1" }
+                     ],
+                     "total": 1
+                   }
+                   """;
+
+        var responses = new Queue<HttpResponseMessage>();
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[]}""") });
+        // The queue is now empty: the bouquet grid request receives HTTP 500,
+        // which must degrade to "no bouquet names" — not to a raw UUID group.
+        var handler = new QueueResponseHandler(responses);
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(() => new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+        var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
+
+        Assert.Single(result);
+        Assert.Null(result[0].ChannelGroup);
+    }
+
+    [Fact]
+    public async Task GetChannelsAsync_WithoutBouquets_DoesNotFetchBouquetGrid()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+
+        var json = """{"entries": [{ "uuid": "ch-1", "name": "BBC One", "number": 1, "enabled": true, "tags": ["tag-1"] }], "total": 1}""";
+
+        var responses = new Queue<HttpResponseMessage>();
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[{"key":"tag-1","val":"Entertainment"}]}""") });
+        var handler = new QueueResponseHandler(responses);
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+        var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
+
+        Assert.Single(result);
+        Assert.Equal("Entertainment", result[0].ChannelGroup);
+        urlBuilder.Verify(x => x.BuildApiUrl(config, It.Is<string>(ep => ep.StartsWith("api/bouquet/grid", StringComparison.Ordinal))), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetChannelsAsync_WithMultipleBouquetChannels_FetchesBouquetGridOnce()
+    {
+        var config = new PluginConfiguration();
+        var api = new Mock<IApiClient>();
+        var urlBuilder = new Mock<IUrlBuilder>();
+
+        var json = """
+                   {
+                     "entries": [
+                       { "uuid": "ch-1", "name": "One", "number": 1, "enabled": true, "bouquet": "bq-1" },
+                       { "uuid": "ch-2", "name": "Two", "number": 2, "enabled": true, "bouquet": "bq-2" }
+                     ],
+                     "total": 2
+                   }
+                   """;
+
+        var responses = new Queue<HttpResponseMessage>();
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[]}""") });
+        responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"entries":[{"uuid":"bq-1","name":"Sky"},{"uuid":"bq-2","name":"Freesat"}],"total":2}""") });
+        var handler = new QueueResponseHandler(responses);
+
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        api.Setup(x => x.CreateApiHttpClient(config)).Returns(() => new HttpClient(handler));
+        urlBuilder.Setup(x => x.BuildApiUrl(config, It.IsAny<string>())).Returns<PluginConfiguration, string>((_, ep) => "http://tvh/" + ep.TrimStart('/'));
+        urlBuilder.Setup(x => x.MaskSensitiveData(It.IsAny<string>(), config)).Returns<string, PluginConfiguration>((v, _) => v);
+
+        var sut = new GuideService(NullLogger<GuideService>.Instance, api.Object, urlBuilder.Object, StubRelay(), NullHealthService.Instance);
+        var result = (await sut.GetChannelsAsync(CancellationToken.None)).ToList();
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("Sky", result[0].ChannelGroup);
+        Assert.Equal("Freesat", result[1].ChannelGroup);
+        urlBuilder.Verify(x => x.BuildApiUrl(config, It.Is<string>(ep => ep.StartsWith("api/bouquet/grid", StringComparison.Ordinal))), Times.Once);
     }
 
     [Fact]
@@ -1475,6 +1615,24 @@ public class GuideServiceCoreTests
         var program = await BuildProgramWithFields(episodeUri: "episode/456");
 
         Assert.Null(program.HomePageUrl);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithCridEpisodeUri_SetsHomePageUrlNull()
+    {
+        // DVB CRIDs parse as absolute URIs but have no browser protocol handler,
+        // so they must not surface as a clickable homepage link.
+        var program = await BuildProgramWithFields(episodeUri: "crid://www.channel4.com/41408/013");
+
+        Assert.Null(program.HomePageUrl);
+    }
+
+    [Fact]
+    public async Task GetProgramsAsync_WithHttpEpisodeUri_SetsHomePageUrl()
+    {
+        var program = await BuildProgramWithFields(episodeUri: "http://example.com/show/9");
+
+        Assert.Equal("http://example.com/show/9", program.HomePageUrl);
     }
 
     // ── No image and no channelIcon ──

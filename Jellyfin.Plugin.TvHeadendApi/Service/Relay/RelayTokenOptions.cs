@@ -45,7 +45,7 @@ public sealed class RelayTokenOptions
     public int StreamTtlSeconds => Math.Max(MinStreamTtlSeconds, _configProvider.Configuration?.StreamTokenTtlSeconds ?? 120);
 
     /// <summary>Gets the effective stream token max uses (0 = unlimited).</summary>
-    public int StreamMaxUses => Math.Max(0, _configProvider.Configuration?.StreamTokenMaxUses ?? 5);
+    public int StreamMaxUses => Math.Max(0, _configProvider.Configuration?.StreamTokenMaxUses ?? 25);
 
     /// <summary>Gets the effective image token TTL in minutes (0 = never expire, minimum 1 if non-zero).</summary>
     public int ImageTtlMinutes

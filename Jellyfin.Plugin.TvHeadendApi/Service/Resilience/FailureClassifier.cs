@@ -23,6 +23,9 @@ internal static class FailureClassifier
     {
         return ex switch
         {
+            // HttpClient.Timeout surfaces as TaskCanceledException wrapping TimeoutException
+            // (.NET 5+) — that is a backend timeout, not a caller cancellation.
+            TaskCanceledException tce when tce.InnerException is TimeoutException => FailureReason.Timeout,
             TaskCanceledException => FailureReason.Cancelled,
             OperationCanceledException => FailureReason.Cancelled,
             HttpRequestException httpEx => ClassifyHttpRequestException(httpEx),

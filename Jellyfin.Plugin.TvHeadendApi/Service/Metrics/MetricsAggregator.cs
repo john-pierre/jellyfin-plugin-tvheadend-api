@@ -1,18 +1,19 @@
-// Metrics aggregator — reads completed sessions from SQLite for dashboard queries.
+// Metrics aggregator — reads stream telemetry from the consolidated relay_request_metric table.
 
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using Jellyfin.Plugin.TvHeadendApi.Model.Metrics;
+using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Database;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TvHeadendApi.Service.Metrics;
 
 /// <summary>
-/// Reads completed session data from SQLite and aggregates it for dashboard APIs.
-/// Provides historical metrics queries with efficient SQL-level filtering.
+/// Reads stream telemetry rows from the consolidated <c>relay_request_metric</c> table and
+/// aggregates them for the dashboard APIs. Read-only — persistence is owned by the relay
+/// metrics pipeline.
 /// </summary>
 internal sealed class MetricsAggregator
 {
@@ -31,7 +32,7 @@ internal sealed class MetricsAggregator
     }
 
     /// <summary>
-    /// Builds a history metrics response for today's completed sessions.
+    /// Builds a history metrics response for today's stream requests.
     /// </summary>
     /// <returns>Historical metrics response with aggregated data.</returns>
     public HistoryMetricsResponse GetHistoryMetrics()
@@ -47,21 +48,25 @@ internal sealed class MetricsAggregator
             using var connection = _connectionFactory.CreateConnection();
             connection.Open();
 
-            var todayStart = DateTime.UtcNow.Date.ToString("o", CultureInfo.InvariantCulture);
+            // EF Core's SQLite provider stores DateTime as "yyyy-MM-dd HH:mm:ss.FFFFFFF" (space
+            // separator). TEXT comparison is lexicographic, so the bound parameter MUST use the
+            // same shape — ISO "o" format ('T' separator) silently matches nothing.
+            var todayStart = DateTime.UtcNow.Date.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
-            // Aggregate counts.
+            // Aggregate counts. AVG(startup_latency_ms) filters > 0 so its population matches
+            // the P95 query below — previously the two disagreed (AVG included zeros).
             using (var cmd = connection.CreateCommand())
             {
                 cmd.CommandText = """
                     SELECT
                         COUNT(*) as total,
-                        SUM(CASE WHEN final_outcome = 'Completed' THEN 1 ELSE 0 END) as completed,
+                        SUM(CASE WHEN stream_final_outcome = 'Completed' THEN 1 ELSE 0 END) as completed,
                         SUM(CASE WHEN normal_disconnect = 1 THEN 1 ELSE 0 END) as normal_disconnects,
-                        AVG(startup_latency_ms) as avg_startup,
-                        SUM(total_bytes) as total_bytes,
-                        AVG(session_duration_ms) as avg_duration
-                    FROM completed_stream_sessions
-                    WHERE started_at_utc >= @todayStart
+                        AVG(CASE WHEN startup_latency_ms > 0 THEN startup_latency_ms ELSE NULL END) as avg_startup,
+                        SUM(bytes_sent) as total_bytes,
+                        AVG(total_duration_ms) as avg_duration
+                    FROM relay_request_metric
+                    WHERE relay_type = 'stream' AND created_at_utc >= @todayStart
                     """;
                 cmd.Parameters.AddWithValue("@todayStart", todayStart);
                 using var reader = cmd.ExecuteReader();
@@ -76,12 +81,12 @@ internal sealed class MetricsAggregator
                 }
             }
 
-            // P95 startup latency.
+            // P95 startup latency — same population filter (> 0) as the AVG above.
             using (var cmd = connection.CreateCommand())
             {
                 cmd.CommandText = """
-                    SELECT startup_latency_ms FROM completed_stream_sessions
-                    WHERE started_at_utc >= @todayStart AND startup_latency_ms > 0
+                    SELECT startup_latency_ms FROM relay_request_metric
+                    WHERE relay_type = 'stream' AND created_at_utc >= @todayStart AND startup_latency_ms > 0
                     ORDER BY startup_latency_ms
                     """;
                 cmd.Parameters.AddWithValue("@todayStart", todayStart);
@@ -103,8 +108,9 @@ internal sealed class MetricsAggregator
             using (var cmd = connection.CreateCommand())
             {
                 cmd.CommandText = """
-                    SELECT channel_name, COUNT(*) as cnt FROM completed_stream_sessions
-                    WHERE started_at_utc >= @todayStart AND channel_name != ''
+                    SELECT channel_name, COUNT(*) as cnt FROM relay_request_metric
+                    WHERE relay_type = 'stream' AND created_at_utc >= @todayStart
+                          AND channel_name IS NOT NULL AND channel_name != ''
                     GROUP BY channel_name ORDER BY cnt DESC LIMIT 10
                     """;
                 cmd.Parameters.AddWithValue("@todayStart", todayStart);
@@ -119,8 +125,9 @@ internal sealed class MetricsAggregator
             using (var cmd = connection.CreateCommand())
             {
                 cmd.CommandText = """
-                    SELECT client_name, COUNT(*) as cnt FROM completed_stream_sessions
-                    WHERE started_at_utc >= @todayStart AND client_name != ''
+                    SELECT client_name, COUNT(*) as cnt FROM relay_request_metric
+                    WHERE relay_type = 'stream' AND created_at_utc >= @todayStart
+                          AND client_name IS NOT NULL AND client_name != ''
                     GROUP BY client_name ORDER BY cnt DESC LIMIT 10
                     """;
                 cmd.Parameters.AddWithValue("@todayStart", todayStart);
@@ -131,13 +138,14 @@ internal sealed class MetricsAggregator
                 }
             }
 
-            // Failures by reason.
+            // Failures by reason (ended_by) — failures only, normal disconnects excluded.
             using (var cmd = connection.CreateCommand())
             {
                 cmd.CommandText = """
-                    SELECT failure_reason, COUNT(*) as cnt FROM completed_stream_sessions
-                    WHERE started_at_utc >= @todayStart AND failure_reason IS NOT NULL
-                    GROUP BY failure_reason ORDER BY cnt DESC
+                    SELECT ended_by, COUNT(*) as cnt FROM relay_request_metric
+                    WHERE relay_type = 'stream' AND created_at_utc >= @todayStart
+                          AND normal_disconnect = 0 AND ended_by IS NOT NULL
+                    GROUP BY ended_by ORDER BY cnt DESC
                     """;
                 cmd.Parameters.AddWithValue("@todayStart", todayStart);
                 using var reader = cmd.ExecuteReader();
@@ -147,13 +155,14 @@ internal sealed class MetricsAggregator
                 }
             }
 
-            // Failures by category (upstream/downstream).
+            // Failures by category (startup/upstream/downstream classification).
             using (var cmd = connection.CreateCommand())
             {
                 cmd.CommandText = """
-                    SELECT final_outcome, COUNT(*) as cnt FROM completed_stream_sessions
-                    WHERE started_at_utc >= @todayStart AND normal_disconnect = 0
-                    GROUP BY final_outcome ORDER BY cnt DESC
+                    SELECT stream_final_outcome, COUNT(*) as cnt FROM relay_request_metric
+                    WHERE relay_type = 'stream' AND created_at_utc >= @todayStart
+                          AND normal_disconnect = 0 AND stream_final_outcome IS NOT NULL
+                    GROUP BY stream_final_outcome ORDER BY cnt DESC
                     """;
                 cmd.Parameters.AddWithValue("@todayStart", todayStart);
                 using var reader = cmd.ExecuteReader();
@@ -172,7 +181,7 @@ internal sealed class MetricsAggregator
     }
 
     /// <summary>
-    /// Gets failure counts for today grouped by upstream/downstream.
+    /// Gets failure counts for today grouped by startup/upstream/downstream.
     /// </summary>
     /// <returns>Tuple of (startup, upstream, downstream) failure counts.</returns>
     public (int Startup, int Upstream, int Downstream) GetTodayFailureCounts()
@@ -186,16 +195,19 @@ internal sealed class MetricsAggregator
         {
             using var connection = _connectionFactory.CreateConnection();
             connection.Open();
-            var todayStart = DateTime.UtcNow.Date.ToString("o", CultureInfo.InvariantCulture);
+            // EF Core's SQLite provider stores DateTime as "yyyy-MM-dd HH:mm:ss.FFFFFFF" (space
+            // separator). TEXT comparison is lexicographic, so the bound parameter MUST use the
+            // same shape — ISO "o" format ('T' separator) silently matches nothing.
+            var todayStart = DateTime.UtcNow.Date.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
             using var cmd = connection.CreateCommand();
             cmd.CommandText = """
                 SELECT
-                    SUM(CASE WHEN final_outcome = 'StartupFailed' THEN 1 ELSE 0 END),
-                    SUM(CASE WHEN final_outcome = 'UpstreamFailed' THEN 1 ELSE 0 END),
-                    SUM(CASE WHEN final_outcome = 'DownstreamFailed' THEN 1 ELSE 0 END)
-                FROM completed_stream_sessions
-                WHERE started_at_utc >= @todayStart
+                    SUM(CASE WHEN stream_final_outcome = 'StartupFailed' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN stream_final_outcome = 'UpstreamFailed' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN stream_final_outcome = 'DownstreamFailed' THEN 1 ELSE 0 END)
+                FROM relay_request_metric
+                WHERE relay_type = 'stream' AND created_at_utc >= @todayStart
                 """;
             cmd.Parameters.AddWithValue("@todayStart", todayStart);
             using var reader = cmd.ExecuteReader();
@@ -216,10 +228,10 @@ internal sealed class MetricsAggregator
     }
 
     /// <summary>
-    /// Gets a completed session by ID with its event timeline.
+    /// Gets a completed session by its session ID from the consolidated metric table.
     /// </summary>
     /// <param name="sessionId">The session identifier.</param>
-    /// <returns>Session detail with events, or null if not found.</returns>
+    /// <returns>Session detail, or null if not found.</returns>
     public SessionMetricsResponse? GetSessionDetail(string sessionId)
     {
         if (!_dbHealthService.IsAvailable || string.IsNullOrEmpty(sessionId))
@@ -232,36 +244,16 @@ internal sealed class MetricsAggregator
             using var connection = _connectionFactory.CreateConnection();
             connection.Open();
 
-            CompletedStreamSession? session = null;
-            using (var cmd = connection.CreateCommand())
-            {
-                cmd.CommandText = "SELECT * FROM completed_stream_sessions WHERE session_id = @sid LIMIT 1";
-                cmd.Parameters.AddWithValue("@sid", sessionId);
-                using var reader = cmd.ExecuteReader();
-                if (reader.Read())
-                {
-                    session = ReadCompletedSession(reader);
-                }
-            }
-
-            if (session == null)
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT * FROM relay_request_metric WHERE session_id = @sid LIMIT 1";
+            cmd.Parameters.AddWithValue("@sid", sessionId);
+            using var reader = cmd.ExecuteReader();
+            if (!reader.Read())
             {
                 return null;
             }
 
-            var events = new List<RelayEvent>();
-            using (var cmd = connection.CreateCommand())
-            {
-                cmd.CommandText = "SELECT * FROM relay_events WHERE session_id = @sid ORDER BY timestamp_utc";
-                cmd.Parameters.AddWithValue("@sid", sessionId);
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    events.Add(ReadRelayEvent(reader));
-                }
-            }
-
-            return new SessionMetricsResponse { Session = session, Events = events };
+            return new SessionMetricsResponse { Session = ReadCompletedSession(reader) };
         }
         catch (Exception ex)
         {
@@ -272,40 +264,48 @@ internal sealed class MetricsAggregator
 
     private static CompletedStreamSession ReadCompletedSession(Microsoft.Data.Sqlite.SqliteDataReader reader)
     {
+        var startedAt = DateTime.Parse(
+            reader["created_at_utc"]?.ToString() ?? DateTime.UtcNow.ToString("o"),
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.RoundtripKind);
+        var totalDurationMs = Convert.ToDouble(reader["total_duration_ms"], CultureInfo.InvariantCulture);
+        var avgBytesPerSecond = ReadNullableDouble(reader, "average_bytes_per_second");
+        var startupLatency = ReadNullableDouble(reader, "startup_latency_ms");
+
         return new CompletedStreamSession
         {
             SessionId = reader["session_id"]?.ToString() ?? string.Empty,
-            StartedAtUtc = DateTime.Parse(reader["started_at_utc"]?.ToString() ?? DateTime.UtcNow.ToString("o"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
-            EndedAtUtc = DateTime.Parse(reader["ended_at_utc"]?.ToString() ?? DateTime.UtcNow.ToString("o"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+            StartedAtUtc = startedAt,
+            EndedAtUtc = startedAt.AddMilliseconds(totalDurationMs),
             ChannelId = reader["channel_id"]?.ToString() ?? string.Empty,
-            ChannelName = reader["channel_name"]?.ToString() ?? string.Empty,
-            ClientName = reader["client_name"]?.ToString() ?? string.Empty,
-            ClientIpHash = reader["client_ip_hash"]?.ToString() ?? string.Empty,
+            ChannelName = reader["channel_name"] == DBNull.Value ? string.Empty : reader["channel_name"]?.ToString() ?? string.Empty,
+            ClientName = reader["client_name"] == DBNull.Value ? string.Empty : reader["client_name"]?.ToString() ?? string.Empty,
             RequestMethod = reader["request_method"]?.ToString() ?? "GET",
-            TotalDurationMs = Convert.ToDouble(reader["total_duration_ms"], CultureInfo.InvariantCulture),
-            SessionDurationMs = Convert.ToDouble(reader["session_duration_ms"], CultureInfo.InvariantCulture),
-            TotalBytes = Convert.ToInt64(reader["total_bytes"], CultureInfo.InvariantCulture),
+            TotalDurationMs = totalDurationMs,
+            TotalBytes = Convert.ToInt64(reader["bytes_sent"], CultureInfo.InvariantCulture),
+            AverageBitrate = (avgBytesPerSecond ?? 0) * 8.0,
+            PeakBitrate = ReadNullableDouble(reader, "peak_bitrate"),
+            StartupLatencyMs = startupLatency ?? 0,
+            UpstreamHeadersLatencyMs = ReadNullableDouble(reader, "upstream_headers_duration_ms"),
+            UpstreamFirstByteLatencyMs = ReadNullableDouble(reader, "first_byte_from_upstream_duration_ms"),
+            DownstreamFirstByteLatencyMs = ReadNullableDouble(reader, "first_byte_to_client_duration_ms"),
+            RangeRequested = Convert.ToInt32(reader["was_range_request"], CultureInfo.InvariantCulture) == 1,
             EndedBy = Enum.TryParse<StreamEndedBy>(reader["ended_by"]?.ToString(), out var eb) ? eb : StreamEndedBy.Unknown,
-            FinalOutcome = Enum.TryParse<StreamFinalOutcome>(reader["final_outcome"]?.ToString(), out var fo) ? fo : StreamFinalOutcome.Failed,
-            NormalDisconnect = Convert.ToInt32(reader["normal_disconnect"], CultureInfo.InvariantCulture) == 1,
             FailureReason = reader["failure_reason"] == DBNull.Value ? null : reader["failure_reason"]?.ToString(),
-            UserAgent = reader["user_agent"]?.ToString() ?? string.Empty,
+            FinalOutcome = Enum.TryParse<StreamFinalOutcome>(reader["stream_final_outcome"]?.ToString(), out var fo) ? fo : StreamFinalOutcome.Failed,
+            NormalDisconnect = reader["normal_disconnect"] != DBNull.Value
+                && Convert.ToInt32(reader["normal_disconnect"], CultureInfo.InvariantCulture) == 1,
+            UserAgent = reader["user_agent"] == DBNull.Value ? string.Empty : reader["user_agent"]?.ToString() ?? string.Empty,
+            EffectiveProfile = reader["effective_profile"] == DBNull.Value ? null : reader["effective_profile"]?.ToString(),
+            ResolutionSource = reader["resolution_source"] == DBNull.Value ? null : reader["resolution_source"]?.ToString(),
+            MediaInfoCacheStatus = reader["mediainfo_cache_status"] == DBNull.Value ? null : reader["mediainfo_cache_status"]?.ToString(),
+            StreamSetupMs = ReadNullableDouble(reader, "stream_setup_ms"),
         };
     }
 
-    private static RelayEvent ReadRelayEvent(Microsoft.Data.Sqlite.SqliteDataReader reader)
+    private static double? ReadNullableDouble(Microsoft.Data.Sqlite.SqliteDataReader reader, string column)
     {
-        return new RelayEvent
-        {
-            EventId = Convert.ToInt64(reader["event_id"], CultureInfo.InvariantCulture),
-            TimestampUtc = DateTime.Parse(reader["timestamp_utc"]?.ToString() ?? DateTime.UtcNow.ToString("o"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
-            SessionId = reader["session_id"]?.ToString() ?? string.Empty,
-            EventType = reader["event_type"]?.ToString() ?? string.Empty,
-            Severity = reader["severity"]?.ToString() ?? "info",
-            Message = reader["message"]?.ToString() ?? string.Empty,
-            UpstreamStatus = reader["upstream_status"] == DBNull.Value ? null : reader["upstream_status"]?.ToString(),
-            DownstreamStatus = reader["downstream_status"] == DBNull.Value ? null : reader["downstream_status"]?.ToString(),
-            BytesSentSnapshot = reader["bytes_sent_snapshot"] == DBNull.Value ? null : Convert.ToInt64(reader["bytes_sent_snapshot"], CultureInfo.InvariantCulture),
-        };
+        var value = reader[column];
+        return value == DBNull.Value || value == null ? null : Convert.ToDouble(value, CultureInfo.InvariantCulture);
     }
 }

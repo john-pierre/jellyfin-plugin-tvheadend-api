@@ -14,6 +14,17 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Relay;
 /// </summary>
 internal sealed class RelayTokenCleanupService : IHostedService, IDisposable
 {
+    /// <summary>
+    /// Upper bound for the effective cleanup cadence. Expired tokens are worthless (validation
+    /// always rejects them) and should disappear from the database — and the dashboard counts —
+    /// within minutes, so configured intervals above this cap are clamped down to it. Shorter
+    /// configured intervals are honored as-is.
+    /// </summary>
+    internal static readonly TimeSpan MaxCleanupInterval = TimeSpan.FromMinutes(5);
+
+    /// <summary>Delay before the first cleanup run after startup.</summary>
+    private static readonly TimeSpan FirstRunDelay = TimeSpan.FromMinutes(1);
+
     private readonly ILogger<RelayTokenCleanupService> _logger;
     private readonly IRelayTokenService _tokenService;
     private readonly RelayTokenOptions _options;
@@ -38,19 +49,29 @@ internal sealed class RelayTokenCleanupService : IHostedService, IDisposable
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        var interval = _options.CleanupInterval;
+        var interval = GetEffectiveInterval(_options.CleanupInterval);
         _cleanupTimer = new Timer(
             _ => RunCleanup(),
             null,
-            TimeSpan.FromMinutes(5), // First run after 5 minutes
+            FirstRunDelay,
             interval);
 
         _logger.LogInformation(
-            "RelayTokenCleanupService started — cleanup interval: {IntervalMinutes} minutes.",
+            "RelayTokenCleanupService started — cleanup runs every {IntervalMinutes} minutes (configured: {ConfiguredMinutes} minutes).",
+            interval.TotalMinutes,
             _options.CleanupIntervalMinutes);
 
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// Returns the effective cleanup interval: the configured value, clamped to
+    /// <see cref="MaxCleanupInterval"/> so expired tokens never linger for hours.
+    /// </summary>
+    /// <param name="configured">The configured cleanup interval.</param>
+    /// <returns>The interval actually used for the cleanup timer.</returns>
+    internal static TimeSpan GetEffectiveInterval(TimeSpan configured)
+        => configured > MaxCleanupInterval ? MaxCleanupInterval : configured;
 
     /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken)

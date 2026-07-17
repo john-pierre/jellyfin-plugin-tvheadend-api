@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -42,16 +43,21 @@ public class DefaultProfileServiceExtendedTests
     private static string IdNodeLoadWithClass(string className) =>
         $$"""{"entries":[{"class":"{{className}}","params":[]}]}""";
 
+    private static string IdNodeLoadWithClassAndParams(string className) =>
+        $$"""{"entries":[{"class":"{{className}}","params":[{"id":"uuid","value":"uuid-old"},{"id":"name","value":"jellyfin-h264"},{"id":"deinterlace","value":true},{"id":"preset","value":"faster"}]}]}""";
+
     private sealed record PostCall(string Url, IReadOnlyList<KeyValuePair<string, string>> Form);
 
     private static Mock<IApiClient> CreateApi(
         Func<string, string> getStringHandler,
         List<PostCall>? captured = null,
-        Func<string, HttpResponseMessage>? postFormHandler = null)
+        Func<PostCall, HttpResponseMessage>? postFormHandler = null,
+        HttpMessageHandler? httpHandler = null)
     {
         var api = new Mock<IApiClient>();
         api.Setup(x => x.GetCurrentConfiguration()).Returns(TestConfig);
-        api.Setup(x => x.CreateApiHttpClient(It.IsAny<PluginConfiguration>())).Returns(new HttpClient());
+        api.Setup(x => x.CreateApiHttpClient(It.IsAny<PluginConfiguration>()))
+            .Returns(() => httpHandler != null ? new HttpClient(httpHandler, disposeHandler: false) : new HttpClient());
 
         api.Setup(x => x.GetStringAsync(It.IsAny<HttpClient>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, CancellationToken>((_, url, _) => Task.FromResult(getStringHandler(url)));
@@ -61,8 +67,9 @@ public class DefaultProfileServiceExtendedTests
                 It.IsAny<IEnumerable<KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
             .Returns<HttpClient, string, IEnumerable<KeyValuePair<string, string>>, CancellationToken>((_, url, form, _) =>
             {
-                captured?.Add(new PostCall(url, form.ToList()));
-                var response = postFormHandler?.Invoke(url)
+                var call = new PostCall(url, form.ToList());
+                captured?.Add(call);
+                var response = postFormHandler?.Invoke(call)
                     ?? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
                 return Task.FromResult(response);
             });
@@ -70,12 +77,22 @@ public class DefaultProfileServiceExtendedTests
         return api;
     }
 
+    private static bool IsCodecProfileCreate(PostCall call, string codecClass) =>
+        call.Url.Contains("codec_profile/create", StringComparison.Ordinal)
+        && call.Form.Any(f => f.Key == "class" && f.Value == codecClass);
+
     private static IUrlBuilder UrlBuilder() => Mock.Of<IUrlBuilder>(u =>
         u.GetBaseUrl(It.IsAny<PluginConfiguration>()) == "http://tvh:9981"
         && u.GetWebRoot(It.IsAny<PluginConfiguration>()) == "/");
 
     private static DefaultProfileService Sut(Mock<IApiClient> api) =>
         new(NullLogger<DefaultProfileService>.Instance, api.Object, UrlBuilder());
+
+    private static DefaultProfileService Sut(
+        Mock<IApiClient> api,
+        IProfileContainerResolver containerResolver,
+        IProfileDiscoveryService discoveryService) =>
+        new(NullLogger<DefaultProfileService>.Instance, api.Object, UrlBuilder(), containerResolver, discoveryService);
 
     [Fact]
     public async Task DetectsLibx264_CreatesTranscodeProfile()
@@ -119,6 +136,113 @@ public class DefaultProfileServiceExtendedTests
         Assert.Contains("\"AAC\"", conf);     // AAC source is transcoded, not copied.
         Assert.Contains("MPEG2VIDEO", conf);
         Assert.Contains("MPEG2AUDIO", conf);
+
+        // Regression: with sid == 0 TVHeadend's libav muxer passes the FFmpeg-6-incompatible
+        // "mpegts_flags=nit" option and every transcode stream returns 0 bytes.
+        Assert.Contains("\"sid\":1", conf);
+        Assert.Contains("\"rewrite_nit\":true", conf);
+    }
+
+    [Fact]
+    public async Task Verification_NoData_FallsBackToSoftwareLibx264()
+    {
+        // A visible-but-broken hardware encoder (0-byte streams) must be detected by the
+        // post-creation verification and replaced with software libx264 automatically.
+        var streamCalls = 0;
+        var handler = new RoutedHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("/stream/channel/", StringComparison.Ordinal))
+            {
+                streamCalls++;
+                var bytes = streamCalls == 1 ? Array.Empty<byte>() : new byte[64 * 1024];
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var posts = new List<PostCall>();
+        var api = CreateApi(
+            url =>
+            {
+                if (url.Contains("codec_profile/list")) return EmptyList;
+                if (url.Contains("codec/list")) return CodecList(VaapiEntry, Libx264Entry, AacEntry);
+                if (url.Contains("profile/list")) return EmptyList;
+                if (url.Contains("channel/grid")) return """{"entries":[{"uuid":"ch-1"}]}""";
+                return "{}";
+            },
+            posts,
+            httpHandler: handler);
+
+        var result = await Sut(api).CreateProfileAsync(CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Contains("VAAPI", result.Message);
+        Assert.Contains("fell back to software libx264", result.Message);
+        Assert.Equal(2, streamCalls);
+
+        // The video codec profile was created twice: first VAAPI, then the libx264 fallback.
+        Assert.Contains(posts, p => IsCodecProfileCreate(p, "h264_vaapi"));
+        Assert.Contains(posts, p => IsCodecProfileCreate(p, "libx264"));
+    }
+
+    [Fact]
+    public async Task Verification_DataFlows_ReportsVerified()
+    {
+        var handler = new RoutedHandler(request =>
+            request.RequestUri!.AbsolutePath.Contains("/stream/channel/", StringComparison.Ordinal)
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[64 * 1024]) }
+                : new HttpResponseMessage(HttpStatusCode.NotFound));
+
+        var api = CreateApi(
+            url =>
+            {
+                if (url.Contains("codec_profile/list")) return EmptyList;
+                if (url.Contains("codec/list")) return CodecList(Libx264Entry, AacEntry);
+                if (url.Contains("profile/list")) return EmptyList;
+                if (url.Contains("channel/grid")) return """{"entries":[{"uuid":"ch-1"}]}""";
+                return "{}";
+            },
+            httpHandler: handler);
+
+        var result = await Sut(api).CreateProfileAsync(CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Contains("transcode verified", result.Message);
+    }
+
+    [Fact]
+    public async Task Verification_NoStreamingPermission_IsSkippedWithoutFallback()
+    {
+        var handler = new RoutedHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        var posts = new List<PostCall>();
+        var api = CreateApi(
+            url =>
+            {
+                if (url.Contains("codec_profile/list")) return EmptyList;
+                if (url.Contains("codec/list")) return CodecList(VaapiEntry, Libx264Entry, AacEntry);
+                if (url.Contains("profile/list")) return EmptyList;
+                if (url.Contains("channel/grid")) return """{"entries":[{"uuid":"ch-1"}]}""";
+                return "{}";
+            },
+            posts,
+            httpHandler: handler);
+
+        var result = await Sut(api).CreateProfileAsync(CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.DoesNotContain("fell back", result.Message);
+        Assert.DoesNotContain(posts, p => IsCodecProfileCreate(p, "libx264"));
+    }
+
+    private sealed class RoutedHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
+
+        public RoutedHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) => _handler = handler;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(_handler(request));
     }
 
     [Fact]
@@ -286,6 +410,150 @@ public class DefaultProfileServiceExtendedTests
     }
 
     [Fact]
+    public async Task ExistingCodecProfile_ReplacementCreateFails_RestoresPreviousProfile()
+    {
+        var posts = new List<PostCall>();
+        var api = CreateApi(
+            url =>
+            {
+                if (url.Contains("codec_profile/list")) return CodecProfileListWith("jellyfin-h264");
+                if (url.Contains("codec/list")) return CodecList(VaapiEntry, Libx264Entry, AacEntry);
+                if (url.Contains("profile/list")) return EmptyList;
+                if (url.Contains("idnode/load")) return IdNodeLoadWithClassAndParams("codec_profile_libx264");
+                return "{}";
+            },
+            posts,
+            // The VAAPI replacement cannot be created (e.g. TVHeadend rejects the device config).
+            call => IsCodecProfileCreate(call, "h264_vaapi")
+                ? new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("bad device") }
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+
+        var result = await Sut(api).CreateProfileAsync(CancellationToken.None);
+
+        // The failed swap must recreate the previous libx264 profile from the captured backup
+        // (delete happened, replacement create failed) instead of leaving it deleted.
+        var restore = posts.Single(p => IsCodecProfileCreate(p, "libx264"));
+        var restoreConf = restore.Form.Single(f => f.Key == "conf").Value;
+        Assert.Contains("\"name\":\"jellyfin-h264\"", restoreConf);
+        Assert.Contains("\"deinterlace\":true", restoreConf);
+        Assert.DoesNotContain("uuid-old", restoreConf); // The old uuid must not be replayed into create.
+
+        // The streaming profile itself still gets provisioned, but as copy passthrough.
+        Assert.True(result.Success);
+        var stream = posts.Single(p => p.Url.Contains("api/profile/create"));
+        var conf = stream.Form.Single(f => f.Key == "conf").Value;
+        Assert.Contains("\"pro_vcodec\":\"copy\"", conf);
+    }
+
+    [Fact]
+    public async Task ExistingCodecProfile_ReplacementCreateFails_PreviousEncoderGone_SkipsRestore()
+    {
+        var posts = new List<PostCall>();
+        var api = CreateApi(
+            url =>
+            {
+                if (url.Contains("codec_profile/list")) return CodecProfileListWith("jellyfin-h264");
+                // The old encoder (libx264) is no longer offered by the backend -> restore impossible.
+                if (url.Contains("codec/list")) return CodecList(VaapiEntry, AacEntry);
+                if (url.Contains("profile/list")) return EmptyList;
+                if (url.Contains("idnode/load")) return IdNodeLoadWithClassAndParams("codec_profile_libx264");
+                return "{}";
+            },
+            posts,
+            call => IsCodecProfileCreate(call, "h264_vaapi")
+                ? new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("bad device") }
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+
+        var result = await Sut(api).CreateProfileAsync(CancellationToken.None);
+
+        // No restore attempt with an unavailable encoder class; falls back to copy passthrough.
+        Assert.DoesNotContain(posts, p => IsCodecProfileCreate(p, "libx264"));
+        Assert.True(result.Success);
+        var stream = posts.Single(p => p.Url.Contains("api/profile/create"));
+        var conf = stream.Form.Single(f => f.Key == "conf").Value;
+        Assert.Contains("\"pro_vcodec\":\"copy\"", conf);
+    }
+
+    [Fact]
+    public async Task ExistingCodecProfile_DeleteFails_KeepsProfileAndSkipsReplacement()
+    {
+        var posts = new List<PostCall>();
+        var api = CreateApi(
+            url =>
+            {
+                if (url.Contains("codec_profile/list")) return CodecProfileListWith("jellyfin-h264");
+                if (url.Contains("codec/list")) return CodecList(VaapiEntry, Libx264Entry, AacEntry);
+                if (url.Contains("profile/list")) return EmptyList;
+                if (url.Contains("idnode/load")) return IdNodeLoadWithClassAndParams("codec_profile_libx264");
+                return "{}";
+            },
+            posts,
+            call => call.Url.Contains("idnode/delete", StringComparison.Ordinal)
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = new StringContent("denied") }
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+
+        var result = await Sut(api).CreateProfileAsync(CancellationToken.None);
+
+        // When the delete fails the swap is aborted: no replacement create for the video profile,
+        // and the managed streaming profile falls back to copy passthrough.
+        Assert.DoesNotContain(posts, p => IsCodecProfileCreate(p, "h264_vaapi"));
+        Assert.True(result.Success);
+        var stream = posts.Single(p => p.Url.Contains("api/profile/create"));
+        var conf = stream.Form.Single(f => f.Key == "conf").Value;
+        Assert.Contains("\"pro_vcodec\":\"copy\"", conf);
+    }
+
+    [Fact]
+    public async Task CreateProfile_Success_InvalidatesProfileCaches()
+    {
+        var containerResolver = new Mock<IProfileContainerResolver>();
+        var discoveryService = new Mock<IProfileDiscoveryService>();
+        var api = CreateApi(url =>
+        {
+            if (url.Contains("codec_profile/list")) return EmptyList;
+            if (url.Contains("codec/list")) return CodecList(Libx264Entry, AacEntry);
+            if (url.Contains("profile/list")) return EmptyList;
+            return "{}";
+        });
+
+        var result = await Sut(api, containerResolver.Object, discoveryService.Object)
+            .CreateProfileAsync(CancellationToken.None);
+
+        // The in-memory snapshot cache and the discovered-profile-list cache must be dropped, or
+        // playback keeps resolving the pre-change profile snapshot until the TTL expires.
+        Assert.True(result.Success);
+        containerResolver.Verify(r => r.InvalidateCache(), Times.Once);
+        discoveryService.Verify(d => d.InvalidateCache(), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateProfile_StreamingProfileFails_StillInvalidatesProfileCaches()
+    {
+        var containerResolver = new Mock<IProfileContainerResolver>();
+        var discoveryService = new Mock<IProfileDiscoveryService>();
+        var api = CreateApi(
+            url =>
+            {
+                if (url.Contains("codec_profile/list")) return EmptyList;
+                if (url.Contains("codec/list")) return CodecList(Libx264Entry, AacEntry);
+                if (url.Contains("profile/list")) return EmptyList;
+                return "{}";
+            },
+            postFormHandler: call => call.Url.Contains("api/profile/create", StringComparison.Ordinal)
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = new StringContent("denied") }
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+
+        var result = await Sut(api, containerResolver.Object, discoveryService.Object)
+            .CreateProfileAsync(CancellationToken.None);
+
+        // Codec profiles were already rewritten before the streaming-profile failure, so the
+        // caches must be invalidated on this path too.
+        Assert.False(result.Success);
+        containerResolver.Verify(r => r.InvalidateCache(), Times.Once);
+        discoveryService.Verify(d => d.InvalidateCache(), Times.Once);
+    }
+
+    [Fact]
     public async Task StreamingProfileCreateFails_ReturnsFailure()
     {
         var api = CreateApi(
@@ -296,7 +564,7 @@ public class DefaultProfileServiceExtendedTests
                 if (url.Contains("profile/list")) return EmptyList;
                 return "{}";
             },
-            postFormHandler: url => url.Contains("api/profile/create")
+            postFormHandler: call => call.Url.Contains("api/profile/create", StringComparison.Ordinal)
                 ? new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = new StringContent("denied") }
                 : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
 

@@ -268,14 +268,17 @@ public class DigestAuthHandlerTests
     }
 
     [Fact]
-    public async Task SendAsync_NonceCountIncrements_AcrossMultipleDigestChallenges()
+    public async Task SendAsync_SecondRequest_AuthenticatesPreemptively_WithIncrementedNonceCount()
     {
-        var callCount = 0;
+        // After the first 401 negotiation the challenge is cached: subsequent requests carry a
+        // preemptive Digest Authorization (no extra 401 round-trip) with an incremented nc
+        // for the same server nonce (RFC 7616).
+        var totalCalls = 0;
         var ncValues = new System.Collections.Generic.List<string>();
         var inner = new FakeInnerHandler(request =>
         {
-            callCount++;
-            if (callCount % 2 == 1) // odd calls are initial requests
+            totalCalls++;
+            if (request.Headers.Authorization is null)
             {
                 var resp = new HttpResponseMessage(HttpStatusCode.Unauthorized);
                 resp.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
@@ -283,6 +286,7 @@ public class DigestAuthHandlerTests
                     "realm=\"TVH\", nonce=\"n1\", qop=\"auth\""));
                 return resp;
             }
+
             // Extract nc value
             var param = request.Headers.Authorization?.Parameter ?? string.Empty;
             var ncStart = param.IndexOf("nc=", StringComparison.Ordinal) + 3;
@@ -301,6 +305,10 @@ public class DigestAuthHandlerTests
         Assert.Equal(2, ncValues.Count);
         Assert.Equal("00000001", ncValues[0]);
         Assert.Equal("00000002", ncValues[1]);
+
+        // 3 upstream calls total: unauthenticated + challenge retry for request 1,
+        // then a single preemptively-authenticated call for request 2.
+        Assert.Equal(3, totalCalls);
     }
 
     private sealed class FakeInnerHandler : HttpMessageHandler

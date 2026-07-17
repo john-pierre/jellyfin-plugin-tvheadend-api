@@ -1,6 +1,6 @@
-// Final outcome classification for completed stream sessions.
+// Final outcome classification for completed relay stream sessions.
 
-namespace Jellyfin.Plugin.TvHeadendApi.Model.Metrics;
+namespace Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 
 /// <summary>
 /// Classifies the final outcome of a relay stream session.
@@ -8,22 +8,19 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Metrics;
 /// </summary>
 public enum StreamFinalOutcome
 {
-    /// <summary>Session is currently running (active sessions only).</summary>
-    Active,
-
     /// <summary>Stream ended cleanly by upstream EOF or normal completion.</summary>
     Completed,
 
     /// <summary>Client disconnected after at least one byte was successfully sent.</summary>
     NormalDisconnect,
 
-    /// <summary>Stream failed before first downstream byte.</summary>
+    /// <summary>Stream failed before the first downstream byte.</summary>
     StartupFailed,
 
     /// <summary>TVHeadend/backend caused the failure.</summary>
     UpstreamFailed,
 
-    /// <summary>Client/network/write caused failure after response started.</summary>
+    /// <summary>Client/network/write caused the failure after the response started.</summary>
     DownstreamFailed,
 
     /// <summary>Unexpected or unclassified failure.</summary>

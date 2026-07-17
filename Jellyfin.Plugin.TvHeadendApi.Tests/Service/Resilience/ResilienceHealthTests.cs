@@ -4,6 +4,7 @@ using System;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
@@ -29,6 +30,14 @@ public class FailureClassifierTests
     {
         var result = FailureClassifier.Classify(new TaskCanceledException());
         Assert.Equal(FailureReason.Cancelled, result);
+    }
+
+    [Fact]
+    public void Classify_HttpClientTimeout_TaskCancelledWithTimeoutInner_ReturnsTimeout()
+    {
+        // HttpClient.Timeout surfaces as TaskCanceledException wrapping TimeoutException (.NET 5+).
+        var timeout = new TaskCanceledException("timed out", new TimeoutException());
+        Assert.Equal(FailureReason.Timeout, FailureClassifier.Classify(timeout));
     }
 
     [Fact]
@@ -205,6 +214,130 @@ public class TvHeadendHealthServiceTests
 
         sut.RecordFailure(FailureReason.Upstream5xx);
         Assert.Equal(FailureReason.Upstream5xx, sut.GetSnapshot().LastFailureReason);
+    }
+
+    [Fact]
+    public void HalfOpen_AdmitsExactlyOneTrialRequest()
+    {
+        var sut = CreateSut();
+        for (int i = 0; i < 5; i++)
+        {
+            sut.RecordFailure(FailureReason.Timeout);
+        }
+
+        Assert.True(ShouldBlockFromIndependentCaller(sut));
+
+        // Simulate the open window elapsing
+        sut.SetCircuitOpenUntil(DateTimeOffset.UtcNow.AddSeconds(-1));
+
+        // First caller is admitted as the single trial request
+        Assert.False(ShouldBlockFromIndependentCaller(sut));
+        Assert.Equal(CircuitState.HalfOpen, sut.GetSnapshot().CircuitState);
+
+        // Concurrent callers are rejected until the trial resolves
+        Assert.True(ShouldBlockFromIndependentCaller(sut));
+        Assert.True(ShouldBlockFromIndependentCaller(sut));
+    }
+
+    [Fact]
+    public void HalfOpen_TrialOwnerFlow_PassesRepeatedChecks()
+    {
+        var sut = CreateSut();
+        for (int i = 0; i < 5; i++)
+        {
+            sut.RecordFailure(FailureReason.Timeout);
+        }
+
+        sut.SetCircuitOpenUntil(DateTimeOffset.UtcNow.AddSeconds(-1));
+
+        // This flow is admitted as the trial; its own re-check (the ResilienceHandler
+        // fast-fail on the same request) must pass while other callers stay blocked.
+        Assert.False(sut.ShouldBlockRequest());
+        Assert.False(sut.ShouldBlockRequest());
+        Assert.True(ShouldBlockFromIndependentCaller(sut));
+    }
+
+    [Fact]
+    public void HalfOpen_TrialSuccess_ClosesCircuitAndUnblocks()
+    {
+        var sut = CreateSut();
+        for (int i = 0; i < 5; i++)
+        {
+            sut.RecordFailure(FailureReason.Timeout);
+        }
+
+        sut.SetCircuitOpenUntil(DateTimeOffset.UtcNow.AddSeconds(-1));
+        Assert.False(sut.ShouldBlockRequest());
+
+        sut.RecordSuccess(10);
+
+        Assert.Equal(CircuitState.Closed, sut.GetSnapshot().CircuitState);
+        Assert.False(ShouldBlockFromIndependentCaller(sut));
+        Assert.False(sut.ShouldBlockRequest());
+    }
+
+    [Fact]
+    public void HalfOpen_TrialFailure_ReopensCircuit()
+    {
+        var sut = CreateSut();
+        for (int i = 0; i < 5; i++)
+        {
+            sut.RecordFailure(FailureReason.Timeout);
+        }
+
+        sut.SetCircuitOpenUntil(DateTimeOffset.UtcNow.AddSeconds(-1));
+        Assert.False(sut.ShouldBlockRequest());
+
+        sut.RecordFailure(FailureReason.Timeout);
+
+        var snapshot = sut.GetSnapshot();
+        Assert.Equal(CircuitState.Open, snapshot.CircuitState);
+        Assert.True(sut.ShouldBlockRequest());
+        Assert.True(ShouldBlockFromIndependentCaller(sut));
+    }
+
+    [Fact]
+    public void HalfOpen_AbandonedTrial_AdmitsNewTrialAfterOpenDuration()
+    {
+        var sut = CreateSut();
+        for (int i = 0; i < 5; i++)
+        {
+            sut.RecordFailure(FailureReason.Timeout);
+        }
+
+        sut.SetCircuitOpenUntil(DateTimeOffset.UtcNow.AddSeconds(-1));
+
+        // Trial admitted by a caller that never resolves it
+        Assert.False(ShouldBlockFromIndependentCaller(sut));
+        Assert.True(ShouldBlockFromIndependentCaller(sut));
+
+        // Simulate the admitted trial never resolving within the open duration
+        sut.SetHalfOpenTrialStarted(DateTimeOffset.UtcNow.AddMinutes(-1));
+
+        // A new trial is admitted, and subsequent callers are rejected again
+        Assert.False(ShouldBlockFromIndependentCaller(sut));
+        Assert.True(ShouldBlockFromIndependentCaller(sut));
+    }
+
+    /// <summary>
+    /// Invokes <see cref="HealthService.ShouldBlockRequest"/> without flowing the current
+    /// <see cref="ExecutionContext"/>, simulating an unrelated concurrent caller that does
+    /// not own any half-open trial admitted by this test's flow. A dedicated short-lived
+    /// thread is used (not <c>Task.Run</c> with suppressed flow — AsyncLocal mutations made
+    /// on an unflowed thread-pool thread leak into later work items on the same thread).
+    /// </summary>
+    private static bool ShouldBlockFromIndependentCaller(HealthService sut)
+    {
+        var result = false;
+        Thread thread;
+        using (ExecutionContext.SuppressFlow())
+        {
+            thread = new Thread(() => result = sut.ShouldBlockRequest());
+            thread.Start();
+        }
+
+        thread.Join();
+        return result;
     }
 
     [Fact]

@@ -84,7 +84,6 @@ internal sealed class DatabaseCleanupHostedService : IHostedService, IDisposable
                 statisticsRetentionDays: statisticsRetentionDays,
                 logRetentionDays: logRetentionDays,
                 metricsRetentionDays: statisticsRetentionDays,
-                tokenRetentionDays: 7,
                 healthEventRetentionDays: 30);
         }
         catch (Exception ex)

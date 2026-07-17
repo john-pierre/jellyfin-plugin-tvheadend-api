@@ -19,6 +19,8 @@ services:
     container_name: iptv-simulator-test
     environment:
       - BASE_URL=http://iptv-simulator
+      # Production-sized lineup so warmup/zapping are exercised at real-world scale.
+      - CHANNEL_COUNT=100
     ports:
       - "18888:80"
     restart: "no"
@@ -31,7 +33,10 @@ services:
 
   tvheadend:
     # Pinned to a specific build for reproducible CI. Update periodically.
-    image: linuxserver/tvheadend:37453bc3-ls279
+    # NOTE: build 37453bc3-ls279 (TVH 4.3-2637 + ffmpeg 6.1) ships a broken libav MPEG-TS
+    # muxer ("mpegts_flags=nit" no longer exists) — every profile-transcode stream returns
+    # 0 bytes there. Keep a build where the managed "jellyfin" profile actually streams.
+    image: linuxserver/tvheadend:80729d2f-ls284
     container_name: tvheadend-test
     environment:
       - PUID=0
@@ -93,7 +98,9 @@ services:
     environment:
       - TVH_URL=http://tvheadend:9981
       - IPTV_SIM_URL=http://iptv-simulator
-      - MAX_WAIT=60
+      # Scanning 100 IPTV muxes takes a while — give the scan/mapping loop room.
+      - MAX_WAIT=240
+      - EXPECTED_CHANNELS=100
     depends_on:
       tvheadend:
         condition: service_healthy

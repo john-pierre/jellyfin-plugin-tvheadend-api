@@ -17,11 +17,20 @@ public class ResiliencePoliciesTests
 {
     /// <summary>
     /// Creates a <see cref="ResilienceHandler"/> backed by a programmable inner handler.
+    /// Retry delays are zeroed so tests do not wait on real back-off.
     /// </summary>
     private static HttpMessageInvoker CreateInvoker(FakeHandler inner)
     {
-        var handler = new ResilienceHandler { InnerHandler = inner };
-        return new HttpMessageInvoker(handler);
+        return new HttpMessageInvoker(CreateHandler(inner));
+    }
+
+    private static ResilienceHandler CreateHandler(HttpMessageHandler inner)
+    {
+        return new ResilienceHandler
+        {
+            InnerHandler = inner,
+            RetryDelay = _ => TimeSpan.Zero,
+        };
     }
 
     [Fact]
@@ -136,7 +145,7 @@ public class ResiliencePoliciesTests
     {
         // Use a single handler instance so the circuit breaker state accumulates.
         var inner = new FakeHandler(() => new HttpResponseMessage(HttpStatusCode.InternalServerError));
-        var handler = new ResilienceHandler { InnerHandler = inner };
+        var handler = CreateHandler(inner);
         using var invoker = new HttpMessageInvoker(handler);
 
         // Keep sending requests until the circuit opens. Each request records multiple failures
@@ -195,7 +204,7 @@ public class ResiliencePoliciesTests
                 : new HttpResponseMessage(HttpStatusCode.OK);
         });
 
-        var handler = new ResilienceHandler { InnerHandler = inner };
+        var handler = CreateHandler(inner);
         using var invoker = new HttpMessageInvoker(handler);
 
         // Trip the circuit: send enough failures to open it.
@@ -228,7 +237,7 @@ public class ResiliencePoliciesTests
     {
         var inner = new FakeHandler(() => new HttpResponseMessage(HttpStatusCode.InternalServerError));
 
-        var handler = new ResilienceHandler { InnerHandler = inner };
+        var handler = CreateHandler(inner);
         using var invoker = new HttpMessageInvoker(handler);
 
         // Trip the circuit.
@@ -265,25 +274,90 @@ public class ResiliencePoliciesTests
     }
 
     [Fact]
-    public async Task ResilienceHandler_CancellationToken_PropagatesImmediately()
+    public async Task ResilienceHandler_CallerCancellation_PropagatesImmediately_WithoutRecordingFailure()
     {
+        var callCount = 0;
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var inner = new FakeHandler(() =>
+        {
+            callCount++;
+            throw new TaskCanceledException("Operation cancelled", null, cts.Token);
+        });
+        var handler = CreateHandler(inner);
+        using var invoker = new HttpMessageInvoker(handler);
+
+        await Assert.ThrowsAsync<TaskCanceledException>(
+            () => invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), cts.Token));
+
+        // Caller-requested cancellation must not retry and must not count as a backend failure.
+        Assert.Equal(1, callCount);
+        Assert.Equal(0, handler.GetConsecutiveFailures());
+    }
+
+    [Fact]
+    public async Task ResilienceHandler_InternalTimeout_RecordsFailure_AndRetriesIdempotentRequest()
+    {
+        // A cancellation the caller did NOT request (e.g. connect timeout) is a backend failure:
+        // it must be recorded for the circuit breaker and retried for idempotent requests.
         var callCount = 0;
         var inner = new FakeHandler(() =>
         {
             callCount++;
-            throw new TaskCanceledException("Operation cancelled", null, new CancellationToken(true));
+            throw new TaskCanceledException("timed out internally");
         });
-        using var invoker = CreateInvoker(inner);
+        var handler = CreateHandler(inner);
+        using var invoker = new HttpMessageInvoker(handler);
 
         await Assert.ThrowsAsync<TaskCanceledException>(
             () => invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None));
 
-        // Should not retry on cancellation — only 1 call.
+        Assert.Equal(1 + ResiliencePolicies.RetryCount, callCount);
+        Assert.Equal(1 + ResiliencePolicies.RetryCount, handler.GetConsecutiveFailures());
+    }
+
+    [Fact]
+    public async Task RetryPolicy_Post_TransientError_IsNotRetried()
+    {
+        // Regression: POSTs to TVHeadend are mutations (dvr/entry/create, passwd/entry/create, ...).
+        // Resending one that was already processed duplicates the mutation, so POSTs must not retry.
+        var callCount = 0;
+        using var invoker = CreateInvoker(new FakeHandler(() =>
+        {
+            callCount++;
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        }));
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost");
+        request.Content = new StringContent("conf=x", System.Text.Encoding.UTF8, "application/x-www-form-urlencoded");
+
+        var result = await invoker.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, result.StatusCode);
         Assert.Equal(1, callCount);
     }
 
     [Fact]
-    public async Task ResilienceHandler_CloneRequest_WithContent_PreservesContentAndHeaders()
+    public async Task RetryPolicy_Post_HttpRequestException_IsNotRetried()
+    {
+        var callCount = 0;
+        using var invoker = CreateInvoker(new FakeHandler(() =>
+        {
+            callCount++;
+            throw new HttpRequestException("Connection reset");
+        }));
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost");
+        request.Content = new StringContent("conf=x", System.Text.Encoding.UTF8, "application/x-www-form-urlencoded");
+
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => invoker.SendAsync(request, CancellationToken.None));
+
+        Assert.Equal(1, callCount);
+    }
+
+    [Fact]
+    public async Task ResilienceHandler_CloneRequest_GetWithContent_PreservesContentAndHeaders()
     {
         var callCount = 0;
         var inner = new FakeHandler(() =>
@@ -297,7 +371,7 @@ public class ResiliencePoliciesTests
         });
         using var invoker = CreateInvoker(inner);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost");
+        var request = new HttpRequestMessage(HttpMethod.Get, "http://localhost");
         request.Content = new StringContent("test body", System.Text.Encoding.UTF8, "text/plain");
         request.Headers.Add("X-Custom", "value");
 
@@ -305,6 +379,84 @@ public class ResiliencePoliciesTests
 
         Assert.Equal(HttpStatusCode.OK, result.StatusCode);
         Assert.True(callCount >= 2);
+    }
+
+    [Fact]
+    public void GetRetryDelay_ProducesExponentialProgression()
+    {
+        // Regression: Math.Pow(base * 2, attempt) yielded a constant 1s for every attempt.
+        Assert.Equal(TimeSpan.FromSeconds(1), ResiliencePolicies.GetRetryDelay(1));
+        Assert.Equal(TimeSpan.FromSeconds(2), ResiliencePolicies.GetRetryDelay(2));
+        Assert.Equal(TimeSpan.FromSeconds(4), ResiliencePolicies.GetRetryDelay(3));
+    }
+
+    [Fact]
+    public async Task CircuitBreaker_HalfOpen_AdmitsExactlyOneTrialRequest()
+    {
+        // Trip the breaker with failing GETs (each request records 1 + RetryCount failures).
+        var gate = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var trialEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failing = true;
+        var inner = new AsyncFakeHandler(() =>
+        {
+            if (failing)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            }
+
+            trialEntered.TrySetResult();
+            return gate.Task;
+        });
+        var handler = CreateHandler(inner);
+        using var invoker = new HttpMessageInvoker(handler);
+
+        while (handler.GetConsecutiveFailures() < ResiliencePolicies.CircuitBreakerThreshold)
+        {
+            try
+            {
+                (await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None)).Dispose();
+            }
+            catch (InvalidOperationException)
+            {
+                break;
+            }
+        }
+
+        // Move to half-open and start the (now blocking) trial request.
+        handler.SetOpenUntil(DateTimeOffset.UtcNow.AddSeconds(-1));
+        failing = false;
+        var trialTask = invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
+        await trialEntered.Task;
+
+        // While the trial is in flight, all other requests must be rejected immediately.
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None));
+
+        // Complete the trial successfully — the circuit closes.
+        gate.SetResult(new HttpResponseMessage(HttpStatusCode.OK));
+        var result = await trialTask;
+        Assert.Equal(HttpStatusCode.OK, result.StatusCode);
+        Assert.Equal(0, handler.GetConsecutiveFailures());
+
+        // Circuit closed again — requests flow normally.
+        var after = await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
+        Assert.Equal(HttpStatusCode.OK, after.StatusCode);
+    }
+
+    [Fact]
+    public async Task ResilienceHandler_ReportsClassifiedFailureReason_ToHealthService()
+    {
+        // Regression: every failure was reported as UpstreamUnavailable regardless of cause.
+        var health = new Moq.Mock<Jellyfin.Plugin.TvHeadendApi.Service.Health.IHealthService>();
+        var inner = new FakeHandler(() => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        var handler = CreateHandler(inner);
+        handler.HealthService = health.Object;
+        using var invoker = new HttpMessageInvoker(handler);
+
+        (await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None)).Dispose();
+
+        health.Verify(h => h.RecordFailure(FailureReason.Upstream5xx), Moq.Times.Exactly(1 + ResiliencePolicies.RetryCount));
+        health.Verify(h => h.RecordFailure(FailureReason.UpstreamUnavailable), Moq.Times.Never);
     }
 
     [Fact]
@@ -390,5 +542,19 @@ public class ResiliencePoliciesTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(_factory());
+    }
+
+    /// <summary>
+    /// A fake <see cref="HttpMessageHandler"/> whose responses are asynchronous, allowing
+    /// tests to hold a request in flight.
+    /// </summary>
+    private sealed class AsyncFakeHandler : HttpMessageHandler
+    {
+        private readonly Func<Task<HttpResponseMessage>> _factory;
+
+        public AsyncFakeHandler(Func<Task<HttpResponseMessage>> factory) => _factory = factory;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => _factory();
     }
 }

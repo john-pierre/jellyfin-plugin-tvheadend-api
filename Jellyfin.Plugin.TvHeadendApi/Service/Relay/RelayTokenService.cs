@@ -169,6 +169,15 @@ internal sealed class RelayTokenService : IRelayTokenService
     }
 
     /// <inheritdoc />
+    public async Task AttachStreamTelemetryAsync(string rawToken, string? resolutionSource, string? mediaInfoCacheStatus, double? streamSetupMs, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rawToken);
+
+        var tokenHash = _hasher.HashToken(rawToken);
+        await _repository.UpdateStreamTelemetryAsync(tokenHash, resolutionSource, mediaInfoCacheStatus, streamSetupMs, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task RevokeTokenAsync(string rawToken, string reason, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rawToken);
@@ -188,7 +197,10 @@ internal sealed class RelayTokenService : IRelayTokenService
     /// <inheritdoc />
     public async Task<int> CleanupExpiredTokensAsync(CancellationToken cancellationToken)
     {
-        var cutoff = DateTime.UtcNow;
+        // Expired tokens are worthless — validation always rejects them — so they are pruned
+        // promptly. The short grace period (shared with the central cleanup) only covers clock
+        // skew and inspecting very recent tokens while diagnosing an issue.
+        var cutoff = DateTime.UtcNow - Database.DatabaseCleanupService.RelayTokenRetentionGrace;
         var count = await _repository.CleanupExpiredAsync(cutoff, cancellationToken).ConfigureAwait(false);
         if (count > 0)
         {

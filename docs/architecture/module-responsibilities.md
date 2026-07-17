@@ -4,9 +4,9 @@ Quick reference for what each module owns and its boundaries.
 
 ## Service Modules
 
-### Service/Guide (`GuideService`)
+### Service/Guide (`GuideService`, `ChannelNameCache`, `ChannelNameCacheWarmupService`)
 
-- **Owns:** Channel listing, EPG program fetching, content type mapping, channel tag mapping.
+- **Owns:** Channel listing, EPG program fetching, content type mapping, channel tag mapping. Also the channel-name cache used by telemetry (`ChannelNameCache`, filled as a side effect of channel fetches) and its startup warmup (`ChannelNameCacheWarmupService`, an `IHostedService` that retries with back-off so sessions recorded right after a restart show channel names instead of raw UUIDs).
 - **Boundary:** Receives raw TVHeadend grid responses, maps to Jellyfin `ChannelInfo` / `ProgramInfo`.
 - **Does not:** Handle stream URLs, DVR operations, or authentication.
 
@@ -19,6 +19,7 @@ Quick reference for what each module owns and its boundaries.
 ### Service/Stream (`MediaSourceService`, `LifecycleService`, `MediaInfoCacheService`)
 
 - **Owns:** Stream URL construction, `MediaSourceInfo` building, mediainfo cache management (`MediaInfoCacheService`), stream close/tuner reset.
+- **Cache specifics (`MediaInfoCacheService`):** reconciles the live Jellyfin cache file on every stream start (hit/miss/invalidation), refreshes the cached `Path` with the current stream URL (fresh relay token / delivery-mode shape), and maintains the per-(channel × profile) store under `cache/mediainfo/profiles/<channel>.<profileKey>.json` — outgoing files are preserved before a profile switch and restored when a rule switches back; warmup pre-seeds the store for all rule-reachable profile combinations.
 - **Boundary:** Produces Jellyfin `MediaSourceInfo` with correct path, container, codec hints.
 - **Does not:** Fetch EPG data or manage timers.
 
@@ -30,9 +31,15 @@ Quick reference for what each module owns and its boundaries.
 
 ### Service/Profile (`ProfileResolver`, `ProfileContainerResolver`, `DefaultProfileService`, `ProfileMappingHelper`)
 
-- **Owns:** Resolving active streaming profile metadata (codec, container), creating default profiles in TVHeadend, mapping profile types to containers.
+- **Owns:** Resolving active streaming profile metadata (codec, container), mapping profile types to containers, and creating/maintaining the managed `jellyfin` TVHeadend transcode profile (`DefaultProfileService`): encoder auto-detection (hardware preferred), self-verification via a short test stream, automatic libx264 fallback when the encoder delivers no data, and the `sid=1`/`rewrite_nit` MPEG-TS muxer workaround (see ADR-009).
 - **Boundary:** Reads TVHeadend profile grid/idnode APIs, produces `ProfileSnapshot` / `ResolvedProfile`.
 - **Does not:** Build stream URLs or manage cache files.
+
+### Service/StreamingProfile (`StreamingProfileResolver`, `ProfileDiscoveryService`, `PlaybackContextAccessor`, `KnownClientsService`)
+
+- **Owns:** Hierarchical streaming-profile selection (channel → group → client → user → global → fallback), TVHeadend profile discovery with TTL caching, playback context enrichment (client/device/user), known-client tracking.
+- **Boundary:** Produces `StreamingProfileResolutionResult` with the effective TVHeadend profile and playback mode consumed by stream services.
+- **Does not:** Build stream URLs, create TVHeadend profiles, or manage cache files.
 
 ### Service/Diagnostic (`DiagnosticService`, `EncodingOptionsReader`)
 
@@ -83,11 +90,11 @@ Quick reference for what each module owns and its boundaries.
 - **Boundary:** Applied as `DelegatingHandler` in the `HttpClient` pipeline.
 - **Does not:** Contain domain logic or make business decisions.
 
-### Service/Metric (`MetricService`)
+### Service/Metrics (`MetricService`, `SessionTracker`, `ActiveSessionStore`, `MetricsAggregator`, `StreamBitrateTracker`, `StreamingDashboardService`)
 
-- **Owns:** `System.Diagnostics.Metrics` instruments for API calls, durations, cache hits/misses.
-- **Boundary:** Provides metric counters and histograms consumed by `dotnet-counters` or OpenTelemetry.
-- **Does not:** Contain business logic or make HTTP calls.
+- **Owns:** Relay streaming telemetry for the admin dashboard — in-memory session lifecycle tracking (start/update/finalize with outcome classification), rolling/peak bitrate computation, read-only aggregation over the consolidated `relay_request_metric` table — plus the `System.Diagnostics.Metrics` instruments (`MetricService`; the former singular `Service/Metric/` folder was merged in). Cache and stream-setup instruments are populated; the `tvh.api.*`/`tvh.epg.*`/`tvh.channels.*` instruments are defined but not yet wired.
+- **Boundary:** Fed by the relay stream path; exposed via dashboard/metrics endpoints. Persistence of stream telemetry happens exactly once per request through `RelayMetricsService` (Service/Relay) — this module never writes to the database.
+- **Does not:** Contain HTTP calls or own database writes.
 
 ### Service/Configuration (`ConfigurationProvider`, `ConfigurationSaver`)
 
@@ -135,7 +142,7 @@ Quick reference for what each module owns and its boundaries.
 
 - **Owns:** Aggregating diagnostics, status, input, and subscription data for the admin dashboard.
 - **Boundary:** Reads from `DiagnosticService`, `StatusService`, `InputMonitorService`, `SubscriptionService`, `CometService`.
-- **Does not:** Expose REST endpoints directly (that is `PluginController`'s responsibility).
+- **Does not:** Expose REST endpoints directly (that is `DashboardController`'s responsibility).
 
 ## Non-Service Modules
 

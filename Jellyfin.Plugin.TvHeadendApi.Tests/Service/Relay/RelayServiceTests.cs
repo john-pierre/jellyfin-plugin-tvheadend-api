@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Service.Health;
@@ -279,5 +280,85 @@ public sealed class RelayServiceTests : IDisposable
         using var result2 = await sut.RelayImageAsync("imagecache/auth", CancellationToken.None);
         result2.StatusCode.Should().Be(200);
         result2.ContentType.Should().Contain("image/png");
+    }
+
+    [Fact]
+    public async Task RelayImageAsync_CacheMiss_MarksFirstByteFromUpstream()
+    {
+        _server.Given(Request.Create().WithPath("/imagecache/timing").UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "image/png")
+                .WithBody(new byte[] { 0x89, 0x50, 0x4E, 0x47 }));
+
+        using var result = await _sut.RelayImageAsync("imagecache/timing", CancellationToken.None);
+
+        result.TimingContext.Should().NotBeNull();
+        result.TimingContext!.FirstByteFromUpstreamTicks.Should().NotBeNull(
+            "the first byte from upstream is received while the image is buffered in the relay service");
+        result.TimingContext.FirstByteToClientTicks.Should().BeNull(
+            "no byte has been written towards a client inside the relay service");
+    }
+
+    [Fact]
+    public async Task RelayImageAsync_ClientCancelDuringConnect_RecordsCancelledMetric()
+    {
+        _server.Given(Request.Create().WithPath("/imagecache/cancel-metric").UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithDelay(TimeSpan.FromSeconds(30))
+                .WithBody(new byte[10]));
+
+        var uri = new Uri(_server.Url!);
+        var config = new PluginConfiguration
+        {
+            Host = uri.Host,
+            Port = uri.Port,
+            UseSSL = false,
+            AllowAnonymousAccess = true,
+        };
+        var configProvider = new ConfigurationProvider(() => config);
+        var metricsMock = new Mock<IRelayMetricsService>();
+        using var sut = new RelayService(new UrlBuilder(), configProvider, NullLogger<RelayService>.Instance, metricsMock.Object, new RelayActivityTracker(), NullHealthService.Instance, new RelayImageCache(NullLogger<RelayImageCache>.Instance, configProvider, () => null));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        Func<Task> act = async () => await sut.RelayImageAsync("imagecache/cancel-metric", cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        metricsMock.Verify(
+            m => m.RecordMetric(It.Is<RelayRequestMetric>(x => x.ClientCancelled && x.ClientStatusCode == 499)),
+            Times.Once,
+            "a client cancellation during the upstream connect phase must still be persisted");
+    }
+
+    [Fact]
+    public async Task RelayStreamAsync_ClientCancelDuringConnect_RecordsCancelledMetric()
+    {
+        _server.Given(Request.Create().WithPath("/stream/channel/*").UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithDelay(TimeSpan.FromSeconds(30))
+                .WithBody(new byte[10]));
+
+        var uri = new Uri(_server.Url!);
+        var config = new PluginConfiguration
+        {
+            Host = uri.Host,
+            Port = uri.Port,
+            UseSSL = false,
+            AllowAnonymousAccess = true,
+        };
+        var configProvider = new ConfigurationProvider(() => config);
+        var metricsMock = new Mock<IRelayMetricsService>();
+        using var sut = new RelayService(new UrlBuilder(), configProvider, NullLogger<RelayService>.Instance, metricsMock.Object, new RelayActivityTracker(), NullHealthService.Instance, new RelayImageCache(NullLogger<RelayImageCache>.Instance, configProvider, () => null));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        Func<Task> act = async () => await sut.RelayStreamAsync("ch-cancel-metric", null, cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        metricsMock.Verify(
+            m => m.RecordMetric(It.Is<RelayRequestMetric>(x => x.ClientCancelled && x.ClientStatusCode == 499)),
+            Times.Once,
+            "a client cancellation while connecting to the stream must still be persisted");
     }
 }

@@ -154,6 +154,13 @@
         .tvh-setup-banner h2 { margin: 0 0 0.5em 0; font-size: 1.3em; }
         .tvh-setup-banner p { margin: 0 0 1em 0; font-size: 0.95em; opacity: 0.9; line-height: 1.6; }
         .tvh-setup-banner .tvh-setup-icon { font-size: 2.5em; margin-bottom: 0.3em; }
+
+        /* ── Status banner (TVHeadend connectivity) ─────────── */
+        .tvh-status-banner { display: flex; align-items: center; gap: 0.6em; padding: 0.7em 1em; border-radius: 6px; font-size: 0.92em; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); }
+        .tvh-status-banner.tvh-status-ok { border-color: rgba(76,175,80,0.45); background: rgba(27,94,32,0.16); }
+        .tvh-status-banner.tvh-status-warn { border-color: rgba(240,173,78,0.45); background: rgba(230,81,0,0.12); }
+        .tvh-status-banner.tvh-status-err { border-color: rgba(183,28,28,0.5); background: rgba(183,28,28,0.14); }
+        .tvh-status-banner.tvh-status-loading { opacity: 0.75; }
     </style>
     <div data-role="content">
         <div class="content-primary">
@@ -220,7 +227,7 @@
                 <div class="tvh-stat"><div class="tvh-stat-value" id="sumSubscriptions">—</div><div class="tvh-stat-label">Subscriptions</div></div>
                 <div class="tvh-stat"><div class="tvh-stat-value" id="sumConnections">—</div><div class="tvh-stat-label">Connections</div></div>
                 <div class="tvh-stat"><div class="tvh-stat-value" id="sumHealth">—</div><div class="tvh-stat-label">Health</div></div>
-                <div class="tvh-stat"><div class="tvh-stat-value" id="sumAlerts">—</div><div class="tvh-stat-label">Alerts</div></div>
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumAlerts">—</div><div class="tvh-stat-label">Warnings</div></div>
             </div>
 
             <!-- ── A. Backend & Health ──────────────────────── -->
@@ -435,11 +442,19 @@
                     <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiActive">—</div><div class="tvh-kpi-label">Active Streams</div></div>
                     <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiRequests">—</div><div class="tvh-kpi-label">Requests</div></div>
                     <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiSuccess">—</div><div class="tvh-kpi-label">Success Rate</div></div>
-                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiStartup">—</div><div class="tvh-kpi-label">Avg Startup</div></div>
-                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiP95">—</div><div class="tvh-kpi-label">P95 Startup</div></div>
+                    <div class="tvh-kpi" title="Zapping target: below 2000 ms is green, below 3500 ms yellow, above red."><div class="tvh-kpi-value" id="rkpiStartup">—</div><div class="tvh-kpi-label">Avg Startup</div></div>
+                    <div class="tvh-kpi" title="Zapping target: below 2000 ms is green, below 3500 ms yellow, above red."><div class="tvh-kpi-value" id="rkpiP95">—</div><div class="tvh-kpi-label">P95 Startup</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiDirectPlay">—</div><div class="tvh-kpi-label">Direct Play (24h)</div></div>
                     <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiBytes">—</div><div class="tvh-kpi-label">Transferred</div></div>
-                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiCache">—</div><div class="tvh-kpi-label">Cache Hit Rate</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiCache">—</div><div class="tvh-kpi-label">Image Cache Hit Rate</div></div>
                     <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiFailures">—</div><div class="tvh-kpi-label">Failures</div></div>
+                </div>
+
+                <!-- MediaInfo cache counters (since plugin start, fed by GET Dashboard) -->
+                <div class="tvh-card" style="margin-bottom:1em;">
+                    <h3>MediaInfo Cache (since start)</h3>
+                    <p class="tvh-hint" style="margin:0 0 .5em; opacity:0.7; font-size:0.85em;">Proactive probe-cache reconciliation outcomes — hits keep channel starts on the fast Direct Play path.</p>
+                    <div id="tvhMediaInfoCacheKv"><div class="tvh-empty">No cache activity recorded yet.</div></div>
                 </div>
 
                 <div id="tvhRelayEmpty" class="tvh-empty" style="display:none;">No relay metrics recorded yet.</div>
@@ -460,6 +475,18 @@
                         <div class="tvh-card">
                             <h3>Stream End Reasons</h3>
                             <div id="tvhRelayEndReasonsChart" style="height:200px; position:relative;"></div>
+                        </div>
+                    </div>
+                    <div class="tvh-grid">
+                        <div class="tvh-card">
+                            <h3>Startup Latency: Warm vs Cold Cache</h3>
+                            <p class="tvh-hint" style="margin:0 0 .5em; opacity:0.7; font-size:0.85em;">Avg / P95 time-to-first-byte grouped by mediainfo cache outcome at stream setup. Green &lt; 2000 ms, yellow &lt; 3500 ms, red above.</p>
+                            <div id="tvhRelayWarmColdChart" style="min-height:120px; position:relative;"></div>
+                        </div>
+                        <div class="tvh-card">
+                            <h3>Startup Latency by Profile</h3>
+                            <p class="tvh-hint" style="margin:0 0 .5em; opacity:0.7; font-size:0.85em;">Avg / P95 time-to-first-byte grouped by effective TVHeadend profile.</p>
+                            <div id="tvhRelayProfileChart" style="min-height:120px; position:relative;"></div>
                         </div>
                     </div>
                     <div class="tvh-grid">
@@ -805,20 +832,24 @@
                 var dbRows = [];
                 dbRows.push(['Database Status', dbStatusBadge]);
                 dbRows.push(['Database Size', fmtBytes(db.DatabaseSizeBytes)]);
-                if (db.WalSizeBytes) dbRows.push(['WAL Size', fmtBytes(db.WalSizeBytes)]);
+                // Always render the WAL row: after a SQLite checkpoint the WAL is legitimately
+                // 0 bytes — a truthiness check made this row flicker in and out on refresh.
+                dbRows.push(['WAL Size', fmtBytes(db.WalSizeBytes)]);
                 dbRows.push(['Schema Version', db.SchemaVersion != null ? String(db.SchemaVersion) : '—']);
                 if (db.TotalTables != null) dbRows.push(['Tables', String(db.TotalTables)]);
                 if (db.ViewingSessionCount != null) dbRows.push(['Viewing Sessions', String(db.ViewingSessionCount)]);
                 if (db.RelayTokenCount != null) {
-                    var tokenInfo = String(db.RelayTokenCount);
-                    if (db.ExpiredRelayTokenCount) tokenInfo += ' (' + db.ExpiredRelayTokenCount + ' expired)';
+                    var expiredTokens = db.ExpiredRelayTokenCount || 0;
+                    var activeTokens = Math.max(0, db.RelayTokenCount - expiredTokens);
+                    var tokenInfo = activeTokens + ' active';
+                    if (expiredTokens > 0) tokenInfo += ' (' + expiredTokens + ' expired, pending cleanup)';
                     dbRows.push(['Relay Tokens', tokenInfo]);
                 }
                 if (db.RelayRequestMetricCount != null) dbRows.push(['Relay Metrics', String(db.RelayRequestMetricCount)]);
                 if (db.PluginLogEntryCount != null) dbRows.push(['Plugin Log Entries', String(db.PluginLogEntryCount)]);
                 if (db.HealthTransitionCount != null) dbRows.push(['Health Transitions', String(db.HealthTransitionCount)]);
-                if (db.OldestLogEntryUtc) dbRows.push(['Oldest Log Entry', new Date(db.OldestLogEntryUtc).toLocaleString()]);
-                if (db.NewestLogEntryUtc) dbRows.push(['Newest Log Entry', new Date(db.NewestLogEntryUtc).toLocaleString()]);
+                if (db.OldestLogEntryUtc) dbRows.push(['Oldest Log Entry', formatDateWithTimezone(db.OldestLogEntryUtc)]);
+                if (db.NewestLogEntryUtc) dbRows.push(['Newest Log Entry', formatDateWithTimezone(db.NewestLogEntryUtc)]);
                 if (db.WarningMessage) dbRows.push(['Warning', badge('warn', db.WarningMessage)]);
                 document.getElementById('tvhHealthKv').innerHTML = kvHtml([
                     ['Diagnostic Status', healthBadge],
@@ -828,6 +859,22 @@
                 ].concat(dbRows));
 
                 // Inputs
+                // MediaInfo cache KPI card (since-start counters from the Dashboard payload)
+                var micEl = document.getElementById('tvhMediaInfoCacheKv');
+                if (micEl) {
+                    var mic = d.MediaInfoCache;
+                    if (!mic) {
+                        micEl.innerHTML = '<div class="tvh-empty">No cache activity recorded yet.</div>';
+                    } else {
+                        micEl.innerHTML = kvHtml([
+                            ['Hits', '<span style="color:#4caf50;font-weight:600;">' + (mic.Hits || 0) + '</span>'],
+                            ['Misses', String(mic.Misses || 0)],
+                            ['Mismatches', mic.Mismatches > 0 ? '<span style="color:#f0ad4e;font-weight:600;">' + mic.Mismatches + '</span>' : '0'],
+                            ['Invalidations', String(mic.Invalidations || 0)]
+                        ]);
+                    }
+                }
+
                 var inputsEl = document.getElementById('tvhInputsContent');
                 if (d.InputsError) {
                     inputsEl.innerHTML = errorRow(d.InputsError);
@@ -934,6 +981,10 @@
             function refreshDashboard() {
                 var loadEl = document.getElementById('tvhLoadingIndicator');
                 loadEl.style.display = '';
+
+                // Keep the connectivity banner in sync with the rest of the page so it can
+                // never keep showing a stale "checking…" state next to healthy panels.
+                loadRelayBannerStatus();
 
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Dashboard'), dataType: 'json' })
                     .then(function (data) {
@@ -1428,7 +1479,7 @@
                         renderLogsTable(data);
                         document.getElementById('tvhLogsStatus').textContent = (data.Entries || []).length + ' of ' + (data.TotalCount || 0) + ' entries';
                         document.getElementById('tvhLogsTotalCount').textContent = 'Total: ' + (data.TotalCount || 0);
-                        document.getElementById('tvhLogsLastUpdated').textContent = 'Last updated: ' + new Date(data.LastUpdatedUtc).toLocaleTimeString();
+                        document.getElementById('tvhLogsLastUpdated').textContent = data.LastUpdatedUtc ? 'Last updated: ' + new Date(data.LastUpdatedUtc).toLocaleTimeString() : '';
                     })
                     .catch(function (err) {
                         document.getElementById('tvhLogsStatus').textContent = 'Failed to load logs';
@@ -1484,7 +1535,16 @@
                 }
             }
 
-            // Logs sort click handler
+            // Logs sort click handler — keeps the header arrows in sync with the active sort.
+            function updateLogsSortArrows() {
+                document.querySelectorAll('#tvhLogsTable th.tvh-sortable').forEach(function (th) {
+                    var arrow = th.querySelector('.tvh-sort-arrow');
+                    if (!arrow) return;
+                    arrow.textContent = th.getAttribute('data-sort') === logsSortField
+                        ? (logsSortDir === 'asc' ? '▲' : '▼')
+                        : '▾';
+                });
+            }
             document.querySelectorAll('#tvhLogsTable th.tvh-sortable').forEach(function (th) {
                 th.addEventListener('click', function () {
                     var field = th.getAttribute('data-sort');
@@ -1494,6 +1554,7 @@
                         logsSortField = field;
                         logsSortDir = 'desc';
                     }
+                    updateLogsSortArrows();
                     loadLogs();
                 });
             });
@@ -1562,9 +1623,10 @@
                         icon.textContent = 'ℹ️';
                         text.textContent = r.Message || 'Relay service is disabled.';
                     } else if (status === 'unknown') {
+                        // Neutral "not checked yet" state — never alarming next to healthy panels.
                         banner.className = 'tvh-status-banner tvh-status-loading';
                         icon.textContent = '⏳';
-                        text.textContent = r.Message || 'Checking TVHeadend connectivity…';
+                        text.textContent = 'Checking TVHeadend connectivity…';
                     } else {
                         banner.className = 'tvh-status-banner tvh-status-err';
                         icon.textContent = '❌';
@@ -1591,13 +1653,31 @@
                 });
             }
 
+            // Zapping target coloring: the plugin exists for 1–2s channel starts.
+            // Green below 2000 ms, yellow below 3500 ms, red above.
+            function startupLatencyColor(ms) {
+                if (ms == null) return '';
+                if (ms < 2000) return '#4caf50';
+                if (ms < 3500) return '#f0ad4e';
+                return '#e74c3c';
+            }
+
+            function setStartupKpi(id, ms) {
+                var el = document.getElementById(id);
+                if (!el) return;
+                el.textContent = ms != null ? fmtMs(ms) : '—';
+                el.style.color = startupLatencyColor(ms);
+            }
+
             function renderRelayMetrics(m) {
                 if (!m || m.TotalRequests === 0) {
                     document.getElementById('tvhRelayEmpty').style.display = '';
                     document.getElementById('tvhRelayContent').style.display = 'none';
                     setText('rkpiActive', m ? m.ActiveStreams : 0);
-                    setText('rkpiRequests', '0'); setText('rkpiSuccess', '—'); setText('rkpiStartup', '—');
-                    setText('rkpiP95', '—'); setText('rkpiBytes', '0 B'); setText('rkpiCache', '—'); setText('rkpiFailures', '0');
+                    setText('rkpiRequests', '0'); setText('rkpiSuccess', '—');
+                    setStartupKpi('rkpiStartup', null); setStartupKpi('rkpiP95', null);
+                    setText('rkpiDirectPlay', '—');
+                    setText('rkpiBytes', '0 B'); setText('rkpiCache', '—'); setText('rkpiFailures', '0');
                     return;
                 }
                 document.getElementById('tvhRelayEmpty').style.display = 'none';
@@ -1607,8 +1687,9 @@
                 setText('rkpiActive', m.ActiveStreams);
                 setText('rkpiRequests', m.TotalRequests);
                 setText('rkpiSuccess', fmtPct(m.SuccessRate));
-                setText('rkpiStartup', fmtMs(m.StartupLatency ? m.StartupLatency.Avg : null));
-                setText('rkpiP95', fmtMs(m.StartupLatency ? m.StartupLatency.P95 : null));
+                setStartupKpi('rkpiStartup', m.StartupLatency ? m.StartupLatency.Avg : null);
+                setStartupKpi('rkpiP95', m.StartupLatency ? m.StartupLatency.P95 : null);
+                setText('rkpiDirectPlay', m.DirectPlayPercent24h != null ? fmtPct(m.DirectPlayPercent24h) : '—');
                 setText('rkpiBytes', formatBytes(m.TotalBytesTransferred));
                 setText('rkpiCache', fmtPct(m.CacheHitRatio));
                 setText('rkpiFailures', m.FailedRequests);
@@ -1622,6 +1703,13 @@
 
                 // ── Latency Breakdown Bar Chart ──
                 renderLatencyChart(m);
+
+                // ── Zapping: startup latency warm vs cold cache / per profile ──
+                renderStartupGroupChart('tvhRelayWarmColdChart', m.StartupLatencyByCacheStatus || {}, {
+                    hit: 'Warm (cache hit)', restored: 'Warm (restored)', miss: 'Cold (cache miss)',
+                    mismatch: 'Cold (mismatch)', unknown: 'Unknown'
+                });
+                renderStartupGroupChart('tvhRelayProfileChart', m.StartupLatencyByProfile || {}, {});
 
                 // ── Stream End Reasons Horizontal Bar ──
                 renderEndReasonsChart(m.StreamEndedByDistribution || {});
@@ -1818,6 +1906,46 @@
                 el.innerHTML = svg;
             }
 
+            // Grouped Avg/P95 startup latency bars (warm/cold cache, per profile). Bars are
+            // colored against the 2s zapping target via startupLatencyColor().
+            function renderStartupGroupChart(elementId, groups, labelMap) {
+                var el = document.getElementById(elementId);
+                if (!el) return;
+                var keys = Object.keys(groups);
+                if (keys.length === 0) { el.innerHTML = '<div class="tvh-empty">No stream startup data</div>'; return; }
+
+                var maxMs = 1;
+                keys.forEach(function(k) {
+                    var g = groups[k] || {};
+                    maxMs = Math.max(maxMs, g.Avg || 0, g.P95 || 0);
+                });
+
+                var W = el.offsetWidth || 400, rowH = 40, labelW = 150;
+                var H = keys.length * rowH + 10;
+                var barMaxW = Math.max(40, W - labelW - 80);
+
+                var svg = '<svg width="' + W + '" height="' + H + '" style="display:block;">';
+                keys.forEach(function(k, i) {
+                    var g = groups[k] || {};
+                    var y = i * rowH + 5;
+                    var label = labelMap[k] || k;
+                    svg += '<text x="' + (labelW - 5) + '" y="' + (y + rowH / 2) + '" fill="rgba(255,255,255,0.7)" font-size="11" text-anchor="end">' + esc(label) + '</text>';
+                    [{ v: g.Avg, name: 'Avg', off: 0 }, { v: g.P95, name: 'P95', off: 15 }].forEach(function(row) {
+                        if (row.v == null) return;
+                        var w = Math.max(2, (row.v / maxMs) * barMaxW);
+                        svg += '<rect x="' + labelW + '" y="' + (y + row.off) + '" width="' + w + '" height="11" fill="' + startupLatencyColor(row.v) + '" rx="2" opacity="0.85"><title>' + row.name + ': ' + fmtMs(row.v) + '</title></rect>';
+                        svg += '<text x="' + (labelW + w + 5) + '" y="' + (y + row.off + 9) + '" fill="rgba(255,255,255,0.8)" font-size="10">' + row.name + ' ' + fmtMs(row.v) + '</text>';
+                    });
+                });
+                // 2s target marker line.
+                if (maxMs > 2000) {
+                    var tx = labelW + (2000 / maxMs) * barMaxW;
+                    svg += '<line x1="' + tx + '" y1="0" x2="' + tx + '" y2="' + H + '" stroke="#4caf50" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"><title>2s zapping target</title></line>';
+                }
+                svg += '</svg>';
+                el.innerHTML = svg;
+            }
+
             function renderEndReasonsChart(dist) {
                 var el = document.getElementById('tvhRelayEndReasonsChart');
                 var keys = Object.keys(dist);
@@ -1825,11 +1953,12 @@
 
                 var total = 0;
                 keys.forEach(function(k) { total += dist[k]; });
+                // Merged StreamEndedBy vocabulary plus the legacy names still present in
+                // rows persisted before the enum merge (Completed, ClientCancelled, ...).
                 var colorMap = {
                     UpstreamEof: '#4caf50', Completed: '#4caf50', ClientCancelled: '#64b5f6',
-                    UserStopOrChannelSwitch: '#64b5f6', ClientDisconnectAfterFirstByte: '#64b5f6',
-                    ServerShutdown: '#ff9800', PluginShutdown: '#ff9800',
-                    StartupCancelledBeforeFirstByte: '#f0ad4e', Error: '#e74c3c',
+                    ClientDisconnectAfterFirstByte: '#64b5f6',
+                    StartupCancelledBeforeFirstByte: '#f0ad4e',
                     DownstreamError: '#e74c3c', DownstreamWriteError: '#e74c3c',
                     UpstreamTimeout: '#e74c3c', UpstreamHttpError: '#e74c3c', UnexpectedException: '#e74c3c'
                 };
@@ -1837,12 +1966,11 @@
                 // NOT a failure, so present it as "Closed by client" rather than "Cancelled".
                 var labelMap = {
                     ClientCancelled: 'Closed by client', ClientDisconnectAfterFirstByte: 'Closed by client',
-                    UserStopOrChannelSwitch: 'Channel switch / stop',
                     Completed: 'Stream ended (EOF)', UpstreamEof: 'Stream ended (EOF)',
                     StartupCancelledBeforeFirstByte: 'Cancelled before start',
                     DownstreamError: 'Client write error', DownstreamWriteError: 'Client write error',
                     UpstreamTimeout: 'Upstream timeout', UpstreamHttpError: 'Upstream error',
-                    PluginShutdown: 'Server shutdown', UnexpectedException: 'Unexpected error', Unknown: 'Unknown'
+                    UnexpectedException: 'Unexpected error', Unknown: 'Unknown'
                 };
                 var W = el.offsetWidth || 400, barH = 24, gap = 6, labelW = 180;
                 var H = keys.length * (barH + gap) + 10;
@@ -1865,11 +1993,11 @@
 
             function renderCacheChart(m) {
                 var el = document.getElementById('tvhRelayCacheChart');
+                // Only outcomes the image cache actually produces: Hit, Miss, and upstream 304.
+                // (Revalidated/NegativeHit were removed — the cache does neither.)
                 var items = [
                     { label: 'Hits', count: m.CacheHits || 0, color: '#4caf50' },
                     { label: 'Misses', count: m.CacheMisses || 0, color: '#e74c3c' },
-                    { label: 'Revalidated', count: m.CacheRevalidated || 0, color: '#f0ad4e' },
-                    { label: 'Negative', count: m.NegativeCacheHits || 0, color: '#9e9e9e' },
                     { label: '304', count: m.NotModified304Count || 0, color: '#64b5f6' },
                 ];
                 var total = 0;

@@ -140,14 +140,17 @@ public sealed class LiveServiceIntegrationTests : IDisposable
     // ── DvrService ──────────────────────────────────────────────────────
 
     [Fact]
-    public async Task DvrService_GetTimersAsync_ReturnsEmptyList()
+    public async Task DvrService_GetTimersAsync_ReturnsBootstrapScheduledTimer()
     {
+        // The bootstrap schedules "E2E Scheduled Recording" (fail-closed), so the timer list
+        // must contain at least that entry — an empty list would mean the DVR grid mapping broke.
         var sut = new DvrService(NullLogger<DvrService>.Instance, _apiClient, _urlBuilder);
 
         var timers = (await sut.GetTimersAsync(CancellationToken.None)).ToList();
 
         Assert.NotNull(timers);
-        Assert.Empty(timers);
+        Assert.NotEmpty(timers);
+        Assert.All(timers, t => Assert.False(string.IsNullOrEmpty(t.ChannelId), "Timer must carry a channel id."));
     }
 
     [Fact]

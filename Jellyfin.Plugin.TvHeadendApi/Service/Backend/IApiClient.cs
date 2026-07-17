@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 /// Provides HTTP client creation and request execution for TVHeadend API calls.
 /// URL construction is handled by <see cref="IUrlBuilder"/>; this interface
 /// is responsible only for authentication-aware HTTP client lifecycle and
-/// raw HTTP operations (GET string, GET stream, POST form).
+/// raw HTTP operations (GET string, POST form).
 /// </summary>
 public interface IApiClient
 {
@@ -47,15 +47,6 @@ public interface IApiClient
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Response body as a string.</returns>
     Task<string> GetStringAsync(HttpClient httpClient, string url, CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Executes a GET request and returns the response as an in-memory stream.
-    /// </summary>
-    /// <param name="httpClient">Configured HTTP client.</param>
-    /// <param name="url">Absolute request URL.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Response stream (caller owns the stream).</returns>
-    Task<global::System.IO.Stream> GetStreamAsync(HttpClient httpClient, string url, CancellationToken cancellationToken);
 
     /// <summary>
     /// Executes a form POST request and returns the raw HTTP response.

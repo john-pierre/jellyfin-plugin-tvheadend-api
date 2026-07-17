@@ -28,6 +28,20 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 /// </summary>
 internal sealed class DiagnosticService : IDiagnosticService
 {
+    /// <summary>
+    /// Maximum score deduction when no channel has a probe cache file. The deduction scales
+    /// linearly with the share of uncovered channels because the MediaInfo probe cache is the
+    /// primary lever that keeps playback on the fast Direct Play startup path — missing
+    /// coverage directly translates into slow channel starts.
+    /// </summary>
+    internal const int ProbeCacheMaxScoreDeduction = 25;
+
+    /// <summary>Coverage ratio at or above which probe cache coverage is considered good.</summary>
+    internal const double ProbeCacheOkCoverage = 0.9;
+
+    /// <summary>Coverage ratio below which probe cache coverage is considered critically low.</summary>
+    internal const double ProbeCacheErrorCoverage = 0.2;
+
     private readonly ILogger<DiagnosticService> _logger;
     private readonly IServerConfigurationManager _serverConfigManager;
     private readonly IEncodingOptionsReader _encodingOptionsReader;
@@ -122,7 +136,7 @@ internal sealed class DiagnosticService : IDiagnosticService
 
         scoreDeductions += PlaybackSettingsChecker.Check(report, config.SupportsDirectPlay, config.SupportsDirectStream, config.SupportsTranscoding, config.SupportsProbing, config.AnalyzeDurationMs, config.BufferMs);
         CheckFfmpegSettings(report, config);
-        CheckProbeCacheStatus(report, allChannelUuids, cancellationToken);
+        scoreDeductions += CheckProbeCacheStatus(report, config, allChannelUuids);
         RelayChecker.Check(report, config.RelayEnabled, config.RelayHostOverride);
 
         report.CompatibilityScore = Math.Max(0, 100 - scoreDeductions);
@@ -203,6 +217,16 @@ internal sealed class DiagnosticService : IDiagnosticService
         {
             report.Connection = $"Cannot reach TVHeadend at {config.Host}:{config.Port} - {ex.Message}";
             report.Checks.Add(new DiagnoseCheck { Category = "Connection", Name = "TVHeadend Connectivity", Status = "ERROR", Message = ex.Message, Recommendation = "Check host, port, and network connectivity." });
+            report.OverallStatus = "ERROR";
+            report.CompatibilityScore = 0;
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("circuit breaker", StringComparison.OrdinalIgnoreCase))
+        {
+            // The resilience layer refuses calls because recent requests kept failing —
+            // functionally the backend is unreachable. Reporting this as a soft warning made
+            // the dashboard claim "OK, score 90" while nothing worked (health-panel contradiction).
+            report.Connection = $"Cannot reach TVHeadend at {config.Host}:{config.Port} — circuit breaker is open after repeated failures";
+            report.Checks.Add(new DiagnoseCheck { Category = "Connection", Name = "TVHeadend Connectivity", Status = "ERROR", Message = ex.Message, Recommendation = "Check host, port, credentials, and whether TVHeadend is running; the breaker retries automatically." });
             report.OverallStatus = "ERROR";
             report.CompatibilityScore = 0;
         }
@@ -517,7 +541,7 @@ internal sealed class DiagnosticService : IDiagnosticService
         }
     }
 
-    private void CheckProbeCacheStatus(DiagnoseResult report, HashSet<string> allChannelUuids, CancellationToken cancellationToken)
+    private int CheckProbeCacheStatus(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, HashSet<string> allChannelUuids)
     {
         try
         {
@@ -542,38 +566,73 @@ internal sealed class DiagnosticService : IDiagnosticService
                 }
 
                 report.CacheStatus = $"{cachedCount}/{allChannelUuids.Count} channels have a Jellyfin mediainfo probe cache file.";
+                return AddProbeCacheCoverageCheck(report, config, cachedCount, allChannelUuids.Count);
+            }
 
-                var cacheStatus = cachedCount == 0 ? "WARNING" : cachedCount < allChannelUuids.Count ? "INFO" : "OK";
-                report.Checks.Add(new DiagnoseCheck
-                {
-                    Category = "Cache",
-                    Name = "Probe Cache Coverage",
-                    Status = cacheStatus,
-                    Message = report.CacheStatus,
-                    Recommendation = cachedCount == 0
-                        ? "No probe cache files found. Tune to channels once so Jellyfin creates the cache. Subsequent tunes will be faster."
-                        : cachedCount < allChannelUuids.Count
-                            ? $"{allChannelUuids.Count - cachedCount} channel(s) still need an initial tune to build probe cache."
-                            : "All channels have probe cache data. Channel switching should be fast."
-                });
-            }
-            else
-            {
-                report.CacheStatus = mediaInfoDir != null && !Directory.Exists(mediaInfoDir)
-                    ? "Mediainfo cache directory does not exist yet. Tune to a channel to create it."
-                    : allChannelUuids.Count == 0
-                        ? "No channel UUIDs available to check probe cache."
-                        : _mediaInfoCacheService == null
-                            ? "Cache status not available (media info cache service not available)."
-                            : "Cache status not available (missing cache path).";
-                report.Checks.Add(new DiagnoseCheck { Category = "Cache", Name = "Probe Cache Coverage", Status = "INFO", Message = report.CacheStatus });
-            }
+            report.CacheStatus = mediaInfoDir != null && !Directory.Exists(mediaInfoDir)
+                ? "Mediainfo cache directory does not exist yet. Run the cache warm-up on the plugin settings page (or tune to a channel) to create it."
+                : allChannelUuids.Count == 0
+                    ? "No channel UUIDs available to check probe cache."
+                    : _mediaInfoCacheService == null
+                        ? "Cache status not available (media info cache service not available)."
+                        : "Cache status not available (missing cache path).";
+            report.Checks.Add(new DiagnoseCheck { Category = "Cache", Name = "Probe Cache Coverage", Status = "INFO", Message = report.CacheStatus });
+            return 0;
         }
         catch (Exception ex)
         {
             report.CacheStatus = $"Could not check probe cache: {ex.Message}";
             report.Checks.Add(new DiagnoseCheck { Category = "Cache", Name = "Probe Cache Coverage", Status = "WARNING", Message = report.CacheStatus });
+            return 0;
         }
+    }
+
+    /// <summary>
+    /// Adds the probe-cache coverage check and returns the proportional score deduction.
+    /// Coverage is weighted into the compatibility score because the MediaInfo probe cache is
+    /// what keeps channel starts on the fast Direct Play path — the plugin's core purpose.
+    /// </summary>
+    /// <param name="report">The diagnostics report being built.</param>
+    /// <param name="config">The current plugin configuration.</param>
+    /// <param name="cachedCount">Number of channels with a probe cache file.</param>
+    /// <param name="totalCount">Total number of channels.</param>
+    /// <returns>The score deduction (0 when coverage is complete or probing is disabled).</returns>
+    private static int AddProbeCacheCoverageCheck(DiagnoseResult report, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, int cachedCount, int totalCount)
+    {
+        // The cache is effective only when probing is enabled — SupportsProbing is what the
+        // media source build actually consults (the old EnableMediaInfoCacheWrite flag is
+        // deprecated and has no backend effect).
+        if (!config.SupportsProbing)
+        {
+            report.Checks.Add(new DiagnoseCheck
+            {
+                Category = "Cache",
+                Name = "Probe Cache Coverage",
+                Status = "INFO",
+                Message = report.CacheStatus + " Probing is disabled in the plugin settings, so the MediaInfo cache is inactive.",
+                Recommendation = "Enable probing (SupportsProbing) in the plugin settings to speed up channel starts.",
+            });
+            return 0;
+        }
+
+        var coverage = (double)cachedCount / totalCount;
+        var status = coverage >= ProbeCacheOkCoverage ? "OK"
+            : coverage >= ProbeCacheErrorCoverage ? "WARNING"
+            : "ERROR";
+        var deduction = (int)Math.Round((1 - coverage) * ProbeCacheMaxScoreDeduction);
+
+        report.Checks.Add(new DiagnoseCheck
+        {
+            Category = "Cache",
+            Name = "Probe Cache Coverage",
+            Status = status,
+            Message = report.CacheStatus,
+            Recommendation = status == "OK"
+                ? "Probe cache coverage is high. Channel switching should be fast."
+                : $"{totalCount - cachedCount} channel(s) have no probe cache file yet, which slows their channel start. Run the cache warm-up on the plugin settings page (or tune each channel once) to build full coverage.",
+        });
+
+        return deduction;
     }
 
     private async Task<bool?> GetCodecProfileBoolSettingAsync(HttpClient httpClient, Jellyfin.Plugin.TvHeadendApi.Configuration.PluginConfiguration config, string baseUrl, string webRoot, string codecProfileRef, string settingName, CancellationToken cancellationToken)

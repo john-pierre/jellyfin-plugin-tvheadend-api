@@ -119,11 +119,24 @@ internal sealed class RelayUrlBuilder : IRelayUrlBuilder
         string? playbackMode,
         CancellationToken cancellationToken)
     {
+        var result = await BuildTokenizedStreamRelayUrlDetailedAsync(channelId, profile, userId, deviceId, playbackMode, cancellationToken).ConfigureAwait(false);
+        return result.Url;
+    }
+
+    /// <inheritdoc />
+    public async Task<TokenizedStreamUrl> BuildTokenizedStreamRelayUrlDetailedAsync(
+        string channelId,
+        string? profile,
+        string? userId,
+        string? deviceId,
+        string? playbackMode,
+        CancellationToken cancellationToken)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(channelId);
 
         if (_tokenService == null || _tokenOptions == null || !_tokenOptions.Enabled)
         {
-            return BuildStreamRelayUrl(channelId, profile);
+            return new TokenizedStreamUrl(BuildStreamRelayUrl(channelId, profile), null);
         }
 
         var rawToken = await _tokenService.IssueStreamTokenAsync(channelId, userId, deviceId, profile, playbackMode, cancellationToken).ConfigureAwait(false);
@@ -138,7 +151,7 @@ internal sealed class RelayUrlBuilder : IRelayUrlBuilder
         }
 
         url += $"{separator}token={Uri.EscapeDataString(rawToken)}";
-        return url;
+        return new TokenizedStreamUrl(url, rawToken);
     }
 
     /// <inheritdoc />

@@ -95,9 +95,10 @@ Fetches channels and EPG data from TVHeadend. Maps TVHeadend JSON responses to J
 
 The most performance-critical service. Builds the `MediaSourceInfo` that tells Jellyfin how to play a channel:
 
-- Constructs the TVHeadend stream URL with auth token
+- Resolves the effective streaming profile via the hierarchical `StreamingProfileResolver`
+- Builds the stream URL per delivery mode: relay URL with scoped token (default) or direct TVHeadend URL with auth token
 - Resolves the streaming profile's codec/container info
-- Manages the mediainfo cache (read/write/validate/invalidate)
+- Delegates mediainfo cache reconciliation to `MediaInfoCacheService` (read/write/validate/invalidate, per-profile store, stream-URL refresh on every start)
 
 ### 6. `Service/Backend/ApiClient.cs` — HTTP Layer
 
@@ -110,7 +111,9 @@ A single-file HTML page embedded as a resource. Contains:
 - Connection/auth/streaming/DVR/statistics configuration forms
 - Inline diagnostics display
 - Profile dropdowns populated from TVHeadend API
-- Chart.js-based viewing statistics
+- Setup helpers (create `jellyfin` profile, generate auth token, warm cache)
+
+A second embedded page, `Page/DashboardPage.html`, renders the Live-TV admin dashboard (metrics, logs, relay status).
 
 ## How Data Flows: Channel Switch Example
 
@@ -119,11 +122,12 @@ A single-file HTML page embedded as a resource. Contains:
 2. Jellyfin calls OrchestratorService.GetChannelStream(channelId)
 3. OrchestratorService delegates to MediaSourceService.GetChannelStreamAsync()
 4. MediaSourceService:
-   a. Gets config from Plugin.Instance
-   b. Builds stream URL via UrlBuilder (includes auth token)
-   c. Resolves profile snapshot via ProfileContainerResolver
-   d. Checks/writes mediainfo cache
-   e. Returns MediaSourceInfo to Jellyfin
+   a. Reads current config via IApiClient.GetCurrentConfiguration()
+   b. Resolves the effective TVHeadend profile via StreamingProfileResolver (channel/group/client/user rules)
+   c. Builds the stream URL (relay URL with scoped token, or direct TVHeadend URL with auth token)
+   d. Resolves profile snapshot via ProfileContainerResolver
+   e. MediaInfoCacheService reconciles the mediainfo cache (hit → refresh cached stream URL; miss → restore from per-profile store or write synthetic file)
+   f. Returns MediaSourceInfo to Jellyfin
 5. Jellyfin evaluates MediaSourceInfo → decides Direct Play / Remux / Transcode
 6. Client receives stream URL and starts playback
 ```

@@ -7,13 +7,15 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Configuration;
 using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
 using Jellyfin.Plugin.TvHeadendApi.Service.Guide;
-using Jellyfin.Plugin.TvHeadendApi.Service.Metric;
+using Jellyfin.Plugin.TvHeadendApi.Service.Metrics;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Storage;
 using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
@@ -61,6 +63,13 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
     private readonly IMediaEncoder? _mediaEncoder;
     private readonly IApplicationPaths? _applicationPaths;
 
+    // In-process counters mirrored to the OTel instruments so the dashboard can show
+    // them without a metrics listener. Updated with Interlocked — the service is a singleton.
+    private long _cacheHits;
+    private long _cacheMisses;
+    private long _cacheMismatches;
+    private long _cacheInvalidations;
+
     public MediaInfoCacheService(
         ILogger<MediaInfoCacheService> logger,
         ILibraryManager libraryManager,
@@ -103,7 +112,24 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
     }
 
     /// <inheritdoc />
-    public async Task EnsureMediaInfoCacheStateAsync(string channelId, string streamUrl, ProfileSnapshot profileSnapshot, bool proactiveCacheEnabled, bool validationEnabled, CancellationToken cancellationToken)
+    public MediaInfoCacheCounters GetCounters()
+    {
+        return new MediaInfoCacheCounters(
+            Interlocked.Read(ref _cacheHits),
+            Interlocked.Read(ref _cacheMisses),
+            Interlocked.Read(ref _cacheMismatches),
+            Interlocked.Read(ref _cacheInvalidations));
+    }
+
+    /// <inheritdoc />
+    public void RecordStreamBuildReuseHit()
+    {
+        MetricService.CacheHitCount.Add(1);
+        Interlocked.Increment(ref _cacheHits);
+    }
+
+    /// <inheritdoc />
+    public async Task<MediaInfoCacheStatus> EnsureMediaInfoCacheStateAsync(string channelId, string streamUrl, ProfileSnapshot profileSnapshot, bool proactiveCacheEnabled, bool validationEnabled, CancellationToken cancellationToken)
     {
         try
         {
@@ -111,24 +137,36 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
             if (cacheSnapshot == null)
             {
                 MetricService.CacheMissCount.Add(1);
+                Interlocked.Increment(ref _cacheMisses);
                 if (proactiveCacheEnabled)
                 {
+                    if (await TryRestoreFromProfileStoreAsync(channelId, profileSnapshot.ProfileName, streamUrl, cancellationToken).ConfigureAwait(false))
+                    {
+                        return MediaInfoCacheStatus.Restored;
+                    }
+
                     await TryWriteMediaInfoCacheAsync(channelId, streamUrl, profileSnapshot, cancellationToken).ConfigureAwait(false);
                 }
 
-                return;
+                return MediaInfoCacheStatus.Miss;
             }
-
-            MetricService.CacheHitCount.Add(1);
 
             if (!validationEnabled)
             {
-                return;
+                // The existing file is used as-is — a warm start.
+                MetricService.CacheHitCount.Add(1);
+                Interlocked.Increment(ref _cacheHits);
+                return MediaInfoCacheStatus.Hit;
             }
 
+            // Pass-through-like profiles carry no output codecs in their snapshot (the stream
+            // keeps the SOURCE codecs, which only a probe can know). For those, a probed cache
+            // file with real codecs is exactly what we want — comparing the empty snapshot
+            // codec against it would flag every probed file as a mismatch and destroy it.
+            var passThroughLike = string.IsNullOrWhiteSpace(profileSnapshot.VideoCodec);
             var profileMatches = string.Equals(profileSnapshot.ProfileName, cacheSnapshot.ProfileName, StringComparison.OrdinalIgnoreCase);
-            var videoCodecMatches = string.Equals(profileSnapshot.VideoCodec, cacheSnapshot.VideoCodec, StringComparison.OrdinalIgnoreCase);
-            var audioCodecMatches = string.Equals(profileSnapshot.AudioCodec, cacheSnapshot.AudioCodec, StringComparison.OrdinalIgnoreCase);
+            var videoCodecMatches = passThroughLike || string.Equals(profileSnapshot.VideoCodec, cacheSnapshot.VideoCodec, StringComparison.OrdinalIgnoreCase);
+            var audioCodecMatches = passThroughLike || string.Equals(profileSnapshot.AudioCodec, cacheSnapshot.AudioCodec, StringComparison.OrdinalIgnoreCase);
             var containerMatches = string.Equals(profileSnapshot.Container, cacheSnapshot.Container, StringComparison.OrdinalIgnoreCase);
             var allMatch = profileMatches && videoCodecMatches && audioCodecMatches && containerMatches;
 
@@ -143,7 +181,30 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
 
             if (allMatch)
             {
-                return;
+                // A real hit — count it only here, after validation confirmed the match.
+                // Mismatches used to be counted as hits because the counter fired before validation.
+                MetricService.CacheHitCount.Add(1);
+                Interlocked.Increment(ref _cacheHits);
+
+                // The media data is current, but the cached Path may still carry an older
+                // stream URL (stale relay token, previous delivery-mode URL shape). Jellyfin
+                // hands the cached Path verbatim to players on Direct Play starts, so it must
+                // be refreshed on every start.
+                await TryRefreshCachedStreamUrlAsync(cacheSnapshot, channelId, streamUrl, cancellationToken).ConfigureAwait(false);
+                return MediaInfoCacheStatus.Hit;
+            }
+
+            // A cache file existed but did not match the effective profile — a mismatch,
+            // counted as its own outcome (NOT a hit).
+            MetricService.CacheMismatchCount.Add(1);
+            Interlocked.Increment(ref _cacheMismatches);
+
+            // Preserve the outgoing file in the per-profile store BEFORE it gets replaced:
+            // probed source-codec data (pass-through profiles) is expensive to regain and must
+            // survive a rule switching this channel to a different TVHeadend profile.
+            if (!string.IsNullOrWhiteSpace(cacheSnapshot.CacheFilePath) && File.Exists(cacheSnapshot.CacheFilePath))
+            {
+                MirrorToProfileStore(channelId, cacheSnapshot.ProfileName, cacheSnapshot.CacheFilePath, overwrite: false);
             }
 
             if (!proactiveCacheEnabled)
@@ -152,17 +213,26 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
                 {
                     File.Delete(cacheSnapshot.CacheFilePath);
                     MetricService.CacheInvalidationCount.Add(1);
+                    Interlocked.Increment(ref _cacheInvalidations);
                     _logger.LogInformation("Deleted mismatching mediainfo cache file for channel {ChannelId}: {CacheFile}", channelId, cacheSnapshot.CacheFilePath);
                 }
 
-                return;
+                return MediaInfoCacheStatus.Mismatch;
             }
 
-            await TryWriteMediaInfoCacheAsync(channelId, streamUrl, profileSnapshot, cancellationToken).ConfigureAwait(false);
+            // Prefer the stored per-profile file (probed data survives rule ping-pong);
+            // fall back to a synthetic write only when this combination was never seen.
+            if (!await TryRestoreFromProfileStoreAsync(channelId, profileSnapshot.ProfileName, streamUrl, cancellationToken).ConfigureAwait(false))
+            {
+                await TryWriteMediaInfoCacheAsync(channelId, streamUrl, profileSnapshot, cancellationToken).ConfigureAwait(false);
+            }
+
+            return MediaInfoCacheStatus.Mismatch;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to enforce mediainfo cache state for channel {ChannelId}.", channelId);
+            return MediaInfoCacheStatus.Unknown;
         }
     }
 
@@ -342,6 +412,11 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
 
             var json = JsonSerializer.Serialize(cacheContent);
             await File.WriteAllTextAsync(cacheFilePath, json, cancellationToken).ConfigureAwait(false);
+
+            // Mirror into the per-profile store so this (channel, profile) combination can be
+            // restored after another rule/profile rewrites the Jellyfin file. Never overwrite:
+            // an existing store entry may hold PROBED data, which beats synthetic content.
+            MirrorToProfileStore(channelId, profileSnapshot.ProfileName, cacheFilePath, overwrite: false);
             _logger.LogInformation(
                 "Wrote proactive mediainfo cache for channel {ChannelId}: Profile={ProfileName}, Container={Container}, VideoCodec={VideoCodec}, AudioCodec={AudioCodec}",
                 channelId,
@@ -353,6 +428,222 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to write mediainfo cache file for channel {ChannelId}.", channelId);
+        }
+    }
+
+    /// <summary>
+    /// Seeds the per-profile store for every profile a configured rule can resolve to
+    /// (client/user rules plus the channel's effective profile, which carries channel/group
+    /// overrides), beyond the combination held by the live Jellyfin cache file. Seeding never
+    /// overwrites an existing store entry, so probed data mirrored from real playback wins.
+    /// Pass-through-like variants reuse the live file's source codecs only when that file
+    /// itself belongs to a pass-through-like profile; anything else gets deterministic
+    /// synthetic content derived from the variant profile.
+    /// </summary>
+    private async Task MirrorRuleProfileVariantsAsync(PluginConfiguration config, string channelId, string? streamUrl, string? jellyfinFileProfile, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var settings = config.StreamingProfileSettings;
+            if (settings == null)
+            {
+                return;
+            }
+
+            var variants = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var rule in (settings.ClientRules ?? new List<StreamingProfileRule>()).Concat(settings.UserRules ?? new List<StreamingProfileRule>()))
+            {
+                if (rule.Enabled && !string.IsNullOrWhiteSpace(rule.TvHeadendProfileName))
+                {
+                    variants.Add(rule.TvHeadendProfileName);
+                }
+            }
+
+            // Channel/group overrides surface through the effective profile — include it so a
+            // freshly configured override finds its combination pre-seeded before first start.
+            var effective = _streamingProfileResolver.Resolve(new StreamingProfileContext { ChannelId = channelId }).EffectiveTvHeadendProfile;
+            if (!string.IsNullOrWhiteSpace(effective))
+            {
+                variants.Add(effective);
+            }
+
+            variants.Remove(jellyfinFileProfile ?? string.Empty);
+            if (variants.Count == 0)
+            {
+                return;
+            }
+
+            var cachePath = _cachePathResolver();
+            if (string.IsNullOrWhiteSpace(cachePath))
+            {
+                return;
+            }
+
+            // The live file carries source codecs only when it belongs to a pass-through-like
+            // profile; copying transcode output codecs into a pass store would poison it.
+            var fileSnapshot = await _profileContainerResolver.ResolveProfileSnapshotAsync(config, jellyfinFileProfile, cancellationToken).ConfigureAwait(false);
+            var fileHasSourceData = string.IsNullOrWhiteSpace(fileSnapshot.VideoCodec);
+
+            var seeded = 0;
+            var jellyfinFilePath = Path.Combine(cachePath, "mediainfo", BuildChannelCacheFileName(channelId, channelId));
+            foreach (var variant in variants)
+            {
+                var storePath = GetProfileStorePath(channelId, variant);
+                if (storePath == null || File.Exists(storePath))
+                {
+                    continue;
+                }
+
+                var snapshot = await _profileContainerResolver.ResolveProfileSnapshotAsync(config, variant, cancellationToken).ConfigureAwait(false);
+                Directory.CreateDirectory(Path.GetDirectoryName(storePath)!);
+                if (string.IsNullOrWhiteSpace(snapshot.VideoCodec) && fileHasSourceData && File.Exists(jellyfinFilePath))
+                {
+                    File.Copy(jellyfinFilePath, storePath, overwrite: false);
+                }
+                else
+                {
+                    streamUrl ??= await _relayUrlBuilder.BuildTokenizedStreamRelayUrlAsync(channelId, variant, null, null, null, cancellationToken).ConfigureAwait(false);
+                    var content = BuildMediaInfoCacheContent(streamUrl, snapshot);
+                    await File.WriteAllTextAsync(storePath, JsonSerializer.Serialize(content), cancellationToken).ConfigureAwait(false);
+                }
+
+                seeded++;
+            }
+
+            if (seeded > 0)
+            {
+                _logger.LogDebug("Pre-seeded {Count} rule-profile cache variants for channel {ChannelId}.", seeded, channelId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to pre-warm rule-profile cache variants for channel {ChannelId}.", channelId);
+        }
+    }
+
+    /// <summary>
+    /// Rewrites the <c>Path</c> of an otherwise matching cache file to the current stream URL.
+    /// The cached Path is what Jellyfin hands to players on Direct Play starts — it must always
+    /// carry a fresh relay token and the currently configured delivery-mode URL shape.
+    /// </summary>
+    private async Task TryRefreshCachedStreamUrlAsync(CacheSnapshot cacheSnapshot, string channelId, string streamUrl, CancellationToken cancellationToken)
+    {
+        var cacheFilePath = cacheSnapshot.CacheFilePath;
+        if (string.IsNullOrWhiteSpace(cacheFilePath) || !File.Exists(cacheFilePath))
+        {
+            return;
+        }
+
+        try
+        {
+            var json = await File.ReadAllTextAsync(cacheFilePath, cancellationToken).ConfigureAwait(false);
+            var node = JsonNode.Parse(json);
+            if (node == null)
+            {
+                return;
+            }
+
+            if (string.Equals((string?)node["Path"], streamUrl, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            node["Path"] = streamUrl;
+            await File.WriteAllTextAsync(cacheFilePath, node.ToJsonString(), cancellationToken).ConfigureAwait(false);
+            _logger.LogDebug("Refreshed cached stream URL for channel {ChannelId}.", channelId);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            _logger.LogWarning(ex, "Failed to refresh cached stream URL for channel {ChannelId}.", channelId);
+        }
+    }
+
+    /// <summary>
+    /// Returns the per-profile store path for a (channel, profile) combination, or <c>null</c>
+    /// when the cache root is unavailable. The store keeps one file per combination so that
+    /// switching rules/profiles never loses probed media info.
+    /// </summary>
+    private string? GetProfileStorePath(string channelId, string? profileName)
+    {
+        var cachePath = _cachePathResolver();
+        if (string.IsNullOrWhiteSpace(cachePath))
+        {
+            return null;
+        }
+
+        var jellyfinName = BuildChannelCacheFileName(channelId, channelId);
+        return Path.Combine(cachePath, "mediainfo", "profiles", $"{jellyfinName}.{BuildProfileStoreKey(profileName)}.json");
+    }
+
+    /// <summary>
+    /// Copies the current Jellyfin cache file into the per-profile store. With
+    /// <paramref name="overwrite"/> = false an existing entry (possibly probed) is kept.
+    /// </summary>
+    private void MirrorToProfileStore(string channelId, string? profileName, string jellyfinCacheFilePath, bool overwrite)
+    {
+        try
+        {
+            var storePath = GetProfileStorePath(channelId, profileName);
+            if (storePath == null || (!overwrite && File.Exists(storePath)))
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(storePath)!);
+            File.Copy(jellyfinCacheFilePath, storePath, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to mirror mediainfo cache for channel {ChannelId} into the profile store.", channelId);
+        }
+    }
+
+    /// <summary>
+    /// Restores the Jellyfin cache file for a (channel, profile) combination from the
+    /// per-profile store, patching the stored <c>Path</c> to the fresh stream URL (the stored
+    /// one carries an expired token and the previous profile parameter). Returns <c>true</c>
+    /// when the combination existed and was restored.
+    /// </summary>
+    private async Task<bool> TryRestoreFromProfileStoreAsync(string channelId, string? profileName, string streamUrl, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var storePath = GetProfileStorePath(channelId, profileName);
+            if (storePath == null || !File.Exists(storePath))
+            {
+                return false;
+            }
+
+            var json = await File.ReadAllTextAsync(storePath, cancellationToken).ConfigureAwait(false);
+            var node = JsonNode.Parse(json);
+            if (node == null)
+            {
+                return false;
+            }
+
+            node["Path"] = streamUrl;
+
+            var cachePath = _cachePathResolver();
+            if (string.IsNullOrWhiteSpace(cachePath))
+            {
+                return false;
+            }
+
+            var mediaInfoDir = Path.Combine(cachePath, "mediainfo");
+            Directory.CreateDirectory(mediaInfoDir);
+            var jellyfinFilePath = Path.Combine(mediaInfoDir, BuildChannelCacheFileName(channelId, channelId));
+            await File.WriteAllTextAsync(jellyfinFilePath, node.ToJsonString(), cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Restored profile-specific mediainfo cache for channel {ChannelId} (profile '{Profile}').",
+                channelId,
+                string.IsNullOrWhiteSpace(profileName) ? "default" : profileName);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to restore mediainfo cache for channel {ChannelId} from the profile store.", channelId);
+            return false;
         }
     }
 
@@ -414,6 +705,17 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
         return string.IsNullOrWhiteSpace(container) ? "mpegts" : container;
     }
 
+    private static string BuildProfileStoreKey(string? profileName)
+    {
+        if (string.IsNullOrWhiteSpace(profileName))
+        {
+            return "default";
+        }
+
+        var chars = profileName.Trim().ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '_');
+        return string.Concat(chars);
+    }
+
     private static string GetNormalizedVideoCodec(ProfileSnapshot profileSnapshot)
         => string.IsNullOrWhiteSpace(profileSnapshot.VideoCodec) ? "h264" : profileSnapshot.VideoCodec;
 
@@ -458,6 +760,8 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
             if (!string.IsNullOrWhiteSpace(cacheFilePath) && File.Exists(cacheFilePath))
             {
                 File.Delete(cacheFilePath);
+                MetricService.CacheInvalidationCount.Add(1);
+                Interlocked.Increment(ref _cacheInvalidations);
                 _logger.LogInformation("Deleted unreadable mediainfo cache file for channel {ChannelId}: {CacheFile}", channelId, cacheFilePath);
             }
         }
@@ -487,14 +791,19 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
         var failed = 0;
         var errors = new List<string>();
         var lockObj = new object();
-        var processedCount = 0;
 
         // Limit parallelism to 2 — each FFprobe opens a real TVH stream and we
         // must not overwhelm the tuners.
         using var throttle = new SemaphoreSlim(2);
 
-        var tasks = channels.Select(async channel =>
+        var tasks = channels.Select(async (channel, channelIndex) =>
         {
+            // Stable, pre-assigned 1-based position for all progress reports of this
+            // channel. Up to two channels run concurrently, so deriving the position
+            // from a shared mutable counter would let parallel tasks observe duplicate
+            // or skipped indices in the progress stream.
+            var position = channelIndex + 1;
+
             await throttle.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -503,40 +812,45 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
 
                 if (string.IsNullOrWhiteSpace(channelId))
                 {
-                    var idx = Interlocked.Increment(ref processedCount);
                     lock (lockObj)
                     {
                         failed++;
                         errors.Add("Channel with empty ID skipped.");
                     }
 
-                    progress?.Report(new CacheWarmupProgress(idx, totalChannels, channelName, channelId ?? string.Empty, "failed", "Empty channel ID"));
+                    progress?.Report(new CacheWarmupProgress(position, totalChannels, channelName, channelId ?? string.Empty, "failed", "Empty channel ID"));
                     return;
                 }
 
                 // Report that we are probing this channel.
                 progress?.Report(new CacheWarmupProgress(
-                    Interlocked.Increment(ref processedCount),
+                    position,
                     totalChannels,
                     channelName,
                     channelId,
                     "probing",
                     null));
 
-                // Decrement so final report uses the same index.
-                Interlocked.Decrement(ref processedCount);
-
                 // Check if cache already exists and is valid.
                 var existingSnapshot = await TryGetMediainfoCacheSnapshotAsync(channelId, cancellationToken).ConfigureAwait(false);
                 if (existingSnapshot != null)
                 {
-                    var idx = Interlocked.Increment(ref processedCount);
+                    // The live file stays, but rules may have changed since it was written:
+                    // preserve its combination and seed every rule-reachable combination that
+                    // is still missing from the per-profile store.
+                    if (!string.IsNullOrWhiteSpace(existingSnapshot.CacheFilePath))
+                    {
+                        MirrorToProfileStore(channelId, existingSnapshot.ProfileName, existingSnapshot.CacheFilePath, overwrite: false);
+                    }
+
+                    await MirrorRuleProfileVariantsAsync(config, channelId, null, existingSnapshot.ProfileName, cancellationToken).ConfigureAwait(false);
+
                     lock (lockObj)
                     {
                         alreadyCached++;
                     }
 
-                    progress?.Report(new CacheWarmupProgress(idx, totalChannels, channelName, channelId, "skipped", "Already cached"));
+                    progress?.Report(new CacheWarmupProgress(position, totalChannels, channelName, channelId, "skipped", "Already cached"));
                     return;
                 }
 
@@ -550,7 +864,7 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
                     channelId, effectiveProfile, null, null, null, cancellationToken).ConfigureAwait(false);
 
                 // Attempt real FFprobe probing via IMediaEncoder when available.
-                var probed = await TryProbeAndWriteCacheAsync(channelId, streamUrl, cancellationToken).ConfigureAwait(false);
+                var probed = await TryProbeAndWriteCacheAsync(channelId, streamUrl, effectiveProfile, cancellationToken).ConfigureAwait(false);
 
                 if (!probed)
                 {
@@ -560,14 +874,19 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
                     await TryWriteMediaInfoCacheAsync(channelId, streamUrl, profileSnapshot, cancellationToken).ConfigureAwait(false);
                 }
 
-                var finalIdx = Interlocked.Increment(ref processedCount);
+                // Pre-warm the per-profile store for every OTHER profile that a configured rule
+                // can resolve to, so a rule-driven first start finds its combination ready:
+                // transcode profiles get deterministic synthetic content; pass-through-like
+                // profiles reuse the (probed) source data of the file just written.
+                await MirrorRuleProfileVariantsAsync(config, channelId, streamUrl, effectiveProfile, cancellationToken).ConfigureAwait(false);
+
                 lock (lockObj)
                 {
                     warmed++;
                 }
 
                 progress?.Report(new CacheWarmupProgress(
-                    finalIdx,
+                    position,
                     totalChannels,
                     channelName,
                     channelId,
@@ -576,7 +895,6 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
             }
             catch (Exception ex)
             {
-                var idx = Interlocked.Increment(ref processedCount);
                 lock (lockObj)
                 {
                     failed++;
@@ -584,7 +902,7 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
                 }
 
                 progress?.Report(new CacheWarmupProgress(
-                    idx,
+                    position,
                     totalChannels,
                     channel.Name ?? channel.Id ?? "Unknown",
                     channel.Id ?? string.Empty,
@@ -614,7 +932,7 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
     /// writes the resulting <see cref="MediaSourceInfo"/> to the Jellyfin mediainfo
     /// cache directory. Returns <c>true</c> when the probe and write both succeed.
     /// </summary>
-    private async Task<bool> TryProbeAndWriteCacheAsync(string channelId, string streamUrl, CancellationToken cancellationToken)
+    private async Task<bool> TryProbeAndWriteCacheAsync(string channelId, string streamUrl, string? profileName, CancellationToken cancellationToken)
     {
         if (_mediaEncoder == null || _applicationPaths == null)
         {
@@ -658,6 +976,18 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
             var filteredStreams = new List<MediaStream>();
             filteredStreams.AddRange(mediaInfo.MediaStreams.Where(s => s.Type == MediaStreamType.Video).Take(1));
             filteredStreams.AddRange(mediaInfo.MediaStreams.Where(s => s.Type == MediaStreamType.Audio).Take(1));
+
+            // A probe that yields neither a video nor an audio stream (e.g. the analyze
+            // window elapsed before the first keyframe) is useless for Direct Play
+            // negotiation. Persisting it would poison the cache until an admin manually
+            // invalidates it, so treat it as a failed probe — the caller then falls back
+            // to the synthetic profile-based cache content, which always declares both.
+            if (filteredStreams.Count == 0)
+            {
+                _logger.LogWarning("FFprobe found no usable video or audio streams for channel {ChannelId}, falling back to synthetic cache.", channelId);
+                return false;
+            }
+
             foreach (var stream in filteredStreams)
             {
                 stream.Index = -1;
@@ -698,6 +1028,10 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
             var json = JsonSerializer.Serialize(cachedSource, CacheJsonOptions);
             await File.WriteAllTextAsync(cacheFilePath, json, cancellationToken).ConfigureAwait(false);
 
+            // Probed data is authoritative for this (channel, profile) combination — overwrite
+            // any previous (possibly synthetic) store entry.
+            MirrorToProfileStore(channelId, profileName, cacheFilePath, overwrite: true);
+
             var videoCodec = filteredStreams.FirstOrDefault(s => s.Type == MediaStreamType.Video)?.Codec;
             var audioCodec = filteredStreams.FirstOrDefault(s => s.Type == MediaStreamType.Audio)?.Codec;
             _logger.LogInformation(
@@ -736,7 +1070,13 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
             return Task.FromResult(0);
         }
 
-        var files = Directory.GetFiles(mediaInfoDir, "*.json");
+        var files = Directory.GetFiles(mediaInfoDir, "*.json").ToList();
+        var profileStoreDir = Path.Combine(mediaInfoDir, "profiles");
+        if (Directory.Exists(profileStoreDir))
+        {
+            files.AddRange(Directory.GetFiles(profileStoreDir, "*.json"));
+        }
+
         var deleted = 0;
         foreach (var file in files)
         {
@@ -753,6 +1093,7 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
 
         _logger.LogInformation("Invalidated all mediainfo caches: {Deleted} files deleted.", deleted);
         MetricService.CacheInvalidationCount.Add(deleted);
+        Interlocked.Add(ref _cacheInvalidations, deleted);
         return Task.FromResult(deleted);
     }
 
@@ -779,6 +1120,7 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
         {
             File.Delete(cacheFilePath);
             MetricService.CacheInvalidationCount.Add(1);
+            Interlocked.Increment(ref _cacheInvalidations);
             _logger.LogInformation("Invalidated mediainfo cache for channel {ChannelId}: {CacheFile}", channelId, cacheFilePath);
             return Task.FromResult(true);
         }

@@ -16,6 +16,16 @@ namespace Jellyfin.Plugin.TvHeadendApi.Service.Database;
 [SuppressMessage("Security", "CA2100:Review SQL queries for security vulnerabilities", Justification = "All SQL uses internal constants, never user input.")]
 internal sealed class DatabaseCleanupService
 {
+    /// <summary>
+    /// Grace period that expired/revoked relay tokens are retained before deletion. Expired
+    /// tokens are worthless to clients (validation always rejects them), so they are pruned
+    /// quickly — the short grace only covers clock skew and inspecting very recent tokens
+    /// while diagnosing an issue. Single source of truth for every relay-token cleanup path:
+    /// any other pruner (e.g. the periodic relay token cleanup) must apply this same grace
+    /// to its cutoff so the effective retention window stays predictable.
+    /// </summary>
+    internal static readonly TimeSpan RelayTokenRetentionGrace = TimeSpan.FromMinutes(15);
+
     private readonly DatabaseHealthService _healthService;
     private readonly DatabaseConnectionFactory _connectionFactory;
     private readonly DatabaseWriteCoordinator _writeCoordinator;
@@ -61,13 +71,11 @@ internal sealed class DatabaseCleanupService
     /// <param name="statisticsRetentionDays">Days to retain viewing sessions, health transitions, and TVHeadend logs.</param>
     /// <param name="logRetentionDays">Days to retain plugin log entries.</param>
     /// <param name="metricsRetentionDays">Days to retain relay request metrics.</param>
-    /// <param name="tokenRetentionDays">Days to retain expired/revoked relay tokens.</param>
     /// <param name="healthEventRetentionDays">Days to retain database health events.</param>
     public void RunCleanup(
         int statisticsRetentionDays = 30,
         int logRetentionDays = 7,
         int metricsRetentionDays = 30,
-        int tokenRetentionDays = 7,
         int healthEventRetentionDays = 30)
     {
         if (!_healthService.IsAvailable)
@@ -95,22 +103,13 @@ internal sealed class DatabaseCleanupService
             totalDeleted += CleanupTable(
                 connection, "plugin_log_entry", "created_at_utc", logRetentionDays);
 
+            // relay_request_metric is the single stream/image telemetry table — the former
+            // completed_stream_sessions / relay_events / active_stream_sessions tables were
+            // dropped by migration 010 and need no retention pass anymore.
             totalDeleted += CleanupTable(
                 connection, "relay_request_metric", "created_at_utc", metricsRetentionDays);
 
-            // Streaming telemetry tables — these grow per stream and previously had no retention.
-            totalDeleted += CleanupTable(
-                connection, "completed_stream_sessions", "ended_at_utc", metricsRetentionDays);
-
-            totalDeleted += CleanupTable(
-                connection, "relay_events", "timestamp_utc", metricsRetentionDays);
-
-            // Active sessions are normally removed on finalization; prune any stale rows left by
-            // an abnormal shutdown so the table cannot grow unbounded.
-            totalDeleted += CleanupTable(
-                connection, "active_stream_sessions", "started_at_utc", metricsRetentionDays);
-
-            totalDeleted += CleanupExpiredTokens(connection, tokenRetentionDays);
+            totalDeleted += CleanupExpiredTokens(connection);
 
             totalDeleted += CleanupTable(
                 connection, "database_health_event", "timestamp_utc", healthEventRetentionDays);
@@ -166,19 +165,14 @@ internal sealed class DatabaseCleanupService
         return deleted;
     }
 
-    private int CleanupExpiredTokens(SqliteConnection connection, int retentionDays)
+    private int CleanupExpiredTokens(SqliteConnection connection)
     {
-        if (retentionDays <= 0)
-        {
-            return 0;
-        }
-
         if (!DatabaseMigrationService.TableExists(connection, "relay_token"))
         {
             return 0;
         }
 
-        var cutoff = DateTime.UtcNow.AddDays(-retentionDays).ToString("o", CultureInfo.InvariantCulture);
+        var cutoff = (DateTime.UtcNow - RelayTokenRetentionGrace).ToString("o", CultureInfo.InvariantCulture);
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
@@ -192,9 +186,9 @@ internal sealed class DatabaseCleanupService
         if (deleted > 0)
         {
             _logger.LogInformation(
-                "Cleaned up {Count} expired/revoked relay tokens older than {Days} days.",
+                "Cleaned up {Count} expired/revoked relay tokens past the {GraceMinutes}-minute grace period.",
                 deleted,
-                retentionDays);
+                RelayTokenRetentionGrace.TotalMinutes);
         }
 
         return deleted;

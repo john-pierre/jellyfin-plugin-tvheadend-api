@@ -101,6 +101,12 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
         }
     }
 
+    /// <inheritdoc />
+    public void InvalidateCache()
+    {
+        _profileCache.Clear();
+    }
+
     private async Task<ProfileSnapshot> DetectProfileSnapshotAsync(PluginConfiguration config, string profileName, CancellationToken cancellationToken)
     {
         const string fallbackContainer = "mpegts";

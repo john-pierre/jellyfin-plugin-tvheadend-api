@@ -127,7 +127,10 @@ internal sealed class RelayService : IRelayService, IDisposable
         // Cache hit — serve from disk without touching TVHeadend. Sniff the bytes for the content type
         // (rather than trusting the stored one) so the response is always a correct image/* type even
         // for entries cached before content-type sniffing existed.
+        var cacheLookup = Stopwatch.StartNew();
         var cached = _imageCache.TryGet(upstreamPath);
+        cacheLookup.Stop();
+        timing.CacheLookupDurationMs = cacheLookup.Elapsed.TotalMilliseconds;
         if (cached != null)
         {
             timing.CacheStatus = RelayCacheStatus.Hit;
@@ -159,7 +162,15 @@ internal sealed class RelayService : IRelayService, IDisposable
                 var cacheControl = result.CacheControl;
                 var acceptRanges = result.AcceptRanges;
                 using var buffer = new MemoryStream();
-                await result.Body.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+                var chunk = new byte[16384];
+                int read;
+                while ((read = await result.Body.ReadAsync(chunk.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    // First byte actually received from upstream — idempotent mark (first call wins).
+                    timing.MarkFirstByteFromUpstream();
+                    await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                }
+
                 var bytes = buffer.ToArray();
                 result.Dispose();
 
@@ -183,10 +194,38 @@ internal sealed class RelayService : IRelayService, IDisposable
                     TimingContext = timing,
                 };
             }
+            catch (OperationCanceledException)
+            {
+                // Client disconnected (or the image timeout hit) mid-buffer. Nothing upstream
+                // will dispose the result for us — release the pooled connection before
+                // propagating the cancellation. The controller never receives a result on this
+                // path, so persist the metric here or the event is lost.
+                result.Dispose();
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    timing.ClientCancelled = true;
+                    timing.FailureReason = RelayFailureReason.ClientCancelled;
+                    timing.ClientStatusCode = 499; // nginx-style client-closed
+                }
+                else
+                {
+                    timing.UpstreamTimedOut = true;
+                    timing.FailureReason = RelayFailureReason.UpstreamTimeout;
+                    timing.ClientStatusCode = 504;
+                }
+
+                RecordAbortedRequestMetric(timing);
+                throw;
+            }
             catch (Exception ex) when (ex is IOException or HttpRequestException)
             {
-                // Buffering failed mid-download — fall through and return what we have.
+                // Buffering failed mid-download — the body is partially consumed and useless.
+                // Release the upstream connection and report a gateway error instead of
+                // handing the caller a broken stream.
                 _logger.LogDebug(ex, "Failed to buffer relayed image: {UpstreamPath}", upstreamPath);
+                result.Dispose();
+                timing.ClientStatusCode = 502;
+                return new RelayResult { StatusCode = 502, TimingContext = timing };
             }
         }
 
@@ -566,6 +605,16 @@ internal sealed class RelayService : IRelayService, IDisposable
             timing.ClientCancelled = true;
             timing.FailureReason = RelayFailureReason.ClientCancelled;
             timing.ClientStatusCode = 499; // nginx-style client-closed
+            if (timing.RelayType == RelayType.Stream)
+            {
+                // Cancelled while connecting upstream — no byte ever reached the client.
+                timing.EndedBy = StreamEndedBy.StartupCancelledBeforeFirstByte;
+            }
+
+            // The exception propagates to the controller with a null result, so the controller
+            // cannot record this request — persist the metric here or the cancellation is
+            // invisible to SuccessRate/CancelledRequests/TopFailureReasons aggregations.
+            RecordAbortedRequestMetric(timing);
             response?.Dispose();
             throw;
         }
@@ -587,6 +636,25 @@ internal sealed class RelayService : IRelayService, IDisposable
             _healthService.RecordFailure(FailureClassifier.Classify(ex));
             response?.Dispose();
             return new RelayResult { StatusCode = 502 };
+        }
+    }
+
+    /// <summary>
+    /// Persists the metric for a request that aborts by throwing (client cancel or timeout)
+    /// before a <see cref="RelayResult"/> reaches the controller. On those paths the controller's
+    /// local result is still <c>null</c>, so this is the only place the timing context can be
+    /// recorded. Best-effort: metrics persistence must never mask the original exception.
+    /// </summary>
+    /// <param name="timing">The timing context populated for the aborted request.</param>
+    private void RecordAbortedRequestMetric(RelayTimingContext timing)
+    {
+        try
+        {
+            _metricsService.RecordMetric(timing.ToMetric());
+        }
+        catch (Exception)
+        {
+            // Best-effort — never let metrics recording break relay error handling.
         }
     }
 

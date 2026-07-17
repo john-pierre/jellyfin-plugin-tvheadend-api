@@ -42,7 +42,7 @@ public class RelayMetricsTests
     }
 
     [Fact]
-    public void TimingContext_ToMetric_StreamType_IncludesSessionDuration()
+    public void TimingContext_ToMetric_StreamType_TotalDurationIsWatchTime()
     {
         var ctx = new RelayTimingContext { RelayType = RelayType.Stream, MediaKind = MediaKind.LiveTvStream };
         ctx.ClientStatusCode = 200;
@@ -51,8 +51,7 @@ public class RelayMetricsTests
         var metric = ctx.ToMetric();
 
         Assert.Equal("stream", metric.RelayType);
-        Assert.NotNull(metric.SessionDurationMs);
-        Assert.True(metric.SessionDurationMs > 0);
+        Assert.True(metric.TotalDurationMs > 0, "TotalDurationMs is the single duration field (SessionDurationMs was removed as redundant)");
     }
 
     [Fact]
@@ -201,7 +200,7 @@ public class RelayMetricsTests
         RecordSync(sut, CreateImageMetric(totalMs: 50, outcome: "success"));
         RecordSync(sut, CreateImageMetric(totalMs: 100, outcome: "success"));
         RecordSync(sut, CreateImageMetric(totalMs: 200, outcome: "failure", failureReason: "Upstream404"));
-        RecordSync(sut, CreateStreamMetric(totalMs: 5000, outcome: "success", sessionMs: 5000));
+        RecordSync(sut, CreateStreamMetric(totalMs: 5000, outcome: "success"));
 
         WaitForMetrics(sut, 4);
 
@@ -440,7 +439,6 @@ public class RelayMetricsTests
     private static RelayRequestMetric CreateStreamMetric(
         double totalMs = 5000,
         string outcome = "success",
-        double sessionMs = 5000,
         string? endedBy = "Completed")
     {
         return new RelayRequestMetric
@@ -449,7 +447,6 @@ public class RelayMetricsTests
             RelayType = "stream",
             MediaKind = "LiveTvStream",
             TotalDurationMs = totalMs,
-            SessionDurationMs = sessionMs,
             StartupLatencyMs = 150,
             BytesSent = 1024 * 1024,
             ClientStatusCode = outcome == "success" ? 200 : 502,

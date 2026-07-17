@@ -57,6 +57,9 @@ internal sealed class RelayTokenDbContext : DbContext
         entity.Property(e => e.RevokedReason).HasColumnName("revoked_reason").HasMaxLength(256);
         entity.Property(e => e.LastValidationResult).HasColumnName("last_validation_result").HasMaxLength(32);
         entity.Property(e => e.LastValidationFailureReason).HasColumnName("last_validation_failure_reason").HasMaxLength(64);
+        entity.Property(e => e.ResolutionSource).HasColumnName("resolution_source").HasMaxLength(32);
+        entity.Property(e => e.MediaInfoCacheStatus).HasColumnName("mediainfo_cache_status").HasMaxLength(16);
+        entity.Property(e => e.StreamSetupMs).HasColumnName("stream_setup_ms");
 
         // Indexes
         entity.HasIndex(e => e.TokenHash).IsUnique().HasDatabaseName("ix_relay_token_token_hash");

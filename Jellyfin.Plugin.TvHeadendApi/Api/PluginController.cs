@@ -11,6 +11,7 @@ using Jellyfin.Plugin.TvHeadendApi.Service.Auth;
 using Jellyfin.Plugin.TvHeadendApi.Service.Diagnostic;
 using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
 using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+using Jellyfin.Plugin.TvHeadendApi.Service.StreamingProfile;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -30,6 +31,9 @@ public class PluginController : ControllerBase
     private readonly IDefaultProfileService _defaultProfileService;
     private readonly ITokenService _tokenService;
     private readonly IMediaInfoCacheService _cacheService;
+    private readonly IProfileContainerResolver? _containerResolver;
+    private readonly IProfileDiscoveryService? _profileDiscoveryService;
+    private readonly IKnownClientsService? _knownClientsService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginController"/> class.
@@ -38,11 +42,17 @@ public class PluginController : ControllerBase
     /// <param name="defaultProfileService">Service that provisions recommended TVHeadend default profiles.</param>
     /// <param name="tokenService">Service that manages TVHeadend auth tokens.</param>
     /// <param name="cacheService">Service that manages mediainfo cache warmup and invalidation.</param>
+    /// <param name="containerResolver">Optional profile container/codec snapshot cache to invalidate together with the mediainfo cache.</param>
+    /// <param name="profileDiscoveryService">Optional discovered-profile-list cache to invalidate together with the mediainfo cache.</param>
+    /// <param name="knownClientsService">Optional aggregator of known Jellyfin users, clients, and devices for the rule editor.</param>
     public PluginController(
         IDiagnosticService diagnosticService,
         IDefaultProfileService defaultProfileService,
         ITokenService tokenService,
-        IMediaInfoCacheService cacheService)
+        IMediaInfoCacheService cacheService,
+        IProfileContainerResolver? containerResolver = null,
+        IProfileDiscoveryService? profileDiscoveryService = null,
+        IKnownClientsService? knownClientsService = null)
     {
         ArgumentNullException.ThrowIfNull(diagnosticService);
         ArgumentNullException.ThrowIfNull(defaultProfileService);
@@ -52,6 +62,9 @@ public class PluginController : ControllerBase
         _defaultProfileService = defaultProfileService;
         _tokenService = tokenService;
         _cacheService = cacheService;
+        _containerResolver = containerResolver;
+        _profileDiscoveryService = profileDiscoveryService;
+        _knownClientsService = knownClientsService;
     }
 
     /// <summary>
@@ -252,7 +265,19 @@ public class PluginController : ControllerBase
             // Client disconnected — expected.
         }
 
-        var result = await warmupTask.ConfigureAwait(false);
+        // Always observe the warmup task — when the client disconnects mid-warmup the task is
+        // cancelled cooperatively and awaiting it rethrows. Swallow that like the surrounding
+        // cancellation points instead of letting it escape the action as an unhandled exception.
+        CacheWarmupResult result;
+        try
+        {
+            result = await warmupTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Client disconnected — expected. No client is listening for the final event.
+            return;
+        }
 
         try
         {
@@ -267,12 +292,29 @@ public class PluginController : ControllerBase
     }
 
     /// <summary>
+    /// Returns the Jellyfin users, client application names, and device names known to this
+    /// server. Used by the configuration UI to offer selectable match values for streaming
+    /// profile rules instead of free-text entry.
+    /// </summary>
+    /// <returns>Known users (id + name), client names, and device names — deduplicated and sorted.</returns>
+    [HttpGet("KnownClients")]
+    public ActionResult<KnownClientsResult> GetKnownClients()
+    {
+        return Ok(_knownClientsService?.GetKnownClients() ?? new KnownClientsResult());
+    }
+
+    /// <summary>
     /// Deletes all mediainfo cache files. Useful after a streaming profile change.
     /// </summary>
     /// <returns>The number of cache files deleted.</returns>
     [HttpPost("InvalidateCache")]
     public async Task<ActionResult> InvalidateCache()
     {
+        // Also drop the profile snapshot/discovery caches: rebuilding the mediainfo cache from a
+        // stale profile snapshot would silently reintroduce the very state the admin is clearing.
+        _containerResolver?.InvalidateCache();
+        _profileDiscoveryService?.InvalidateCache();
+
         var count = await _cacheService.InvalidateAllCachesAsync().ConfigureAwait(false);
         return Ok(new { Success = true, DeletedFiles = count });
     }

@@ -77,6 +77,55 @@ public sealed class JellyfinApiEndToEndTests
         return first.GetProperty("Id").GetString();
     }
 
+    /// <summary>
+    /// Requests PlaybackInfo for the first available Jellyfin Live TV channel item, driving the
+    /// plugin's real <c>MediaSourceService</c>/<c>RelayUrlBuilder</c> path so a genuine HMAC relay
+    /// token gets minted (the fixture's config keeps <c>EnableRelayTokenSecurity</c> enabled — this
+    /// is NOT the same as the TVHeadend <c>AuthToken</c>). Returns the TVHeadend channel id, the
+    /// streaming profile carried by the token (if any), and the raw token, so callers can build a
+    /// request against either the open <c>/api/tvheadend/stream/{channelId}</c> route or the
+    /// token-secured <c>/api/tvheadend/relay/stream/{channelId}</c> route.
+    /// </summary>
+    private async Task<(string ChannelId, string? Profile, string Token)> IssueRelayStreamTokenAsync()
+    {
+        // Jellyfin's Live TV channel cache may be empty right after the plugin recovered from a
+        // misconfiguration — trigger a guide refresh when needed before requiring channel items.
+        Assert.True(
+            await _fixture.EnsureLiveTvChannelsAsync(),
+            "Jellyfin must expose at least one Live TV channel item (guide refresh did not surface any).");
+
+        using var channelsDoc = await GetJsonAsync("/LiveTv/Channels?limit=1");
+        var liveTvChannels = channelsDoc.RootElement.GetProperty("Items");
+        Assert.True(liveTvChannels.GetArrayLength() > 0, "Jellyfin must expose at least one Live TV channel item.");
+        var jellyfinChannelId = liveTvChannels[0].GetProperty("Id").GetString();
+        Assert.False(string.IsNullOrEmpty(jellyfinChannelId), "Live TV channel item must have an Id.");
+
+        using var playbackDoc = await GetJsonAsync($"/Items/{jellyfinChannelId}/PlaybackInfo");
+        var mediaSources = playbackDoc.RootElement.GetProperty("MediaSources");
+        Assert.True(mediaSources.GetArrayLength() > 0, "PlaybackInfo must return at least one media source.");
+
+        var relayUrl = mediaSources[0].GetProperty("Path").GetString();
+        Assert.False(string.IsNullOrEmpty(relayUrl), "Media source Path must contain the relay stream URL.");
+
+        var relayUri = new Uri(relayUrl, UriKind.Absolute);
+        var channelId = Uri.UnescapeDataString(relayUri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries)[^1]);
+        Assert.False(string.IsNullOrEmpty(channelId), $"Could not extract channel id from relay URL: {relayUrl}");
+
+        var queryParts = relayUri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries);
+        var token = queryParts
+            .Where(p => p.StartsWith("token=", StringComparison.OrdinalIgnoreCase))
+            .Select(p => Uri.UnescapeDataString(p.Substring("token=".Length)))
+            .FirstOrDefault();
+        var profile = queryParts
+            .Where(p => p.StartsWith("profile=", StringComparison.OrdinalIgnoreCase))
+            .Select(p => Uri.UnescapeDataString(p.Substring("profile=".Length)))
+            .FirstOrDefault();
+
+        Assert.False(string.IsNullOrEmpty(token), $"Relay URL must contain a token query parameter: {relayUrl}");
+
+        return (channelId, profile, token);
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // A) Plugin Info & Config
     // ═══════════════════════════════════════════════════════════════════════
@@ -98,92 +147,33 @@ public sealed class JellyfinApiEndToEndTests
     public async Task ResetToDefaults_ResetsAndReturnsSuccess()
     {
         SkipIfUnavailable();
-        var resetResp = await _fixture.Client.PostAsync("/TvHeadendApi/ResetToDefaults", null);
-        Assert.True(
-            resetResp.StatusCode == HttpStatusCode.OK || resetResp.StatusCode == HttpStatusCode.NoContent,
-            $"Expected 200 or 204 for ResetToDefaults, got {(int)resetResp.StatusCode}.");
-
-        // If the response has a body, verify Success property.
-        var resetBody = await resetResp.Content.ReadAsStringAsync();
-        if (!string.IsNullOrWhiteSpace(resetBody))
+        try
         {
-            using var doc = JsonDocument.Parse(resetBody);
-            if (doc.RootElement.TryGetProperty("Success", out var success))
+            var resetResp = await _fixture.Client.PostAsync("/TvHeadendApi/ResetToDefaults", null);
+            Assert.True(
+                resetResp.StatusCode == HttpStatusCode.OK || resetResp.StatusCode == HttpStatusCode.NoContent,
+                $"Expected 200 or 204 for ResetToDefaults, got {(int)resetResp.StatusCode}.");
+
+            // If the response has a body, verify Success property.
+            var resetBody = await resetResp.Content.ReadAsStringAsync();
+            if (!string.IsNullOrWhiteSpace(resetBody))
             {
-                Assert.True(success.GetBoolean(), "ResetToDefaults should succeed.");
-            }
-        }
-
-        // Re-configure the plugin after reset so subsequent tests still work.
-        var tvhHost = Environment.GetEnvironmentVariable("TVH_HOST") ?? "localhost";
-        var tvhPortStr = Environment.GetEnvironmentVariable("TVH_PORT") ?? "19981";
-        var tvhUser = Environment.GetEnvironmentVariable("TVH_USER") ?? "testuser";
-        var tvhPass = Environment.GetEnvironmentVariable("TVH_PASS") ?? "testpass";
-        if (!int.TryParse(tvhPortStr, out var tvhPort))
-        {
-            tvhPort = 19981;
-        }
-
-        // Re-read, patch, and save config.
-        var pluginId = "ae9f5148-d656-43ab-ab83-94192f9e840a";
-        var getResp = await _fixture.Client.GetAsync($"/Plugins/{pluginId}/Configuration");
-        Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
-
-        var configJson = await getResp.Content.ReadAsStringAsync();
-        using var configDoc = JsonDocument.Parse(configJson);
-
-        using var ms = new System.IO.MemoryStream();
-        using (var writer = new System.Text.Json.Utf8JsonWriter(ms))
-        {
-            writer.WriteStartObject();
-            foreach (var prop in configDoc.RootElement.EnumerateObject())
-            {
-                switch (prop.Name)
+                using var doc = JsonDocument.Parse(resetBody);
+                if (doc.RootElement.TryGetProperty("Success", out var success))
                 {
-                    case "Host":
-                        writer.WriteString("Host", tvhHost);
-                        break;
-                    case "Port":
-                        writer.WriteNumber("Port", tvhPort);
-                        break;
-                    case "Username":
-                        writer.WriteString("Username", tvhUser);
-                        break;
-                    case "Password":
-                        writer.WriteString("Password", tvhPass);
-                        break;
-                    case "AllowAnonymousAccess":
-                        writer.WriteBoolean("AllowAnonymousAccess", false);
-                        break;
-                    case "RelayEnabled":
-                        writer.WriteBoolean("RelayEnabled", true);
-                        break;
-                    case "EnableRelayTokenSecurity":
-                        writer.WriteBoolean("EnableRelayTokenSecurity", true);
-                        break;
-                    case "StreamingProfile":
-                        writer.WriteString("StreamingProfile", "pass");
-                        break;
-                    default:
-                        prop.WriteTo(writer);
-                        break;
+                    Assert.True(success.GetBoolean(), "ResetToDefaults should succeed.");
                 }
             }
-
-            writer.WriteEndObject();
         }
-
-        var updatedConfig = System.Text.Encoding.UTF8.GetString(ms.ToArray());
-        var postResp = await _fixture.Client.PostAsync(
-            $"/Plugins/{pluginId}/Configuration",
-            new StringContent(updatedConfig, System.Text.Encoding.UTF8, "application/json"));
-        Assert.True(
-            postResp.StatusCode == HttpStatusCode.OK || postResp.StatusCode == HttpStatusCode.NoContent,
-            $"Expected 200 or 204 for config update, got {(int)postResp.StatusCode}.");
-
-        // ResetToDefaults points Host at the default (unreachable inside the container) and can trip
-        // the circuit breaker; wait for the connection to recover so later collection tests are not polluted.
-        await _fixture.EnsureConfiguredAndHealthyAsync();
+        finally
+        {
+            // ResetToDefaults points Host at the default (unreachable inside the container) and can trip
+            // the circuit breaker; re-apply the known-good connection config and wait for it to recover
+            // so later collection tests are not polluted. This performs the same field overrides
+            // (Host/Port/Username/Password/AllowAnonymousAccess/RelayEnabled/EnableRelayTokenSecurity/
+            // StreamingProfile) the fixture applies during setup, so no hand-rolled re-configure is needed.
+            await _fixture.EnsureConfiguredAndHealthyAsync();
+        }
     }
 
     [Fact]
@@ -191,19 +181,11 @@ public sealed class JellyfinApiEndToEndTests
     {
         SkipIfUnavailable();
         var response = await _fixture.Client.GetAsync("/TvHeadendApi/ProfileOptions");
-        Assert.True(
-            response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.InternalServerError,
-            $"Expected success or 500 (TVH unreachable), got {(int)response.StatusCode}.");
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return; // TVH unreachable — skip assertions on body.
-        }
-
         var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected success from ProfileOptions, got {(int)response.StatusCode}: {body}");
+
         using var doc = JsonDocument.Parse(body);
         Assert.True(doc.RootElement.TryGetProperty("StreamingProfiles", out var streaming), "Response must have StreamingProfiles.");
-        // Streaming profiles may be empty if TVH hasn't fully initialized.
         Assert.True(streaming.ValueKind == JsonValueKind.Array, "StreamingProfiles must be an array.");
     }
 
@@ -212,16 +194,9 @@ public sealed class JellyfinApiEndToEndTests
     {
         SkipIfUnavailable();
         var response = await _fixture.Client.GetAsync("/TvHeadendApi/Diagnose");
-        Assert.True(
-            response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.InternalServerError,
-            $"Expected success or 500 (TVH unreachable), got {(int)response.StatusCode}.");
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return; // TVH unreachable — skip body assertions.
-        }
-
         var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected success from Diagnose, got {(int)response.StatusCode}: {body}");
+
         using var doc = JsonDocument.Parse(body);
 
         Assert.True(doc.RootElement.TryGetProperty("CompatibilityScore", out _), "Response must have CompatibilityScore.");
@@ -251,16 +226,9 @@ public sealed class JellyfinApiEndToEndTests
     {
         SkipIfUnavailable();
         var response = await _fixture.Client.PostAsync("/TvHeadendApi/GenerateAuthToken", null);
-        Assert.True(
-            response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.InternalServerError,
-            $"Expected success or 500 (TVH unreachable), got {(int)response.StatusCode}.");
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return; // TVH unreachable.
-        }
-
         var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected success from GenerateAuthToken, got {(int)response.StatusCode}: {body}");
+
         using var doc = JsonDocument.Parse(body);
 
         Assert.True(doc.RootElement.TryGetProperty("Success", out var success), "Response must have Success property.");
@@ -275,16 +243,9 @@ public sealed class JellyfinApiEndToEndTests
     {
         SkipIfUnavailable();
         var response = await _fixture.Client.PostAsync("/TvHeadendApi/CreateProfile", null);
-        Assert.True(
-            response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.InternalServerError,
-            $"Expected success or 500 (TVH unreachable), got {(int)response.StatusCode}.");
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return; // TVH unreachable.
-        }
-
         var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected success from CreateProfile, got {(int)response.StatusCode}: {body}");
+
         using var doc = JsonDocument.Parse(body);
         Assert.True(doc.RootElement.TryGetProperty("Success", out var success), "Response must have Success property.");
         Assert.True(success.GetBoolean(), "CreateProfile should succeed.");
@@ -299,18 +260,10 @@ public sealed class JellyfinApiEndToEndTests
     {
         SkipIfUnavailable();
         var response = await _fixture.Client.GetAsync("/TvHeadendApi/StreamingProfiles/Discovered");
-        Assert.True(
-            response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.InternalServerError,
-            $"Expected success or 500 (TVH unreachable), got {(int)response.StatusCode}.");
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return; // TVH unreachable.
-        }
-
         var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected success from Discovered, got {(int)response.StatusCode}: {body}");
+
         using var doc = JsonDocument.Parse(body);
-        // TVH may return empty if not fully initialized — just verify it's an array.
         Assert.True(doc.RootElement.ValueKind == JsonValueKind.Array, "Discovered must return an array.");
     }
 
@@ -319,20 +272,12 @@ public sealed class JellyfinApiEndToEndTests
     {
         SkipIfUnavailable();
         var response = await _fixture.Client.GetAsync("/TvHeadendApi/StreamingProfiles/Channels");
-        Assert.True(
-            response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.InternalServerError,
-            $"Expected success or 500 (TVH unreachable), got {(int)response.StatusCode}.");
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return; // TVH unreachable.
-        }
-
         var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected success from Channels, got {(int)response.StatusCode}: {body}");
+
         using var doc = JsonDocument.Parse(body);
         Assert.True(doc.RootElement.ValueKind == JsonValueKind.Array, "Channels must return an array.");
 
-        // Channels may be empty if TVH hasn't fully initialized.
         foreach (var ch in doc.RootElement.EnumerateArray())
         {
             Assert.True(ch.TryGetProperty("Id", out var id), "Channel must have Id.");
@@ -394,18 +339,10 @@ public sealed class JellyfinApiEndToEndTests
     {
         SkipIfUnavailable();
         var response = await _fixture.Client.GetAsync("/TvHeadendApi/Status");
-        Assert.True(
-            response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.InternalServerError,
-            $"Expected success or 500 (TVH unreachable), got {(int)response.StatusCode}.");
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return;
-        }
-
         var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected success from Status, got {(int)response.StatusCode}: {body}");
+
         using var doc = JsonDocument.Parse(body);
-        // ActivityStatus is a JSON object — verify it's non-empty.
         Assert.True(doc.RootElement.ValueKind == JsonValueKind.Object, "Status must return a JSON object.");
     }
 
@@ -414,16 +351,9 @@ public sealed class JellyfinApiEndToEndTests
     {
         SkipIfUnavailable();
         var response = await _fixture.Client.GetAsync("/TvHeadendApi/Connections");
-        Assert.True(
-            response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.InternalServerError,
-            $"Expected success or 500 (TVH unreachable), got {(int)response.StatusCode}.");
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return;
-        }
-
         var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected success from Connections, got {(int)response.StatusCode}: {body}");
+
         using var doc = JsonDocument.Parse(body);
         Assert.True(doc.RootElement.ValueKind == JsonValueKind.Array, "Connections must return an array.");
     }
@@ -433,16 +363,9 @@ public sealed class JellyfinApiEndToEndTests
     {
         SkipIfUnavailable();
         var response = await _fixture.Client.GetAsync("/TvHeadendApi/Inputs");
-        Assert.True(
-            response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.InternalServerError,
-            $"Expected success or 500 (TVH unreachable), got {(int)response.StatusCode}.");
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return;
-        }
-
         var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected success from Inputs, got {(int)response.StatusCode}: {body}");
+
         using var doc = JsonDocument.Parse(body);
         Assert.True(doc.RootElement.ValueKind == JsonValueKind.Array, "Inputs must return an array.");
     }
@@ -495,18 +418,12 @@ public sealed class JellyfinApiEndToEndTests
     {
         SkipIfUnavailable();
         var response = await _fixture.Client.DeleteAsync("/TvHeadendApi/Statistics");
-
-        // DELETE may return 200, 204, or 500 if DB is not yet initialized.
-        if (response.StatusCode == HttpStatusCode.InternalServerError)
-        {
-            return; // DB not ready — acceptable in E2E timing
-        }
+        var body = await response.Content.ReadAsStringAsync();
 
         Assert.True(
             response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.NoContent,
-            $"Expected 200 or 204 for Statistics clear, got {(int)response.StatusCode}.");
+            $"Expected 200 or 204 for Statistics clear, got {(int)response.StatusCode}: {body}");
 
-        var body = await response.Content.ReadAsStringAsync();
         if (!string.IsNullOrWhiteSpace(body))
         {
             using var doc = JsonDocument.Parse(body);
@@ -524,16 +441,11 @@ public sealed class JellyfinApiEndToEndTests
 
         // Clear first.
         var deleteResp = await _fixture.Client.DeleteAsync("/TvHeadendApi/Statistics");
-
-        // DELETE may return 200, 204, or 500 if DB is not yet initialized.
-        if (deleteResp.StatusCode == HttpStatusCode.InternalServerError)
-        {
-            return; // DB not ready — acceptable in E2E timing
-        }
+        var deleteBody = await deleteResp.Content.ReadAsStringAsync();
 
         Assert.True(
             deleteResp.StatusCode == HttpStatusCode.OK || deleteResp.StatusCode == HttpStatusCode.NoContent,
-            $"Expected 200 or 204 for Statistics clear, got {(int)deleteResp.StatusCode}.");
+            $"Expected 200 or 204 for Statistics clear, got {(int)deleteResp.StatusCode}: {deleteBody}");
 
         // Fetch stats.
         using var doc = await GetJsonAsync("/TvHeadendApi/Statistics");
@@ -659,43 +571,30 @@ public sealed class JellyfinApiEndToEndTests
     {
         SkipIfUnavailable();
 
-        var channelId = await TryGetFirstChannelUuidAsync();
-        if (string.IsNullOrEmpty(channelId))
-        {
-            return; // No channels available (TVH unreachable) — skip gracefully.
-        }
+        // The bootstrapped stack enables EnableRelayTokenSecurity by default, so even the open
+        // /stream/{channelId} endpoint now requires a valid relay token — obtain a genuine one via
+        // PlaybackInfo (the same token also authorizes /stream/{channelId}, not just
+        // /relay/stream/{channelId}) instead of tolerating the resulting 401 as before.
+        var (channelId, profile, token) = await IssueRelayStreamTokenAsync();
+        var tokenQuery = string.IsNullOrWhiteSpace(profile)
+            ? $"token={Uri.EscapeDataString(token)}"
+            : $"profile={Uri.EscapeDataString(profile)}&token={Uri.EscapeDataString(token)}";
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        try
-        {
-            var response = await _fixture.Client.GetAsync(
-                $"/api/tvheadend/stream/{channelId}?profile=pass",
-                HttpCompletionOption.ResponseHeadersRead,
-                cts.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var response = await _fixture.Client.GetAsync(
+            $"/api/tvheadend/stream/{channelId}?{tokenQuery}",
+            HttpCompletionOption.ResponseHeadersRead,
+            cts.Token);
 
-            // TVHeadend may return 200 (streaming) or 502/504 if upstream fails — but not 404.
-            Assert.NotEqual(HttpStatusCode.NotFound, response.StatusCode);
+        var body = response.IsSuccessStatusCode ? string.Empty : await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected success from the relay stream endpoint, got {(int)response.StatusCode}: {body}");
 
-            if (response.IsSuccessStatusCode)
-            {
-                var contentType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
-                Assert.True(
-                    contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) ||
-                    contentType == "application/octet-stream" ||
-                    contentType == "video/MP2T",
-                    $"Unexpected content type: {contentType}");
-            }
-
-            response.Dispose();
-        }
-        catch (TaskCanceledException)
-        {
-            // Timeout means the stream started (200 OK, data flowing) — acceptable.
-        }
-        catch (OperationCanceledException)
-        {
-            // Same as above.
-        }
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+        Assert.True(
+            contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) ||
+            contentType == "application/octet-stream" ||
+            contentType == "video/MP2T",
+            $"Unexpected content type: {contentType}");
     }
 
     [Fact]
@@ -705,12 +604,11 @@ public sealed class JellyfinApiEndToEndTests
 
         var response = await _fixture.Client.GetAsync("/api/tvheadend/images/imagecache/1");
 
-        // Image may be 200 (logo cached), 404 (no logos), or 502 (TVH upstream unreachable) — all acceptable.
+        // Image may be 200 (logo cached) or 404 (no logo at this id) — TVHeadend reachability is
+        // guaranteed by the bootstrapped stack, so a 502 upstream failure is no longer tolerated.
         Assert.True(
-            response.StatusCode == HttpStatusCode.OK ||
-            response.StatusCode == HttpStatusCode.NotFound ||
-            response.StatusCode == HttpStatusCode.BadGateway,
-            $"Expected 200, 404, or 502, got {(int)response.StatusCode}.");
+            response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.NotFound,
+            $"Expected 200 or 404, got {(int)response.StatusCode}.");
     }
 
     [Fact]
@@ -718,22 +616,15 @@ public sealed class JellyfinApiEndToEndTests
     {
         SkipIfUnavailable();
 
-        // Generate a fresh token via the API.
+        // Generate a fresh TVHeadend auth token via the API — TVH reachability is guaranteed by the
+        // bootstrapped stack, so this must succeed.
         var tokenResp = await _fixture.Client.PostAsync("/TvHeadendApi/GenerateAuthToken", null);
-        if (!tokenResp.IsSuccessStatusCode)
-        {
-            return; // TVH unreachable — skip gracefully.
-        }
-
         var tokenBody = await tokenResp.Content.ReadAsStringAsync();
+        Assert.True(tokenResp.IsSuccessStatusCode, $"Expected success from GenerateAuthToken, got {(int)tokenResp.StatusCode}: {tokenBody}");
+
         using var tokenDoc = JsonDocument.Parse(tokenBody);
         var tokenSuccess = tokenDoc.RootElement.TryGetProperty("Success", out var s) && s.GetBoolean();
-
-        // If token generation failed, skip this test — TVHeadend may not support token auth.
-        if (!tokenSuccess)
-        {
-            return;
-        }
+        Assert.True(tokenSuccess, $"GenerateAuthToken should succeed: {tokenBody}");
 
         // Re-read config to get the stored token.
         var pluginId = "ae9f5148-d656-43ab-ab83-94192f9e840a";
@@ -744,44 +635,18 @@ public sealed class JellyfinApiEndToEndTests
             authToken = tokenProp.GetString() ?? string.Empty;
         }
 
-        if (string.IsNullOrEmpty(authToken))
-        {
-            return; // Token not stored — skip.
-        }
+        Assert.False(string.IsNullOrEmpty(authToken), "AuthToken must be stored in plugin configuration after GenerateAuthToken.");
 
         var channelId = await TryGetFirstChannelUuidAsync();
-        if (string.IsNullOrEmpty(channelId))
-        {
-            return; // No channels available — skip gracefully.
-        }
+        Assert.False(string.IsNullOrEmpty(channelId), "Bootstrapped stack must guarantee at least one channel.");
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        try
-        {
-            var response = await _fixture.AnonymousClient.GetAsync(
-                $"/api/tvheadend/relay/stream/{channelId}?profile=pass&token={Uri.EscapeDataString(authToken)}",
-                HttpCompletionOption.ResponseHeadersRead,
-                cts.Token);
+        // The TVHeadend AuthToken is NOT a relay token — relay tokens are plugin-internal HMAC
+        // tokens minted per-request (see RelayStream_WithValidToken_StreamsBytes for the positive
+        // path). The relay endpoint must reject this token as unrecognized (401).
+        var response = await _fixture.AnonymousClient.GetAsync(
+            $"/api/tvheadend/relay/stream/{channelId}?profile=pass&token={Uri.EscapeDataString(authToken)}");
 
-            // With a valid TVH auth token (NOT a relay token), the relay endpoint
-            // will reject it (401) because relay tokens are plugin-internal HMAC tokens.
-            // This is expected behavior — we're testing that the endpoint responds, not that
-            // the TVH auth token works as a relay token. A true relay token test would need
-            // to call the MediaSource API which issues tokens internally.
-            // Accept any response that proves the endpoint is reachable.
-            Assert.True(
-                response.StatusCode != HttpStatusCode.NotFound,
-                $"Relay stream endpoint should exist, got {(int)response.StatusCode}.");
-            response.Dispose();
-        }
-        catch (TaskCanceledException)
-        {
-            // Stream started — acceptable.
-        }
-        catch (OperationCanceledException)
-        {
-            // Stream started — acceptable.
-        }
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -790,20 +655,15 @@ public sealed class JellyfinApiEndToEndTests
         SkipIfUnavailable();
 
         var channelId = await TryGetFirstChannelUuidAsync();
-        if (string.IsNullOrEmpty(channelId))
-        {
-            return; // No channels available — skip gracefully.
-        }
+        Assert.False(string.IsNullOrEmpty(channelId), "Bootstrapped stack must guarantee at least one channel.");
 
         var response = await _fixture.AnonymousClient.GetAsync(
             $"/api/tvheadend/relay/stream/{channelId}?token=invalid-bogus-token");
 
-        Assert.True(
-            response.StatusCode == HttpStatusCode.Unauthorized ||
-            response.StatusCode == HttpStatusCode.Forbidden ||
-            response.StatusCode == HttpStatusCode.Gone ||
-            response.StatusCode == HttpStatusCode.BadGateway,
-            $"Invalid token should return 401, 403, 410, or 502 — got {(int)response.StatusCode}.");
+        // A never-issued token is always classified as TokenNotFound/MalformedToken by
+        // RelayAuthorizationHelper.MapToStatusCode, which both map to 401 — 403/410/502 are only
+        // reachable for tokens that were actually issued and then revoked/expired/mismatched.
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -812,20 +672,74 @@ public sealed class JellyfinApiEndToEndTests
         SkipIfUnavailable();
 
         var channelId = await TryGetFirstChannelUuidAsync();
-        if (string.IsNullOrEmpty(channelId))
-        {
-            return; // No channels available — skip gracefully.
-        }
+        Assert.False(string.IsNullOrEmpty(channelId), "Bootstrapped stack must guarantee at least one channel.");
 
         var response = await _fixture.AnonymousClient.GetAsync(
             $"/api/tvheadend/relay/stream/{channelId}");
 
-        Assert.True(
-            response.StatusCode == HttpStatusCode.Unauthorized ||
-            response.StatusCode == HttpStatusCode.Forbidden ||
-            response.StatusCode == HttpStatusCode.Gone ||
-            response.StatusCode == HttpStatusCode.BadGateway,
-            $"Missing token should return 401, 403, 410, or 502 — got {(int)response.StatusCode}.");
+        // A missing token is always classified as MissingToken by
+        // RelayAuthorizationHelper.MapToStatusCode, which maps to 401.
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RelayStream_WithValidToken_StreamsBytes()
+    {
+        SkipIfUnavailable();
+
+        var channelId = await TryGetFirstChannelUuidAsync();
+        Assert.False(string.IsNullOrEmpty(channelId), "Bootstrapped stack must guarantee at least one TVHeadend channel.");
+
+        // Drive the plugin's real MediaSourceService/RelayUrlBuilder path via Jellyfin's own
+        // PlaybackInfo endpoint so a genuine HMAC relay token gets minted — the TVHeadend AuthToken
+        // (see RelayTokenStream_WithValidToken_Succeeds) is always rejected by the relay endpoint.
+        var (tokenChannelId, profile, token) = await IssueRelayStreamTokenAsync();
+        var tokenQuery = string.IsNullOrWhiteSpace(profile)
+            ? $"token={Uri.EscapeDataString(token)}"
+            : $"profile={Uri.EscapeDataString(profile)}&token={Uri.EscapeDataString(token)}";
+        var relayPath = $"/api/tvheadend/relay/stream/{tokenChannelId}?{tokenQuery}";
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        // Positive path: the plugin-issued relay token must actually authorize a stream.
+        using (var response = await _fixture.AnonymousClient.GetAsync(
+            relayPath,
+            HttpCompletionOption.ResponseHeadersRead,
+            cts.Token))
+        {
+            var errorBody = response.IsSuccessStatusCode ? string.Empty : await response.Content.ReadAsStringAsync();
+            Assert.True(response.IsSuccessStatusCode, $"Expected success streaming with a valid relay token, got {(int)response.StatusCode}: {errorBody}");
+
+            var contentType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+            Assert.True(
+                contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) ||
+                contentType == "application/octet-stream",
+                $"Expected video/* or application/octet-stream, got: {contentType}");
+
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            var buffer = new byte[65536];
+            var totalRead = 0;
+            while (totalRead < buffer.Length)
+            {
+                var bytesRead = await stream.ReadAsync(buffer.AsMemory(totalRead, buffer.Length - totalRead), cts.Token);
+                if (bytesRead == 0)
+                {
+                    break;
+                }
+
+                totalRead += bytesRead;
+            }
+
+            Assert.True(totalRead >= 65536, $"Expected >= 65536 bytes (64 KB) of continuous stream data within 30s, got {totalRead}.");
+        }
+
+        // Negative control: the identical request without the token query parameter must be rejected.
+        var noTokenPath = string.IsNullOrWhiteSpace(profile)
+            ? $"/api/tvheadend/relay/stream/{tokenChannelId}"
+            : $"/api/tvheadend/relay/stream/{tokenChannelId}?profile={Uri.EscapeDataString(profile)}";
+
+        var unauthorizedResponse = await _fixture.AnonymousClient.GetAsync(noTokenPath);
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorizedResponse.StatusCode);
     }
 
     // ═══════════════════════════════════════════════════════════════════════

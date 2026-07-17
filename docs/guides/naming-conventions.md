@@ -12,6 +12,7 @@ This document defines the naming standards for the Jellyfin TVHeadend API Plugin
   - ✓ `Configuration/` (not `Configurations/`)
   - ✓ `Property/` (not `Properties/`)
 - **Rationale**: Singular names are the standard convention for directory structure. They represent the category/domain (everything in `Model/` is model-related), not a collection of items.
+- **Documented exception**: `Service/Metrics/` (plural). "Metrics" is the established .NET term (`System.Diagnostics.Metrics`) and the plural form was already entrenched across the codebase; the former singular `Service/Metric/` folder was merged INTO `Service/Metrics/` so instrumentation and session telemetry live in one namespace instead of two near-identical ones.
 
 ### Markdown File Names
 - **The root `README.md` is the only README in UPPERCASE.**
@@ -68,8 +69,9 @@ Jellyfin.Plugin.TvHeadendApi/
 │   │   ├── GridFetcher.cs             → public class GridFetcher { }
 │   ├── Resilience/                     → Jellyfin.Plugin.TvHeadendApi.Service.Resilience
 │   │   ├── ResiliencePolicies.cs      → public class ResiliencePolicies { }
-│   ├── Metric/                         → Jellyfin.Plugin.TvHeadendApi.Service.Metric
-│   │   ├── MetricService.cs           → public class MetricService { }
+│   ├── Metrics/                        → Jellyfin.Plugin.TvHeadendApi.Service.Metrics (documented plural exception)
+│   │   ├── MetricService.cs           → internal static class MetricService { }
+│   │   ├── SessionTracker.cs          → public sealed class SessionTracker { }
 │   ├── Configuration/                  → Jellyfin.Plugin.TvHeadendApi.Service.Configuration
 │   │   ├── ConfigurationProvider.cs   → public class ConfigurationProvider { }
 │   │   ├── ConfigurationSaver.cs      → public class ConfigurationSaver { }
@@ -109,7 +111,7 @@ Services are organized by **domain responsibility**, not by implementation detai
 | **Service.Diagnostic** | Plugin diagnostics and health checks | `DiagnosticService` |
 | **Service.Backend** | Low-level HTTP and URL infrastructure | `ApiClient`, `UrlBuilder`, `GridFetcher`, `IdNodeValueHelper` |
 | **Service.Resilience** | Retry and circuit breaker policies | `ResiliencePolicies`, `FailureClassifier` |
-| **Service.Metric** | Metrics instrumentation | `MetricService` |
+| **Service.Metrics** | Metrics instrumentation + in-memory stream session telemetry | `MetricService`, `SessionTracker`, `MetricsAggregator` |
 | **Service.Configuration** | Plugin configuration access and mutation | `ConfigurationProvider`, `ConfigurationSaver` |
 | **Service.Storage** | Plugin path resolution | `CachePathProvider`, `DataFolderPathProvider` |
 | **Service.Common** | Shared utilities | `JsonDefaults` |
@@ -204,7 +206,7 @@ using Microsoft.Extensions.Logging;
 
 When adding or moving files and folders:
 
-- [ ] All folder names are **singular** (e.g., `Service/`, not `Services/`; `Model/`, not `Models/`)
+- [ ] All folder names are **singular** (e.g., `Service/`, not `Services/`; `Model/`, not `Models/`) — sole documented exception: `Service/Metrics/`
 - [ ] File name matches class name exactly (e.g., `TokenValidator.cs`)
 - [ ] Namespace path matches folder structure
 - [ ] Class uses appropriate suffix: `-Service`, `-Resolver`, `-Validator`, `-Helper`, `-Provider`, `-Saver`, `-Reader`, `-Handler`, `-Fetcher`, `-Context`

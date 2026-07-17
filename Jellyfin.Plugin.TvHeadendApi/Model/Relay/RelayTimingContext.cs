@@ -8,7 +8,8 @@ namespace Jellyfin.Plugin.TvHeadendApi.Model.Relay;
 /// <summary>
 /// Lightweight mutable timing context carried through a single relay request.
 /// Captures Stopwatch-based timestamps at key milestones. Converted to a
-/// <see cref="RelayRequestMetric"/> on completion.
+/// <see cref="RelayRequestMetric"/> on completion — the single persistence
+/// point for both image and stream relay telemetry.
 /// <para>
 /// Performance: uses a single <see cref="Stopwatch"/> instance and records
 /// elapsed ticks at each milestone — no allocations in the hot path.
@@ -67,6 +68,9 @@ public sealed class RelayTimingContext
     /// <summary>Gets or sets the cache status (images).</summary>
     public RelayCacheStatus CacheStatus { get; set; } = RelayCacheStatus.NotApplicable;
 
+    /// <summary>Gets or sets the on-disk image cache lookup duration in ms (images only).</summary>
+    public double? CacheLookupDurationMs { get; set; }
+
     /// <summary>Gets or sets a value indicating whether upstream response had ETag.</summary>
     public bool HadEtag { get; set; }
 
@@ -88,11 +92,45 @@ public sealed class RelayTimingContext
     /// <summary>Gets or sets Content-Length if known.</summary>
     public long? ContentLength { get; set; }
 
+    /// <summary>Gets or sets the HTTP request method (GET, HEAD).</summary>
+    public string RequestMethod { get; set; } = "GET";
+
     /// <summary>Gets or sets stream ended-by reason.</summary>
     public StreamEndedBy? EndedBy { get; set; }
 
     /// <summary>Gets or sets active streams at start (streams only).</summary>
     public int? ParallelActiveStreamCountAtStart { get; set; }
+
+    // ── Session identity (streams) ──────────────────────────────────
+
+    /// <summary>Gets or sets the in-memory session ID for streams.</summary>
+    public string? SessionId { get; set; }
+
+    /// <summary>Gets or sets the channel display name if known.</summary>
+    public string? ChannelName { get; set; }
+
+    /// <summary>Gets or sets the derived client name.</summary>
+    public string? ClientName { get; set; }
+
+    /// <summary>Gets or sets the sanitized User-Agent string.</summary>
+    public string? UserAgent { get; set; }
+
+    /// <summary>Gets or sets the peak observed bitrate in bits per second (max of rolling window samples).</summary>
+    public double? PeakBitrate { get; set; }
+
+    // ── Zapping telemetry (streams) ─────────────────────────────────
+
+    /// <summary>Gets or sets the effective TVHeadend profile used for the stream.</summary>
+    public string? EffectiveProfile { get; set; }
+
+    /// <summary>Gets or sets which level of the profile hierarchy resolved the effective profile.</summary>
+    public string? ResolutionSource { get; set; }
+
+    /// <summary>Gets or sets the mediainfo cache outcome recorded during stream setup.</summary>
+    public string? MediaInfoCacheStatus { get; set; }
+
+    /// <summary>Gets or sets the media source build (stream setup) duration in ms.</summary>
+    public double? StreamSetupMs { get; set; }
 
     /// <summary>Records the upstream-headers-arrived milestone.</summary>
     public void MarkUpstreamHeaders() => UpstreamHeadersTicks = _sw.ElapsedTicks;
@@ -116,7 +154,6 @@ public sealed class RelayTimingContext
         double? TicksToMs(long? ticks) => ticks.HasValue ? ticks.Value / tickFreq * 1000.0 : null;
 
         var startupLatency = TicksToMs(FirstByteToClientTicks);
-        var sessionDuration = RelayType == RelayType.Stream ? totalMs : (double?)null;
         var avgBps = totalMs > 0 && BytesSent > 0 ? BytesSent / (totalMs / 1000.0) : (double?)null;
 
         var outcome = ClientCancelled
@@ -125,6 +162,23 @@ public sealed class RelayTimingContext
                 ? "success"
                 : "failure";
 
+        // Stream outcome classification — derived once here so every persistence path
+        // (controller finalize AND the relay-service aborted-connect path) agrees.
+        var isStream = RelayType == RelayType.Stream;
+        var firstByteSent = FirstByteToClientTicks.HasValue;
+        StreamFinalOutcome? streamOutcome = isStream && EndedBy.HasValue
+            ? StreamOutcomeClassifier.ClassifyOutcome(EndedBy.Value, firstByteSent)
+            : null;
+
+        // A "startup failure" means the stream never delivered a first byte fast enough AND
+        // actually failed: either the first byte took longer than 5 s, or no byte was ever
+        // delivered although the request lasted at least 5 s. Fast failures (e.g. an upstream
+        // 404 after 200 ms) are failures, but not startup-latency failures.
+        var startupFailed = isStream
+            && outcome == "failure"
+            && ((startupLatency.HasValue && startupLatency.Value > 5000)
+                || (!startupLatency.HasValue && totalMs >= 5000));
+
         return new RelayRequestMetric
         {
             CreatedAtUtc = StartedAtUtc,
@@ -132,21 +186,30 @@ public sealed class RelayTimingContext
             MediaKind = this.MediaKind.ToString(),
             ImageSourceType = this.RelayType == RelayType.Image ? this.ImageSourceType.ToString() : null,
             ChannelId = this.ChannelId,
+            SessionId = isStream ? SessionId : null,
+            ChannelName = isStream ? ChannelName : null,
+            ClientName = isStream ? ClientName : null,
+            UserAgent = isStream ? UserAgent : null,
             TotalDurationMs = totalMs,
             UpstreamHeadersDurationMs = TicksToMs(UpstreamHeadersTicks),
             FirstByteFromUpstreamDurationMs = TicksToMs(FirstByteFromUpstreamTicks),
             FirstByteToClientDurationMs = TicksToMs(FirstByteToClientTicks),
             StartupLatencyMs = startupLatency,
-            SessionDurationMs = sessionDuration,
             BytesSent = BytesSent,
             AverageBytesPerSecond = avgBps,
+            PeakBitrate = isStream ? PeakBitrate : null,
             UpstreamStatusCode = UpstreamStatusCode,
             ClientStatusCode = ClientStatusCode,
             FinalOutcome = outcome,
             FailureReason = this.FailureReason.ToString(),
             ClientCancelled = ClientCancelled,
             UpstreamTimedOut = UpstreamTimedOut,
+            StreamFinalOutcome = streamOutcome?.ToString(),
+            NormalDisconnect = streamOutcome.HasValue
+                ? StreamOutcomeClassifier.IsNormalDisconnect(streamOutcome.Value)
+                : null,
             CacheStatus = CacheStatus.ToString(),
+            CacheLookupDurationMs = CacheLookupDurationMs,
             HadEtag = HadEtag,
             HadLastModified = HadLastModified,
             WasNotModified304 = WasNotModified304,
@@ -154,9 +217,14 @@ public sealed class RelayTimingContext
             WasRangeRequest = WasRangeRequest,
             HasContentLength = HasContentLength,
             ContentLength = this.ContentLength,
+            RequestMethod = RequestMethod,
             EndedBy = EndedBy?.ToString(),
-            StartupFailedWithin5Seconds = startupLatency.HasValue && startupLatency > 5000 && outcome == "failure",
+            StartupFailedWithin5Seconds = startupFailed,
             ParallelActiveStreamCountAtStart = ParallelActiveStreamCountAtStart,
+            EffectiveProfile = isStream ? EffectiveProfile : null,
+            ResolutionSource = isStream ? ResolutionSource : null,
+            MediaInfoCacheStatus = isStream ? MediaInfoCacheStatus : null,
+            StreamSetupMs = isStream ? StreamSetupMs : null,
         };
     }
 }

@@ -60,23 +60,54 @@ internal static class ResiliencePolicies
         return IsTransientStatusCode(response.StatusCode)
                || response.StatusCode == HttpStatusCode.TooManyRequests;
     }
+
+    /// <summary>
+    /// Computes the exponential back-off delay for a retry attempt: 1s, 2s, 4s for attempts 1..3.
+    /// </summary>
+    /// <param name="attempt">The 1-based retry attempt number.</param>
+    /// <returns>The delay to wait before the attempt.</returns>
+    internal static TimeSpan GetRetryDelay(int attempt)
+    {
+        return TimeSpan.FromSeconds(RetryBaseDelaySeconds * Math.Pow(2, attempt));
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when the request may safely be sent again (idempotent method).
+    /// All TVHeadend mutations in this plugin (DVR timer/autorec, passwd entry, profile and
+    /// codec creation) are form POSTs — resending one that the backend already processed
+    /// would duplicate the mutation, so only GET/HEAD requests are retried.
+    /// </summary>
+    /// <param name="request">The request to evaluate.</param>
+    /// <returns><c>true</c> if the request is idempotent; otherwise <c>false</c>.</returns>
+    internal static bool IsIdempotent(HttpRequestMessage request)
+    {
+        return request.Method == HttpMethod.Get || request.Method == HttpMethod.Head;
+    }
 }
 
 /// <summary>
-/// A <see cref="DelegatingHandler"/> that retries requests on transient failures with exponential back-off
-/// and breaks the circuit after consecutive failures.
-/// Optionally reports success/failure to a <see cref="IHealthService"/> for centralized health tracking.
+/// A <see cref="DelegatingHandler"/> that retries idempotent requests on transient failures with
+/// exponential back-off and breaks the circuit after consecutive failures. The half-open state
+/// admits exactly one trial request. Failures are reported to an optional
+/// <see cref="IHealthService"/> with their classified <see cref="FailureReason"/>.
 /// </summary>
 internal sealed class ResilienceHandler : DelegatingHandler
 {
     private readonly object _lock = new();
     private int _consecutiveFailures;
     private DateTimeOffset _openUntil = DateTimeOffset.MinValue;
+    private bool _trialInFlight;
 
     /// <summary>
     /// Gets or sets the optional health service callback for centralized health reporting.
     /// </summary>
     internal IHealthService? HealthService { get; set; }
+
+    /// <summary>
+    /// Gets or sets the retry delay strategy (1-based attempt → delay).
+    /// Overridable in tests to avoid real back-off waits.
+    /// </summary>
+    internal Func<int, TimeSpan> RetryDelay { get; set; } = ResiliencePolicies.GetRetryDelay;
 
     /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -88,85 +119,126 @@ internal sealed class ResilienceHandler : DelegatingHandler
                 "TVHeadend circuit breaker is open (central). Requests are temporarily blocked.");
         }
 
-        HttpResponseMessage? response = null;
+        var mayRetry = ResiliencePolicies.IsIdempotent(request);
+        var ownsTrial = false;
 
-        for (int attempt = 0; attempt <= ResiliencePolicies.RetryCount; attempt++)
+        try
         {
-            ThrowIfCircuitOpen();
+            HttpResponseMessage? response = null;
 
-            if (attempt > 0)
+            for (int attempt = 0; attempt <= ResiliencePolicies.RetryCount; attempt++)
             {
-                var delay = TimeSpan.FromSeconds(
-                    Math.Pow(ResiliencePolicies.RetryBaseDelaySeconds * 2, attempt));
-                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                ownsTrial |= EnterGateOrThrow();
+
+                if (attempt > 0)
+                {
+                    await Task.Delay(RetryDelay(attempt), cancellationToken).ConfigureAwait(false);
+                }
+
+                try
+                {
+                    // Clone the request for each attempt — the original content stream may already be consumed.
+                    using var clone = await HttpRequestCloner.CloneAsync(request, cancellationToken).ConfigureAwait(false);
+                    response = await base.SendAsync(clone, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // Genuine cancellation requested by the caller (or a linked timeout above this
+                    // handler) — propagate immediately without recording a backend failure.
+                    throw;
+                }
+                catch (OperationCanceledException)
+                {
+                    // Internal cancellation the caller did not request (e.g. connect timeout):
+                    // a hung backend must be visible to the circuit breaker.
+                    RecordFailure(FailureReason.Timeout);
+                    if (mayRetry && attempt < ResiliencePolicies.RetryCount)
+                    {
+                        continue;
+                    }
+
+                    throw;
+                }
+                catch (HttpRequestException ex)
+                {
+                    RecordFailure(FailureClassifier.Classify(ex));
+                    if (mayRetry && attempt < ResiliencePolicies.RetryCount)
+                    {
+                        continue;
+                    }
+
+                    throw;
+                }
+
+                if (ResiliencePolicies.ShouldRetry(response))
+                {
+                    RecordFailure(FailureClassifier.ClassifyStatusCode(response.StatusCode));
+                    if (mayRetry && attempt < ResiliencePolicies.RetryCount)
+                    {
+                        response.Dispose();
+                        continue;
+                    }
+                }
+                else
+                {
+                    RecordSuccess();
+                }
+
+                return response;
             }
 
-            try
-            {
-                // Clone the request for retries — the original content stream may already be consumed.
-                using var clone = await HttpRequestCloner.CloneAsync(request, cancellationToken).ConfigureAwait(false);
-                response = await base.SendAsync(clone, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // Cancellation is not a transient failure — propagate immediately without recording failure.
-                throw;
-            }
-            catch (HttpRequestException) when (attempt < ResiliencePolicies.RetryCount)
-            {
-                RecordFailure();
-                continue;
-            }
-            catch (HttpRequestException)
-            {
-                RecordFailure();
-                throw;
-            }
-
-            if (ResiliencePolicies.ShouldRetry(response) && attempt < ResiliencePolicies.RetryCount)
-            {
-                RecordFailure();
-                response.Dispose();
-                continue;
-            }
-
-            if (ResiliencePolicies.ShouldRetry(response))
-            {
-                RecordFailure();
-            }
-            else
-            {
-                RecordSuccess();
-            }
-
-            return response;
+            // Should not be reached, but satisfy the compiler.
+            return response!;
         }
-
-        // Should not be reached, but satisfy the compiler.
-        return response!;
+        finally
+        {
+            if (ownsTrial)
+            {
+                ClearTrial();
+            }
+        }
     }
 
-    private void ThrowIfCircuitOpen()
+    /// <summary>
+    /// Checks the circuit breaker gate. Throws when the circuit is open; when the open window
+    /// has elapsed (half-open), admits exactly one trial request and rejects the rest.
+    /// </summary>
+    /// <returns><c>true</c> when this call was admitted as the half-open trial request.</returns>
+    private bool EnterGateOrThrow()
     {
         lock (_lock)
         {
-            if (_consecutiveFailures >= ResiliencePolicies.CircuitBreakerThreshold
-                && DateTimeOffset.UtcNow < _openUntil)
+            if (_consecutiveFailures < ResiliencePolicies.CircuitBreakerThreshold)
+            {
+                return false;
+            }
+
+            if (DateTimeOffset.UtcNow < _openUntil)
             {
                 throw new InvalidOperationException(
                     $"Circuit breaker is open until {_openUntil:O}. Requests to TVHeadend are temporarily blocked.");
             }
 
-            // If the break duration has elapsed, allow a trial request (half-open).
-            if (_consecutiveFailures >= ResiliencePolicies.CircuitBreakerThreshold)
+            if (_trialInFlight)
             {
-                // Reset so that a single success closes the circuit, or a failure re-opens it.
-                _consecutiveFailures = ResiliencePolicies.CircuitBreakerThreshold - 1;
+                throw new InvalidOperationException(
+                    "Circuit breaker is half-open and a trial request is already in flight. Requests to TVHeadend are temporarily blocked.");
             }
+
+            _trialInFlight = true;
+            return true;
         }
     }
 
-    private void RecordFailure()
+    private void ClearTrial()
+    {
+        lock (_lock)
+        {
+            _trialInFlight = false;
+        }
+    }
+
+    private void RecordFailure(FailureReason reason)
     {
         lock (_lock)
         {
@@ -177,7 +249,7 @@ internal sealed class ResilienceHandler : DelegatingHandler
             }
         }
 
-        HealthService?.RecordFailure(FailureReason.UpstreamUnavailable);
+        HealthService?.RecordFailure(reason);
     }
 
     private void RecordSuccess()

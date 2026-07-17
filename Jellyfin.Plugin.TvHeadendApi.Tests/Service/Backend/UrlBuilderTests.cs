@@ -95,6 +95,22 @@ public class UrlBuilderTests
         Assert.Equal("https://tvh.local:443", sut.GetBaseUrl(config));
     }
 
+    [Fact]
+    public void GetBaseUrl_IPv6Host_BracketsAddress()
+    {
+        var sut = new UrlBuilder();
+        var config = new PluginConfiguration { Host = "2001:db8::10", Port = 9981, UseSSL = false };
+        Assert.Equal("http://[2001:db8::10]:9981", sut.GetBaseUrl(config));
+    }
+
+    [Fact]
+    public void GetBaseUrl_IPv6HostAlreadyBracketed_IsNotDoubleBracketed()
+    {
+        var sut = new UrlBuilder();
+        var config = new PluginConfiguration { Host = "[fd00::2]", Port = 9981, UseSSL = false };
+        Assert.Equal("http://[fd00::2]:9981", sut.GetBaseUrl(config));
+    }
+
     [Theory]
     [InlineData(null, "/")]
     [InlineData("", "/")]

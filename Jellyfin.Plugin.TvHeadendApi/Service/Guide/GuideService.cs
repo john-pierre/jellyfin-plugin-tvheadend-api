@@ -154,6 +154,12 @@ internal sealed class GuideService : IGuideService
 
             var channelTagNames = await GetChannelTagsAsync(cancellationToken).ConfigureAwait(false);
 
+            // Bouquet names are fetched lazily: TVHeadend's channel grid only carries the
+            // bouquet's opaque idnode UUID, so an api/bouquet/grid lookup is required to get
+            // a display name — but most setups have no bouquets at all, so skip the extra
+            // round trip unless an enabled channel actually references one.
+            Dictionary<string, string>? bouquetNames = null;
+
             var channels = new List<ChannelInfo>();
             foreach (var channel in result.Entries.Where(ch => ch.Enabled))
             {
@@ -165,18 +171,34 @@ internal sealed class GuideService : IGuideService
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray();
 
-                var channelGroup = !string.IsNullOrWhiteSpace(channel.Bouquet)
-                    ? channel.Bouquet
-                    : resolvedTags.FirstOrDefault();
+                string? channelGroup;
+                if (!string.IsNullOrWhiteSpace(channel.Bouquet))
+                {
+                    // Resolve the bouquet UUID to its human-readable name. When the lookup
+                    // fails, fall back to the first tag name instead of surfacing a raw UUID —
+                    // the value is user-visible and matched against admin-configured channel
+                    // group overrides, so an opaque UUID would be useless in both places.
+                    bouquetNames ??= await GetBouquetNamesAsync(cancellationToken).ConfigureAwait(false);
+                    channelGroup = bouquetNames.TryGetValue(channel.Bouquet, out var bouquetName) && !string.IsNullOrWhiteSpace(bouquetName)
+                        ? bouquetName
+                        : resolvedTags.FirstOrDefault();
+                }
+                else
+                {
+                    channelGroup = resolvedTags.FirstOrDefault();
+                }
 
                 string? imageUrl = null;
                 if (!string.IsNullOrWhiteSpace(channel.IconPublicUrl))
                 {
-                    imageUrl = await _relayUrlBuilder.BuildTokenizedImageRelayUrlAsync(
-                        channel.IconPublicUrl.TrimStart('/'),
-                        Model.Relay.MediaKind.Logo,
-                        null,
-                        cancellationToken).ConfigureAwait(false);
+                    // Shares the EPG-image logic: external absolute URLs pass through unchanged
+                    // (relaying them through the TVHeadend base URL produces a broken address),
+                    // TVHeadend-relative paths go through the token-secured relay.
+                    imageUrl = await ResolveTvhImageUrlAsync(
+                        config,
+                        channel.IconPublicUrl,
+                        cancellationToken,
+                        Model.Relay.MediaKind.Logo).ConfigureAwait(false);
                 }
 
                 _channelNameCache?.Set(channel.Uuid, channel.Name);
@@ -308,7 +330,7 @@ internal sealed class GuideService : IGuideService
                         || (entry.Genre?.Any(genreId => genreId >= 48 && genreId <= 51) ?? false),
                     SeriesId = string.IsNullOrWhiteSpace(entry.SerieslinkUri) ? null : entry.SerieslinkUri,
                     ShowId = string.IsNullOrWhiteSpace(entry.SerieslinkUri) ? null : entry.SerieslinkUri,
-                    HomePageUrl = Uri.TryCreate(entry.EpisodeUri, UriKind.Absolute, out var episodeUri) ? episodeUri.ToString() : null,
+                    HomePageUrl = TryGetHttpUrl(entry.EpisodeUri),
                     ProviderIds = providerHints?.ProviderIds ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
                     SeriesProviderIds = providerHints?.SeriesProviderIds ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
                     ProductionYear = entry.CopyrightYear > 0 ? entry.CopyrightYear : null,
@@ -384,6 +406,50 @@ internal sealed class GuideService : IGuideService
         }
     }
 
+    /// <summary>
+    /// Fetches the bouquet UUID → display-name mapping from TVHeadend's
+    /// <c>api/bouquet/grid</c> endpoint. The channel grid's <c>bouquet</c> field only
+    /// carries the bouquet's idnode UUID, so this lookup is needed to present a
+    /// human-readable channel group. Failures degrade to an empty mapping.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Dictionary mapping bouquet UUIDs to their display names.</returns>
+    private async Task<Dictionary<string, string>> GetBouquetNamesAsync(CancellationToken cancellationToken)
+    {
+        var bouquetNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var config = GetConfig();
+            var url = _tvheadendUrlBuilder.BuildApiUrl(config, "api/bouquet/grid");
+            using var httpClient = _tvheadendApiClient.CreateApiHttpClient(config);
+            var result = await GridFetcher.FetchAllAsync<BouquetGridResponse>(
+                httpClient,
+                url,
+                r => r.Total,
+                _logger,
+                cancellationToken).ConfigureAwait(false);
+            if (result?.Entries == null)
+            {
+                return bouquetNames;
+            }
+
+            foreach (var entry in result.Entries)
+            {
+                if (!string.IsNullOrWhiteSpace(entry.Uuid) && !string.IsNullOrWhiteSpace(entry.Name))
+                {
+                    bouquetNames[entry.Uuid] = entry.Name;
+                }
+            }
+
+            return bouquetNames;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error occurred while fetching bouquets from TVHeadend — channel groups fall back to tag names.");
+            return bouquetNames;
+        }
+    }
+
     private PluginConfiguration GetConfig()
     {
         return _tvheadendApiClient.GetCurrentConfiguration()
@@ -419,7 +485,7 @@ internal sealed class GuideService : IGuideService
         return "0";
     }
 
-    private async Task<string> ResolveTvhImageUrlAsync(PluginConfiguration config, string rawImagePath, CancellationToken cancellationToken)
+    private async Task<string> ResolveTvhImageUrlAsync(PluginConfiguration config, string rawImagePath, CancellationToken cancellationToken, Model.Relay.MediaKind? mediaKind = null)
     {
         var raw = rawImagePath.Trim();
         var normalized = raw.TrimStart('/');
@@ -440,7 +506,7 @@ internal sealed class GuideService : IGuideService
         // fetch the image without Jellyfin auth headers (the token provides authorization).
         return await _relayUrlBuilder.BuildTokenizedImageRelayUrlAsync(
             normalized,
-            null,
+            mediaKind,
             null,
             cancellationToken).ConfigureAwait(false);
     }
@@ -518,7 +584,33 @@ internal sealed class GuideService : IGuideService
         };
     }
 
-    private static bool HasCategoryFlag(IEnumerable<string> categories, params string[] patterns)
+    /// <summary>
+    /// Returns the candidate when it is an absolute http/https URL; otherwise <c>null</c>.
+    /// EPG providers frequently populate episode URIs with DVB CRIDs
+    /// (e.g. <c>crid://www.channel4.com/41408/013</c>) which parse as absolute URIs but
+    /// have no browser protocol handler — surfacing them as a homepage link would give
+    /// users a dead link instead of no link at all.
+    /// </summary>
+    /// <param name="candidate">Raw URI string from TVHeadend, may be <c>null</c>.</param>
+    /// <returns>The normalized http/https URL, or <c>null</c> when not a web URL.</returns>
+    private static string? TryGetHttpUrl(string? candidate)
+    {
+        return Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? uri.ToString()
+            : null;
+    }
+
+    /// <summary>
+    /// Tests whether any category contains one of the patterns as a whole word.
+    /// Whole-word matching matters: a raw substring test flagged the standard
+    /// category "News" as a premiere because it contains "new".
+    /// Internal for unit testing.
+    /// </summary>
+    /// <param name="categories">The EPG category strings of the programme.</param>
+    /// <param name="patterns">The whole-word patterns to look for.</param>
+    /// <returns><c>true</c> when any category contains any pattern as a whole word.</returns>
+    internal static bool HasCategoryFlag(IEnumerable<string> categories, params string[] patterns)
     {
         foreach (var category in categories)
         {
@@ -530,7 +622,7 @@ internal sealed class GuideService : IGuideService
             var normalized = category.Trim();
             foreach (var pattern in patterns)
             {
-                if (normalized.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                if (ContainsWholeWord(normalized, pattern))
                 {
                     return true;
                 }
@@ -540,7 +632,63 @@ internal sealed class GuideService : IGuideService
         return false;
     }
 
+    /// <summary>
+    /// Case-insensitive whole-word search: the match must not be bordered by letters or digits.
+    /// </summary>
+    private static bool ContainsWholeWord(string text, string pattern)
+    {
+        var index = 0;
+        while (index <= text.Length - pattern.Length
+               && (index = text.IndexOf(pattern, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            var startsAtBoundary = index == 0 || !char.IsLetterOrDigit(text[index - 1]);
+            var endIndex = index + pattern.Length;
+            var endsAtBoundary = endIndex >= text.Length || !char.IsLetterOrDigit(text[endIndex]);
+            if (startsAtBoundary && endsAtBoundary)
+            {
+                return true;
+            }
+
+            index++;
+        }
+
+        return false;
+    }
+
     private sealed record ProviderHintSet(
         Dictionary<string, string> ProviderIds,
         Dictionary<string, string> SeriesProviderIds);
+
+    /// <summary>
+    /// Response model for the TVHeadend <c>api/bouquet/grid</c> endpoint.
+    /// Kept private to this service — it is only used to resolve bouquet display names.
+    /// </summary>
+    private sealed class BouquetGridResponse
+    {
+        /// <summary>
+        /// Gets the bouquet entries returned by the grid endpoint.
+        /// </summary>
+        public IReadOnlyList<BouquetGridEntry> Entries { get; init; } = new List<BouquetGridEntry>();
+
+        /// <summary>
+        /// Gets the total number of bouquets available on the server.
+        /// </summary>
+        public int Total { get; init; }
+    }
+
+    /// <summary>
+    /// A single bouquet entry from the TVHeadend <c>api/bouquet/grid</c> endpoint.
+    /// </summary>
+    private sealed class BouquetGridEntry
+    {
+        /// <summary>
+        /// Gets the bouquet's idnode UUID (matches the channel grid's <c>bouquet</c> field).
+        /// </summary>
+        public string Uuid { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Gets the bouquet's human-readable display name.
+        /// </summary>
+        public string Name { get; init; } = string.Empty;
+    }
 }

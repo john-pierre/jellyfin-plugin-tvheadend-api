@@ -79,4 +79,18 @@ public class SubscriptionServiceTests
 
         Assert.Empty(result);
     }
+
+    [Fact]
+    public async Task GetActiveSubscriptionsAsync_WhenCircuitOpen_ReturnsEmptyWithoutCallingApi()
+    {
+        var api = new Mock<IApiClient>();
+        var health = new Mock<IHealthService>();
+        health.Setup(h => h.ShouldBlockRequest()).Returns(true);
+
+        var sut = new SubscriptionService(NullLogger<SubscriptionService>.Instance, api.Object, new Mock<IUrlBuilder>().Object, health.Object);
+        var result = await sut.GetActiveSubscriptionsAsync(CancellationToken.None);
+
+        Assert.Empty(result);
+        api.Verify(x => x.GetCurrentConfiguration(), Times.Never);
+    }
 }

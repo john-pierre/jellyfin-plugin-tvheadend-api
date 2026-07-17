@@ -31,6 +31,12 @@ internal sealed class HealthService : IHealthService
     private static readonly TimeSpan DefaultCircuitOpenDuration = TimeSpan.FromSeconds(30);
 
     private readonly object _lock = new();
+
+    // Marks the async flow that owns the current half-open trial request. The same logical
+    // request consults ShouldBlockRequest() twice — once from the domain service's pre-check
+    // and once from the ResilienceHandler fast-fail — so the owning flow must pass both.
+    private readonly AsyncLocal<bool> _ownsHalfOpenTrial = new();
+
     private readonly IApiClient _apiClient;
     private readonly IUrlBuilder _urlBuilder;
     private readonly ILogger<HealthService> _logger;
@@ -48,6 +54,8 @@ internal sealed class HealthService : IHealthService
     private int _consecutiveFailures;
     private int? _lastResponseTimeMs;
     private DateTimeOffset _circuitOpenUntilUtc = DateTimeOffset.MinValue;
+    private bool _halfOpenTrialInFlight;
+    private DateTimeOffset _halfOpenTrialStartedUtc = DateTimeOffset.MinValue;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HealthService"/> class.
@@ -143,6 +151,8 @@ internal sealed class HealthService : IHealthService
             _lastResponseTimeMs = responseTimeMs;
             _consecutiveFailures = 0;
             _circuitState = CircuitState.Closed;
+            _halfOpenTrialInFlight = false;
+            _ownsHalfOpenTrial.Value = false;
             _status = HealthStatus.Healthy;
 
             if (previousStatus != HealthStatus.Healthy)
@@ -169,6 +179,11 @@ internal sealed class HealthService : IHealthService
             _lastFailureUtc = DateTimeOffset.UtcNow;
             _lastFailureReason = reason;
             _consecutiveFailures++;
+
+            // A failure resolves any half-open trial; the threshold check below re-opens the
+            // circuit (consecutive failures never reset between Open and HalfOpen).
+            _halfOpenTrialInFlight = false;
+            _ownsHalfOpenTrial.Value = false;
 
             _status = reason switch
             {
@@ -213,22 +228,42 @@ internal sealed class HealthService : IHealthService
                 return false;
             }
 
-            if (_circuitState == CircuitState.Open && DateTimeOffset.UtcNow >= _circuitOpenUntilUtc)
+            if (_circuitState == CircuitState.Open)
             {
-                // Transition to half-open — allow a trial request
+                // Open and not yet expired — block
+                if (DateTimeOffset.UtcNow < _circuitOpenUntilUtc)
+                {
+                    return true;
+                }
+
+                // Open window elapsed — transition to half-open and admit this caller
+                // as the single trial request.
                 _circuitState = CircuitState.HalfOpen;
                 _status = HealthStatus.Recovering;
-                _logger.LogInformation("TVHeadend circuit breaker entering half-open state — allowing trial request");
+                BeginHalfOpenTrial();
+                _logger.LogInformation("TVHeadend circuit breaker entering half-open state — allowing a single trial request");
                 return false;
             }
 
-            // Open and not yet expired — block
-            if (_circuitState == CircuitState.Open)
+            // Half-open: exactly one trial request may be in flight; concurrent callers are
+            // blocked until the trial resolves via RecordSuccess/RecordFailure. The async flow
+            // that was admitted as the trial passes repeated checks (its own request re-checks
+            // this gate in the ResilienceHandler). If the admitted caller never issues a request
+            // (e.g. it bailed on a missing configuration), the trial is considered abandoned
+            // after the open duration and a new one is admitted so the breaker cannot stay
+            // half-open forever.
+            if (_ownsHalfOpenTrial.Value)
+            {
+                return false;
+            }
+
+            if (_halfOpenTrialInFlight
+                && DateTimeOffset.UtcNow - _halfOpenTrialStartedUtc < CircuitOpenDuration)
             {
                 return true;
             }
 
-            // HalfOpen — allow (already transitioned above or previously)
+            BeginHalfOpenTrial();
             return false;
         }
     }
@@ -306,6 +341,41 @@ internal sealed class HealthService : IHealthService
             _logger.LogDebug(ex, "Failed to read health transition history");
             return Array.Empty<HealthTransition>();
         }
+    }
+
+    /// <summary>
+    /// Sets the circuit open-until time. Exposed for testing to simulate time advancement.
+    /// </summary>
+    /// <param name="openUntil">The new open-until timestamp.</param>
+    internal void SetCircuitOpenUntil(DateTimeOffset openUntil)
+    {
+        lock (_lock)
+        {
+            _circuitOpenUntilUtc = openUntil;
+        }
+    }
+
+    /// <summary>
+    /// Sets the half-open trial start time. Exposed for testing to simulate an abandoned trial.
+    /// </summary>
+    /// <param name="startedUtc">The new trial start timestamp.</param>
+    internal void SetHalfOpenTrialStarted(DateTimeOffset startedUtc)
+    {
+        lock (_lock)
+        {
+            _halfOpenTrialStartedUtc = startedUtc;
+        }
+    }
+
+    /// <summary>
+    /// Marks a half-open trial request as in flight and the current async flow as its owner.
+    /// Caller must hold <see cref="_lock"/>.
+    /// </summary>
+    private void BeginHalfOpenTrial()
+    {
+        _halfOpenTrialInFlight = true;
+        _halfOpenTrialStartedUtc = DateTimeOffset.UtcNow;
+        _ownsHalfOpenTrial.Value = true;
     }
 
     private HealthSnapshot BuildSnapshot()

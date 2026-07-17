@@ -39,6 +39,13 @@ public class MediaSourceServiceTests
                 string.IsNullOrWhiteSpace(p)
                     ? $"http://jellyfin:8096/api/tvheadend/stream/{Uri.EscapeDataString(ch)}"
                     : $"http://jellyfin:8096/api/tvheadend/stream/{Uri.EscapeDataString(ch)}?profile={Uri.EscapeDataString(p)}"));
+        mock.Setup(x => x.BuildTokenizedStreamRelayUrlDetailedAsync(
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string?, string?, string?, string?, CancellationToken>((ch, p, _, _, _, _) => Task.FromResult(new TokenizedStreamUrl(
+                string.IsNullOrWhiteSpace(p)
+                    ? $"http://jellyfin:8096/api/tvheadend/stream/{Uri.EscapeDataString(ch)}"
+                    : $"http://jellyfin:8096/api/tvheadend/stream/{Uri.EscapeDataString(ch)}?profile={Uri.EscapeDataString(p)}",
+                null)));
         mock.Setup(x => x.BuildTokenizedImageRelayUrlAsync(
                 It.IsAny<string>(), It.IsAny<MediaKind?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Returns<string, MediaKind?, string?, CancellationToken>((path, _, _, _) =>
@@ -130,7 +137,6 @@ public class MediaSourceServiceTests
             SupportsProbing = true,
             FallbackMaxStreamingBitrate = 3000000,
             AnalyzeDurationMs = 250,
-            EnableMediaInfoCacheWrite = false,
             AllowAnonymousAccess = true,
         };
 
@@ -162,7 +168,6 @@ public class MediaSourceServiceTests
             Port = 9981,
             StreamingProfile = "pass",
             AnalyzeDurationMs = 0,
-            EnableMediaInfoCacheWrite = false,
             AllowAnonymousAccess = true,
         };
 
@@ -189,7 +194,6 @@ public class MediaSourceServiceTests
             Host = "tvh.local",
             Port = 9981,
             StreamingProfile = "pass",
-            EnableMediaInfoCacheWrite = false,
             AllowAnonymousAccess = true,
         };
 
@@ -218,7 +222,6 @@ public class MediaSourceServiceTests
             Port = 9981,
             StreamingProfile = "pass",
             BufferMs = 1234,
-            EnableMediaInfoCacheWrite = false,
             AllowAnonymousAccess = true,
         };
 
@@ -245,7 +248,6 @@ public class MediaSourceServiceTests
             Host = "tvh.local",
             Port = 9981,
             StreamingProfile = "jelly fin+fast",
-            EnableMediaInfoCacheWrite = false,
             AllowAnonymousAccess = true,
         };
 
@@ -273,7 +275,6 @@ public class MediaSourceServiceTests
             Host = "tvh.local",
             Port = 9981,
             StreamingProfile = "pass",
-            EnableMediaInfoCacheWrite = true,
             AllowAnonymousAccess = true,
         };
 
@@ -301,8 +302,6 @@ public class MediaSourceServiceTests
             Host = "tvh.local",
             Port = 9981,
             StreamingProfile = "jellyfin",
-            EnableMediaInfoCacheWrite = true,
-            EnableMediaInfoCacheValidation = true,
             AllowAnonymousAccess = true,
         };
 
@@ -329,8 +328,6 @@ public class MediaSourceServiceTests
             Host = "tvh.local",
             Port = 9981,
             StreamingProfile = "jellyfin",
-            EnableMediaInfoCacheWrite = true,
-            EnableMediaInfoCacheValidation = true,
             AllowAnonymousAccess = true,
         };
 
@@ -357,8 +354,6 @@ public class MediaSourceServiceTests
             Host = "tvh.local",
             Port = 9981,
             StreamingProfile = "pass",
-            EnableMediaInfoCacheWrite = true,
-            EnableMediaInfoCacheValidation = true,
             AllowAnonymousAccess = true,
         };
 
@@ -374,8 +369,6 @@ public class MediaSourceServiceTests
             Host = "tvh.local",
             Port = 9981,
             StreamingProfile = "jellyfin",
-            EnableMediaInfoCacheWrite = true,
-            EnableMediaInfoCacheValidation = true,
             AllowAnonymousAccess = true,
         };
 
@@ -400,8 +393,6 @@ public class MediaSourceServiceTests
             Host = "tvh.local",
             Port = 9981,
             StreamingProfile = "pass",
-            EnableMediaInfoCacheWrite = true,
-            EnableMediaInfoCacheValidation = true,
             SupportsProbing = true,
             AllowAnonymousAccess = true,
         };
@@ -416,8 +407,6 @@ public class MediaSourceServiceTests
             Host = "tvh.local",
             Port = 9981,
             StreamingProfile = "jellyfin",
-            EnableMediaInfoCacheWrite = true,
-            EnableMediaInfoCacheValidation = false,
             SupportsProbing = true,
             AllowAnonymousAccess = true,
         };
@@ -542,8 +531,6 @@ public class MediaSourceServiceTests
             Host = "tvh.local",
             Port = 9981,
             StreamingProfile = "pass",
-            EnableMediaInfoCacheWrite = true,
-            EnableMediaInfoCacheValidation = true,
             AllowAnonymousAccess = true,
         };
 
@@ -575,8 +562,6 @@ public class MediaSourceServiceTests
             Host = "tvh.local",
             Port = 9981,
             StreamingProfile = "pass",
-            EnableMediaInfoCacheWrite = true,
-            EnableMediaInfoCacheValidation = true,
             SupportsProbing = true,
             AllowAnonymousAccess = true,
         };
@@ -596,8 +581,6 @@ public class MediaSourceServiceTests
             Host = "tvh.local",
             Port = 9981,
             StreamingProfile = "jellyfin",
-            EnableMediaInfoCacheWrite = false,
-            EnableMediaInfoCacheValidation = true,
             SupportsProbing = false,
             AllowAnonymousAccess = true,
         };
@@ -623,6 +606,148 @@ public class MediaSourceServiceTests
         Assert.Equal("aac", streams[1]["Codec"]);
     }
 
+    // ── Stream build reuse across Jellyfin's enumerate→open playback start ──
+
+    [Fact]
+    public async Task GetChannelStream_AfterMediaSourcesRequest_ReusesStreamBuildWithinWindow()
+    {
+        var config = new PluginConfiguration
+        {
+            Host = "tvh.local",
+            Port = 9981,
+            StreamingProfile = "pass",
+            StreamDeliveryMode = StreamDeliveryMode.Relay,
+            AllowAnonymousAccess = true,
+        };
+
+        var resolver = new Mock<IProfileContainerResolver>();
+        var api = new Mock<IApiClient>();
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
+
+        var tokenCounter = 0;
+        var relay = new Mock<IRelayUrlBuilder>();
+        relay.Setup(x => x.BuildTokenizedStreamRelayUrlDetailedAsync(
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var token = $"tok{Interlocked.Increment(ref tokenCounter)}";
+                return new TokenizedStreamUrl($"http://jellyfin:8096/api/tvheadend/stream/ch-1?token={token}", token);
+            });
+
+        var cacheService = new Mock<IMediaInfoCacheService>();
+        cacheService.Setup(x => x.BuildChannelCacheFileName(It.IsAny<string>(), It.IsAny<string?>())).Returns("cache-file.json");
+
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), StubPlaybackContext(), api.Object, new UrlBuilder(), relay.Object, cacheService.Object);
+
+        // Jellyfin's playback start: enumerate sources first, then open the stream.
+        var sources = await sut.GetChannelStreamMediaSourcesAsync("ch-1", CancellationToken.None);
+        var stream = await sut.GetChannelStreamAsync("ch-1", CancellationToken.None);
+
+        // The relay token minted for enumeration must be the one that is opened.
+        Assert.Equal(sources[0].Path, stream.Path);
+        Assert.Contains("token=tok1", stream.Path, StringComparison.Ordinal);
+
+        // Jellyfin core mutates returned media sources, so instances must not be shared.
+        Assert.NotSame(sources[0], stream);
+
+        relay.Verify(
+            x => x.BuildTokenizedStreamRelayUrlDetailedAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        cacheService.Verify(
+            x => x.EnsureMediaInfoCacheStateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ProfileSnapshot>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        cacheService.Verify(x => x.BuildChannelCacheFileName(It.IsAny<string>(), It.IsAny<string?>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetChannelStreamAsync_DifferentChannels_BuildSeparateStreams()
+    {
+        var config = new PluginConfiguration
+        {
+            Host = "tvh.local",
+            Port = 9981,
+            StreamingProfile = "pass",
+            StreamDeliveryMode = StreamDeliveryMode.Relay,
+            AllowAnonymousAccess = true,
+        };
+
+        var resolver = new Mock<IProfileContainerResolver>();
+        var api = new Mock<IApiClient>();
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
+
+        var relay = new Mock<IRelayUrlBuilder>();
+        relay.Setup(x => x.BuildTokenizedStreamRelayUrlDetailedAsync(
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string?, string?, string?, string?, CancellationToken>((ch, _, _, _, _, _) =>
+                Task.FromResult(new TokenizedStreamUrl($"http://jellyfin:8096/api/tvheadend/stream/{Uri.EscapeDataString(ch)}", null)));
+
+        var cacheService = new Mock<IMediaInfoCacheService>();
+        cacheService.Setup(x => x.BuildChannelCacheFileName(It.IsAny<string>(), It.IsAny<string?>())).Returns("cache-file.json");
+
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), StubPlaybackContext(), api.Object, new UrlBuilder(), relay.Object, cacheService.Object);
+
+        var first = await sut.GetChannelStreamAsync("ch-1", CancellationToken.None);
+        var second = await sut.GetChannelStreamAsync("ch-2", CancellationToken.None);
+
+        Assert.NotEqual(first.Path, second.Path);
+        relay.Verify(
+            x => x.BuildTokenizedStreamRelayUrlDetailedAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task GetChannelStreamAsync_DifferentUsers_DoNotShareStreamBuilds()
+    {
+        var config = new PluginConfiguration
+        {
+            Host = "tvh.local",
+            Port = 9981,
+            StreamingProfile = "pass",
+            StreamDeliveryMode = StreamDeliveryMode.Relay,
+            AllowAnonymousAccess = true,
+        };
+
+        var resolver = new Mock<IProfileContainerResolver>();
+        var api = new Mock<IApiClient>();
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
+
+        // Two different users request the same channel back to back — relay tokens are
+        // user-scoped, so the second user must never receive the first user's token.
+        var userIds = new Queue<string>(new[] { "user-a", "user-b" });
+        var playback = new Mock<IPlaybackContextAccessor>();
+        playback.Setup(x => x.CreateContextAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string?, CancellationToken>((channelId, _) =>
+                Task.FromResult(new StreamingProfileContext { ChannelId = channelId, UserId = userIds.Dequeue() }));
+
+        var relay = new Mock<IRelayUrlBuilder>();
+        relay.Setup(x => x.BuildTokenizedStreamRelayUrlDetailedAsync(
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string?, string?, string?, string?, CancellationToken>((ch, _, userId, _, _, _) =>
+                Task.FromResult(new TokenizedStreamUrl($"http://jellyfin:8096/api/tvheadend/stream/{Uri.EscapeDataString(ch)}?user={userId}", null)));
+
+        var cacheService = new Mock<IMediaInfoCacheService>();
+        cacheService.Setup(x => x.BuildChannelCacheFileName(It.IsAny<string>(), It.IsAny<string?>())).Returns("cache-file.json");
+
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), playback.Object, api.Object, new UrlBuilder(), relay.Object, cacheService.Object);
+
+        var first = await sut.GetChannelStreamAsync("ch-1", CancellationToken.None);
+        var second = await sut.GetChannelStreamAsync("ch-1", CancellationToken.None);
+
+        Assert.Contains("user=user-a", first.Path, StringComparison.Ordinal);
+        Assert.Contains("user=user-b", second.Path, StringComparison.Ordinal);
+        relay.Verify(
+            x => x.BuildTokenizedStreamRelayUrlDetailedAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+    }
 
     private static MediaSourceService CreateSut(PluginConfiguration config, ProfileSnapshot snapshot, string cachePath)
     {

@@ -34,6 +34,70 @@ internal sealed class SingleTimerService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <summary>
+    /// Confirms that a TVHeadend EPG event still describes the same broadcast the timer was
+    /// created for. TVHeadend event ids are not stable across grabber runs; a stale id would
+    /// record a completely different program. Any doubt (missing event, other channel, shifted
+    /// times, transport error) returns <c>false</c> so the caller records by time window instead.
+    /// </summary>
+    /// <param name="config">Current plugin configuration.</param>
+    /// <param name="info">The timer being created.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><c>true</c> when the event matches channel and requested time window.</returns>
+    private async Task<bool> EventStillMatchesTimerAsync(PluginConfiguration config, TimerInfo info, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var url = _dvr.UrlBuilder.BuildApiUrl(config, "api/epg/events/load");
+            using var httpClient = _dvr.ApiClient.CreateApiHttpClient(config);
+            using var response = await _dvr.ApiClient.PostFormAsync(
+                httpClient,
+                url,
+                new[] { new KeyValuePair<string, string>("eventId", info.ProgramId!) },
+                cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return false;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("entries", out var entries)
+                || entries.ValueKind != JsonValueKind.Array
+                || entries.GetArrayLength() == 0)
+            {
+                return false;
+            }
+
+            var evt = entries[0];
+            var channel = evt.TryGetProperty("channelUuid", out var channelElement) && channelElement.ValueKind == JsonValueKind.String
+                ? channelElement.GetString()
+                : null;
+            if (!string.Equals(channel, info.ChannelId, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!evt.TryGetProperty("start", out var startElement) || !evt.TryGetProperty("stop", out var stopElement))
+            {
+                return false;
+            }
+
+            // create_by_event ignores the requested start/stop entirely — the event's own times
+            // win. A drifted event OR a user-customized window must go through the time-based path.
+            var tolerance = TimeSpan.FromSeconds(120);
+            var eventStart = DateTimeOffset.FromUnixTimeSeconds(startElement.GetInt64());
+            var eventStop = DateTimeOffset.FromUnixTimeSeconds(stopElement.GetInt64());
+            return (eventStart - new DateTimeOffset(info.StartDate)).Duration() <= tolerance
+                && (eventStop - new DateTimeOffset(info.EndDate)).Duration() <= tolerance;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "EPG event verification failed for event {EventId}; falling back to a time-based recording entry.", info.ProgramId);
+            return false;
+        }
+    }
+
     public async Task CancelTimerAsync(string timerId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(timerId);
@@ -76,32 +140,57 @@ internal sealed class SingleTimerService
         string requestBodyJson;
         IEnumerable<KeyValuePair<string, string>> formValues;
 
+        // TVHeadend renumbers EPG event ids on every grabber run, so the event id cached in
+        // Jellyfin's guide may silently point at a DIFFERENT broadcast by now. Trust it only
+        // after re-validating channel and time window against TVHeadend's current EPG.
+        var useEventCreation = false;
         if (!string.IsNullOrWhiteSpace(info.ProgramId))
         {
-            path = "api/dvr/entry/create_by_event";
-            var pairs = new[]
+            useEventCreation = await EventStillMatchesTimerAsync(config, info, cancellationToken).ConfigureAwait(false);
+            if (!useEventCreation)
             {
-                new KeyValuePair<string, string>("config_uuid", configUuid),
-                new KeyValuePair<string, string>("event_id", info.ProgramId),
-            };
+                _logger.LogWarning(
+                    "EPG event {EventId} no longer matches the requested timer on channel {ChannelId} — creating a time-based recording entry instead.",
+                    info.ProgramId,
+                    info.ChannelId);
+            }
+        }
+
+        if (useEventCreation)
+        {
+            path = "api/dvr/entry/create_by_event";
+            var pairs = new List<KeyValuePair<string, string>>();
+
+            // Omit the profile when the configured name matched nothing so TVHeadend applies its default.
+            if (configUuid is not null)
+            {
+                pairs.Add(new KeyValuePair<string, string>("config_uuid", configUuid));
+            }
+
+            pairs.Add(new KeyValuePair<string, string>("event_id", info.ProgramId));
             requestBodyJson = JsonSerializer.Serialize(pairs);
             formValues = pairs;
         }
         else
         {
             path = "api/dvr/entry/create";
-            var timerJson = new
+            var timerJson = new Dictionary<string, object?>
             {
-                channel = info.ChannelId,
-                start = new DateTimeOffset(info.StartDate).ToUnixTimeSeconds(),
-                stop = new DateTimeOffset(info.EndDate).ToUnixTimeSeconds(),
-                start_extra = (int)Math.Round((double)info.PrePaddingSeconds / 60),
-                stop_extra = (int)Math.Round((double)info.PostPaddingSeconds / 60),
-                disp_title = info.Name,
-                disp_extratext = info.Overview,
-                pri = config.Priority,
-                config_name = configUuid,
+                ["channel"] = info.ChannelId,
+                ["start"] = new DateTimeOffset(info.StartDate).ToUnixTimeSeconds(),
+                ["stop"] = new DateTimeOffset(info.EndDate).ToUnixTimeSeconds(),
+                ["start_extra"] = (int)Math.Round((double)info.PrePaddingSeconds / 60),
+                ["stop_extra"] = (int)Math.Round((double)info.PostPaddingSeconds / 60),
+                ["disp_title"] = info.Name,
+                ["disp_extratext"] = info.Overview,
+                ["pri"] = config.Priority,
             };
+
+            // Omit the profile when the configured name matched nothing so TVHeadend applies its default.
+            if (configUuid is not null)
+            {
+                timerJson["config_name"] = configUuid;
+            }
 
             requestBodyJson = JsonSerializer.Serialize(timerJson, JsonDefaults.Api);
             formValues = new[] { new KeyValuePair<string, string>("conf", requestBodyJson) };
@@ -155,6 +244,9 @@ internal sealed class SingleTimerService
             { "uuid", updatedTimer.Id },
             { "start_extra", (int)Math.Round((double)updatedTimer.PrePaddingSeconds / 60) },
             { "stop_extra", (int)Math.Round((double)updatedTimer.PostPaddingSeconds / 60) },
+            // Always send the priority: 0 is a legitimate TVHeadend priority ("Important"),
+            // not an "unset" sentinel, and GetTimersAsync round-trips the current value.
+            { "pri", updatedTimer.Priority },
         };
 
         if (updatedTimer.StartDate != default)
@@ -165,11 +257,6 @@ internal sealed class SingleTimerService
         if (updatedTimer.EndDate != default)
         {
             updates["stop"] = new DateTimeOffset(updatedTimer.EndDate).ToUnixTimeSeconds();
-        }
-
-        if (updatedTimer.Priority != default)
-        {
-            updates["pri"] = updatedTimer.Priority;
         }
 
         if (!string.IsNullOrWhiteSpace(updatedTimer.ChannelId))
@@ -227,7 +314,7 @@ internal sealed class SingleTimerService
                 _logger,
                 cancellationToken).ConfigureAwait(false);
             return result?.Entries?
-                .Where(entry => entry.Enabled && entry.FileRemoved == 0 && entry.Stop >= now)
+                .Where(entry => ShouldIncludeEntry(entry, now))
                 .Select(entry => new TimerInfo
                 {
                     Id = entry.Uuid,
@@ -241,8 +328,11 @@ internal sealed class SingleTimerService
                     EndDate = DateTimeOffset.FromUnixTimeSeconds(entry.Stop).UtcDateTime,
                     PrePaddingSeconds = Math.Max(0, entry.StartExtra * 60),
                     PostPaddingSeconds = Math.Max(0, entry.StopExtra * 60),
-                    // Link single timer to its parent series timer (autorec rule)
-                    SeriesTimerId = string.IsNullOrWhiteSpace(entry.AutoRec) ? null : entry.AutoRec,
+                    Priority = entry.Priority,
+                    // Link single timer to its parent recurring rule (EPG-based autorec or time-based timerec)
+                    SeriesTimerId = ResolveSeriesTimerId(entry),
+                    // Recorded file location on TVHeadend storage; empty until the recording has started
+                    RecordingPath = string.IsNullOrWhiteSpace(entry.Filename) ? null : entry.Filename,
                     // TVH sched_status: "scheduled", "recording", "completed", "completedError", "missed", "invalid"
                     Status = MapRecordingStatus(entry.SchedStatus),
                 })
@@ -253,6 +343,50 @@ internal sealed class SingleTimerService
             _logger.LogError(ex, "Error occurred while fetching timers from TVHeadEnd.");
             return Enumerable.Empty<TimerInfo>();
         }
+    }
+
+    /// <summary>
+    /// Determines whether a DVR entry should be surfaced to Jellyfin. Upcoming and active
+    /// entries are always included. Past entries are kept only while they represent a
+    /// recording that actually ran ("recording", "completed", "completedWarning",
+    /// "completedError"), so finished recordings keep reporting their final status instead
+    /// of vanishing the moment the scheduled stop time passes; TVHeadend ages them out via
+    /// <c>fileremoved</c>/retention. Past "missed"/"invalid" entries never produced a file
+    /// and are dropped to avoid unbounded accumulation.
+    /// </summary>
+    /// <param name="entry">The DVR grid entry to evaluate.</param>
+    /// <param name="now">The current time as a Unix timestamp in seconds.</param>
+    /// <returns><c>true</c> when the entry should be mapped to a <see cref="TimerInfo"/>.</returns>
+    private static bool ShouldIncludeEntry(DvrEntryGridEntry entry, long now)
+    {
+        if (!entry.Enabled || entry.FileRemoved != 0)
+        {
+            return false;
+        }
+
+        if (entry.Stop >= now)
+        {
+            return true;
+        }
+
+        return entry.SchedStatus is "recording" or "completed" or "completedWarning" or "completedError";
+    }
+
+    /// <summary>
+    /// Resolves the parent recurring-rule ID for a DVR entry. TVHeadend spawns child entries
+    /// from EPG-based <c>autorec</c> rules and from time-based <c>timerec</c> rules; either
+    /// one links the timer to its series.
+    /// </summary>
+    /// <param name="entry">The DVR grid entry to inspect.</param>
+    /// <returns>The parent rule UUID, or <c>null</c> for one-off timers.</returns>
+    private static string? ResolveSeriesTimerId(DvrEntryGridEntry entry)
+    {
+        if (!string.IsNullOrWhiteSpace(entry.AutoRec))
+        {
+            return entry.AutoRec;
+        }
+
+        return string.IsNullOrWhiteSpace(entry.TimeRec) ? null : entry.TimeRec;
     }
 
     /// <summary>

@@ -33,6 +33,7 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
     private readonly ConfigurationProvider _configProvider;
     private readonly DatabaseHealthService _dbHealthService;
     private readonly DatabaseProvider _databaseProvider;
+    private readonly DatabaseWriteCoordinator? _writeCoordinator;
 
     private readonly BlockingCollection<PluginLogEntry> _queue =
         new(new ConcurrentQueue<PluginLogEntry>(), MaxQueueSize);
@@ -40,18 +41,20 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
     private DbContextOptions<ViewingSessionContext>? _lazyDbContextOptions;
     private CancellationTokenSource? _cts;
     private Task? _writerTask;
-    private volatile bool _dbLoggingFailed;
+    private long _dbLoggingSuspendedUntilTicks;
 
     public PluginLogService(
         ILogger<PluginLogService> logger,
         ConfigurationProvider configProvider,
         DatabaseHealthService dbHealthService,
-        DatabaseProvider databaseProvider)
+        DatabaseProvider databaseProvider,
+        DatabaseWriteCoordinator? writeCoordinator = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _dbHealthService = dbHealthService ?? throw new ArgumentNullException(nameof(dbHealthService));
         _databaseProvider = databaseProvider ?? throw new ArgumentNullException(nameof(databaseProvider));
+        _writeCoordinator = writeCoordinator;
     }
 
     /// <summary>
@@ -62,15 +65,24 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
     /// <param name="configProvider">Configuration provider.</param>
     /// <param name="dbHealthService">Database health service.</param>
     /// <param name="dbContextOptions">Pre-built EF Core context options.</param>
+    /// <param name="writeCoordinator">Optional coordinator serializing SQLite writes across services.</param>
     internal PluginLogService(
         ILogger<PluginLogService> logger,
         ConfigurationProvider configProvider,
         DatabaseHealthService dbHealthService,
-        DbContextOptions<ViewingSessionContext> dbContextOptions)
-        : this(logger, configProvider, dbHealthService, CreateNullProvider())
+        DbContextOptions<ViewingSessionContext> dbContextOptions,
+        DatabaseWriteCoordinator? writeCoordinator = null)
+        : this(logger, configProvider, dbHealthService, CreateNullProvider(), writeCoordinator)
     {
         _lazyDbContextOptions = dbContextOptions;
     }
+
+    /// <summary>
+    /// Gets or sets how long database logging stays suspended after a failed flush before it
+    /// is retried automatically. One transient failure (locked file, brief read-only mount)
+    /// must not silence dashboard logs until the next server restart. Internal for tests.
+    /// </summary>
+    internal TimeSpan DbLoggingRetryDelay { get; set; } = TimeSpan.FromMinutes(2);
 
     private static DatabaseProvider CreateNullProvider()
     {
@@ -326,6 +338,9 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
 
         try
         {
+            // Serialize the bulk delete with other plugin writers (write loop, cleanup service)
+            // on the shared SQLite file.
+            using var writeLock = _writeCoordinator?.AcquireWrite();
             using var db = new ViewingSessionContext(GetDbContextOptions());
             var count = db.PluginLogEntries.Count();
             db.PluginLogEntries.RemoveRange(db.PluginLogEntries);
@@ -429,23 +444,40 @@ internal sealed class PluginLogService : IPluginLogQueryService, IHostedService,
 
     private async Task FlushBatchAsync(List<PluginLogEntry> batch)
     {
-        if (_dbLoggingFailed || !_dbHealthService.IsAvailable)
+        if (!_dbHealthService.IsAvailable
+            || DateTime.UtcNow.Ticks < System.Threading.Volatile.Read(ref _dbLoggingSuspendedUntilTicks))
         {
             return;
         }
 
         try
         {
-            using var db = new ViewingSessionContext(GetDbContextOptions());
-            db.PluginLogEntries.AddRange(batch);
-            await db.SaveChangesAsync().ConfigureAwait(false);
+            // Serialize with all other plugin writers on the shared SQLite file so a flush
+            // cannot collide with a coordinated writer (e.g. retention cleanup) and trigger
+            // an unnecessary logging suspension on a transient SQLITE_BUSY.
+            IDisposable? writeLock = null;
+            if (_writeCoordinator != null)
+            {
+                writeLock = await _writeCoordinator.AcquireWriteAsync().ConfigureAwait(false);
+            }
+
+            try
+            {
+                using var db = new ViewingSessionContext(GetDbContextOptions());
+                db.PluginLogEntries.AddRange(batch);
+                await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                writeLock?.Dispose();
+            }
         }
         catch (Exception ex)
         {
-            // Log one warning through Jellyfin's normal logger, then disable DB logging
-            // to prevent recursion or repeated failures
-            _dbLoggingFailed = true;
-            _logger.LogWarning(ex, "Failed to persist plugin log batch to SQLite — DB logging disabled for this session");
+            // Suspend DB logging briefly instead of permanently: the batch is dropped, but
+            // flushing resumes automatically once the window elapses.
+            System.Threading.Volatile.Write(ref _dbLoggingSuspendedUntilTicks, DateTime.UtcNow.Add(DbLoggingRetryDelay).Ticks);
+            _logger.LogWarning(ex, "Failed to persist plugin log batch to SQLite — DB logging suspended for {RetryDelay}", DbLoggingRetryDelay);
         }
     }
 

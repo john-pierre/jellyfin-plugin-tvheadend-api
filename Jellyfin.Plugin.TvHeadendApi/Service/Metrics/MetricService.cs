@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
-namespace Jellyfin.Plugin.TvHeadendApi.Service.Metric;
+namespace Jellyfin.Plugin.TvHeadendApi.Service.Metrics;
 
 /// <summary>
 /// Provides centralized <see cref="Meter"/> and instruments for plugin observability.
@@ -38,31 +38,38 @@ internal static class MetricService
         PluginMeter.CreateHistogram<double>("tvh.api.duration", "ms", "TVHeadend API call duration");
 
     /// <summary>
-    /// Counts channel stream setup requests.
+    /// Counts channel stream setup requests (media source builds).
     /// </summary>
     internal static readonly Counter<long> StreamSetupCount =
         PluginMeter.CreateCounter<long>("tvh.stream.setup", "requests", "Channel stream setup requests");
 
     /// <summary>
-    /// Records stream setup duration in milliseconds (including cache warm-up).
+    /// Records stream setup duration in milliseconds (including mediainfo cache reconciliation).
     /// </summary>
     internal static readonly Histogram<double> StreamSetupDuration =
         PluginMeter.CreateHistogram<double>("tvh.stream.setup.duration", "ms", "Stream setup duration including cache");
 
     /// <summary>
-    /// Counts mediainfo cache hits.
+    /// Counts mediainfo cache hits (an existing, matching cache file was used).
     /// </summary>
     internal static readonly Counter<long> CacheHitCount =
         PluginMeter.CreateCounter<long>("tvh.cache.hit", "hits", "Mediainfo cache hits");
 
     /// <summary>
-    /// Counts mediainfo cache misses (new cache file written).
+    /// Counts mediainfo cache misses (no cache file existed for the channel).
     /// </summary>
     internal static readonly Counter<long> CacheMissCount =
         PluginMeter.CreateCounter<long>("tvh.cache.miss", "misses", "Mediainfo cache misses");
 
     /// <summary>
-    /// Counts mediainfo cache invalidations (stale file deleted).
+    /// Counts mediainfo cache mismatches (a cache file existed but did not match the
+    /// effective profile — previously miscounted as a hit).
+    /// </summary>
+    internal static readonly Counter<long> CacheMismatchCount =
+        PluginMeter.CreateCounter<long>("tvh.cache.mismatch", "mismatches", "Mediainfo cache profile mismatches");
+
+    /// <summary>
+    /// Counts mediainfo cache invalidations (stale or unreadable file deleted).
     /// </summary>
     internal static readonly Counter<long> CacheInvalidationCount =
         PluginMeter.CreateCounter<long>("tvh.cache.invalidation", "invalidations", "Mediainfo cache invalidations");
