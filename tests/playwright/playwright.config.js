@@ -21,7 +21,13 @@ module.exports = defineConfig({
     video: 'retain-on-failure',
     actionTimeout: 20_000,
     launchOptions: {
-      args: ['--no-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required', '--start-maximized'],
+      // The three disable-*-throttling/backgrounding flags matter for live playback: after
+      // 60s of being considered backgrounded, Chromium throttles timers to 1/min — hls.js
+      // stops fetching segments and long-running playback tests stall at ~80s.
+      args: [
+        '--no-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required', '--start-maximized',
+        '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
+      ],
       // Set SLOWMO=250 (ms) to slow each action down so a human can follow a headed run.
       slowMo: Number(process.env.SLOWMO) || 0,
     },

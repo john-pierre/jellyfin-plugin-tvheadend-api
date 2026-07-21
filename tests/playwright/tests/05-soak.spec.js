@@ -4,16 +4,40 @@
 const { test, expect, request } = require('@playwright/test');
 const JF = require('../fixtures/jellyfin');
 
+// Recording MUST stay off for the soak: 'retain-on-failure' video+trace record DURING the
+// run (they are only discarded on success), and minutes of 720p playback in this
+// software-rendered WSL2 Chromium starve the decoder under that overhead — playback then
+// freezes at ~80s and the soak fails on a pure harness artifact. Verified live: identical
+// 240s soak is 0-stall/0-error with recording off and reproducibly stalls with it on.
+test.use({ video: 'off', trace: 'off', screenshot: 'off' });
+
 test.describe('@soak sustained playback', () => {
   let api, token, userId, serverId, channel;
 
   test.beforeAll(async () => {
+    test.setTimeout(300000);
     api = await request.newContext({ baseURL: JF.CONFIG.baseURL, ignoreHTTPSErrors: true });
     ({ token, userId } = await JF.authenticate(api));
     serverId = await JF.getServerId(api);
     channel = await JF.pickChannel(api, token, userId);
+
+    // A transcode/live stream left over from an earlier browser test on the same channel
+    // keeps running server-side for minutes and reliably prevents THIS session's playback
+    // from ever starting (video stays at position 0). Drain like 06's zap test does.
+    await JF.stopAllPlaybackSessions(api, token);
+    await JF.pollUntil(async () => {
+      const subs = await JF.tvhApi('/api/status/subscriptions');
+      const active = (subs.entries || []).filter((e) => (e.title || '') !== 'epggrab');
+      if (active.length === 0) return true;
+      await JF.stopAllPlaybackSessions(api, token);
+      return null;
+    }, { timeoutMs: 120000, intervalMs: 5000, label: 'TVHeadend subscriptions drained before the soak' });
   });
-  test.afterAll(async () => { await api.dispose(); });
+  test.afterAll(async () => {
+    // Release the soak's own transcode so the next spec/run starts on a clean stack.
+    await JF.stopAllPlaybackSessions(api, token);
+    await api.dispose();
+  });
 
   test('plays continuously without dropouts', async ({ page }) => {
     test.setTimeout(0); // no timeout — duration is controlled by SOAK_SECONDS

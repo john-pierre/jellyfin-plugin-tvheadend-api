@@ -575,7 +575,14 @@ internal sealed class RelayService : IRelayService, IDisposable
                 var statusCode = MapUpstreamStatus(response.StatusCode);
                 timing.ClientStatusCode = statusCode;
                 timing.FailureReason = ClassifyUpstreamFailure(response.StatusCode);
-                _healthService.RecordFailure(FailureClassifier.ClassifyStatusCode(response.StatusCode));
+
+                // TVHeadend RESPONDED — the server is alive; this is a per-request/per-channel
+                // failure (dead channel, exhausted tuner, bad path). It must stay visible in
+                // health status and metrics but must NOT count toward the server-level circuit
+                // breaker: a rapid zapping burst of 5xx on scarce tuners used to open the
+                // breaker and block ALL requests for the cool-down although TVHeadend was fine
+                // (the dashboard then showed "Unreachable" next to a green Diagnose).
+                _healthService.RecordFailure(FailureClassifier.ClassifyStatusCode(response.StatusCode), affectsCircuit: false);
                 response.Dispose();
                 return new RelayResult { StatusCode = statusCode };
             }

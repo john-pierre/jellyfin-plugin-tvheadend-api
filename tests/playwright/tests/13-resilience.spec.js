@@ -21,7 +21,7 @@ const JF = require('../fixtures/jellyfin');
 test.describe.configure({ mode: 'serial' });
 
 test.describe('Resilience: TVHeadend outage and recovery', () => {
-  let api, token, userId, pluginId, channel, pristine;
+  let api, token, userId, pluginId, channel, pristine, breakerBaseline;
 
   async function getJson(path) {
     const res = await api.get(`${JF.CONFIG.baseURL}${path}`, { headers: JF.authHeaders(token) });
@@ -43,6 +43,16 @@ test.describe('Resilience: TVHeadend outage and recovery', () => {
       return h.CircuitState === 'Closed' && h.Status === 'Healthy' ? h : null;
     }, { timeoutMs: 90000, intervalMs: 3000, label: 'circuit breaker closes again' });
     console.log(`[13|${tag}] Health -> ${health.Status}/${health.CircuitState}`);
+
+    // If this recovery closed an open episode, its duration metrics must be recorded.
+    if (health.Breaker.TimesOpened > breakerBaseline.TimesOpened) {
+      console.log(`[13|${tag}] breaker episode: lastOpen=${health.Breaker.LastOpenDurationMs}ms, totalOpen=${health.Breaker.TotalOpenDurationMs}ms, trials=${health.Breaker.HalfOpenTrials}/${health.Breaker.HalfOpenTrialSuccesses} ok`);
+      expect(health.Breaker.LastOpenDurationMs, 'recovered episode has a duration').toBeGreaterThan(0);
+      expect(health.Breaker.TotalOpenDurationMs, 'cumulative open time includes the episode')
+        .toBeGreaterThanOrEqual(health.Breaker.LastOpenDurationMs);
+      expect(health.Breaker.HalfOpenTrialSuccesses, 'recovery went through a successful half-open trial')
+        .toBeGreaterThan(breakerBaseline.HalfOpenTrialSuccesses);
+    }
 
     let liveStreamId = null;
     try {
@@ -70,6 +80,11 @@ test.describe('Resilience: TVHeadend outage and recovery', () => {
     pristine = await JF.readPluginConfig(api, token, pluginId);
     expect(JF.canonicalConfigDeviations(pristine), 'suite starts canonical').toEqual([]);
     channel = await JF.pickChannel(api, token, userId);
+    // Breaker metrics baseline — all assertions below are DELTAS so the spec is independent
+    // of how much breaker history the running plugin instance already accumulated.
+    breakerBaseline = (await getJson('/TvHeadendApi/Health')).Breaker;
+    expect(breakerBaseline, 'Health exposes the Breaker metrics block').toBeTruthy();
+    console.log(`[13] breaker baseline: opened=${breakerBaseline.TimesOpened}, rejected=${breakerBaseline.RejectedWhileOpen}`);
   });
 
   test.afterAll(async () => {
@@ -115,6 +130,23 @@ test.describe('Resilience: TVHeadend outage and recovery', () => {
       expect(health.Status).toBe('CircuitOpen');
       expect(health.IsDegradedModeActive, 'degraded mode active').toBe(true);
 
+      // Breaker metrics tell the story of THIS outage (delta vs the beforeAll baseline).
+      expect(health.Breaker.TimesOpened, 'the open was counted').toBeGreaterThan(breakerBaseline.TimesOpened);
+      expect(health.Breaker.LastOpenReason, 'open attributed to a connection-level reason')
+        .toMatch(/ConnectionRefused|UpstreamUnavailable|Timeout|DnsFailure/);
+      expect(health.Breaker.LastOpenedAtUtc, 'open timestamp recorded').toBeTruthy();
+      expect(health.Breaker.CircuitFailures, 'breaker-relevant failures counted').toBeGreaterThan(breakerBaseline.CircuitFailures);
+      expect(
+        health.Breaker.FailureCountsByReason.ConnectionRefused || 0,
+        'per-reason counter tracks the refusals',
+      ).toBeGreaterThan((breakerBaseline.FailureCountsByReason || {}).ConnectionRefused || 0);
+
+      // While open, blocked requests are counted as rejections (Diagnose fast-fails).
+      await api.get(`${JF.CONFIG.baseURL}/TvHeadendApi/Diagnose`, { headers: JF.authHeaders(token) }).catch(() => {});
+      const whileOpen = (await getJson('/TvHeadendApi/Health')).Breaker;
+      console.log(`[13|down] breaker: opened=${whileOpen.TimesOpened}, rejected=${whileOpen.RejectedWhileOpen}, reason=${whileOpen.LastOpenReason}`);
+      expect(whileOpen.RejectedWhileOpen, 'rejections while open are counted').toBeGreaterThan(breakerBaseline.RejectedWhileOpen);
+
       // PlaybackInfo fails CONTROLLED: 200 with a (currently unservable) source — never a 500.
       const pi = await JF.requestPlaybackInfo(api, token, userId, channel.id, JF.deviceProfiles.directPlay);
       console.log(`[13|down] PlaybackInfo -> 200, ${(pi.ms.Path || '').replace(/token=[^&]+/, 'token=…')}`);
@@ -157,5 +189,57 @@ test.describe('Resilience: TVHeadend outage and recovery', () => {
       await JF.writePluginConfig(api, token, pluginId, pristine);
     }
     await assertRecovered('auth');
+  });
+
+  // Backlog #4 regression: per-request relay failures where TVHeadend RESPONDED (dead channel,
+  // exhausted tuner, bad path -> upstream 4xx/5xx) must stay VISIBLE in metrics but must NOT
+  // open the global circuit breaker nor downgrade the global health banner. Before the fix a
+  // rapid burst of such errors flipped Health to Unreachable/Degraded while Diagnose still read
+  // "Connected, 100" — the exact dashboard contradiction. The backend stays UP the whole time.
+  test('server-responded relay failures stay visible but do not trip the global breaker', async () => {
+    test.setTimeout(120000);
+    // Backend healthy at the start.
+    const diagBefore = await JF.waitForDiagnoseChannels(api, token, 60000);
+    expect(diagBefore.OverallStatus, 'backend healthy before the burst').not.toBe('ERROR');
+    const before = (await getJson('/TvHeadendApi/Health')).Breaker;
+
+    // Fire a burst well past the breaker threshold. The admin image relay to a nonexistent
+    // TVHeadend asset makes TVHeadend answer with an error (upstream 4xx/5xx) — the plugin
+    // relays a 5xx to us but records the failure as non-breaker (server was reachable).
+    const statuses = [];
+    for (let i = 0; i < 12; i++) {
+      const res = await api.get(`${JF.CONFIG.baseURL}/api/tvheadend/images/static/img/e2e-nonexistent-${i}.png`, { headers: JF.authHeaders(token) });
+      statuses.push(res.status());
+    }
+    console.log(`[13|relay] 12 relay-error statuses: ${statuses.join(',')}`);
+
+    const health = await getJson('/TvHeadendApi/Health');
+    const after = health.Breaker;
+    console.log(`[13|relay] Health -> ${health.Status}/${health.CircuitState} | reported +${after.ReportedFailures - before.ReportedFailures}, circuitFails +${after.CircuitFailures - before.CircuitFailures}, opened +${after.TimesOpened - before.TimesOpened}`);
+
+    // The failures ARE visible in metrics …
+    expect(after.ReportedFailures, 'relay failures recorded in metrics').toBeGreaterThan(before.ReportedFailures);
+    // … but did NOT count toward the circuit or open it, and did not block requests.
+    expect(after.CircuitFailures, 'relay failures do NOT count toward the breaker').toBe(before.CircuitFailures);
+    expect(after.TimesOpened, 'the breaker did NOT open').toBe(before.TimesOpened);
+    expect(health.CircuitState, 'circuit stays closed').toBe('Closed');
+    expect(health.Status, 'global health is not downgraded by per-channel failures').toBe('Healthy');
+    expect(health.IsDegradedModeActive, 'degraded mode not active').toBe(false);
+
+    // No contradiction: Diagnose still reports the backend as reachable, and a real stream works.
+    const diagAfter = await getJson('/TvHeadendApi/Diagnose');
+    expect(diagAfter.OverallStatus, 'Diagnose stays consistent with health (no #4 contradiction)').not.toBe('ERROR');
+    expect(diagAfter.ChannelCount, 'channels still visible').toBeGreaterThan(0);
+
+    let liveStreamId = null;
+    try {
+      const pi = await JF.requestPlaybackInfo(api, token, userId, channel.id, JF.deviceProfiles.directPlay);
+      liveStreamId = pi.liveStreamId;
+      const bytes = await JF.fetchStreamBytes(JF.rewriteHost(pi.ms.Path, JF.CONFIG.baseURL), { minBytes: 65536, timeoutMs: 15000 });
+      console.log(`[13|relay] real stream after the burst -> ${bytes.status}, ${bytes.bytes}B`);
+      expect(bytes.status, 'real streaming unaffected by the dead-channel burst').toBe(200);
+    } finally {
+      await JF.closeLiveStream(api, token, liveStreamId);
+    }
   });
 });

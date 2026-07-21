@@ -29,7 +29,7 @@ internal sealed class NullHealthService : IHealthService
     }
 
     /// <inheritdoc />
-    public void RecordFailure(FailureReason reason)
+    public void RecordFailure(FailureReason reason, bool affectsCircuit = true)
     {
     }
 

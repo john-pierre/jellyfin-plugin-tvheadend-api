@@ -21,7 +21,15 @@ public interface IHealthService
 
     /// <summary>Records a failed TVHeadend interaction.</summary>
     /// <param name="reason">The classified failure reason.</param>
-    void RecordFailure(FailureReason reason);
+    /// <param name="affectsCircuit">
+    /// When <c>true</c> (default) the failure advances the circuit breaker's consecutive-failure
+    /// counter. Pass <c>false</c> for failures that must stay VISIBLE (status, metrics, last
+    /// failure) but must not open the server-level breaker: mid-retry attempt failures of a
+    /// single logical request, and per-channel stream errors where TVHeadend itself responded
+    /// (a response proves the server is alive — a dead channel or exhausted tuner must not
+    /// block every other request for the cool-down period).
+    /// </param>
+    void RecordFailure(FailureReason reason, bool affectsCircuit = true);
 
     /// <summary>Returns true if requests should be blocked (circuit open + not yet half-open).</summary>
     /// <returns><c>true</c> if requests should be blocked; otherwise <c>false</c>.</returns>

@@ -814,6 +814,9 @@
                     ['Last Failure', uh.LastFailureUtc ? new Date(uh.LastFailureUtc).toLocaleString() : '—'],
                     ['Last Failure Reason', uh.LastFailureReason && uh.LastFailureReason !== 'None' ? badge('warn', uh.LastFailureReason) : '—'],
                     ['Consecutive Failures', String(uh.ConsecutiveFailures || 0)],
+                    ['Breaker Opens', String((uh.Breaker && uh.Breaker.TimesOpened) || 0) + (uh.Breaker && uh.Breaker.LastOpenReason && uh.Breaker.LastOpenReason !== 'None' ? ' (last: ' + uh.Breaker.LastOpenReason + ')' : '')],
+                    ['Rejected While Open', String((uh.Breaker && uh.Breaker.RejectedWhileOpen) || 0)],
+                    ['Half-Open Trials', ((uh.Breaker && uh.Breaker.HalfOpenTrials) || 0) + ' (' + ((uh.Breaker && uh.Breaker.HalfOpenTrialSuccesses) || 0) + ' ok / ' + ((uh.Breaker && uh.Breaker.HalfOpenTrialFailures) || 0) + ' failed)'],
                     ['Last Response Time', uh.LastResponseTimeMs != null ? uh.LastResponseTimeMs + ' ms' : '—'],
                     ['Next Retry', uh.NextRetryUtc ? new Date(uh.NextRetryUtc).toLocaleString() : '—']
                 ]);

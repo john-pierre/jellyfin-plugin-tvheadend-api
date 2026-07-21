@@ -128,7 +128,8 @@ public class ResiliencePoliciesTests
             callCount++;
             if (callCount <= 2)
             {
-                throw new HttpRequestException("Connection refused");
+                // Transient network error (classified UpstreamUnavailable) — retryable.
+                throw new HttpRequestException("Connection reset by peer");
             }
 
             return new HttpResponseMessage(HttpStatusCode.OK);
@@ -138,6 +139,28 @@ public class ResiliencePoliciesTests
 
         Assert.Equal(HttpStatusCode.OK, result.StatusCode);
         Assert.Equal(3, callCount);
+    }
+
+    [Fact]
+    public async Task RetryPolicy_ConnectionRefused_FailsFast_WithoutRetry()
+    {
+        // A refused port is deterministic — nothing heals within the back-off window, and the
+        // ~7s retry ladder used to stall every degraded-mode caller (dashboard timeouts while
+        // the backend was down). Fail immediately and count ONE breaker-relevant failure.
+        var callCount = 0;
+        var inner = new FakeHandler(() =>
+        {
+            callCount++;
+            throw new HttpRequestException("Connection refused");
+        });
+        var handler = CreateHandler(inner);
+        using var invoker = new HttpMessageInvoker(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None));
+
+        Assert.Equal(1, callCount);
+        Assert.Equal(1, handler.GetConsecutiveFailures());
     }
 
     [Fact]
@@ -207,18 +230,22 @@ public class ResiliencePoliciesTests
         var handler = CreateHandler(inner);
         using var invoker = new HttpMessageInvoker(handler);
 
-        // Trip the circuit: send enough failures to open it.
-        for (int i = 0; i < 3 && handler.GetConsecutiveFailures() < ResiliencePolicies.CircuitBreakerThreshold; i++)
+        // Trip the circuit: send enough LOGICAL failures to open it (one count per request).
+        for (int i = 0; i < ResiliencePolicies.CircuitBreakerThreshold && handler.GetConsecutiveFailures() < ResiliencePolicies.CircuitBreakerThreshold; i++)
         {
             try
             {
-                await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
+                (await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None)).Dispose();
             }
             catch (InvalidOperationException)
             {
                 break;
             }
         }
+
+        Assert.True(
+            handler.GetConsecutiveFailures() >= ResiliencePolicies.CircuitBreakerThreshold,
+            "circuit must be open before the half-open scenario starts");
 
         // Simulate the break duration elapsing.
         handler.SetOpenUntil(DateTimeOffset.UtcNow.AddSeconds(-1));
@@ -240,18 +267,23 @@ public class ResiliencePoliciesTests
         var handler = CreateHandler(inner);
         using var invoker = new HttpMessageInvoker(handler);
 
-        // Trip the circuit.
-        for (int i = 0; i < 3; i++)
+        // Trip the circuit: each LOGICAL failed request counts once, so the threshold takes
+        // that many requests (per-attempt counting used to reach it after ~2).
+        for (int i = 0; i < ResiliencePolicies.CircuitBreakerThreshold; i++)
         {
             try
             {
-                await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None);
+                (await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None)).Dispose();
             }
             catch (InvalidOperationException)
             {
                 break;
             }
         }
+
+        Assert.True(
+            handler.GetConsecutiveFailures() >= ResiliencePolicies.CircuitBreakerThreshold,
+            "circuit must be open before the half-open scenario starts");
 
         // Simulate break duration elapsed — half-open state.
         handler.SetOpenUntil(DateTimeOffset.UtcNow.AddSeconds(-1));
@@ -313,7 +345,10 @@ public class ResiliencePoliciesTests
             () => invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None));
 
         Assert.Equal(1 + ResiliencePolicies.RetryCount, callCount);
-        Assert.Equal(1 + ResiliencePolicies.RetryCount, handler.GetConsecutiveFailures());
+
+        // One LOGICAL request failed — regardless of how many attempts it took. Per-attempt
+        // counting let a single retried request contribute 4 of the 5 threshold failures.
+        Assert.Equal(1, handler.GetConsecutiveFailures());
     }
 
     [Fact]
@@ -455,8 +490,11 @@ public class ResiliencePoliciesTests
 
         (await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost"), CancellationToken.None)).Dispose();
 
-        health.Verify(h => h.RecordFailure(FailureReason.Upstream5xx), Moq.Times.Exactly(1 + ResiliencePolicies.RetryCount));
-        health.Verify(h => h.RecordFailure(FailureReason.UpstreamUnavailable), Moq.Times.Never);
+        // Mid-retry attempts are reported WITHOUT breaker impact; only the final failed
+        // attempt of the logical request counts toward the circuit.
+        health.Verify(h => h.RecordFailure(FailureReason.Upstream5xx, false), Moq.Times.Exactly(ResiliencePolicies.RetryCount));
+        health.Verify(h => h.RecordFailure(FailureReason.Upstream5xx, true), Moq.Times.Once);
+        health.Verify(h => h.RecordFailure(FailureReason.UpstreamUnavailable, Moq.It.IsAny<bool>()), Moq.Times.Never);
     }
 
     [Fact]

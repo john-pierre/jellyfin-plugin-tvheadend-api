@@ -32,6 +32,9 @@ internal sealed class HealthService : IHealthService
 
     private readonly object _lock = new();
 
+    // Per-reason failure counters (all reported failures) — guarded by _lock.
+    private readonly Dictionary<FailureReason, long> _failureCountsByReason = new();
+
     // Marks the async flow that owns the current half-open trial request. The same logical
     // request consults ShouldBlockRequest() twice — once from the domain service's pre-check
     // and once from the ResilienceHandler fast-fail — so the owning flow must pass both.
@@ -56,6 +59,20 @@ internal sealed class HealthService : IHealthService
     private DateTimeOffset _circuitOpenUntilUtc = DateTimeOffset.MinValue;
     private bool _halfOpenTrialInFlight;
     private DateTimeOffset _halfOpenTrialStartedUtc = DateTimeOffset.MinValue;
+
+    // Breaker observability counters — guarded by _lock, accumulated since plugin start.
+    private long _timesOpened;
+    private DateTimeOffset? _lastOpenedAtUtc;
+    private FailureReason _lastOpenReason = FailureReason.None;
+    private DateTimeOffset? _currentOpenEpisodeStartedUtc;
+    private long _lastOpenDurationMs;
+    private long _totalOpenDurationMs;
+    private long _rejectedWhileOpen;
+    private long _halfOpenTrials;
+    private long _halfOpenTrialSuccesses;
+    private long _halfOpenTrialFailures;
+    private long _circuitFailures;
+    private long _reportedFailures;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HealthService"/> class.
@@ -147,6 +164,13 @@ internal sealed class HealthService : IHealthService
             var wasDegraded = _circuitState != CircuitState.Closed
                 || _consecutiveFailures >= CircuitOpenThreshold;
 
+            if (_circuitState == CircuitState.HalfOpen)
+            {
+                _halfOpenTrialSuccesses++;
+            }
+
+            CloseOpenEpisodeIfAny();
+
             _lastSuccessUtc = DateTimeOffset.UtcNow;
             _lastResponseTimeMs = responseTimeMs;
             _consecutiveFailures = 0;
@@ -171,17 +195,34 @@ internal sealed class HealthService : IHealthService
     }
 
     /// <inheritdoc />
-    public void RecordFailure(FailureReason reason)
+    public void RecordFailure(FailureReason reason, bool affectsCircuit = true)
     {
         lock (_lock)
         {
             var previousStatus = _status;
             _lastFailureUtc = DateTimeOffset.UtcNow;
             _lastFailureReason = reason;
-            _consecutiveFailures++;
+            _reportedFailures++;
+            _failureCountsByReason[reason] = _failureCountsByReason.TryGetValue(reason, out var count) ? count + 1 : 1;
+
+            if (!affectsCircuit)
+            {
+                // Non-breaker failures (server-responded per-channel errors, mid-retry attempts)
+                // stay VISIBLE — LastFailureReason and the metrics counters above record them —
+                // but they must NOT downgrade the GLOBAL health status. A single dead channel or
+                // exhausted tuner used to flip the dashboard banner to "Degraded" while Diagnose
+                // still read "Connected, 100" (backlog #4). The global status reflects whether we
+                // can reach TVHeadend AT ALL, which a server-answered error does not threaten.
+                return;
+            }
 
             // A failure resolves any half-open trial; the threshold check below re-opens the
             // circuit (consecutive failures never reset between Open and HalfOpen).
+            if (_circuitState == CircuitState.HalfOpen && _halfOpenTrialInFlight)
+            {
+                _halfOpenTrialFailures++;
+            }
+
             _halfOpenTrialInFlight = false;
             _ownsHalfOpenTrial.Value = false;
 
@@ -195,20 +236,31 @@ internal sealed class HealthService : IHealthService
                 _ => HealthStatus.Degraded,
             };
 
-            if (_consecutiveFailures >= CircuitOpenThreshold)
-            {
-                if (_circuitState != CircuitState.Open)
-                {
-                    _circuitState = CircuitState.Open;
-                    _circuitOpenUntilUtc = DateTimeOffset.UtcNow.Add(CircuitOpenDuration);
-                    _status = HealthStatus.CircuitOpen;
+            _consecutiveFailures++;
+            _circuitFailures++;
 
-                    _logger.LogWarning(
-                        "TVHeadend circuit breaker opened — {ConsecutiveFailures} consecutive failures, last reason: {Reason}. Blocking requests until {OpenUntil:O}",
-                        _consecutiveFailures,
-                        reason,
-                        _circuitOpenUntilUtc);
+            if (_consecutiveFailures >= CircuitOpenThreshold && _circuitState != CircuitState.Open)
+            {
+                var reopenedFromHalfOpen = _circuitState == CircuitState.HalfOpen;
+                _circuitState = CircuitState.Open;
+                _circuitOpenUntilUtc = DateTimeOffset.UtcNow.Add(CircuitOpenDuration);
+                _status = HealthStatus.CircuitOpen;
+
+                // Metrics: a Closed->Open transition starts a NEW open episode; a failed
+                // half-open trial merely extends the current one.
+                if (!reopenedFromHalfOpen || _currentOpenEpisodeStartedUtc is null)
+                {
+                    _timesOpened++;
+                    _lastOpenedAtUtc = DateTimeOffset.UtcNow;
+                    _lastOpenReason = reason;
+                    _currentOpenEpisodeStartedUtc ??= DateTimeOffset.UtcNow;
                 }
+
+                _logger.LogWarning(
+                    "TVHeadend circuit breaker opened — {ConsecutiveFailures} consecutive failures, last reason: {Reason}. Blocking requests until {OpenUntil:O}",
+                    _consecutiveFailures,
+                    reason,
+                    _circuitOpenUntilUtc);
             }
 
             if (previousStatus != _status)
@@ -233,6 +285,7 @@ internal sealed class HealthService : IHealthService
                 // Open and not yet expired — block
                 if (DateTimeOffset.UtcNow < _circuitOpenUntilUtc)
                 {
+                    _rejectedWhileOpen++;
                     return true;
                 }
 
@@ -260,6 +313,7 @@ internal sealed class HealthService : IHealthService
             if (_halfOpenTrialInFlight
                 && DateTimeOffset.UtcNow - _halfOpenTrialStartedUtc < CircuitOpenDuration)
             {
+                _rejectedWhileOpen++;
                 return true;
             }
 
@@ -376,10 +430,33 @@ internal sealed class HealthService : IHealthService
         _halfOpenTrialInFlight = true;
         _halfOpenTrialStartedUtc = DateTimeOffset.UtcNow;
         _ownsHalfOpenTrial.Value = true;
+        _halfOpenTrials++;
+    }
+
+    /// <summary>
+    /// Finalizes the current open episode's duration metrics on recovery.
+    /// Caller must hold <see cref="_lock"/>.
+    /// </summary>
+    private void CloseOpenEpisodeIfAny()
+    {
+        if (_currentOpenEpisodeStartedUtc is { } startedUtc)
+        {
+            var episodeMs = (long)(DateTimeOffset.UtcNow - startedUtc).TotalMilliseconds;
+            _lastOpenDurationMs = episodeMs;
+            _totalOpenDurationMs += episodeMs;
+            _currentOpenEpisodeStartedUtc = null;
+        }
     }
 
     private HealthSnapshot BuildSnapshot()
     {
+        // Cumulative open time includes the still-running episode while the circuit is open.
+        var totalOpenMs = _totalOpenDurationMs;
+        if (_currentOpenEpisodeStartedUtc is { } startedUtc)
+        {
+            totalOpenMs += (long)(DateTimeOffset.UtcNow - startedUtc).TotalMilliseconds;
+        }
+
         return new HealthSnapshot
         {
             Status = _status,
@@ -397,6 +474,23 @@ internal sealed class HealthService : IHealthService
             LastResponseTimeMs = _lastResponseTimeMs,
             NextRetryUtc = _circuitState == CircuitState.Open ? _circuitOpenUntilUtc : null,
             SnapshotUtc = DateTimeOffset.UtcNow,
+            Breaker = new CircuitBreakerMetrics
+            {
+                Threshold = CircuitOpenThreshold,
+                OpenDurationSeconds = (int)CircuitOpenDuration.TotalSeconds,
+                TimesOpened = _timesOpened,
+                LastOpenedAtUtc = _lastOpenedAtUtc,
+                LastOpenReason = _lastOpenReason,
+                LastOpenDurationMs = _lastOpenDurationMs,
+                TotalOpenDurationMs = totalOpenMs,
+                RejectedWhileOpen = _rejectedWhileOpen,
+                HalfOpenTrials = _halfOpenTrials,
+                HalfOpenTrialSuccesses = _halfOpenTrialSuccesses,
+                HalfOpenTrialFailures = _halfOpenTrialFailures,
+                CircuitFailures = _circuitFailures,
+                ReportedFailures = _reportedFailures,
+                FailureCountsByReason = _failureCountsByReason.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
+            },
         };
     }
 
