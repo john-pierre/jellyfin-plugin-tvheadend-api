@@ -27,10 +27,17 @@ public class PluginLogServiceTests : IDisposable
     private readonly PluginLogService _sut;
     private readonly PluginConfiguration _config;
     private readonly DatabaseHealthService _dbHealth;
+    private readonly string _tempDir;
 
     public PluginLogServiceTests()
     {
-        var dbPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"pluginlog-test-{Guid.NewGuid():N}.db");
+        // Every test instance gets its own data folder. The health service derives the plugin
+        // database path from this folder, so sharing the bare temp directory would point every
+        // test class at the same tvheadend_plugin.db and let concurrent runs mark it unhealthy.
+        _tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"tvh-pluginlog-{Guid.NewGuid():N}");
+        System.IO.Directory.CreateDirectory(_tempDir);
+
+        var dbPath = System.IO.Path.Combine(_tempDir, "pluginlog-test.db");
         _dbOptions = new DbContextOptionsBuilder<ViewingSessionContext>()
             .UseSqlite($"DataSource={dbPath}")
             .Options;
@@ -42,8 +49,7 @@ public class PluginLogServiceTests : IDisposable
         };
 
         // Create a real health service
-        var dir = System.IO.Path.GetDirectoryName(dbPath)!;
-        var pathProvider = new DataFolderPathProvider(() => dir);
+        var pathProvider = new DataFolderPathProvider(() => _tempDir);
         var provider = new DatabaseProvider(pathProvider);
         var factory = new DatabaseConnectionFactory(provider);
         var migration = new DatabaseMigrationService(factory, NullLogger<DatabaseMigrationService>.Instance);
@@ -65,6 +71,19 @@ public class PluginLogServiceTests : IDisposable
     public void Dispose()
     {
         _sut.Dispose();
+
+        try
+        {
+            System.IO.Directory.Delete(_tempDir, recursive: true);
+        }
+        catch (System.IO.IOException)
+        {
+            // Best effort: a still-open SQLite handle must not fail the test run.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Best effort.
+        }
     }
 
     [Fact]
@@ -310,14 +329,15 @@ public class PluginLogServiceTests : IDisposable
     [Fact]
     public async Task FlushBatch_AfterTransientFailure_ResumesAfterRetryDelay()
     {
-        var dbPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"pluginlog-suspend-{Guid.NewGuid():N}.db");
+        // The failure is injected by pointing SQLite at a directory that does not exist yet:
+        // opening the database fails with SQLITE_CANTOPEN on every platform. File-permission
+        // tricks (FileAttributes.ReadOnly) cannot be used here — they are a no-op when the test
+        // process runs as root, which is the case in most CI containers.
+        var missingDir = System.IO.Path.Combine(_tempDir, $"not-created-yet-{Guid.NewGuid():N}");
+        var dbPath = System.IO.Path.Combine(missingDir, "pluginlog-suspend.db");
         var options = new DbContextOptionsBuilder<ViewingSessionContext>()
             .UseSqlite($"DataSource={dbPath};Pooling=False")
             .Options;
-        using (var db = new ViewingSessionContext(options))
-        {
-            db.Database.EnsureCreated();
-        }
 
         using var sut = new PluginLogService(
             NullLogger<PluginLogService>.Instance,
@@ -330,12 +350,17 @@ public class PluginLogServiceTests : IDisposable
         var hosted = (IHostedService)sut;
         await hosted.StartAsync(CancellationToken.None);
 
-        // Make the database unwritable: the first flush fails and suspends DB logging.
-        System.IO.File.SetAttributes(dbPath, System.IO.FileAttributes.ReadOnly);
+        // The database cannot be opened: the first flush fails and suspends DB logging.
         sut.EnqueuePluginLog("Information", "Cat", "lost during suspension");
         await Task.Delay(700);
-        System.IO.File.SetAttributes(dbPath, System.IO.FileAttributes.Normal);
         Assert.Empty(sut.QueryLogs(limit: 10));
+
+        // Repair the database so writes can succeed again.
+        System.IO.Directory.CreateDirectory(missingDir);
+        using (var db = new ViewingSessionContext(options))
+        {
+            db.Database.EnsureCreated();
+        }
 
         // One transient failure must NOT silence logging for the whole session: once the
         // retry window elapses, the next batch persists again.
