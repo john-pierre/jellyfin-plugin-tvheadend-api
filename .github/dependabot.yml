@@ -1,0 +1,74 @@
+# Dependency update automation.
+#
+# The official jellyfin-plugin-template ships a renovate.json instead. Renovate is a GitHub App
+# that does nothing until it is installed on the repository, whereas Dependabot is built into
+# GitHub and starts working the moment this file lands — which is what matters here, since the
+# gap this closes is exactly the one that let nineteen action refs sit on the deprecated Node 20
+# runtime unnoticed. Swap to renovate.json if the Renovate App is ever installed.
+version: 2
+
+updates:
+  # GitHub Actions — the runtime deprecations that broke CI show up here first.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # NuGet packages for the plugin and its test project.
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build"
+    labels:
+      - dependencies
+    groups:
+      analyzers:
+        patterns:
+          - "StyleCop.Analyzers"
+          - "SerilogAnalyzer"
+          - "SmartAnalyzers.*"
+      test-tooling:
+        patterns:
+          - "xunit*"
+          - "Microsoft.NET.Test.Sdk"
+          - "Moq"
+          - "FluentAssertions"
+          - "AutoFixture"
+          - "WireMock.Net"
+          - "coverlet.*"
+    ignore:
+      # Jellyfin.Controller / Jellyfin.Model pin the server ABI the plugin compiles against.
+      # Bumping them changes which Jellyfin versions can load the plugin, so that stays a
+      # deliberate decision made together with targetAbi — never an automated PR.
+      - dependency-name: "Jellyfin.Controller"
+      - dependency-name: "Jellyfin.Model"
+
+  # Playwright end-to-end suite.
+  - package-ecosystem: npm
+    directory: /tests/playwright
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "test"
+    labels:
+      - dependencies
+
+  # Base images used by the E2E stack.
+  - package-ecosystem: docker
+    directory: /docker/jellyfin
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies

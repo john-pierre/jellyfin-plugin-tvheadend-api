@@ -1,0 +1,118 @@
+# Live integration test environment: Jellyfin + TVHeadend + IPTV simulator.
+#
+# Usage:
+#   docker compose -f docker-compose.test.yaml -p tvh-test up -d
+#   # Wait ~15s for services to start, then run live integration tests:
+#   TVHEADEND_LIVE_TESTS=true dotnet test ... --filter "Category=LiveIntegration"
+#   docker compose -f docker-compose.test.yaml -p tvh-test down
+#
+# TVHeadend is pre-configured with no password (-C flag) for test simplicity.
+# This stack is NOT for production — it runs with relaxed security settings.
+
+name: jellyfin-plugin-tvheadend-api-test
+
+services:
+  iptv-simulator:
+    build:
+      context: ./iptv-simulator
+      dockerfile: Dockerfile
+    container_name: iptv-simulator-test
+    environment:
+      - BASE_URL=http://iptv-simulator
+      # Production-sized lineup so warmup/zapping are exercised at real-world scale.
+      - CHANNEL_COUNT=100
+    ports:
+      - "18888:80"
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:80/health', timeout=2)"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  tvheadend:
+    # Pinned to a specific build for reproducible CI. Update periodically.
+    # NOTE: build 37453bc3-ls279 (TVH 4.3-2637 + ffmpeg 6.1) ships a broken libav MPEG-TS
+    # muxer ("mpegts_flags=nit" no longer exists) — every profile-transcode stream returns
+    # 0 bytes there. Keep a build where the managed "jellyfin" profile actually streams.
+    image: linuxserver/tvheadend:80729d2f-ls284
+    container_name: tvheadend-test
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=Europe/Berlin
+      # Skip first-run wizard so the API is available immediately without auth.
+      # -C creates a superuser with no password (anonymous access works).
+      # ACL remains active so bootstrap-created users/passwords are validated.
+      - RUN_OPTS=-C
+    ports:
+      - "19981:9981"    # TVHeadend HTTP API (offset to avoid conflicts with dev stack)
+      - "19982:9982"    # TVHeadend HTSP (not used by plugin, but useful for debugging)
+    volumes:
+      - tvheadend-test-config:/config
+      - tvheadend-test-recordings:/recordings
+    depends_on:
+      iptv-simulator:
+        condition: service_healthy
+    restart: "no"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sS --max-time 2 http://localhost:9981/api/serverinfo >/dev/null || curl --anyauth -u \"testuser:testpass\" -sS --max-time 2 http://localhost:9981/api/serverinfo >/dev/null"
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  jellyfin:
+    build:
+      context: ../
+      dockerfile: docker/jellyfin/Dockerfile
+      args:
+        # Override to run the stack against another server version, e.g.
+        #   JELLYFIN_IMAGE=jellyfin/jellyfin:12.0-rc4 docker compose ... up --build
+        JELLYFIN_IMAGE: ${JELLYFIN_IMAGE:-jellyfin/jellyfin:10.10.7}
+    container_name: jellyfin-test
+    environment:
+      - TZ=Europe/Berlin
+    ports:
+      - "18096:8096"    # Jellyfin HTTP (offset to avoid conflicts with dev stack)
+    volumes:
+      - jellyfin-test-config:/config
+      - jellyfin-test-cache:/cache
+    depends_on:
+      tvheadend:
+        condition: service_healthy
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8096/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  tvheadend-bootstrap:
+    build:
+      context: ./tvheadend-bootstrap
+      dockerfile: Dockerfile
+    container_name: tvheadend-bootstrap-test
+    environment:
+      - TVH_URL=http://tvheadend:9981
+      - IPTV_SIM_URL=http://iptv-simulator
+      # Scanning 100 IPTV muxes takes a while — give the scan/mapping loop room.
+      - MAX_WAIT=240
+      - EXPECTED_CHANNELS=100
+    depends_on:
+      tvheadend:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  tvheadend-test-config:
+  tvheadend-test-recordings:
+  jellyfin-test-config:
+  jellyfin-test-cache:
+

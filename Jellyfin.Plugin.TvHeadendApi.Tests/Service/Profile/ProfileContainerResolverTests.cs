@@ -1,0 +1,303 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+using Jellyfin.Plugin.TvHeadendApi.Configuration;
+using Jellyfin.Plugin.TvHeadendApi.Model.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Backend;
+using Jellyfin.Plugin.TvHeadendApi.Service.Health;
+using Jellyfin.Plugin.TvHeadendApi.Service.Profile;
+using Jellyfin.Plugin.TvHeadendApi.Service.Resilience;
+using Jellyfin.Plugin.TvHeadendApi.Service.Stream;
+using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
+
+namespace Jellyfin.Plugin.TvHeadendApi.Tests;
+
+public class ProfileContainerResolverTests
+{
+    [Fact]
+    public async Task ResolveContainerAsync_UsesCacheForSameProfile()
+    {
+        var apiClient = new FakeApiClient();
+        var profileResolver = new FakeProfileResolver();
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
+
+        var config = new PluginConfiguration { StreamingProfile = "jellyfin" };
+
+        var first = await sut.ResolveContainerAsync(config, CancellationToken.None);
+        var second = await sut.ResolveContainerAsync(config, CancellationToken.None);
+
+        Assert.Equal("mp4", first);
+        Assert.Equal("mp4", second);
+        Assert.Equal(1, profileResolver.ResolveCalls);
+    }
+
+    [Fact]
+    public async Task ResolveContainerAsync_DoesNotPinAFallbackForTheFullSuccessTtl()
+    {
+        // A transient TVHeadend failure yields the guessed "mpegts" fallback. Caching that for
+        // the full success TTL pinned a wrong MediaSourceInfo.Container for minutes after the
+        // backend recovered, which pushes clients off Direct Play. The fallback must expire
+        // quickly so the next call re-resolves.
+        var apiClient = new FakeApiClient();
+        var profileResolver = new FakeProfileResolver { FailNextResolve = true };
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver)
+        {
+            FallbackCacheTtl = TimeSpan.FromMilliseconds(50),
+        };
+
+        var config = new PluginConfiguration { StreamingProfile = "jellyfin" };
+
+        var fallback = await sut.ResolveContainerAsync(config, CancellationToken.None);
+        Assert.Equal("mpegts", fallback);
+
+        // Past the short negative-cache window the backend answers normally again.
+        await Task.Delay(TimeSpan.FromMilliseconds(120));
+
+        var recovered = await sut.ResolveContainerAsync(config, CancellationToken.None);
+
+        Assert.Equal("mp4", recovered);
+        Assert.Equal(2, profileResolver.ResolveCalls);
+    }
+
+    [Fact]
+    public async Task ResolveContainerAsync_CachesSuccessfulResultForTheFullTtl()
+    {
+        // The negative-cache window must not shorten caching of real answers.
+        var apiClient = new FakeApiClient();
+        var profileResolver = new FakeProfileResolver();
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver)
+        {
+            FallbackCacheTtl = TimeSpan.FromMilliseconds(1),
+        };
+
+        var config = new PluginConfiguration { StreamingProfile = "jellyfin" };
+
+        Assert.Equal("mp4", await sut.ResolveContainerAsync(config, CancellationToken.None));
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
+        Assert.Equal("mp4", await sut.ResolveContainerAsync(config, CancellationToken.None));
+
+        Assert.Equal(1, profileResolver.ResolveCalls);
+    }
+
+    [Fact]
+    public async Task ResolveContainerAsync_InvalidatesCacheWhenProfileChanges()
+    {
+        var apiClient = new FakeApiClient();
+        var profileResolver = new FakeProfileResolver();
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
+
+        var firstConfig = new PluginConfiguration { StreamingProfile = "jellyfin" };
+        var secondConfig = new PluginConfiguration { StreamingProfile = "jellyfin-alt" };
+
+        var first = await sut.ResolveContainerAsync(firstConfig, CancellationToken.None);
+        var second = await sut.ResolveContainerAsync(secondConfig, CancellationToken.None);
+
+        Assert.Equal("mp4", first);
+        Assert.Equal("mp4", second);
+        Assert.Equal(2, profileResolver.ResolveCalls);
+    }
+
+    [Fact]
+    public async Task InvalidateCache_ForcesFreshResolutionOnNextCall()
+    {
+        var apiClient = new FakeApiClient();
+        var profileResolver = new FakeProfileResolver();
+        using var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
+
+        var config = new PluginConfiguration { StreamingProfile = "jellyfin" };
+
+        // Populate the snapshot cache, then invalidate it (as the managed-profile creation flow
+        // does after rewriting profiles in TVHeadend) — the next call must re-resolve.
+        _ = await sut.ResolveContainerAsync(config, CancellationToken.None);
+        sut.InvalidateCache();
+        _ = await sut.ResolveContainerAsync(config, CancellationToken.None);
+
+        Assert.Equal(2, profileResolver.ResolveCalls);
+    }
+
+    [Fact]
+    public async Task ResolveProfileSnapshotAsync_WithBlankProfileName_ReturnsFallbackContainer()
+    {
+        var apiClient = new FakeApiClient();
+        var profileResolver = new FakeProfileResolver();
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
+
+        var config = new PluginConfiguration { StreamingProfile = "   " };
+        var snapshot = await sut.ResolveProfileSnapshotAsync(config, CancellationToken.None);
+
+        Assert.Equal("mpegts", snapshot.Container);
+        Assert.Equal(string.Empty, snapshot.ProfileUuid);
+    }
+
+    [Fact]
+    public async Task ResolveProfileSnapshotAsync_WhenResolvedProfileIsNull_ReturnsFallbackContainer()
+    {
+        var apiClient = new FakeApiClient();
+        var profileResolver = new NullProfileResolver();
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
+
+        var config = new PluginConfiguration { StreamingProfile = "missing" };
+        var snapshot = await sut.ResolveProfileSnapshotAsync(config, CancellationToken.None);
+
+        Assert.Equal("mpegts", snapshot.Container);
+    }
+
+    [Fact]
+    public async Task ResolveProfileSnapshotAsync_WhenTranscodeProfileHasEmptyContainer_UsesFallback()
+    {
+        var apiClient = new FakeApiClient();
+        var profileResolver = new TranscodeNoContainerProfileResolver();
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
+
+        var config = new PluginConfiguration { StreamingProfile = "transcode-nocontainer" };
+        var snapshot = await sut.ResolveProfileSnapshotAsync(config, CancellationToken.None);
+
+        Assert.Equal("mpegts", snapshot.Container);
+    }
+
+    [Fact]
+    public async Task ResolveProfileSnapshotAsync_WhenResolverThrows_ReturnsFallbackContainer()
+    {
+        var apiClient = new FakeApiClient();
+        var profileResolver = new ThrowingProfileResolver();
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
+
+        var config = new PluginConfiguration { StreamingProfile = "throws" };
+        var snapshot = await sut.ResolveProfileSnapshotAsync(config, CancellationToken.None);
+
+        Assert.Equal("mpegts", snapshot.Container);
+    }
+
+    [Fact]
+    public async Task ResolveContainerAsync_ReturnsCachedContainerFromSnapshot()
+    {
+        var apiClient = new FakeApiClient();
+        var profileResolver = new FakeProfileResolver();
+        using var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver);
+
+        var config = new PluginConfiguration { StreamingProfile = "jellyfin" };
+        var container = await sut.ResolveContainerAsync(config, CancellationToken.None);
+
+        Assert.Equal("mp4", container);
+    }
+
+    private sealed class NullProfileResolver : IProfileResolver
+    {
+        public Task<IReadOnlyList<ProfileReference>> GetProfilesAsync(HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<ProfileReference>>(Array.Empty<ProfileReference>());
+
+        public Task<ProfileDetails?> GetProfileDetailsByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileUuid, string profileName, CancellationToken cancellationToken)
+            => Task.FromResult<ProfileDetails?>(null);
+
+        public Task<ResolvedProfile?> ResolveProfileByNameAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
+            => Task.FromResult<ResolvedProfile?>(null);
+    }
+
+    private sealed class TranscodeNoContainerProfileResolver : IProfileResolver
+    {
+        public Task<IReadOnlyList<ProfileReference>> GetProfilesAsync(HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<ProfileReference>>(Array.Empty<ProfileReference>());
+
+        public Task<ProfileDetails?> GetProfileDetailsByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileUuid, string profileName, CancellationToken cancellationToken)
+            => Task.FromResult<ProfileDetails?>(null);
+
+        public Task<ResolvedProfile?> ResolveProfileByNameAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
+            => Task.FromResult<ResolvedProfile?>(new ResolvedProfile(
+                "key-1", profileName, "profile-transcode", string.Empty, string.Empty,
+                string.Empty, string.Empty, string.Empty, string.Empty,
+                Array.Empty<string>(), Array.Empty<string>(), null, null));
+    }
+
+    private sealed class ThrowingProfileResolver : IProfileResolver
+    {
+        public Task<IReadOnlyList<ProfileReference>> GetProfilesAsync(HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("forced failure");
+
+        public Task<ProfileDetails?> GetProfileDetailsByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileUuid, string profileName, CancellationToken cancellationToken)
+            => Task.FromResult<ProfileDetails?>(null);
+
+        public Task<ResolvedProfile?> ResolveProfileByNameAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("forced failure");
+    }
+
+    private sealed class FakeProfileResolver : IProfileResolver
+    {
+        public int ResolveCalls { get; private set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the next resolve call simulates a backend
+        /// failure (the resolver then falls back to a guessed snapshot).
+        /// </summary>
+        public bool FailNextResolve { get; set; }
+
+        public Task<IReadOnlyList<ProfileReference>> GetProfilesAsync(HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<ProfileReference>>(
+                new[]
+                {
+                    new ProfileReference("uuid1", "jellyfin"),
+                    new ProfileReference("uuid2", "jellyfin-alt"),
+                });
+        }
+
+        public Task<ProfileDetails?> GetProfileDetailsByUuidAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileUuid, string profileName, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<ProfileDetails?>(new ProfileDetails(
+                profileUuid,
+                profileName,
+                "profile-transcode",
+                "mp4",
+                "9",
+                string.Empty,
+                string.Empty,
+                Array.Empty<string>(),
+                Array.Empty<string>(),
+                null));
+        }
+
+        public Task<ResolvedProfile?> ResolveProfileByNameAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
+        {
+            ResolveCalls++;
+
+            if (FailNextResolve)
+            {
+                FailNextResolve = false;
+                throw new HttpRequestException("simulated TVHeadend outage");
+            }
+
+            return Task.FromResult<ResolvedProfile?>(new ResolvedProfile(
+                "uuid-" + profileName,
+                profileName,
+                "profile-transcode",
+                "mp4",
+                "9",
+                "jellyfin-h264",
+                "jellyfin-aac",
+                "h264",
+                "aac",
+                Array.Empty<string>(),
+                Array.Empty<string>(),
+                true,
+                true));
+        }
+    }
+
+    private sealed class FakeApiClient : IApiClient
+    {
+        private static readonly HttpClient SharedClient = new();
+
+        public PluginConfiguration? GetCurrentConfiguration() => new PluginConfiguration();
+
+        public HttpClient CreateApiHttpClient(PluginConfiguration config) => SharedClient;
+
+        public Task<string> GetStringAsync(HttpClient httpClient, string url, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("Not used by this resolver test.");
+
+        public Task<HttpResponseMessage> PostFormAsync(HttpClient httpClient, string url, IEnumerable<KeyValuePair<string, string>> formValues, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+    }
+}

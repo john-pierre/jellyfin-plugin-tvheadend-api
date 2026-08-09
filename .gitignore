@@ -1,66 +1,83 @@
-# Ignore build output directories
+# Git does not support trailing comments on pattern lines: everything after the
+# pattern (including the "#") becomes part of the pattern itself. Every rule below
+# must therefore stay on its own line, with comments on separate lines.
+
+# Build output
 bin/
 obj/
 publish/
+artifacts/
 
-# Ignore user-specific files
-*.user         # User-specific project settings
-*.rsuser       # Rider-specific settings
-*.suo          # Visual Studio solution options
-*.userosscache # User-specific OSS cache
-*.sln.docstates # Solution user-specific states
+# User-specific project files
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
 
-# Ignore log files
-*.log          # Log files from builds or debugging
+# Logs
+*.log
 
-# Ignore Visual Studio Code settings
+# Editor / IDE
 .vscode/
-
-# Ignore Visual Studio files
 .vs/
+.idea/
+*.sln.iml
 
-# Ignore package management artifacts
-*.nupkg        # NuGet package files
-*.snupkg       # Symbol NuGet package files
-packages/      # Package cache folder
-*.props        # MSBuild property files
+# Package management
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.fragment.lock.json
 
-# Ignore temporary and backup files
-[Tt]humbs.db   # Windows thumbnail cache
-*.tmp          # Temporary files
-*.bak          # Backup files
-*.old          # Old version files
-*.swp          # Swap files (e.g., from editors)
-*~             # Other temporary backup files
+# Temporary and backup files
+*.tmp
+*.bak
+*.old
+*.swp
+*~
 
-# Ignore executable files and debug symbols
-*.exe          # Executable files
-*.dll          # Dynamic Link Libraries
-*.pdb          # Program database (debugging info)
+# Compiled binaries and debug symbols
+*.exe
+*.dll
+*.pdb
 
-# Ignore OS-specific files
-.DS_Store      # macOS Finder metadata
-Icon?          # macOS icon metadata
-Thumbs.db      # Windows thumbnail cache
-ehthumbs.db    # Windows media thumbnail cache
-desktop.ini    # Windows desktop configuration
+# OS metadata
+.DS_Store
+Icon?
+Thumbs.db
+ehthumbs.db
+desktop.ini
 
-# Ignore JetBrains Rider and IDE settings
-.idea/         # Rider project settings
-*.sln.iml      # Rider-generated solution metadata
+# Test output
+TestResults/
+coverage.cobertura.xml
+*.trx
 
-# Ignore test results
-TestResults/   # Visual Studio test result output
+# Local SQLite databases produced by running the plugin or its tests
+*.db
+*.db-shm
+*.db-wal
 
-# Ignore NuGet files
-project.lock.json         # Legacy project lock file
-project.fragment.lock.json # Legacy lock fragments
-artifacts/                # Build artifacts
+# Local configuration and secrets
+appsettings.*.json
 
-# Ignore local configuration and secrets
-appsettings.*.json       # App settings files for local development
+# Misc caches
+*.cache
+*.ide
+/docker/.dev-volumes/
+/docker/dev-version.txt
 
-# Ignore misc files
-*.cache        # Cache files
-*.ide          # IDE-generated files
-/.docker/
+# Python bytecode from the docker helper scripts
+__pycache__/
+*.py[cod]
+
+# Node / Playwright
+node_modules/
+tests/playwright/test-results/
+tests/playwright/playwright-report/
+tests/playwright/blob-report/
+
+# AI Agent local artifacts
+agent-results/

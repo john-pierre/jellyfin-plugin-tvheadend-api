@@ -2,259 +2,2088 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>TvHeadend Api Configuration</title>
+    <title>TvHeadend Settings</title>
 </head>
 <body>
 <div id="TvHeadendApiConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <style>
+        /* ── Layout ─────────────────────────────────────────── */
+        /* Match the dashboard's full-width, centred layout (was a narrow 900px column). */
+        #TvHeadendApiConfigPage { max-width: 1200px; margin: 0 auto; }
+
+        /* ── Header ─────────────────────────────────────────── */
+        .tvh-header { margin-bottom: 1.5em; }
+        .tvh-header h1 { margin: 0 0 0.15em 0; font-size: 1.6em; }
+        .tvh-header-sub { opacity: 0.65; font-size: 0.92em; margin-bottom: 0.8em; }
+        .tvh-toolbar { display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap; }
+        .tvh-meta { font-size: 0.82em; opacity: 0.55; }
+
+        /* ── Cards & sections ───────────────────────────────── */
+        .tvh-section { margin-bottom: 1.5em; }
+        .tvh-section-title { font-size: 1.1em; font-weight: 600; margin: 0 0 0.6em 0; padding-bottom: 0.3em; border-bottom: 1px solid #333; }
+        .tvh-section-desc { opacity: 0.65; font-size: 0.9em; margin-bottom: 1em; }
+        .tvh-card { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 1em 1.2em; margin-bottom: 1em; }
+        .tvh-card h3 { margin: 0 0 0.6em 0; font-size: 1em; font-weight: 600; opacity: 0.9; }
+
+        /* ── Form elements ──────────────────────────────────── */
+        .tvh-field { margin-bottom: 1em; }
+        .tvh-field .fieldDescription { display: block; margin-top: 0.25em; opacity: 0.6; font-size: 0.88em; line-height: 1.5; }
+        .tvh-field details { margin-top: 0.3em; }
+        .tvh-field details summary { cursor: pointer; font-size: 0.85em; opacity: 0.55; }
+        .tvh-field details span { font-size: 0.85em; opacity: 0.8; }
+
+        .tvh-checkbox { display: block; margin-bottom: 1em; }
+        .tvh-checkbox label { display: flex; align-items: center; gap: 0.75em; margin-bottom: 0.25em; }
+        .tvh-checkbox .fieldDescription { display: block; margin: 0.25em 0 0 3.1em; opacity: 0.6; font-size: 0.88em; line-height: 1.5; max-width: none; }
+
+        .tvh-required { color: #e74c3c; font-weight: bold; }
+
+        /* ── Button rows ────────────────────────────────────── */
+        .tvh-btn-row { display: flex; flex-wrap: wrap; gap: 0.6em; align-items: center; }
+        .tvh-btn-primary { background: #00a4dc !important; color: #fff !important; font-weight: 600; }
+        .tvh-btn-success { background: #4caf50 !important; color: #fff !important; font-weight: 600; }
+        .tvh-btn-muted { background: #444 !important; color: #fff !important; }
+
+        /* ── Messages ───────────────────────────────────────── */
+        .tvh-msg { font-size: 0.9em; font-style: italic; min-height: 1.2em; }
+
+        /* ── Diagnostics panel ──────────────────────────────── */
+        .tvh-diag-panel { padding: 1em; border-radius: 8px; background: rgba(255,255,255,0.03); font-size: 0.9em; line-height: 1.6; }
+        .tvh-diag-panel em { opacity: 0.5; }
+
+        /* ── Guide card ─────────────────────────────────────── */
+        .tvh-guide { border: 1px solid rgba(0,164,220,0.3); background: rgba(0,164,220,0.04); }
+        .tvh-guide summary { cursor: pointer; font-size: 1em; font-weight: 600; }
+        .tvh-guide-steps { display: grid; grid-template-columns: 2em 1fr; gap: 0.3em 0.6em; margin: 0.8em 0; font-size: 0.92em; line-height: 1.6; }
+        .tvh-guide-steps .tvh-step-num { font-size: 1.2em; font-weight: 700; opacity: 0.7; text-align: center; }
+
+        /* ── Save area ──────────────────────────────────────── */
+        .tvh-save-area { margin-top: 1.5em; padding-top: 1em; border-top: 1px solid #333; }
+
+        /* ── Dynamic rule rows ─────────────────────────────── */
+        .tvh-rule-row { padding: 0.8em; margin-bottom: 0.6em; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; position: relative; }
+        .tvh-rule-row .tvh-rule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5em 0.8em; }
+        .tvh-rule-row .tvh-rule-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5em 0.8em; }
+        .tvh-rule-row .tvh-rule-full { grid-column: 1 / -1; }
+        .tvh-rule-row label { font-size: 0.82em; opacity: 0.7; display: block; margin-bottom: 0.15em; }
+        .tvh-rule-row input, .tvh-rule-row select { width: 100%; box-sizing: border-box; }
+        .tvh-rule-row .tvh-rule-remove { position: absolute; top: 0.4em; right: 0.4em; background: rgba(231,76,60,0.2); border: 1px solid rgba(231,76,60,0.4); border-radius: 4px; color: #e74c3c; cursor: pointer; font-size: 0.8em; padding: 0.15em 0.5em; }
+        .tvh-rule-row .tvh-rule-remove:hover { background: rgba(231,76,60,0.4); }
+        .tvh-rule-empty { opacity: 0.5; font-style: italic; font-size: 0.9em; padding: 0.5em 0; }
+        .tvh-rule-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6em; }
+        .tvh-rule-header h3 { margin: 0; }
+        .tvh-hierarchy-legend { font-size: 0.85em; opacity: 0.7; line-height: 1.6; margin-bottom: 1em; padding: 0.6em 0.8em; background: rgba(0,164,220,0.04); border: 1px solid rgba(0,164,220,0.2); border-radius: 6px; }
+        .tvh-hierarchy-legend ol { margin: 0.3em 0 0 1.4em; padding: 0; }
+        .tvh-test-result { padding: 0.8em; border-radius: 6px; background: rgba(255,255,255,0.03); font-size: 0.9em; line-height: 1.6; margin-top: 0.6em; }
+        .tvh-test-result .tvh-res-label { font-weight: 600; opacity: 0.8; min-width: 8em; display: inline-block; }
+        .tvh-validation-ok { color: #4caf50; }
+        .tvh-validation-warn { color: #f0ad4e; }
+
+        /* ── Profile assignment table ─────────────────── */
+        .tvh-badge { display: inline-block; padding: 0.15em 0.5em; border-radius: 4px; font-size: 0.78em; font-weight: 600; letter-spacing: 0.02em; }
+        .tvh-badge-channel { background: rgba(33,150,243,0.2); color: #64b5f6; }
+        .tvh-badge-group { background: rgba(0,150,136,0.2); color: #4db6ac; }
+        .tvh-badge-client { background: rgba(156,39,176,0.2); color: #ce93d8; }
+        .tvh-badge-device { background: rgba(255,152,0,0.2); color: #ffb74d; }
+        .tvh-badge-user { background: rgba(76,175,80,0.2); color: #81c784; }
+        .tvh-badge-default { background: rgba(96,125,139,0.2); color: #90a4ae; }
+
+        .tvh-profile-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.9em; }
+        .tvh-profile-table th { text-align: left; padding: 0.5em 0.6em; font-size: 0.82em; font-weight: 600; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .tvh-profile-table td { padding: 0.45em 0.6em; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+        .tvh-profile-table tr:last-child td { border-bottom: none; }
+        .tvh-profile-table tr.tvh-row-default td { background: rgba(96,125,139,0.06); }
+        .tvh-profile-table input[type="number"] { width: 4.5em; }
+        .tvh-profile-table input[type="text"],
+        .tvh-profile-table select { width: 100%; box-sizing: border-box; }
+        .tvh-profile-table .tvh-action-delete { background: rgba(231,76,60,0.15); border: 1px solid rgba(231,76,60,0.35); border-radius: 4px; color: #e74c3c; cursor: pointer; font-size: 0.85em; padding: 0.2em 0.55em; line-height: 1; }
+        .tvh-profile-table .tvh-action-delete:hover { background: rgba(231,76,60,0.35); }
+        .tvh-add-rule-wrap { position: relative; display: inline-block; }
+        .tvh-add-rule-menu { position: absolute; top: 100%; left: 0; z-index: 100; min-width: 10em; background: #2a2a2a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); padding: 0.3em 0; display: none; }
+        .tvh-add-rule-menu.tvh-open { display: block; }
+        .tvh-add-rule-menu button { display: block; width: 100%; text-align: left; background: none; border: none; color: inherit; padding: 0.45em 0.9em; cursor: pointer; font-size: 0.9em; }
+        .tvh-add-rule-menu button:hover { background: rgba(255,255,255,0.08); }
+        .tvh-collapsible summary { cursor: pointer; font-weight: 600; font-size: 0.95em; padding: 0.5em 0; opacity: 0.85; }
+        .tvh-collapsible summary:hover { opacity: 1; }
+        .tvh-collapsible-body { padding-top: 0.6em; }
+
+        /* ── Save indicator ──────────────────────────────── */
+        .tvh-save-toast { position: fixed; bottom: 1.5em; right: 1.5em; padding: 0.5em 1.2em; border-radius: 6px; font-size: 0.88em; font-weight: 600; z-index: 9999; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
+        .tvh-save-toast.tvh-show { opacity: 1; }
+        .tvh-save-toast-ok { background: #1b5e20; color: #a5d6a7; }
+        .tvh-save-toast-err { background: #b71c1c; color: #ef9a9a; }
+        .tvh-field-saved { animation: tvh-flash 0.6s ease; }
+        @keyframes tvh-flash { 0% { box-shadow: 0 0 0 0 rgba(76,175,80,0.4); } 50% { box-shadow: 0 0 0 3px rgba(76,175,80,0.3); } 100% { box-shadow: none; } }
+
+        /* ── TOC ─────────────────────────────────────────────── */
+        .tvh-toc { display: flex; flex-wrap: wrap; gap: 0.3em 0.8em; margin-bottom: 1.2em; padding: 0.6em 0.8em; background: rgba(255,255,255,0.03); border-radius: 6px; }
+        .tvh-toc a { font-size: 0.85em; color: #00a4dc; text-decoration: none; white-space: nowrap; cursor: pointer; }
+        .tvh-toc a:hover { text-decoration: underline; }
+
+        /* ── Tabs ────────────────────────────────────────────── */
+        .tvh-tabs { display: flex; flex-wrap: wrap; gap: 0; border-bottom: 2px solid #333; margin-bottom: 1.4em; }
+        .tvh-tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: inherit; opacity: 0.6; padding: 0.55em 1em; font-size: 0.92em; font-weight: 600; cursor: pointer; margin-bottom: -2px; transition: opacity 0.2s, border-color 0.2s; white-space: nowrap; }
+        .tvh-tab-btn:hover { opacity: 0.85; }
+        .tvh-tab-btn.tvh-tab-active { opacity: 1; border-bottom-color: #00a4dc; color: #00a4dc; }
+        .tvh-tab-panel { display: none; }
+        /* Visible tab lays its sections out in a responsive 2-column grid, matching the dashboard's card layout. */
+        .tvh-tab-panel.tvh-tab-visible { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.6em; align-items: start; }
+        .tvh-tab-panel.tvh-tab-visible > .tvh-section { margin-bottom: 1.5em; min-width: 0; }
+        /* Sections with wide tables / rule editors take the full row. */
+        .tvh-tab-panel.tvh-tab-visible > #sec-streaming,
+        .tvh-tab-panel.tvh-tab-visible > #sec-playback,
+        .tvh-tab-panel.tvh-tab-visible > #sec-recording { grid-column: 1 / -1; }
+        @media (max-width: 860px) {
+            .tvh-tab-panel.tvh-tab-visible { grid-template-columns: 1fr; }
+        }
+
+        /* ── Status banner ───────────────────────────────────── */
+        .tvh-status-banner { padding: 0.8em 1em; border-radius: 8px; margin-bottom: 1.2em; display: flex; flex-wrap: wrap; align-items: center; gap: 0.8em; font-size: 0.9em; }
+        .tvh-status-ok { background: rgba(76,175,80,0.08); border: 1px solid rgba(76,175,80,0.3); }
+        .tvh-status-warn { background: rgba(240,173,78,0.08); border: 1px solid rgba(240,173,78,0.3); }
+        .tvh-status-err { background: rgba(231,76,60,0.08); border: 1px solid rgba(231,76,60,0.3); }
+        .tvh-status-loading { background: rgba(255,255,255,0.03); }
+        .tvh-status-score { font-size: 1.3em; font-weight: 700; }
+        .tvh-status-checks { display: flex; flex-wrap: wrap; gap: 0.3em 0.8em; font-size: 0.85em; }
+        .tvh-status-actions { margin-left: auto; display: flex; gap: 0.5em; }
+        .tvh-diag-timestamp { font-size: 0.75em; opacity: 0.45; margin-left: auto; white-space: nowrap; }
+        .tvh-diag-details { margin-top: 0.6em; width: 100%; }
+        .tvh-diag-details summary { cursor: pointer; font-size: 0.88em; opacity: 0.7; font-weight: 600; }
+        .tvh-diag-details summary:hover { opacity: 1; }
+        .tvh-diag-details-body { margin-top: 0.5em; padding: 0.8em; border-radius: 6px; background: rgba(255,255,255,0.03); font-size: 0.9em; line-height: 1.6; }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 600px) {
+            .tvh-btn-row { flex-direction: column; align-items: stretch; }
+            .tvh-status-actions { margin-left: 0; width: 100%; }
+        }
+    </style>
+
     <div data-role="content">
         <div class="content-primary">
             <form id="TvHeadendApiConfigForm">
 
-                <!-- Connection Settings -->
-                <div class="section">
-                    <h2>Connection Settings</h2>
-                    <p class="sectionDescription">Configure how the plugin connects to your TVHeadend server.</p>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="Host">Server Hostname or IP Address</label>
-                        <input id="Host" name="Host" type="text" is="emby-input" placeholder="e.g., 192.168.0.28" />
-                        <div class="fieldDescription">Specifies the hostname or IP address of your TVHeadend server. Example: 192.168.0.28 or tvheadend.example.com.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="Port">Server Port</label>
-                        <input id="Port" name="Port" type="number" is="emby-input" min="1" placeholder="e.g., 9981" />
-                        <div class="fieldDescription">Defines the port on which the TVHeadend server is listening. Default: 9981.</div>
-                    </div>
-                    <div class="checkboxContainer">
-                        <label>
-                            <input id="UseSSL" name="UseSSL" type="checkbox" is="emby-checkbox" />
-                            <span>Use SSL</span>
-                        </label>
-                        <div class="fieldDescription">Enables or disables SSL (Secure Sockets Layer) for secure communication with the TVHeadend server. Check this option if your server uses HTTPS.</div>
-                    </div>
-                    <div class="checkboxContainer">
-                        <label>
-                            <input id="IgnoreCertificateErrors" name="IgnoreCertificateErrors" type="checkbox" is="emby-checkbox" />
-                            <span>Ignore Certificate Errors</span>
-                        </label>
-                        <div class="fieldDescription">When enabled, the plugin ignores SSL certificate validation errors, such as self-signed certificates. Use with caution.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="Webroot">Web Root</label>
-                        <input id="Webroot" name="Webroot" type="text" is="emby-input" placeholder="e.g., /" />
-                        <div class="fieldDescription">Specifies the base web path of your TVHeadend server if it uses a custom path. Default: / (root directory).</div>
+                <!-- ── Header ──────────────────────────────────── -->
+                <div class="tvh-header">
+                    <h1>TvHeadend Settings</h1>
+                    <p class="tvh-header-sub">
+                        Configure the connection, authentication, and playback behaviour for your TvHeadend backend.
+                        <span id="PluginVersionLabel" class="tvh-meta"></span>
+                    </p>
+                    <div class="tvh-toolbar">
+                        <button id="OpenDashboardBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-primary">
+                            <span>Open Dashboard</span>
+                        </button>
                     </div>
                 </div>
 
-                <!-- Authentication -->
-                <div class="section">
-                    <h2>Authentication</h2>
-                    <p class="sectionDescription">Provide credentials for authenticating with your TVHeadend server.</p>
+                <!-- ── Status Banner ───────────────────────────── -->
+                <div id="StatusBanner" class="tvh-status-banner tvh-status-loading">
+                    <span id="StatusIcon">⏳</span>
+                    <span id="StatusScore" class="tvh-status-score">—</span>
+                    <span id="StatusText" style="opacity:0.7;">Checking configuration…</span>
+                    <div id="StatusChecks" class="tvh-status-checks"></div>
+                    <span id="DiagLastRun" class="tvh-diag-timestamp"></span>
+                    <div class="tvh-status-actions">
+                        <button id="CreateProfileBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-primary" style="font-size:0.85em;" title="Requires TvHeadend admin credentials">
+                            <span>Create "jellyfin" Profile</span>
+                        </button>
+                        <button id="OptimalSetupBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-success" style="font-size:0.85em;">
+                            <span>⚡ Optimal Setup</span>
+                        </button>
+                        <button id="DiagnoseBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.85em;">
+                            <span>🔄 Diagnose</span>
+                        </button>
+                        <button id="ResetDefaultsBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-muted" style="font-size:0.85em;">
+                            <span>Reset to Defaults</span>
+                        </button>
+                        <button id="WarmCacheBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.85em;" title="Pre-create cache files for all channels">
+                            <span>Preload Cache</span>
+                        </button>
+                    </div>
+                    <div id="WarmCacheStatus" class="tvh-msg" style="font-size:0.82em;min-height:1.4em;margin-top:0.3em;opacity:0;transition:opacity 0.3s;"></div>
+                    <div id="ProfileActionMsg" class="tvh-msg"></div>
+                    <div id="ResetDefaultsMsg" class="tvh-msg"></div>
+                    <details id="DiagDetails" class="tvh-diag-details">
+                        <summary>Show Details</summary>
+                        <div class="tvh-diag-details-body">
+                            <div id="DiagDetailsContent"><em>Running diagnostics…</em></div>
+                        </div>
+                    </details>
+                </div>
 
-                    <div class="checkboxContainer">
-                        <label>
-                            <input id="AllowAnonymousAccess" name="AllowAnonymousAccess" type="checkbox" is="emby-checkbox" />
-                            <span>Allow Anonymous Access</span>
-                        </label>
-                        <div class="fieldDescription">Enables access to the TVHeadend server without authentication. Use only if your server allows unauthenticated connections.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="Username">Username</label>
-                        <input id="Username" name="Username" type="text" is="emby-input" placeholder="e.g., admin" />
-                        <div class="fieldDescription">The username for authenticating with the TVHeadend server. Required if Allow Anonymous Access is disabled.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="Password">Password</label>
-                        <input id="Password" name="Password" type="password" is="emby-input" />
-                        <div class="fieldDescription">The password for authenticating with the TVHeadend server. Required if Allow Anonymous Access is disabled.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="AuthToken">Auth Token</label>
-                        <input id="AuthToken" name="AuthToken" type="password" is="emby-input" placeholder="e.g., Token" />
-                        <div class="fieldDescription">A specific authentication token used to access the TVHeadend API. Overrides username/password if provided.</div>
+                <!-- ── Quick Setup Guide (collapsible, separate from banner) ── -->
+                <div class="tvh-card tvh-guide" style="margin-bottom:1.2em;">
+                    <details>
+                        <summary>Fast Channel Switching Guide (&lt; 3 seconds)</summary>
+                        <div style="margin-top:0.6em;">
+                            <p style="margin-bottom:0.5em;">
+                                <strong>Goal:</strong> Switch channels in under 3 seconds — even on the first tune.
+                            </p>
+                            <div class="tvh-guide-steps">
+                                <span class="tvh-step-num">1</span>
+                                <div>
+                                    <strong>Keep the default pass-through profile</strong><br>
+                                    Leave the Default profile as <code>pass</code>. TVHeadend forwards each channel's native stream unchanged — no transcoding, no GPU or encoder needed. This is the fastest and most compatible path and works on any TVHeadend.
+                                </div>
+                                <span class="tvh-step-num">2</span>
+                                <div>
+                                    <strong>Enable fast playback settings</strong><br>
+                                    In Playback Behaviour, enable: Direct Play, Direct Stream, Stream Probing, and Pre-create Probe Cache Files.
+                                </div>
+                                <span class="tvh-step-num">3</span>
+                                <div>
+                                    <strong>Preload the cache (optional)</strong><br>
+                                    Click "Preload Cache" to probe all channels up front, so even the very first tune of each channel is instant.
+                                </div>
+                            </div>
+                            <details>
+                                <summary>How it works</summary>
+                                <p style="margin:0.4em 0 0 0; font-size:0.9em; opacity:0.8;">
+                                    The plugin keeps playback on Jellyfin's Direct Play path: TVHeadend forwards each channel's native stream (the <code>pass</code> profile — no transcoding), and the plugin pre-creates Jellyfin's mediainfo cache by probing each channel once. On a channel switch, Jellyfin finds the cache, skips its FFmpeg analysis wait, and starts Direct Play immediately.
+                                </p>
+                                <p style="margin:0.4em 0 0 0; font-size:0.9em; opacity:0.8;">
+                                    Only use a transcode profile (e.g. "jellyfin") if a specific client cannot play the native codec <em>and</em> your TVHeadend has a working video encoder. Check the <strong>Transcode Capability</strong> result above first — a VAAPI-only server with no configured GPU produces audio-only.
+                                </p>
+                            </details>
+                        </div>
+                    </details>
+                </div>
+
+                <!-- ── Tab Navigation ────────────────────────── -->
+                <div class="tvh-tabs" id="TvhTabs">
+                    <button type="button" class="tvh-tab-btn tvh-tab-active" data-tab="tab-connection">Connection</button>
+                    <button type="button" class="tvh-tab-btn" data-tab="tab-relay">Relay</button>
+                    <button type="button" class="tvh-tab-btn" data-tab="tab-streaming">Streaming</button>
+                    <button type="button" class="tvh-tab-btn" data-tab="tab-playback">Playback</button>
+                    <button type="button" class="tvh-tab-btn" data-tab="tab-recording">Recording</button>
+                    <button type="button" class="tvh-tab-btn" data-tab="tab-advanced">Advanced</button>
+                </div>
+
+                <!-- ══ Tab: Connection ═══════════════════════════ -->
+                <div class="tvh-tab-panel tvh-tab-visible" id="tab-connection">
+
+                <!-- ── A. Connection ───────────────────────────── -->
+                <div class="tvh-section" id="sec-connection">
+                    <h2 class="tvh-section-title">Connection</h2>
+                    <p class="tvh-section-desc">How the plugin connects to your TvHeadend server.</p>
+                    <div class="tvh-card">
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="Host">Hostname / IP</label>
+                            <input id="Host" name="Host" type="text" is="emby-input" placeholder="e.g. 192.168.0.28" />
+                            <div class="fieldDescription">Hostname or IP address of your TvHeadend server.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="Port">HTTP API Port</label>
+                            <input id="Port" name="Port" type="number" is="emby-input" min="1" placeholder="9981" />
+                            <div class="fieldDescription">Port for HTTP API requests. Default: 9981.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="UseSSL" name="UseSSL" type="checkbox" is="emby-checkbox" />
+                                <span>Use HTTPS</span>
+                            </label>
+                            <div class="fieldDescription">Enable if TvHeadend uses HTTPS (SSL/TLS).</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="IgnoreCertificateErrors" name="IgnoreCertificateErrors" type="checkbox" is="emby-checkbox" />
+                                <span>Ignore Certificate Errors</span>
+                            </label>
+                            <div class="fieldDescription">Accept self-signed or invalid certificates.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="Webroot">Web Root</label>
+                            <input id="Webroot" name="Webroot" type="text" is="emby-input" placeholder="/" />
+                            <div class="fieldDescription">Only needed behind a reverse proxy sub-path (e.g. <code>/tvh/</code>). Default: <code>/</code>.</div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Streaming Settings -->
-                <div class="section">
-                    <h2>Streaming Settings</h2>
-                    <p class="sectionDescription">Configure settings related to live streaming and playback quality.</p>
+                <!-- ── B. Authentication ───────────────────────── -->
+                <div class="tvh-section" id="sec-auth">
+                    <h2 class="tvh-section-title">Authentication</h2>
+                    <p class="tvh-section-desc">Credentials used to authenticate with TvHeadend.</p>
+                    <div class="tvh-card">
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="AllowAnonymousAccess" name="AllowAnonymousAccess" type="checkbox" is="emby-checkbox" />
+                                <span>Allow Anonymous Access</span>
+                            </label>
+                            <div class="fieldDescription">Enable only if TvHeadend permits unauthenticated connections. Username and password are ignored when checked.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="Username">Username <span class="tvh-required">*</span></label>
+                            <input id="Username" name="Username" type="text" is="emby-input" placeholder="e.g. admin" required />
+                            <div class="fieldDescription">TvHeadend username for HTTP Basic Auth. Required when anonymous access is disabled.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="Password">Password <span class="tvh-required">*</span></label>
+                            <input id="Password" name="Password" type="password" is="emby-input" required />
+                            <div class="fieldDescription">TvHeadend password for HTTP Basic Auth. Required when anonymous access is disabled.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="AuthToken">Auth Token</label>
+                            <input id="AuthToken" name="AuthToken" type="password" is="emby-input" />
+                            <div class="fieldDescription">
+                                Persistent access token appended as <code>?auth=…</code> to TVHeadend stream and image URLs.
+                                Required for the "Direct to TVHeadend" stream delivery mode (without it, direct mode falls back to relay);
+                                with the default Relay mode the plugin authenticates server-side with the credentials above.
+                                Allowed format: letters and digits only (<code>A-Z</code>, <code>a-z</code>, <code>0-9</code>).
+                            </div>
+                            <div class="tvh-btn-row" style="margin-top:0.6em;">
+                                <button id="GenerateAuthTokenBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-success">
+                                    <span>Generate Auth Token</span>
+                                </button>
+                                <span id="AuthTokenActionMsg" class="tvh-msg"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div><!-- /tab-connection -->
 
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="StreamingProfile">Streaming Profile</label>
-                        <input id="StreamingProfile" name="StreamingProfile" type="text" is="emby-input" placeholder="e.g., high-quality" />
-                        <div class="fieldDescription">Defines the streaming profile to use for playback. Example: high-quality, pass-through.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="BufferMs">Buffer Size (ms)</label>
-                        <input id="BufferMs" name="BufferMs" type="number" is="emby-input" placeholder="e.g., 500" />
-                        <div class="fieldDescription">Specifies the buffer size in milliseconds for streaming data. Example: 500 ms.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="FallbackMaxStreamingBitrate">Fallback Max Bitrate (kbps)</label>
-                        <input id="FallbackMaxStreamingBitrate" name="FallbackMaxStreamingBitrate" type="number" is="emby-input" placeholder="e.g., 30000" />
-                        <div class="fieldDescription">Maximum bitrate to fall back on if no specific bitrate is configured. Example: 30000 kbps (30 Mbps).</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="AnalyzeDurationMs">Analyze Duration (ms)</label>
-                        <input id="AnalyzeDurationMs" name="AnalyzeDurationMs" type="number" is="emby-input" placeholder="e.g., 500" />
-                        <div class="fieldDescription">The duration in milliseconds to analyze the stream before playback starts. Example: 500 ms.</div>
+                <!-- ══ Tab: Relay ════════════════════════════════ -->
+                <div class="tvh-tab-panel" id="tab-relay">
+
+                <!-- ── C. Streaming ────────────────────────────── -->
+                <div class="tvh-section" id="sec-relay">
+                    <h2 class="tvh-section-title">Relay Service</h2>
+                    <p class="tvh-section-desc">The relay proxies images and streams through Jellyfin so TVHeadend credentials and internal URLs stay hidden from clients.</p>
+                    <div class="tvh-card">
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="RelayEnabled" name="RelayEnabled" type="checkbox" is="emby-checkbox" />
+                                <span>Enable Relay Service</span>
+                            </label>
+                            <div class="fieldDescription">When enabled, all image and stream URLs point to Jellyfin's relay endpoints instead of TVHeadend directly. Recommended for security.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="RelayHostOverride">Jellyfin Host Override</label>
+                            <input id="RelayHostOverride" name="RelayHostOverride" type="text" is="emby-input" placeholder="e.g. http://192.168.1.10:8096" />
+                            <div class="fieldDescription">
+                                Usually leave empty: relay URLs automatically use the host each client reached Jellyfin through (honoring Jellyfin's Published Server URLs and reverse-proxy headers). Set only if auto-detection picks an unreachable address — e.g. Jellyfin in a Docker bridge network without a Published Server URL.
+                            </div>
+                            <div id="RelayAutoDetectedHost" style="margin-top:0.4em; font-size:0.85em; opacity:0.6;"></div>
+                        </div>
+                        <div id="RelayStatusMsg" class="tvh-msg" style="margin-top:0.5em;"></div>
                     </div>
                 </div>
 
-                <!-- Features -->
-                <div class="section">
-                    <h2>Features</h2>
-                    <p class="sectionDescription">Enable or disable specific playback features for streaming.</p>
+                <!-- ── Relay Token Security ──────────────────── -->
+                <div class="tvh-section" id="sec-relay-token">
+                    <h2 class="tvh-section-title">Relay Token Security</h2>
+                    <p class="tvh-section-desc">Protects public relay endpoints with plugin-issued, scoped, short-lived tokens. Required because Jellyfin/FFmpeg does not reliably send auth headers to plugin endpoints.</p>
+                    <div class="tvh-card">
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="EnableRelayTokenSecurity" name="EnableRelayTokenSecurity" type="checkbox" is="emby-checkbox" />
+                                <span>Enable Relay Token Security</span>
+                            </label>
+                            <div class="fieldDescription">When enabled, public relay endpoints require a plugin-issued token. Disable only for debugging. <strong>Strongly recommended: enabled.</strong></div>
+                        </div>
+                        <div id="RelayTokenSecurityWarning" style="display:none; padding:0.6em; margin-bottom:1em; background:rgba(231,76,60,0.15); border-radius:6px; font-size:0.9em; color:#e74c3c;">
+                            ⚠️ Relay token security is disabled — public relay endpoints are unprotected.
+                        </div>
+                        <h3>Stream Tokens</h3>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="StreamTokenTtlSeconds">Stream Token TTL (seconds)</label>
+                            <input id="StreamTokenTtlSeconds" name="StreamTokenTtlSeconds" type="number" min="10" is="emby-input" placeholder="120" />
+                            <div class="fieldDescription">Controls how long a token may be used to start a new relay request. Active streams are <strong>not</strong> interrupted after expiry. Minimum: 10 seconds.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="StreamTokenMaxUses">Stream Token Max Uses</label>
+                            <input id="StreamTokenMaxUses" name="StreamTokenMaxUses" type="number" min="0" is="emby-input" placeholder="25" />
+                            <div class="fieldDescription">Maximum number of requests a single stream token may authorize. Jellyfin consumes several uses per playback start (stream open, FFmpeg probe, transcoder starts, player retries), so keep headroom — values below ~10 have broken browser playback. Set to 0 for unlimited. Default: 25.</div>
+                        </div>
+                        <div id="StreamTokenWarnings" style="display:none; padding:0.6em; margin-bottom:1em; background:rgba(241,196,15,0.15); border-radius:6px; font-size:0.85em; color:#f1c40f;"></div>
+                        <h3>Image Tokens</h3>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="ImageTokenTtlMinutes">Image Token TTL (minutes)</label>
+                            <input id="ImageTokenTtlMinutes" name="ImageTokenTtlMinutes" type="number" min="0" is="emby-input" placeholder="0" />
+                            <div class="fieldDescription"><strong>0 = never expire (recommended).</strong> Jellyfin caches image URLs (with the embedded token) for a long time; a non-zero TTL can make channel logos and EPG images return 401/410 once the token expires. Only set a positive value if you have a specific security requirement.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="ImageTokenMaxUses">Image Token Max Uses</label>
+                            <input id="ImageTokenMaxUses" name="ImageTokenMaxUses" type="number" min="0" is="emby-input" placeholder="0" />
+                            <div class="fieldDescription">Maximum uses for image relay tokens. Set to 0 for unlimited (recommended for images).</div>
+                        </div>
+                        <h3>Advanced</h3>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="EnableTokenReuse" name="EnableTokenReuse" type="checkbox" is="emby-checkbox" />
+                                <span>Enable Token Reuse</span>
+                            </label>
+                            <div class="fieldDescription">Allow the same token to be used multiple times within its TTL and max-uses limits.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="StrictScopeValidation" name="StrictScopeValidation" type="checkbox" is="emby-checkbox" />
+                                <span>Strict Scope Validation</span>
+                            </label>
+                            <div class="fieldDescription">A stream token for channel A cannot be used for channel B. An image token cannot access a stream endpoint.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="CleanupExpiredTokensIntervalMinutes">Cleanup Interval (minutes)</label>
+                            <input id="CleanupExpiredTokensIntervalMinutes" name="CleanupExpiredTokensIntervalMinutes" type="number" min="1" is="emby-input" placeholder="60" />
+                            <div class="fieldDescription">How often expired and revoked tokens are cleaned up from the database. Minimum: 1 minute.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="TokenValidationClockSkewSeconds">Clock Skew Tolerance (seconds)</label>
+                            <input id="TokenValidationClockSkewSeconds" name="TokenValidationClockSkewSeconds" type="number" min="0" is="emby-input" placeholder="5" />
+                            <div class="fieldDescription">Tolerance for minor clock differences between token issuance and validation.</div>
+                        </div>
+                    </div>
+                </div>
+                </div><!-- /tab-relay -->
 
-                    <div class="checkboxContainer">
-                        <label>
-                            <input id="SupportsTranscoding" name="SupportsTranscoding" type="checkbox" is="emby-checkbox" />
-                            <span>Supports Transcoding</span>
-                        </label>
-                        <div class="fieldDescription">Enables transcoding support to adapt streams to the capabilities of the playback device.</div>
+                <!-- ══ Tab: Streaming ════════════════════════════ -->
+                <div class="tvh-tab-panel" id="tab-streaming">
+
+                <!-- ── D. Streaming ────────────────────────────── -->
+                <div class="tvh-section" id="sec-streaming">
+                    <h2 class="tvh-section-title">Streaming</h2>
+                    <p class="tvh-section-desc">Controls how live TV streams are requested from TvHeadend and which profile is used per channel, client, or user.</p>
+                    <div class="tvh-card">
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="StreamDeliveryMode">Stream Delivery Mode</label>
+                            <select id="StreamDeliveryMode" name="StreamDeliveryMode" is="emby-select">
+                                <option value="Relay">Relay through Jellyfin (recommended)</option>
+                                <option value="DirectToTvheadend">Direct to TVHeadend (fastest)</option>
+                            </select>
+                            <div class="fieldDescription"><strong>Relay</strong> proxies the stream through Jellyfin so TVHeadend credentials/URLs are never exposed to clients; the Jellyfin host is auto-derived from the client request (the host override is only needed for unusual reverse-proxy setups). <strong>Direct to TVHeadend</strong> points clients straight at TVHeadend with an auth token — fastest and needs no reachable Jellyfin host, but exposes the TVHeadend host and token to clients. Direct mode requires a configured Auth Token (or anonymous access); otherwise it falls back to relay.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="FallbackMaxStreamingBitrate">Fallback Max Bitrate (bps)</label>
+                            <input id="FallbackMaxStreamingBitrate" name="FallbackMaxStreamingBitrate" type="number" is="emby-input" placeholder="3000000" />
+                            <div class="fieldDescription">Fallback maximum bitrate in bits per second when no stream-level bitrate is known. Default: 3,000,000 (~3 Mbps).</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="IsInfiniteStream" name="IsInfiniteStream" type="checkbox" is="emby-checkbox" />
+                                <span>Infinite Stream</span>
+                            </label>
+                            <div class="fieldDescription">Treat the stream as never-ending. Should almost always be enabled for live TV.</div>
+                        </div>
                     </div>
-                    <div class="checkboxContainer">
-                        <label>
-                            <input id="SupportsProbing" name="SupportsProbing" type="checkbox" is="emby-checkbox" />
-                            <span>Supports Probing</span>
-                        </label>
-                        <div class="fieldDescription">Allows stream probing to detect and analyze properties before playback starts.</div>
+
+                    <!-- Profile Assignment Table -->
+                    <div class="tvh-card">
+                        <div class="tvh-rule-header">
+                            <h3>Profile Assignments</h3>
+                            <div class="tvh-add-rule-wrap">
+                                <button id="AddRuleBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.82em;">+ Add Rule</button>
+                                <div id="AddRuleMenu" class="tvh-add-rule-menu">
+                                    <button type="button" data-rule-type="channel"><span class="tvh-badge tvh-badge-channel">Channel</span></button>
+                                    <button type="button" data-rule-type="group"><span class="tvh-badge tvh-badge-group">Channel Group</span></button>
+                                    <button type="button" data-rule-type="client"><span class="tvh-badge tvh-badge-client">Client</span></button>
+                                    <button type="button" data-rule-type="device"><span class="tvh-badge tvh-badge-device">Device</span></button>
+                                    <button type="button" data-rule-type="user"><span class="tvh-badge tvh-badge-user">User</span></button>
+                                </div>
+                            </div>
+                        </div>
+                        <p style="font-size:0.85em; opacity:0.6; margin-top:0; margin-bottom:0.8em;">
+                            First match wins. Rules are evaluated top-to-bottom by type priority (Channel &gt; Group &gt; Client/Device &gt; User &gt; Default), then by priority number within the same type.
+                        </p>
+                        <!-- Suggestions for rule match values, filled from TvHeadendApi/KnownClients. -->
+                        <datalist id="KnownClientNamesList"></datalist>
+                        <datalist id="KnownDeviceNamesList"></datalist>
+                        <datalist id="KnownUserIdsList"></datalist>
+                        <div style="overflow-x:auto;">
+                            <table class="tvh-profile-table" id="ProfileAssignmentsTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width:5em;">Priority</th>
+                                        <th style="width:8em;">Type</th>
+                                        <th>Match</th>
+                                        <th style="width:12em;">Profile</th>
+                                        <th>Description</th>
+                                        <th style="width:3.5em;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ProfileAssignmentsBody">
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                    <div class="checkboxContainer">
-                        <label>
-                            <input id="SupportsDirectPlay" name="SupportsDirectPlay" type="checkbox" is="emby-checkbox" />
-                            <span>Supports Direct Play</span>
-                        </label>
-                        <div class="fieldDescription">Enables playback without transcoding when the stream is compatible with the playback device.</div>
+
+                    <!-- Advanced Profile Settings (collapsible) -->
+                    <div class="tvh-card">
+                        <details class="tvh-collapsible">
+                            <summary>Advanced Profile Settings</summary>
+                            <div class="tvh-collapsible-body">
+                                <p style="font-size:0.88em; opacity:0.65; margin-top:0;">
+                                    Edge-case safety nets only. The effective profile normally comes from the Profile Assignments
+                                    table above (rules first, then the Default row) — most setups never need to change anything here.
+                                </p>
+                                <div class="tvh-field inputContainer">
+                                    <label class="inputLabel" for="SPS_FallbackTvHeadendProfile">Fallback Profile</label>
+                                    <input id="SPS_FallbackTvHeadendProfile" type="text" is="emby-input" placeholder="pass" />
+                                    <div class="fieldDescription">
+                                        Safety net for when profile resolution comes up <em>empty</em>: used when a matched rule
+                                        (or the global default) carries no explicit profile name and the Default row above is empty
+                                        as well. It does <strong>not</strong> correct misspelled or unknown profile names
+                                        (use "Validate Profiles" below to find those). Empty = <code>pass</code>.
+                                    </div>
+                                </div>
+                                <div class="tvh-field inputContainer">
+                                    <label class="inputLabel" for="SPS_PassThroughProfile">Pass Through Profile</label>
+                                    <input id="SPS_PassThroughProfile" type="text" is="emby-input" placeholder="pass" />
+                                    <div class="fieldDescription">
+                                        Only consulted for a rule or default whose playback mode is "Pass Through" <em>and</em> that
+                                        has no explicit profile name. Rules created on this page always store an explicit profile,
+                                        so this value is normally never used. Empty = <code>pass</code>.
+                                    </div>
+                                </div>
+                                <div class="tvh-field inputContainer">
+                                    <label class="inputLabel" for="SPS_JellyfinTranscodeProfile">Jellyfin Transcode Profile</label>
+                                    <input id="SPS_JellyfinTranscodeProfile" type="text" is="emby-input" placeholder="matroska" />
+                                    <div class="fieldDescription">
+                                        Only consulted for a rule or default whose playback mode is "Jellyfin Transcode" <em>and</em> that
+                                        has no explicit profile name — same edge case as above, for the mode where Jellyfin itself
+                                        transcodes and wants a probing-friendly container. Empty = <code>matroska</code>.
+                                    </div>
+                                </div>
+                                <div class="tvh-checkbox">
+                                    <label>
+                                        <input id="SPS_EnableResolutionDiagnostics" type="checkbox" is="emby-checkbox" />
+                                        <span>Enable Resolution Diagnostics</span>
+                                    </label>
+                                    <div class="fieldDescription">Log detailed resolution trace for every playback request. Useful for debugging rules.</div>
+                                </div>
+                            </div>
+                        </details>
                     </div>
-                    <div class="checkboxContainer">
-                        <label>
-                            <input id="SupportsDirectStream" name="SupportsDirectStream" type="checkbox" is="emby-checkbox" />
-                            <span>Supports Direct Stream</span>
-                        </label>
-                        <div class="fieldDescription">Allows streams to be played with minimal modifications, such as re-muxing instead of re-encoding.</div>
+
+                    <!-- Test Resolution -->
+                    <div class="tvh-card">
+                        <h3>Test Profile Resolution</h3>
+                        <p style="font-size:0.88em; opacity:0.6; margin-top:0;">Test which profile would be selected for a given combination. Saves current settings first.</p>
+                        <div class="tvh-rule-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:0.5em 0.8em; margin-bottom:0.6em;">
+                            <div><label style="font-size:0.82em; opacity:0.7;">Channel</label><select id="TestChannelId" is="emby-select"><option value="">-- Select Channel --</option></select></div>
+                            <div><label style="font-size:0.82em; opacity:0.7;">Channel Group</label><select id="TestChannelGroup" is="emby-select"><option value="">-- Select Group --</option></select></div>
+                            <div><label style="font-size:0.82em; opacity:0.7;">Client Name</label><input id="TestClientName" type="text" is="emby-input" list="KnownClientNamesList" placeholder="e.g. Jellyfin Web" /></div>
+                            <div><label style="font-size:0.82em; opacity:0.7;">Device Name</label><input id="TestDeviceName" type="text" is="emby-input" list="KnownDeviceNamesList" placeholder="e.g. iPhone 15" /></div>
+                            <div><label style="font-size:0.82em; opacity:0.7;">User ID</label><input id="TestUserId" type="text" is="emby-input" list="KnownUserIdsList" placeholder="e.g. user-guid" /></div>
+                        </div>
+                        <div class="tvh-btn-row" style="margin-bottom:0.6em;">
+                            <button id="TestResolutionBtn" is="emby-button" type="button" class="raised emby-button tvh-btn-primary" style="font-size:0.85em;">Test Resolution</button>
+                            <button id="ValidateProfilesBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:0.85em;">Validate Profiles</button>
+                        </div>
+                        <div id="TestResolutionResult" class="tvh-test-result" style="display:none;"></div>
+                        <div id="ValidateProfilesResult" style="margin-top:0.5em;"></div>
                     </div>
-                    <div class="checkboxContainer">
-                        <label>
-                            <input id="IsInfiniteStream" name="IsInfiniteStream" type="checkbox" is="emby-checkbox" />
-                            <span>Is Infinite Stream</span>
-                        </label>
-                        <div class="fieldDescription">Specifies whether the stream is continuous (e.g., for live TV channels).</div>
+                </div>
+                </div><!-- /tab-streaming -->
+
+                <!-- ══ Tab: Playback ═════════════════════════════ -->
+                <div class="tvh-tab-panel" id="tab-playback">
+
+                <!-- ── D. Playback Behaviour ───────────────────── -->
+                <div class="tvh-section" id="sec-playback">
+                    <h2 class="tvh-section-title">Playback Behaviour</h2>
+                    <p class="tvh-section-desc">Controls how Jellyfin handles the incoming stream. Settings that affect channel switching speed are highlighted.</p>
+                    <div class="tvh-card">
+                        <h3>Play Method</h3>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="SupportsDirectPlay" name="SupportsDirectPlay" type="checkbox" is="emby-checkbox" />
+                                <span>Direct Play</span>
+                            </label>
+                            <div class="fieldDescription">Lets the client play the stream as-is. Fastest option — keep enabled.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="SupportsDirectStream" name="SupportsDirectStream" type="checkbox" is="emby-checkbox" />
+                                <span>Direct Stream (Remux)</span>
+                            </label>
+                            <div class="fieldDescription">Allows Jellyfin to change the container without re-encoding. Fast fallback when Direct Play is not possible.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="SupportsTranscoding" name="SupportsTranscoding" type="checkbox" is="emby-checkbox" />
+                                <span>Transcoding</span>
+                            </label>
+                            <div class="fieldDescription">Allows full transcoding as a last resort. Adds ~3 s extra delay.</div>
+                        </div>
                     </div>
-                    <div class="checkboxContainer">
-                        <label>
-                            <input id="IgnoreDts" name="IgnoreDts" type="checkbox" is="emby-checkbox" />
-                            <span>Ignore DTS</span>
-                        </label>
-                        <div class="fieldDescription">Ignores Decode Time Stamps (DTS) to resolve compatibility issues with certain streams.</div>
+
+                    <div class="tvh-card">
+                        <h3>Probing &amp; Cache</h3>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="SupportsProbing" name="SupportsProbing" type="checkbox" is="emby-checkbox" />
+                                <span>Stream Probing</span>
+                            </label>
+                            <div class="fieldDescription">
+                                Jellyfin analyses stream metadata before playback. Keep enabled when using a transcode profile with pre-created cache files — the probe resolves instantly.
+                                <details>
+                                    <summary>Technical details…</summary>
+                                    <span>Without cached metadata, Jellyfin adds a 3 s probe delay for live streams. With matching cache files, the probe resolves instantly.</span>
+                                </details>
+                            </div>
+                        </div>
+                        <div class="tvh-checkbox" style="display:none;">
+                            <label>
+                                <input id="EnableMediaInfoCacheWrite" name="EnableMediaInfoCacheWrite" type="checkbox" is="emby-checkbox" />
+                                <span>Pre-create Probe Cache Files</span>
+                            </label>
+                            <div class="fieldDescription">
+                                Deprecated — cache is now always active when Stream Probing is enabled.
+                            </div>
+                        </div>
+                        <div class="tvh-checkbox" style="display:none;">
+                            <label>
+                                <input id="EnableMediaInfoCacheValidation" name="EnableMediaInfoCacheValidation" type="checkbox" is="emby-checkbox" />
+                                <span>Validate Cache Against Profile</span>
+                            </label>
+                            <div class="fieldDescription">
+                                Deprecated — cache validation is now always active when Stream Probing is enabled.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tvh-card">
+                        <h3>Stream Tuning</h3>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="IgnoreDts" name="IgnoreDts" type="checkbox" is="emby-checkbox" />
+                                <span>Ignore DTS Timestamps</span>
+                            </label>
+                            <div class="fieldDescription">Ignore Decode Time Stamps. Can fix playback glitches with some MPEG-TS streams. Default: enabled.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="EnableJellyfinMetadataEnrichment" name="EnableJellyfinMetadataEnrichment" type="checkbox" is="emby-checkbox" />
+                                <span>EPG Metadata Enrichment</span>
+                            </label>
+                            <div class="fieldDescription">
+                                Allows Jellyfin metadata plugins to enrich EPG entries using provider hints parsed from TvHeadend URIs.
+                            </div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="BufferMs">Buffer (ms)</label>
+                            <input id="BufferMs" name="BufferMs" type="number" is="emby-input" min="0" placeholder="0" />
+                            <div class="fieldDescription">Stream buffer in milliseconds. <code>0</code> = Jellyfin default. Lower values reduce latency.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="AnalyzeDurationMs">FFmpeg Analyze Duration (ms)</label>
+                            <input id="AnalyzeDurationMs" name="AnalyzeDurationMs" type="number" is="emby-input" min="0" placeholder="200" />
+                            <div class="fieldDescription">
+                                Time FFmpeg spends analysing the stream before playback. Default: 200 ms. Set <code>0</code> for automatic fallback.
+                                <details>
+                                    <summary>Technical details…</summary>
+                                    <span>When Stream Probing is on, Jellyfin overrides this to 3000 ms for live streams. This value only applies when probing is off.</span>
+                                </details>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div><!-- /tab-playback -->
+
+                <!-- ══ Tab: Recording ════════════════════════════ -->
+                <div class="tvh-tab-panel" id="tab-recording">
+
+                <!-- ── E. Recording (DVR) ──────────────────────── -->
+                <div class="tvh-section" id="sec-recording">
+                    <h2 class="tvh-section-title">Recording (DVR)</h2>
+                    <p class="tvh-section-desc">Settings for TvHeadend-managed recordings.</p>
+                    <div class="tvh-card">
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="RecordingProfile">Recording Profile</label>
+                            <select id="RecordingProfile" name="RecordingProfile" is="emby-select">
+                                <option value="">TVHeadend default (recommended)</option>
+                            </select>
+                            <div class="fieldDescription">TvHeadend DVR configuration used for recordings. "TVHeadend default (recommended)" uses TVHeadend's built-in default DVR configuration — recording works out of the box, nothing to configure. Only pick a specific entry if you created additional DVR configurations in TVHeadend (the entry must exist there).</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="Priority">Priority</label>
+                            <input id="Priority" name="Priority" type="number" is="emby-input" min="0" max="6" placeholder="5" />
+                            <div class="fieldDescription">TVHeadend DVR priority passed to new timers: 0 = important, 1 = high, 2 = normal, 3 = low, 4 = unimportant, 5 = not set (TVHeadend decides). Lower = higher priority. Default: 5.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="PrePaddingSeconds">Pre-Padding (minutes)</label>
+                            <input id="PrePaddingSeconds" name="PrePaddingSeconds" type="number" is="emby-input" min="0" placeholder="0" />
+                            <div class="fieldDescription">Whole minutes to start recording before the scheduled start (TVHeadend accepts minute granularity). Default: 0 minutes (no pre-padding).</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="PostPaddingSeconds">Post-Padding (minutes)</label>
+                            <input id="PostPaddingSeconds" name="PostPaddingSeconds" type="number" is="emby-input" min="0" placeholder="0" />
+                            <div class="fieldDescription">Whole minutes to continue recording after the scheduled end (TVHeadend accepts minute granularity). Default: 0 minutes (no post-padding).</div>
+                        </div>
+                    </div>
+
+                    <div class="tvh-card">
+                        <h3>Series Timer Defaults</h3>
+                        <p style="font-size:0.88em; opacity:0.6; margin-top:0;">Default settings when creating a new series timer (autorec). Can be overridden per timer in Jellyfin.</p>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="SeriesRecordNewOnly" name="SeriesRecordNewOnly" type="checkbox" is="emby-checkbox" />
+                                <span>Record New Episodes Only</span>
+                            </label>
+                            <div class="fieldDescription">Only record new episodes, skip repeats. Default: enabled.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="SeriesRecordAnyTime" name="SeriesRecordAnyTime" type="checkbox" is="emby-checkbox" />
+                                <span>Record at Any Time</span>
+                            </label>
+                            <div class="fieldDescription">Record regardless of broadcast time. When disabled, only records at the original time slot. Default: enabled.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="SeriesRecordAnyChannel" name="SeriesRecordAnyChannel" type="checkbox" is="emby-checkbox" />
+                                <span>Record on Any Channel</span>
+                            </label>
+                            <div class="fieldDescription">Record from any channel that broadcasts the series. When disabled, only records from the original channel. Default: disabled.</div>
+                        </div>
+                    </div>
+                </div>
+                </div><!-- /tab-recording -->
+
+                <!-- ══ Tab: Advanced ═════════════════════════════ -->
+                <div class="tvh-tab-panel" id="tab-advanced">
+
+                <!-- ── G. Advanced Settings ────────────────────── -->
+                <div class="tvh-section" id="sec-advanced">
+                    <h2 class="tvh-section-title">Advanced</h2>
+                    <p class="tvh-section-desc">Expert-level tuning parameters. Default values work for most setups.</p>
+                    <div class="tvh-card">
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="AuthTokenMaxAttempts">Auth Token Max Attempts</label>
+                            <input id="AuthTokenMaxAttempts" name="AuthTokenMaxAttempts" type="number" is="emby-input" min="1" max="20" placeholder="5" />
+                            <div class="fieldDescription">Maximum retries when generating an alphanumeric auth token. Default: 5.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="StatisticsRetentionPeriod">Statistics Retention</label>
+                            <select id="StatisticsRetentionPeriod" name="StatisticsRetentionPeriod" is="emby-select">
+                                <option value="ThirtyDays">30 days</option>
+                                <option value="SixMonths">6 months</option>
+                                <option value="OneYear">1 year</option>
+                                <option value="TwoYears">2 years</option>
+                                <option value="Forever">Forever</option>
+                            </select>
+                            <div class="fieldDescription">How long viewing statistics are retained before automatic pruning. Default: 30 days.</div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Recording Settings -->
-                <div class="section">
-                    <h2>Recording Settings</h2>
-                    <p class="sectionDescription">Adjust the preferences for scheduled recordings.</p>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="Priority">Priority</label>
-                        <input id="Priority" name="Priority" type="number" is="emby-input" placeholder="e.g., 5" />
-                        <div class="fieldDescription">Sets the priority for scheduled recordings. A lower value indicates higher priority. Example: 5.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="PrePaddingSeconds">Pre-Padding (seconds)</label>
-                        <input id="PrePaddingSeconds" name="PrePaddingSeconds" type="number" is="emby-input" placeholder="e.g., 5" />
-                        <div class="fieldDescription">Specifies the number of seconds to start recording before the scheduled time. Example: 5 seconds.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="PostPaddingSeconds">Post-Padding (seconds)</label>
-                        <input id="PostPaddingSeconds" name="PostPaddingSeconds" type="number" is="emby-input" placeholder="e.g., 5" />
-                        <div class="fieldDescription">Specifies the number of seconds to continue recording after the scheduled end time. Example: 5 seconds.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="RecordingProfile">Recording Profile</label>
-                        <input id="RecordingProfile" name="RecordingProfile" type="text" is="emby-input" placeholder="e.g., high-quality" />
-                        <div class="fieldDescription">Defines the recording profile to use (e.g., high-quality, low-bitrate). The profile must exist in the TVHeadend configuration.</div>
+                <!-- ── H. Logging Settings ──────────────────────── -->
+                <div class="tvh-section" id="sec-logging">
+                    <h2 class="tvh-section-title">Logging</h2>
+                    <p class="tvh-section-desc">Controls plugin and TVHeadend log persistence and verbosity.</p>
+                    <div class="tvh-card">
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="PluginLogLevelOverride">Plugin Log Level Override</label>
+                            <select id="PluginLogLevelOverride" name="PluginLogLevelOverride" is="emby-select">
+                                <option value="JellyfinDefault">Jellyfin Default</option>
+                                <option value="Trace">Trace</option>
+                                <option value="Debug">Debug</option>
+                                <option value="Information">Information</option>
+                                <option value="Warning">Warning</option>
+                                <option value="Error">Error</option>
+                                <option value="Critical">Critical</option>
+                                <option value="None">None</option>
+                            </select>
+                            <div class="fieldDescription">Sets the minimum level of plugin log entries captured to the dashboard log view. "Jellyfin Default" captures everything Jellyfin's logging delivers; a higher level (e.g. Warning) drops lower-level entries. It can only filter down — it cannot capture entries more verbose than Jellyfin's global log level.</div>
+                            <div id="LogLevelWarning" style="display:none; color:#f0ad4e; font-size:0.88em; margin-top:0.3em;">⚠️ To actually capture Trace/Debug entries, Jellyfin's global log level must already be at least that verbose.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="StorePluginLogsInSqlite" type="checkbox" is="emby-checkbox" />
+                                <span>Store plugin logs in SQLite</span>
+                            </label>
+                            <div class="fieldDescription">Persist plugin log entries to the database for dashboard viewing.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="StoreTvHeadendLogsInSqlite" type="checkbox" is="emby-checkbox" />
+                                <span>Store TVHeadend logs in SQLite</span>
+                            </label>
+                            <div class="fieldDescription">Persist TVHeadend log entries to the database for dashboard viewing.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="TvHeadendLogImportEnabled" type="checkbox" is="emby-checkbox" />
+                                <span>TVHeadend log import enabled</span>
+                            </label>
+                            <div class="fieldDescription">Enable ingestion of TVHeadend log lines via the Comet WebSocket connection.</div>
+                        </div>
+                        <div class="tvh-checkbox">
+                            <label>
+                                <input id="EnableDebugLogSanitization" type="checkbox" is="emby-checkbox" />
+                                <span>Enable debug log sanitization</span>
+                            </label>
+                            <div class="fieldDescription">Mask tokens, passwords, and Authorization headers in log messages before storage.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="MaxDashboardLogEntries">Max Dashboard Log Entries</label>
+                            <input id="MaxDashboardLogEntries" name="MaxDashboardLogEntries" type="number" is="emby-input" min="1" max="5000" placeholder="500" />
+                            <div class="fieldDescription">Maximum number of log entries shown in the dashboard. Default: 500.</div>
+                        </div>
+                        <div class="tvh-field inputContainer">
+                            <label class="inputLabel" for="LogRetentionDays">Log Retention (days)</label>
+                            <input id="LogRetentionDays" name="LogRetentionDays" type="number" is="emby-input" min="1" max="90" placeholder="7" />
+                            <div class="fieldDescription">Log entries older than this are automatically pruned. Default: 7 days.</div>
+                        </div>
                     </div>
                 </div>
+                </div><!-- /tab-advanced -->
 
-                <div>
+                <!-- ── Save ─────────────────────────────────────── -->
+                <div class="tvh-save-area">
                     <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                         <span>Save</span>
                     </button>
                 </div>
+
             </form>
+            <div id="TvhSaveToast" class="tvh-save-toast tvh-save-toast-ok">Saved</div>
         </div>
     </div>
+
     <script type="text/javascript">
-        const TvHeadendApiConfig = {
-            pluginUniqueId: 'ae9f5148-d656-43ab-ab83-94192f9e840a'
-        };
+        (function () {
+            'use strict';
 
-        document.querySelector('#TvHeadendApiConfigPage').addEventListener('pageshow', function () {
-            Dashboard.showLoadingMsg();
-            ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
-                document.querySelector('#Host').value = config.Host || '';
-                document.querySelector('#Port').value = config.Port || '';
-                document.querySelector('#UseSSL').checked = config.UseSSL || false;
-                document.querySelector('#IgnoreCertificateErrors').checked = config.IgnoreCertificateErrors || false;
-                document.querySelector('#Webroot').value = config.Webroot || '';
-                document.querySelector('#AllowAnonymousAccess').checked = config.AllowAnonymousAccess || false;
-                document.querySelector('#Username').value = config.Username || '';
-                document.querySelector('#Password').value = config.Password || '';
-                document.querySelector('#AuthToken').value = config.AuthToken || '';
-                document.querySelector('#StreamingProfile').value = config.StreamingProfile || '';
-                document.querySelector('#BufferMs').value = config.BufferMs || '';
-                document.querySelector('#FallbackMaxStreamingBitrate').value = config.FallbackMaxStreamingBitrate || '';
-                document.querySelector('#AnalyzeDurationMs').value = config.AnalyzeDurationMs || '';
-                document.querySelector('#SupportsTranscoding').checked = config.SupportsTranscoding || false;
-                document.querySelector('#SupportsProbing').checked = config.SupportsProbing || false;
-                document.querySelector('#SupportsDirectPlay').checked = config.SupportsDirectPlay || false;
-                document.querySelector('#SupportsDirectStream').checked = config.SupportsDirectStream || false;
-                document.querySelector('#IsInfiniteStream').checked = config.IsInfiniteStream || false;
-                document.querySelector('#IgnoreDts').checked = config.IgnoreDts || false;
-                document.querySelector('#Priority').value = config.Priority || '';
-                document.querySelector('#PrePaddingSeconds').value = config.PrePaddingSeconds || '';
-                document.querySelector('#PostPaddingSeconds').value = config.PostPaddingSeconds || '';
-                document.querySelector('#RecordingProfile').value = config.RecordingProfile || '';
-                Dashboard.hideLoadingMsg();
+            var pluginId = 'ae9f5148-d656-43ab-ab83-94192f9e840a';
+            var autoSaveTimer = null;
+
+            // ── Helpers ─────────────────────────────────────────
+            function $(sel) { return document.querySelector(sel); }
+
+            function parseInt_(selector, fallback) {
+                var v = parseInt($(selector).value, 10);
+                return Number.isNaN(v) ? fallback : v;
+            }
+
+            // The padding config fields store seconds while the UI edits whole minutes.
+            // Remember the exact loaded seconds on the element so an untouched field
+            // round-trips unchanged on save (e.g. the 5-second default must not be
+            // silently rewritten to 0 just because 5 s rounds down to 0 min).
+            function setMinutesFromSeconds(selector, seconds) {
+                var el = $(selector);
+                var sec = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+                el.value = secondsToMinutes(sec);
+                el.setAttribute('data-loaded-seconds', String(sec));
+            }
+
+            function minutesToSeconds(selector, fallbackSec) {
+                var el = $(selector);
+                var loadedSec = parseInt(el.getAttribute('data-loaded-seconds') || '', 10);
+                if (Number.isNaN(loadedSec)) loadedSec = Number.isFinite(fallbackSec) ? Math.max(0, fallbackSec) : 0;
+                var mins = parseInt(el.value, 10);
+                if (Number.isNaN(mins)) mins = secondsToMinutes(loadedSec);
+                mins = Math.max(0, mins);
+                // Unchanged at minute granularity → keep the exact stored seconds.
+                if (mins === secondsToMinutes(loadedSec)) return loadedSec;
+                return mins * 60;
+            }
+
+            // ── Relay token security warnings ─────────────────────
+            function updateLogLevelWarning() {
+                var val = $('#PluginLogLevelOverride').value;
+                var warn = document.getElementById('LogLevelWarning');
+                if (warn) warn.style.display = (val === 'Trace' || val === 'Debug') ? 'block' : 'none';
+            }
+            document.addEventListener('DOMContentLoaded', function() {
+                var el = document.getElementById('PluginLogLevelOverride');
+                if (el) { el.addEventListener('change', updateLogLevelWarning); }
             });
-        });
 
-        document.querySelector('#TvHeadendApiConfigForm').addEventListener('submit', function (e) {
-            e.preventDefault();
-            Dashboard.showLoadingMsg();
-            ApiClient.getPluginConfiguration(TvHeadendApiConfig.pluginUniqueId).then(function (config) {
-                config.Host = document.querySelector('#Host').value;
-                config.Port = parseInt(document.querySelector('#Port').value, 10);
-                config.UseSSL = document.querySelector('#UseSSL').checked;
-                config.IgnoreCertificateErrors = document.querySelector('#IgnoreCertificateErrors').checked;
-                config.Webroot = document.querySelector('#Webroot').value;
-                config.AllowAnonymousAccess = document.querySelector('#AllowAnonymousAccess').checked;
-                config.Username = document.querySelector('#Username').value;
-                config.Password = document.querySelector('#Password').value;
-                config.AuthToken = document.querySelector('#AuthToken').value;
-                config.StreamingProfile = document.querySelector('#StreamingProfile').value;
-                config.BufferMs = parseInt(document.querySelector('#BufferMs').value, 10);
-                config.FallbackMaxStreamingBitrate = parseInt(document.querySelector('#FallbackMaxStreamingBitrate').value, 10);
-                config.AnalyzeDurationMs = parseInt(document.querySelector('#AnalyzeDurationMs').value, 10);
-                config.SupportsTranscoding = document.querySelector('#SupportsTranscoding').checked;
-                config.SupportsProbing = document.querySelector('#SupportsProbing').checked;
-                config.SupportsDirectPlay = document.querySelector('#SupportsDirectPlay').checked;
-                config.SupportsDirectStream = document.querySelector('#SupportsDirectStream').checked;
-                config.IsInfiniteStream = document.querySelector('#IsInfiniteStream').checked;
-                config.IgnoreDts = document.querySelector('#IgnoreDts').checked;
-                config.Priority = parseInt(document.querySelector('#Priority').value, 10);
-                config.PrePaddingSeconds = parseInt(document.querySelector('#PrePaddingSeconds').value, 10);
-                config.PostPaddingSeconds = parseInt(document.querySelector('#PostPaddingSeconds').value, 10);
-                config.RecordingProfile = document.querySelector('#RecordingProfile').value;
+            function updateRelayTokenWarnings() {
+                var secEnabled = $('#EnableRelayTokenSecurity').checked;
+                var warningBox = document.getElementById('RelayTokenSecurityWarning');
+                if (warningBox) warningBox.style.display = secEnabled ? 'none' : 'block';
 
-                ApiClient.updatePluginConfiguration(TvHeadendApiConfig.pluginUniqueId, config).then(function (result) {
-                    Dashboard.processPluginConfigurationUpdateResult(result);
+                var warnings = [];
+                var ttl = parseInt($('#StreamTokenTtlSeconds').value, 10) || 120;
+                var maxUses = parseInt($('#StreamTokenMaxUses').value, 10);
+                if (isNaN(maxUses)) maxUses = 5;
+
+                if (ttl < 30) warnings.push('Stream TTL below 30 seconds may cause playback failures.');
+                if (ttl > 3600) warnings.push('Stream TTL above 1 hour is unusually long — tokens should be short-lived.');
+                if (maxUses > 0 && maxUses < 3) warnings.push('Stream max uses below 3 may prevent FFmpeg probing from completing.');
+
+                var streamWarnBox = document.getElementById('StreamTokenWarnings');
+                if (streamWarnBox) {
+                    streamWarnBox.style.display = warnings.length > 0 ? 'block' : 'none';
+                    streamWarnBox.innerHTML = warnings.map(function(w) { return '⚠️ ' + w; }).join('<br>');
+                }
+            }
+
+            // Attach change handlers for live warnings
+            document.addEventListener('DOMContentLoaded', function() {
+                var fields = ['EnableRelayTokenSecurity', 'StreamTokenTtlSeconds', 'StreamTokenMaxUses'];
+                fields.forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (el) el.addEventListener('change', updateRelayTokenWarnings);
+                    if (el) el.addEventListener('input', updateRelayTokenWarnings);
                 });
             });
-            return false;
-        });
+
+            function secondsToMinutes(sec) {
+                return (!Number.isFinite(sec) || sec <= 0) ? 0 : Math.round(sec / 60);
+            }
+
+            function esc(text) {
+                var d = document.createElement('div');
+                d.appendChild(document.createTextNode(text));
+                return d.innerHTML;
+            }
+
+            // ── Auth state ──────────────────────────────────────
+            function updateAuthRequiredState() {
+                var anon = $('#AllowAnonymousAccess').checked;
+                $('#Username').required = !anon;
+                $('#Password').required = !anon;
+            }
+
+            function updateAuthTokenButtonLabel() {
+                var has = !!$('#AuthToken').value.trim();
+                $('#GenerateAuthTokenBtn span').textContent = has ? 'Regenerate Auth Token' : 'Generate Auth Token';
+            }
+
+            // Selects a profile in the Default row. The profile dropdown is built from a
+            // discovery snapshot taken when the page loaded, so a profile that was created
+            // afterwards ("Create jellyfin Profile" / "Optimal Setup") has no <option> yet —
+            // assigning select.value would silently leave it as "" and the save that follows
+            // would wipe the configured profile. Append the option first when it is missing.
+            function setDefaultRowProfile(profileName) {
+                var defaultRow = document.querySelector('#ProfileAssignmentsBody .tvh-row-default');
+                if (!defaultRow) { return; }
+
+                var profileEl = defaultRow.querySelector('[data-field="profile"]');
+                if (!profileEl) { return; }
+
+                if (profileEl.tagName === 'SELECT') {
+                    var exists = Array.prototype.some.call(profileEl.options, function (o) { return o.value === profileName; });
+                    if (!exists) {
+                        var option = document.createElement('option');
+                        option.value = profileName;
+                        option.textContent = profileName;
+                        profileEl.appendChild(option);
+                    }
+                }
+
+                profileEl.value = profileName;
+
+                if (profileEl.value !== profileName) {
+                    console.warn('[TvHeadend] Could not select profile "' + profileName + '" in the Default row.');
+                }
+            }
+
+            // ── Plugin info ─────────────────────────────────────
+            function loadPluginInfo() {
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/PluginInfo'), dataType: 'json' }).then(function (info) {
+                    $('#PluginVersionLabel').textContent = '— v' + ((info && info.Version) || 'unknown');
+                }).catch(function () {
+                    $('#PluginVersionLabel').textContent = '';
+                });
+            }
+
+            function loadRelayStatus() {
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('api/tvheadend/status'), dataType: 'json' }).then(function (r) {
+                    $('#RelayAutoDetectedHost').textContent = 'Auto-detected host: ' + (r.EffectiveHost || '(unknown)');
+                    var msg = $('#RelayStatusMsg');
+                    var status = (r.Status || '').toLowerCase();
+                    if (status === 'ok') {
+                        msg.style.color = '#a5d6a7';
+                        var latency = r.LastResponseTimeMs ? ' (' + r.LastResponseTimeMs + ' ms)' : '';
+                        msg.textContent = '✅ Relay connected to TVHeadend' + latency + ' — ' + (r.ActiveStreams || 0) + ' active stream(s)';
+                    } else if (status === 'degraded') {
+                        msg.style.color = '#f0ad4e';
+                        msg.textContent = '⚠️ TVHeadend degraded: ' + (r.Message || 'intermittent issues');
+                    } else if (status === 'disabled') {
+                        msg.style.color = '#90a4ae';
+                        msg.textContent = 'ℹ️ ' + (r.Message || 'Relay service is disabled.');
+                    } else if (status === 'unknown') {
+                        msg.style.color = '#90a4ae';
+                        msg.textContent = '⏳ ' + (r.Message || 'Checking TVHeadend connectivity…');
+                    } else {
+                        msg.style.color = '#ef9a9a';
+                        msg.textContent = '❌ ' + (r.Message || 'TVHeadend not reachable');
+                        if (r.ConsecutiveFailures > 0) {
+                            msg.textContent += ' (' + r.ConsecutiveFailures + ' consecutive failure' + (r.ConsecutiveFailures > 1 ? 's' : '') + ')';
+                        }
+                    }
+                }).catch(function () {
+                    $('#RelayAutoDetectedHost').textContent = 'Auto-detected host: (could not determine)';
+                    var msg = $('#RelayStatusMsg');
+                    msg.style.color = '#ef9a9a';
+                    msg.textContent = '❌ Relay endpoint not reachable';
+                });
+            }
+
+            // ── Save config ─────────────────────────────────────
+            function saveCurrentFormToConfig() {
+                return ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config.Host = $('#Host').value;
+                    config.Port = parseInt_('#Port', config.Port);
+                    config.UseSSL = $('#UseSSL').checked;
+                    config.IgnoreCertificateErrors = $('#IgnoreCertificateErrors').checked;
+                    config.Webroot = $('#Webroot').value;
+                    config.AllowAnonymousAccess = $('#AllowAnonymousAccess').checked;
+                    config.Username = $('#Username').value;
+                    config.Password = $('#Password').value;
+                    config.AuthToken = $('#AuthToken').value;
+
+                    config.RelayEnabled = $('#RelayEnabled').checked;
+                    config.RelayHostOverride = $('#RelayHostOverride').value;
+
+                    // Relay token security
+                    config.EnableRelayTokenSecurity = $('#EnableRelayTokenSecurity').checked;
+                    config.StreamTokenTtlSeconds = parseInt_('#StreamTokenTtlSeconds', config.StreamTokenTtlSeconds);
+                    config.StreamTokenMaxUses = parseInt_('#StreamTokenMaxUses', config.StreamTokenMaxUses);
+                    config.ImageTokenTtlMinutes = parseInt_('#ImageTokenTtlMinutes', config.ImageTokenTtlMinutes);
+                    config.ImageTokenMaxUses = parseInt_('#ImageTokenMaxUses', config.ImageTokenMaxUses);
+                    config.EnableTokenReuse = $('#EnableTokenReuse').checked;
+                    config.StrictScopeValidation = $('#StrictScopeValidation').checked;
+                    config.CleanupExpiredTokensIntervalMinutes = parseInt_('#CleanupExpiredTokensIntervalMinutes', config.CleanupExpiredTokensIntervalMinutes);
+                    config.TokenValidationClockSkewSeconds = parseInt_('#TokenValidationClockSkewSeconds', config.TokenValidationClockSkewSeconds);
+
+                    config.StreamDeliveryMode = $('#StreamDeliveryMode').value || 'Relay';
+                    config.FallbackMaxStreamingBitrate = parseInt_('#FallbackMaxStreamingBitrate', config.FallbackMaxStreamingBitrate);
+                    config.IsInfiniteStream = $('#IsInfiniteStream').checked;
+                    config.SupportsDirectPlay = $('#SupportsDirectPlay').checked;
+                    config.SupportsDirectStream = $('#SupportsDirectStream').checked;
+                    config.SupportsTranscoding = $('#SupportsTranscoding').checked;
+                    config.SupportsProbing = $('#SupportsProbing').checked;
+                    config.IgnoreDts = $('#IgnoreDts').checked;
+                    config.BufferMs = parseInt_('#BufferMs', config.BufferMs);
+                    config.AnalyzeDurationMs = parseInt_('#AnalyzeDurationMs', config.AnalyzeDurationMs);
+                    config.EnableMediaInfoCacheWrite = $('#EnableMediaInfoCacheWrite').checked;
+                    config.EnableMediaInfoCacheValidation = $('#EnableMediaInfoCacheValidation').checked;
+                    config.EnableJellyfinMetadataEnrichment = $('#EnableJellyfinMetadataEnrichment').checked;
+                    config.AuthTokenMaxAttempts = parseInt_('#AuthTokenMaxAttempts', config.AuthTokenMaxAttempts);
+                    config.StatisticsRetentionPeriod = $('#StatisticsRetentionPeriod').value || 'ThirtyDays';
+                    config.Priority = parseInt_('#Priority', config.Priority);
+                    config.PrePaddingSeconds = minutesToSeconds('#PrePaddingSeconds', config.PrePaddingSeconds);
+                    config.PostPaddingSeconds = minutesToSeconds('#PostPaddingSeconds', config.PostPaddingSeconds);
+                    config.SeriesRecordNewOnly = $('#SeriesRecordNewOnly').checked;
+                    config.SeriesRecordAnyTime = $('#SeriesRecordAnyTime').checked;
+                    config.SeriesRecordAnyChannel = $('#SeriesRecordAnyChannel').checked;
+
+                    // Logging
+                    config.PluginLogLevelOverride = $('#PluginLogLevelOverride').value || 'JellyfinDefault';
+                    config.StorePluginLogsInSqlite = $('#StorePluginLogsInSqlite').checked;
+                    config.StoreTvHeadendLogsInSqlite = $('#StoreTvHeadendLogsInSqlite').checked;
+                    config.TvHeadendLogImportEnabled = $('#TvHeadendLogImportEnabled').checked;
+                    config.EnableDebugLogSanitization = $('#EnableDebugLogSanitization').checked;
+                    config.MaxDashboardLogEntries = parseInt_('#MaxDashboardLogEntries', config.MaxDashboardLogEntries);
+                    config.LogRetentionDays = parseInt_('#LogRetentionDays', config.LogRetentionDays);
+
+                    // Always assign so selecting the blank "-- Select a profile --"
+                    // option clears the value (fall back to TVHeadend's default DVR config).
+                    config.RecordingProfile = $('#RecordingProfile').value;
+
+                    // Streaming profile settings — collect from unified table
+                    var sps = config.StreamingProfileSettings || {};
+                    var assignments = collectProfileAssignments();
+                    // Preserve any previously-configured default playback mode (the table UI does not edit it).
+                    if (sps.DefaultPlaybackMode == null) sps.DefaultPlaybackMode = 0; // Auto
+                    sps.DefaultTvHeadendProfile = assignments.defaultProfile;
+                    config.StreamingProfile = assignments.defaultProfile;
+                    sps.PassThroughProfile = ($('#SPS_PassThroughProfile').value || 'pass').trim();
+                    sps.JellyfinTranscodeProfile = ($('#SPS_JellyfinTranscodeProfile').value || 'matroska').trim();
+                    sps.FallbackTvHeadendProfile = ($('#SPS_FallbackTvHeadendProfile').value || 'pass').trim();
+                    sps.EnableResolutionDiagnostics = $('#SPS_EnableResolutionDiagnostics').checked;
+                    sps.ChannelOverrides = assignments.channelOverrides;
+                    sps.ChannelGroupOverrides = assignments.channelGroupOverrides;
+                    sps.ClientRules = assignments.clientRules;
+                    sps.UserRules = assignments.userRules;
+                    config.StreamingProfileSettings = sps;
+
+                    return ApiClient.updatePluginConfiguration(pluginId, config);
+                });
+            }
+
+            // ── Load config ─────────────────────────────────────
+            function loadFormFromConfig(config) {
+                $('#Host').value = config.Host || '';
+                $('#Port').value = config.Port || '';
+                $('#UseSSL').checked = config.UseSSL || false;
+                $('#IgnoreCertificateErrors').checked = config.IgnoreCertificateErrors || false;
+                $('#Webroot').value = config.Webroot || '';
+                $('#AllowAnonymousAccess').checked = config.AllowAnonymousAccess || false;
+                $('#Username').value = config.Username || '';
+                $('#Password').value = config.Password || '';
+                $('#AuthToken').value = config.AuthToken || '';
+                $('#RelayEnabled').checked = config.RelayEnabled !== false;
+                $('#RelayHostOverride').value = config.RelayHostOverride || '';
+
+                // Relay token security
+                $('#EnableRelayTokenSecurity').checked = config.EnableRelayTokenSecurity !== false;
+                $('#StreamTokenTtlSeconds').value = config.StreamTokenTtlSeconds || 120;
+                $('#StreamTokenMaxUses').value = config.StreamTokenMaxUses != null ? config.StreamTokenMaxUses : 25;
+                $('#ImageTokenTtlMinutes').value = config.ImageTokenTtlMinutes != null ? config.ImageTokenTtlMinutes : 0;
+                $('#ImageTokenMaxUses').value = config.ImageTokenMaxUses != null ? config.ImageTokenMaxUses : 0;
+                $('#EnableTokenReuse').checked = config.EnableTokenReuse !== false;
+                $('#StrictScopeValidation').checked = config.StrictScopeValidation !== false;
+                $('#CleanupExpiredTokensIntervalMinutes').value = config.CleanupExpiredTokensIntervalMinutes || 60;
+                $('#TokenValidationClockSkewSeconds').value = config.TokenValidationClockSkewSeconds != null ? config.TokenValidationClockSkewSeconds : 5;
+                updateRelayTokenWarnings();
+                $('#StreamDeliveryMode').value = config.StreamDeliveryMode || 'Relay';
+                $('#FallbackMaxStreamingBitrate').value = config.FallbackMaxStreamingBitrate || '';
+                $('#IsInfiniteStream').checked = config.IsInfiniteStream !== false;
+                $('#SupportsDirectPlay').checked = config.SupportsDirectPlay !== false;
+                $('#SupportsDirectStream').checked = config.SupportsDirectStream !== false;
+                $('#SupportsTranscoding').checked = config.SupportsTranscoding || false;
+                $('#SupportsProbing').checked = config.SupportsProbing !== false;
+                $('#IgnoreDts').checked = config.IgnoreDts || false;
+                $('#BufferMs').value = config.BufferMs || '0';
+                $('#AnalyzeDurationMs').value = config.AnalyzeDurationMs || '0';
+                $('#EnableMediaInfoCacheWrite').checked = config.EnableMediaInfoCacheWrite !== false;
+                $('#EnableMediaInfoCacheValidation').checked = config.EnableMediaInfoCacheValidation !== false;
+                $('#EnableJellyfinMetadataEnrichment').checked = config.EnableJellyfinMetadataEnrichment || false;
+                $('#AuthTokenMaxAttempts').value = config.AuthTokenMaxAttempts || '';
+                $('#StatisticsRetentionPeriod').value = config.StatisticsRetentionPeriod || 'ThirtyDays';
+                $('#Priority').value = config.Priority || '';
+                setMinutesFromSeconds('#PrePaddingSeconds', config.PrePaddingSeconds);
+                setMinutesFromSeconds('#PostPaddingSeconds', config.PostPaddingSeconds);
+                // Seed the saved recording profile as a real option immediately: the
+                // full option list is loaded separately (and may fail if TVHeadend is
+                // unreachable), and a <select> silently resets to "" when its value
+                // has no matching option — which would wipe the setting on save.
+                var recSel = $('#RecordingProfile');
+                var recSaved = config.RecordingProfile || '';
+                recSel.innerHTML = '<option value="">TVHeadend default (recommended)</option>';
+                if (recSaved) {
+                    var recOpt = document.createElement('option');
+                    recOpt.value = recSaved;
+                    recOpt.textContent = recSaved;
+                    recSel.appendChild(recOpt);
+                }
+                recSel.value = recSaved;
+                $('#SeriesRecordNewOnly').checked = config.SeriesRecordNewOnly !== false;
+                $('#SeriesRecordAnyTime').checked = config.SeriesRecordAnyTime !== false;
+                $('#SeriesRecordAnyChannel').checked = config.SeriesRecordAnyChannel || false;
+
+                // Logging
+                $('#PluginLogLevelOverride').value = config.PluginLogLevelOverride || 'JellyfinDefault';
+                updateLogLevelWarning();
+                $('#StorePluginLogsInSqlite').checked = config.StorePluginLogsInSqlite !== false;
+                $('#StoreTvHeadendLogsInSqlite').checked = config.StoreTvHeadendLogsInSqlite !== false;
+                $('#TvHeadendLogImportEnabled').checked = config.TvHeadendLogImportEnabled !== false;
+                $('#EnableDebugLogSanitization').checked = config.EnableDebugLogSanitization !== false;
+                $('#MaxDashboardLogEntries').value = config.MaxDashboardLogEntries || 500;
+                $('#LogRetentionDays').value = config.LogRetentionDays || 7;
+                updateLogLevelWarning();
+
+                // Streaming profile settings — render unified table
+                var sps = config.StreamingProfileSettings || {};
+                $('#SPS_PassThroughProfile').value = sps.PassThroughProfile || 'pass';
+                $('#SPS_JellyfinTranscodeProfile').value = sps.JellyfinTranscodeProfile || 'matroska';
+                $('#SPS_FallbackTvHeadendProfile').value = sps.FallbackTvHeadendProfile || 'pass';
+                $('#SPS_EnableResolutionDiagnostics').checked = sps.EnableResolutionDiagnostics || false;
+                var defaultProfile = (sps.DefaultTvHeadendProfile || config.StreamingProfile || '').trim();
+                renderProfileTable(sps.ChannelOverrides || [], sps.ChannelGroupOverrides || [], sps.ClientRules || [], sps.UserRules || [], defaultProfile);
+
+                // Track the default profile for auto-invalidation on change.
+                lastKnownDefaultProfile = defaultProfile;
+
+                updateAuthRequiredState();
+                updateAuthTokenButtonLabel();
+            }
+
+            // ── Load profiles ───────────────────────────────────
+            function loadAvailableProfiles(config) {
+                var recordingSel = $('#RecordingProfile');
+                var cfgRecord = (config.RecordingProfile || '').trim();
+
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/ProfileOptions'), dataType: 'json' }).then(function (opts) {
+                    var recording = new Set();
+                    if (opts.RecordingProfiles) opts.RecordingProfiles.forEach(function (p) { if (p && p.trim()) recording.add(p); });
+                    if (cfgRecord) recording.add(cfgRecord);
+
+                    function eq(a, b) { return (a || '').toLowerCase() === (b || '').toLowerCase(); }
+
+                    recordingSel.innerHTML = '<option value="">TVHeadend default (recommended)</option>';
+                    Array.from(recording).sort().forEach(function (p) {
+                        var o = document.createElement('option');
+                        o.value = p; o.textContent = p;
+                        if (cfgRecord && eq(p, cfgRecord)) o.selected = true;
+                        recordingSel.appendChild(o);
+                    });
+                }).catch(function (err) {
+                    console.warn('[TvHeadend] Could not load profiles:', err);
+                });
+            }
+
+            // ── Diagnostics ─────────────────────────────────────
+            function updateStatusBanner(r) {
+                var banner = $('#StatusBanner');
+                var cls = r.CompatibilityScore >= 80 ? 'tvh-status-ok' : r.CompatibilityScore >= 50 ? 'tvh-status-warn' : 'tvh-status-err';
+                banner.className = 'tvh-status-banner ' + cls;
+                var icon = r.OverallStatus === 'OK' ? '✅' : r.OverallStatus === 'WARNING' ? '⚠️' : '❌';
+                $('#StatusIcon').textContent = icon;
+                var scoreColor = r.CompatibilityScore >= 80 ? '#4caf50' : r.CompatibilityScore >= 50 ? '#f0ad4e' : '#e74c3c';
+                $('#StatusScore').innerHTML = '<span style="color:' + scoreColor + ';">' + r.CompatibilityScore + '/100</span>';
+                var connText = r.Connection || '';
+                if (r.LatencyMs > 0) connText += ' (' + r.LatencyMs + ' ms)';
+                $('#StatusText').textContent = connText;
+
+                var checksHtml = '';
+                if (r.Checks && r.Checks.length > 0) {
+                    r.Checks.forEach(function (c) {
+                        var ci = c.Status === 'OK' ? '✅' : c.Status === 'WARNING' ? '⚠️' : '❌';
+                        checksHtml += '<span>' + ci + ' ' + esc(c.Name) + '</span>';
+                    });
+                }
+                $('#StatusChecks').innerHTML = checksHtml;
+            }
+
+            function loadDiagnose() {
+                var el = $('#DiagDetailsContent');
+                el.innerHTML = '<em>Running diagnostics…</em>';
+
+                saveCurrentFormToConfig().then(function () {
+                    return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Diagnose'), dataType: 'json' });
+                }).then(function (r) {
+                    // Detail content — only checks, config, warnings, recommendations.
+                    // Score, connection, and server version are shown in the banner above.
+                    var html = '';
+
+                    if (r.Checks && r.Checks.length > 0) {
+                        r.Checks.forEach(function (c) {
+                            var ci = c.Status === 'OK' ? '✅' : c.Status === 'WARNING' ? '⚠️' : c.Status === 'ERROR' ? '❌' : 'ℹ️';
+                            html += '<div style="margin:0.15em 0;">' + ci + ' <strong>' + esc(c.Name) + ':</strong> ' + esc(c.Message);
+                            if (c.Recommendation) html += ' <em style="opacity:0.6;">→ ' + esc(c.Recommendation) + '</em>';
+                            html += '</div>';
+                        });
+                    }
+
+                    if (r.PluginSettings && r.PluginSettings.length > 0) {
+                        html += '<details style="margin-top:0.6em;"><summary style="cursor:pointer;"><strong>Configuration Details</strong></summary><ul style="margin:0.2em 0 0 1.5em;">';
+                        r.PluginSettings.forEach(function (s) { html += '<li>' + esc(s) + '</li>'; });
+                        html += '</ul></details>';
+                    }
+
+                    if (r.Warnings && r.Warnings.length > 0) {
+                        html += '<details style="margin-top:0.6em;" open><summary style="cursor:pointer; color:#f0ad4e;"><strong>Warnings (' + r.Warnings.length + ')</strong></summary><ul style="margin:0.2em 0 0 1.5em;">';
+                        r.Warnings.forEach(function (w) { html += '<li style="color:#f0ad4e;">' + esc(w) + '</li>'; });
+                        html += '</ul></details>';
+                    }
+
+                    if (r.Recommendations && r.Recommendations.length > 0 && !(r.Recommendations.length === 1 && r.Recommendations[0] === 'Everything looks good!')) {
+                        html += '<details style="margin-top:0.6em;"><summary style="cursor:pointer;"><strong>Recommendations (' + r.Recommendations.length + ')</strong></summary><ul style="margin:0.2em 0 0 1.5em;">';
+                        r.Recommendations.forEach(function (rec) { html += '<li>' + esc(rec) + '</li>'; });
+                        html += '</ul></details>';
+                    }
+
+                    el.innerHTML = html || '<span style="opacity:0.6;">No issues found.</span>';
+                    updateStatusBanner(r);
+
+                    // Update last-run timestamp
+                    var now = new Date();
+                    var ts = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0') + ':' + now.getSeconds().toString().padStart(2,'0');
+                    var diagTs = document.getElementById('DiagLastRun');
+                    if (diagTs) diagTs.textContent = 'Last check: ' + ts;
+                }).catch(function (err) {
+                    el.innerHTML = '<span style="color:#ef9a9a;">Diagnostics failed: ' + esc(err.statusText || err.message || 'Unknown error') + '</span>';
+                });
+            }
+
+            // ── Event listeners ──────────────────────────────────
+            $('#OpenDashboardBtn').addEventListener('click', function () {
+                Dashboard.navigate('configurationpage?name=TvHeadendDashboard');
+            });
+
+            // ── Tab switching ────────────────────────────────────
+            (function initTabs() {
+                var tabBar = document.getElementById('TvhTabs');
+                if (!tabBar) return;
+                tabBar.addEventListener('click', function (e) {
+                    var btn = e.target.closest('.tvh-tab-btn');
+                    if (!btn) return;
+                    var tabId = btn.getAttribute('data-tab');
+                    // Deactivate all
+                    tabBar.querySelectorAll('.tvh-tab-btn').forEach(function (b) { b.classList.remove('tvh-tab-active'); });
+                    document.querySelectorAll('.tvh-tab-panel').forEach(function (p) { p.classList.remove('tvh-tab-visible'); });
+                    // Activate target
+                    btn.classList.add('tvh-tab-active');
+                    var panel = document.getElementById(tabId);
+                    if (panel) panel.classList.add('tvh-tab-visible');
+                });
+            })();
+
+            $('#DiagnoseBtn').addEventListener('click', loadDiagnose);
+
+            // ── Optimize Settings ────────────────────────────────────
+            $('#OptimalSetupBtn').addEventListener('click', function () {
+                var btn = $('#OptimalSetupBtn span');
+                var origText = btn.textContent;
+                btn.textContent = '⏳ Setting up…';
+
+                // Step 1: Create jellyfin profile
+                saveCurrentFormToConfig().then(function () {
+                    return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/CreateProfile'), dataType: 'json' });
+                }).then(function (r) {
+                    // Step 2: Generate auth token if empty
+                    if (!$('#AuthToken').value.trim()) {
+                        return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/GenerateAuthToken'), dataType: 'json' }).then(function (tr) {
+                            if (tr.Success && tr.AuthToken) {
+                                $('#AuthToken').value = tr.AuthToken;
+                                updateAuthTokenButtonLabel();
+                            }
+                        });
+                    }
+                }).then(function () {
+                    // Step 3: Set optimal config values — update Default row profile
+                    setDefaultRowProfile('jellyfin');
+                    $('#IsInfiniteStream').checked = true;
+                    $('#SupportsDirectPlay').checked = true;
+                    $('#SupportsDirectStream').checked = true;
+                    $('#SupportsTranscoding').checked = true;
+                    $('#SupportsProbing').checked = true;
+                    $('#EnableMediaInfoCacheWrite').checked = true;
+                    $('#EnableMediaInfoCacheValidation').checked = true;
+                    // IgnoreDts is deliberately left untouched: it ships enabled, the field
+                    // description documents it as enabled, and it is unrelated to Direct Play.
+                    // Silently turning it off here re-introduced MPEG-TS playback glitches for
+                    // anyone who relied on the shipped default.
+
+                    // Step 4: Save and re-diagnose
+                    return saveCurrentFormToConfig();
+                }).then(function () {
+                    return loadAvailableProfiles({ RecordingProfile: $('#RecordingProfile').value });
+                }).then(function () {
+                    btn.textContent = 'Done!';
+                    loadDiagnose();
+                    setTimeout(function () { btn.textContent = origText; }, 2000);
+                }).catch(function (err) {
+                    btn.textContent = '❌ Failed';
+                    console.error('Optimal setup failed:', err);
+                    setTimeout(function () { btn.textContent = origText; }, 2000);
+                });
+            });
+
+            $('#GenerateAuthTokenBtn').addEventListener('click', function () {
+                var msg = $('#AuthTokenActionMsg');
+                msg.style.color = ''; msg.textContent = 'Generating…';
+                saveCurrentFormToConfig().then(function () {
+                    return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/GenerateAuthToken'), dataType: 'json' });
+                }).then(function (r) {
+                    if (!r.Success) { msg.style.color = '#ef9a9a'; msg.textContent = r.Message; return; }
+                    $('#AuthToken').value = r.AuthToken || '';
+                    msg.style.color = '#a5d6a7'; msg.textContent = r.Message || 'Auth token generated.';
+                    updateAuthTokenButtonLabel();
+                }).catch(function (err) {
+                    msg.style.color = '#ef9a9a'; msg.textContent = 'Failed: ' + (err.statusText || err.message || 'Unknown error');
+                });
+            });
+
+            $('#ResetDefaultsBtn').addEventListener('click', function () {
+                var msg = $('#ResetDefaultsMsg');
+                msg.style.color = ''; msg.textContent = 'Resetting…';
+                ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/ResetToDefaults'), dataType: 'json' }).then(function (r) {
+                    if (!r.Success) { msg.style.color = '#ef9a9a'; msg.textContent = r.Message || 'Reset failed.'; return; }
+                    msg.style.color = '#a5d6a7'; msg.textContent = r.Message || 'Configuration reset.';
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        loadFormFromConfig(config);
+                        Dashboard.hideLoadingMsg();
+                        loadDiagnose();
+                    });
+                }).catch(function (err) {
+                    msg.style.color = '#ef9a9a'; msg.textContent = 'Failed: ' + (err.statusText || err.message || 'Unknown error');
+                });
+            });
+
+            $('#CreateProfileBtn').addEventListener('click', function () {
+                var msg = $('#ProfileActionMsg');
+                msg.style.color = ''; msg.textContent = 'Creating profiles…';
+                saveCurrentFormToConfig().then(function () {
+                    return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/CreateProfile'), dataType: 'json' });
+                }).then(function (r) {
+                    if (!r.Success) { msg.style.color = '#ef9a9a'; msg.textContent = r.Message; return; }
+                    // Update the Default row profile in the table
+                    setDefaultRowProfile('jellyfin');
+                    msg.style.color = '#a5d6a7'; msg.textContent = r.Message;
+                    loadDiagnose();
+                }).catch(function (err) {
+                    msg.style.color = '#ef9a9a'; msg.textContent = 'Failed: ' + (err.statusText || err.message || 'Unknown error');
+                });
+            });
+
+            $('#AllowAnonymousAccess').addEventListener('change', updateAuthRequiredState);
+            $('#AuthToken').addEventListener('input', updateAuthTokenButtonLabel);
+
+            // ── Cache warmup button (SSE progress) ─────────────────
+            $('#WarmCacheBtn').addEventListener('click', function () {
+                var btn = $('#WarmCacheBtn span');
+                var statusEl = $('#WarmCacheStatus');
+                var orig = btn.textContent;
+                btn.textContent = 'Warming\u2026';
+                btn.parentElement.disabled = true;
+                statusEl.style.opacity = '1';
+                statusEl.style.color = '#b0bec5';
+                statusEl.textContent = 'Preparing\u2026';
+
+                saveCurrentFormToConfig().then(function () {
+                    // Build SSE URL — Jellyfin requires auth header, so we use fetch + ReadableStream
+                    // because EventSource cannot set custom headers.
+                    var url = ApiClient.getUrl('TvHeadendApi/WarmCacheStream');
+                    var headers = { 'Content-Type': 'application/json' };
+                    var token = ApiClient.accessToken();
+                    if (token) { headers['Authorization'] = 'MediaBrowser Token="' + token + '"'; }
+
+                    return fetch(url, { method: 'POST', headers: headers }).then(function (response) {
+                        if (!response.ok) { throw new Error('HTTP ' + response.status); }
+
+                        var reader = response.body.getReader();
+                        var decoder = new TextDecoder();
+                        var buffer = '';
+
+                        function processChunk() {
+                            return reader.read().then(function (result) {
+                                if (result.done) return;
+                                buffer += decoder.decode(result.value, { stream: true });
+
+                                // Parse SSE frames from the buffer.
+                                var lines = buffer.split('\n');
+                                buffer = lines.pop(); // keep incomplete line in buffer
+
+                                var eventType = 'message';
+                                for (var i = 0; i < lines.length; i++) {
+                                    var line = lines[i];
+                                    if (line.indexOf('event: ') === 0) {
+                                        eventType = line.substring(7).trim();
+                                    } else if (line.indexOf('data: ') === 0) {
+                                        var jsonStr = line.substring(6);
+                                        try {
+                                            var data = JSON.parse(jsonStr);
+                                            if (eventType === 'done') {
+                                                // Final result
+                                                btn.textContent = data.Warmed + '/' + data.TotalChannels + ' warmed';
+                                                statusEl.style.color = '#a5d6a7';
+                                                var parts = [];
+                                                if (data.AlreadyCached > 0) parts.push(data.AlreadyCached + ' already cached');
+                                                if (data.Failed > 0) parts.push(data.Failed + ' failed');
+                                                statusEl.textContent = parts.length ? 'Done — ' + parts.join(', ') : 'Done ✓';
+                                                setTimeout(function () {
+                                                    btn.textContent = orig;
+                                                    btn.parentElement.disabled = false;
+                                                }, 5000);
+                                                setTimeout(function () { statusEl.style.opacity = '0'; }, 8000);
+                                                loadDiagnose();
+                                            } else {
+                                                // Progress update
+                                                btn.textContent = data.Current + '/' + data.Total;
+                                                var icon = data.Status === 'probing' ? '\u23F3' :
+                                                           data.Status === 'cached'  ? '\u2705' :
+                                                           data.Status === 'skipped' ? '\u23ED' :
+                                                           data.Status === 'failed'  ? '\u274C' : '\u2022';
+                                                var detail = data.Detail ? ' — ' + data.Detail : '';
+                                                statusEl.style.color = data.Status === 'failed' ? '#ef9a9a' :
+                                                                       data.Status === 'cached' ? '#a5d6a7' :
+                                                                       data.Status === 'skipped' ? '#90caf9' : '#b0bec5';
+                                                statusEl.textContent = icon + ' [' + data.Current + '/' + data.Total + '] ' + data.ChannelName + ' — ' + data.Status + detail;
+                                            }
+                                        } catch (e) { /* ignore malformed JSON */ }
+                                        eventType = 'message';
+                                    }
+                                }
+
+                                return processChunk();
+                            });
+                        }
+
+                        return processChunk();
+                    });
+                }).catch(function (err) {
+                    btn.textContent = 'Failed';
+                    statusEl.style.color = '#ef9a9a';
+                    statusEl.textContent = '\u274C ' + (err.statusText || err.message || 'Unknown error');
+                    console.error('[TvHeadend] Cache warmup failed:', err);
+                    setTimeout(function () { btn.textContent = orig; btn.parentElement.disabled = false; }, 3000);
+                    setTimeout(function () { statusEl.style.opacity = '0'; }, 8000);
+                });
+            });
+
+            // ── Auto-invalidation on profile change ──────────────
+            var lastKnownDefaultProfile = '';
+
+            // ── Page init ────────────────────────────────────────
+            $('#TvHeadendApiConfigPage').addEventListener('pageshow', function () {
+                loadPluginInfo();
+                loadRelayStatus();
+                Dashboard.showLoadingMsg();
+                Promise.all([loadDiscoveredProfiles(), loadDiscoveredChannels(), loadDiscoveredChannelGroups(), loadKnownClients()]).then(function () {
+                    populateTestResolutionSelects();
+                    return ApiClient.getPluginConfiguration(pluginId);
+                }).then(function (config) {
+                    loadFormFromConfig(config);
+                    return loadAvailableProfiles(config);
+                }).then(function () {
+                    Dashboard.hideLoadingMsg();
+                    loadDiagnose();
+                }).catch(function (err) {
+                    Dashboard.hideLoadingMsg();
+                    console.error('Error loading configuration:', err);
+                });
+            });
+
+            // ── Form submit ──────────────────────────────────────
+            $('#TvHeadendApiConfigForm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                Dashboard.showLoadingMsg();
+                saveCurrentFormToConfig().then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                    loadDiagnose();
+                });
+                return false;
+            });
+
+            // ── Unified Profile Assignment Table ────────────────
+
+            var discoveredProfiles = [];
+            var discoveredChannels = [];    // [{Id, Name}]
+            var discoveredChannelGroups = []; // [{Id, Name}]
+            var knownClients = { Users: [], Clients: [], Devices: [] }; // from TvHeadendApi/KnownClients
+
+            function loadKnownClients() {
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/KnownClients'), dataType: 'json' })
+                    .then(function (r) {
+                        knownClients = {
+                            Users: (r && r.Users) || [],
+                            Clients: (r && r.Clients) || [],
+                            Devices: (r && r.Devices) || []
+                        };
+                        populateKnownClientDatalists();
+                    })
+                    .catch(function () { /* endpoint unavailable — rule fields stay free-text */ });
+            }
+
+            function populateKnownClientDatalists() {
+                function fill(id, values) {
+                    var dl = document.getElementById(id);
+                    if (!dl) return;
+                    dl.innerHTML = '';
+                    (values || []).forEach(function (v) {
+                        var o = document.createElement('option');
+                        o.value = v;
+                        dl.appendChild(o);
+                    });
+                }
+                fill('KnownClientNamesList', knownClients.Clients);
+                fill('KnownDeviceNamesList', knownClients.Devices);
+                var userDl = document.getElementById('KnownUserIdsList');
+                if (userDl) {
+                    userDl.innerHTML = '';
+                    knownClients.Users.forEach(function (u) {
+                        var o = document.createElement('option');
+                        o.value = u.Id;
+                        o.textContent = u.Name;
+                        userDl.appendChild(o);
+                    });
+                }
+            }
+
+            // The resolver tolerates dashed/compact/braced GUID formats, so option matching must too.
+            function normalizeGuid(v) {
+                return (v || '').replace(/[{}\-]/g, '').toLowerCase();
+            }
+
+            function buildUserSelect(selectedValue) {
+                if (knownClients.Users.length === 0) return null; // fallback to text input
+                var html = '<option value="">-- Select User --</option>';
+                var selNorm = normalizeGuid(selectedValue);
+                var found = !selectedValue;
+                knownClients.Users.forEach(function (u) {
+                    var isSelected = selNorm !== '' && normalizeGuid(u.Id) === selNorm;
+                    if (isSelected) found = true;
+                    html += '<option value="' + esc(u.Id) + '"' + (isSelected ? ' selected' : '') + '>' + esc(u.Name) + '</option>';
+                });
+                if (!found) html += buildMissingOption(selectedValue);
+                return html;
+            }
+
+            function loadDiscoveredProfiles() {
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/StreamingProfiles/Discovered'), dataType: 'json' })
+                    .then(function (profiles) { discoveredProfiles = profiles || []; })
+                    .catch(function () { discoveredProfiles = []; });
+            }
+
+            function loadDiscoveredChannels() {
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/StreamingProfiles/Channels'), dataType: 'json' })
+                    .then(function (list) { discoveredChannels = list || []; })
+                    .catch(function () { discoveredChannels = []; });
+            }
+
+            function loadDiscoveredChannelGroups() {
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/StreamingProfiles/ChannelGroups'), dataType: 'json' })
+                    .then(function (list) { discoveredChannelGroups = list || []; })
+                    .catch(function () { discoveredChannelGroups = []; });
+            }
+
+            function populateTestResolutionSelects() {
+                var chSel = document.getElementById('TestChannelId');
+                var grpSel = document.getElementById('TestChannelGroup');
+                chSel.innerHTML = '<option value="">-- Select Channel --</option>';
+                discoveredChannels.forEach(function (ch) {
+                    chSel.innerHTML += '<option value="' + esc(ch.Id) + '">' + esc(ch.Name) + '</option>';
+                });
+                grpSel.innerHTML = '<option value="">-- Select Group --</option>';
+                discoveredChannelGroups.forEach(function (g) {
+                    grpSel.innerHTML += '<option value="' + esc(g.Name) + '">' + esc(g.Name) + '</option>';
+                });
+            }
+
+            // Appended when a saved value is missing from the freshly discovered list
+            // (e.g. TVHeadend unreachable, channel disabled, profile renamed). Keeping
+            // it as an explicit selected option prevents the auto-save from silently
+            // wiping the stored value or dropping the whole rule.
+            function buildMissingOption(selectedValue) {
+                return '<option value="' + esc(selectedValue) + '" selected>' + esc(selectedValue) + ' (saved, currently unavailable)</option>';
+            }
+
+            function buildProfileSelect(selectedValue) {
+                if (discoveredProfiles.length === 0) return null; // fallback to text input
+                var html = '<option value="">-- Select --</option>';
+                var found = !selectedValue;
+                discoveredProfiles.forEach(function (p) {
+                    var name = typeof p === 'string' ? p : (p.Name || p.name || '');
+                    if (!name) return;
+                    var isSelected = name === selectedValue;
+                    if (isSelected) found = true;
+                    html += '<option value="' + esc(name) + '"' + (isSelected ? ' selected' : '') + '>' + esc(name) + '</option>';
+                });
+                if (!found) html += buildMissingOption(selectedValue);
+                return html;
+            }
+
+            function buildChannelSelect(selectedValue) {
+                if (discoveredChannels.length === 0) return null; // fallback to text input
+                var html = '<option value="">-- Select Channel --</option>';
+                var found = !selectedValue;
+                discoveredChannels.forEach(function (ch) {
+                    var isSelected = ch.Id === selectedValue || ch.Name === selectedValue;
+                    if (isSelected) found = true;
+                    html += '<option value="' + esc(ch.Id) + '"' + (isSelected ? ' selected' : '') + '>' + esc(ch.Name) + '</option>';
+                });
+                if (!found) html += buildMissingOption(selectedValue);
+                return html;
+            }
+
+            function buildChannelGroupSelect(selectedValue) {
+                if (discoveredChannelGroups.length === 0) return null;
+                var html = '<option value="">-- Select Group --</option>';
+                var found = !selectedValue;
+                discoveredChannelGroups.forEach(function (g) {
+                    var isSelected = g.Id === selectedValue || g.Name === selectedValue;
+                    if (isSelected) found = true;
+                    html += '<option value="' + esc(g.Name) + '"' + (isSelected ? ' selected' : '') + '>' + esc(g.Name) + '</option>';
+                });
+                if (!found) html += buildMissingOption(selectedValue);
+                return html;
+            }
+
+            function buildProfileCell(selectedValue) {
+                var selectHtml = buildProfileSelect(selectedValue);
+                if (selectHtml) {
+                    return '<select is="emby-select" data-field="profile">' + selectHtml + '</select>';
+                }
+                return '<input type="text" is="emby-input" data-field="profile" value="' + esc(selectedValue || '') + '" placeholder="e.g. pass" />';
+            }
+
+            var typeMeta = {
+                channel: { order: 1, badge: 'tvh-badge-channel', label: 'Channel', placeholder: 'Channel UUID' },
+                group:   { order: 2, badge: 'tvh-badge-group',   label: 'Channel Group', placeholder: 'e.g. Sports' },
+                client:  { order: 3, badge: 'tvh-badge-client',  label: 'Client', placeholder: 'e.g. Jellyfin Web' },
+                device:  { order: 3, badge: 'tvh-badge-device',  label: 'Device', placeholder: 'e.g. iPhone 15' },
+                user:    { order: 4, badge: 'tvh-badge-user',    label: 'User', placeholder: 'User ID' },
+                default: { order: 5, badge: 'tvh-badge-default', label: 'Default', placeholder: '' }
+            };
+
+            function getMaxPriority() {
+                var max = 0;
+                var rows = document.querySelectorAll('#ProfileAssignmentsBody tr:not(.tvh-row-default)');
+                rows.forEach(function (row) {
+                    var inp = row.querySelector('[data-field="priority"]');
+                    if (inp) { var v = parseInt(inp.value, 10); if (v > max) max = v; }
+                });
+                return max;
+            }
+
+            function buildTableRow(type, match, profile, description, priority, preserved) {
+                var meta = typeMeta[type] || typeMeta.default;
+                var isDefault = type === 'default';
+                var tr = document.createElement('tr');
+                tr.setAttribute('data-rule-type', type);
+                if (isDefault) tr.className = 'tvh-row-default';
+
+                // Preserve fields the simplified table UI does not render (match type,
+                // playback mode, enabled flag) so a load→save round-trip is idempotent and
+                // does not silently flatten rules created outside this UI.
+                if (preserved) {
+                    if (preserved.matchType != null) tr.setAttribute('data-match-type', String(preserved.matchType));
+                    if (preserved.playbackMode != null) tr.setAttribute('data-playback-mode', String(preserved.playbackMode));
+                    if (preserved.enabled != null) tr.setAttribute('data-enabled', preserved.enabled ? '1' : '0');
+                }
+
+                // Priority
+                var tdPri = document.createElement('td');
+                if (!isDefault) {
+                    tdPri.innerHTML = '<input type="number" is="emby-input" data-field="priority" value="' + (priority || 0) + '" min="0" style="width:4.5em;" />';
+                } else {
+                    tdPri.innerHTML = '<span style="opacity:0.4;">—</span>';
+                }
+                tr.appendChild(tdPri);
+
+                // Type badge
+                var tdType = document.createElement('td');
+                tdType.innerHTML = '<span class="tvh-badge ' + meta.badge + '">' + esc(meta.label) + '</span>';
+                tr.appendChild(tdType);
+
+                // Match
+                var tdMatch = document.createElement('td');
+                if (!isDefault) {
+                    var matchHtml = null;
+                    if (type === 'channel') {
+                        var chOpts = buildChannelSelect(match);
+                        if (chOpts) {
+                            matchHtml = '<select is="emby-select" data-field="match">' + chOpts + '</select>';
+                        }
+                    } else if (type === 'group') {
+                        var grpOpts = buildChannelGroupSelect(match);
+                        if (grpOpts) {
+                            matchHtml = '<select is="emby-select" data-field="match">' + grpOpts + '</select>';
+                        }
+                    } else if (type === 'user') {
+                        // User rules match by id — offer the registered Jellyfin users by name.
+                        var userOpts = buildUserSelect(match);
+                        if (userOpts) {
+                            matchHtml = '<select is="emby-select" data-field="match">' + userOpts + '</select>';
+                        }
+                    }
+                    if (!matchHtml) {
+                        // Client/device names stay editable free text ("Contains" match types need
+                        // substrings), but get datalist suggestions from known sessions/devices.
+                        var listAttr = type === 'client' ? ' list="KnownClientNamesList"'
+                            : type === 'device' ? ' list="KnownDeviceNamesList"'
+                            : '';
+                        matchHtml = '<input type="text" is="emby-input" data-field="match" value="' + esc(match || '') + '" placeholder="' + esc(meta.placeholder) + '"' + listAttr + ' />';
+                    }
+                    tdMatch.innerHTML = matchHtml;
+                } else {
+                    tdMatch.innerHTML = '<span style="opacity:0.4;">—</span>';
+                }
+                tr.appendChild(tdMatch);
+
+                // Profile
+                var tdProfile = document.createElement('td');
+                tdProfile.innerHTML = buildProfileCell(profile);
+                tr.appendChild(tdProfile);
+
+                // Description
+                var tdDesc = document.createElement('td');
+                if (!isDefault) {
+                    tdDesc.innerHTML = '<input type="text" is="emby-input" data-field="description" value="' + esc(description || '') + '" placeholder="optional" />';
+                } else {
+                    tdDesc.innerHTML = '<span style="opacity:0.4; font-size:0.88em;">Fallback when no rule matches</span>';
+                }
+                tr.appendChild(tdDesc);
+
+                // Actions
+                var tdAction = document.createElement('td');
+                if (!isDefault) {
+                    var delBtn = document.createElement('button');
+                    delBtn.type = 'button';
+                    delBtn.className = 'tvh-action-delete';
+                    delBtn.textContent = '\u2715';
+                    delBtn.addEventListener('click', function () {
+                        tr.remove();
+                        scheduleAutoSave();
+                    });
+                    tdAction.appendChild(delBtn);
+                }
+                tr.appendChild(tdAction);
+
+                return tr;
+            }
+
+            function sortAssignmentRows() {
+                var tbody = document.getElementById('ProfileAssignmentsBody');
+                var rows = Array.from(tbody.querySelectorAll('tr'));
+                rows.sort(function (a, b) {
+                    var ta = a.getAttribute('data-rule-type') || 'default';
+                    var tb = b.getAttribute('data-rule-type') || 'default';
+                    var oa = (typeMeta[ta] || typeMeta.default).order;
+                    var ob = (typeMeta[tb] || typeMeta.default).order;
+                    if (oa !== ob) return oa - ob;
+                    var pa = parseInt((a.querySelector('[data-field="priority"]') || {}).value || '0', 10);
+                    var pb = parseInt((b.querySelector('[data-field="priority"]') || {}).value || '0', 10);
+                    return pa - pb;
+                });
+                rows.forEach(function (row) { tbody.appendChild(row); });
+            }
+
+            function renderProfileTable(channelOverrides, channelGroupOverrides, clientRules, userRules, defaultProfile) {
+                var tbody = document.getElementById('ProfileAssignmentsBody');
+                tbody.innerHTML = '';
+
+                // Channel overrides
+                (channelOverrides || []).forEach(function (o) {
+                    tbody.appendChild(buildTableRow('channel', o.ChannelId, o.TvHeadendProfileName, o.Description, 0, { playbackMode: o.PlaybackMode }));
+                });
+
+                // Channel group overrides
+                (channelGroupOverrides || []).forEach(function (o) {
+                    tbody.appendChild(buildTableRow('group', o.ChannelGroup, o.TvHeadendProfileName, o.Description, 0, { playbackMode: o.PlaybackMode }));
+                });
+
+                // Client & Device rules
+                (clientRules || []).forEach(function (r) {
+                    var ruleType = (r.MatchType === 2 || r.MatchType === 3) ? 'device' : 'client';
+                    tbody.appendChild(buildTableRow(ruleType, r.MatchValue, r.TvHeadendProfileName, r.Description || r.RuleName, r.Priority, { matchType: r.MatchType, playbackMode: r.PlaybackMode, enabled: r.Enabled }));
+                });
+
+                // User rules
+                (userRules || []).forEach(function (r) {
+                    tbody.appendChild(buildTableRow('user', r.MatchValue, r.TvHeadendProfileName, r.Description || r.RuleName, r.Priority, { matchType: r.MatchType, playbackMode: r.PlaybackMode, enabled: r.Enabled }));
+                });
+
+                // Default row (always last)
+                tbody.appendChild(buildTableRow('default', '', defaultProfile, '', 0));
+
+                sortAssignmentRows();
+            }
+
+            function collectProfileAssignments() {
+                var rows = document.querySelectorAll('#ProfileAssignmentsBody tr');
+                var channelOverrides = [];
+                var channelGroupOverrides = [];
+                var clientRules = [];
+                var userRules = [];
+                var defaultProfile = '';
+
+                rows.forEach(function (row) {
+                    var type = row.getAttribute('data-rule-type');
+                    var profileEl = row.querySelector('[data-field="profile"]');
+                    var profile = profileEl ? profileEl.value.trim() : '';
+
+                    if (type === 'default') {
+                        defaultProfile = profile;
+                        return;
+                    }
+
+                    var matchEl = row.querySelector('[data-field="match"]');
+                    var match = matchEl ? matchEl.value.trim() : '';
+                    if (!match) return;
+
+                    var descEl = row.querySelector('[data-field="description"]');
+                    var description = descEl ? descEl.value.trim() : '';
+                    var priEl = row.querySelector('[data-field="priority"]');
+                    var priority = priEl ? (parseInt(priEl.value, 10) || 0) : 0;
+
+                    // Recover fields the simplified UI does not render (preserved as data-* attributes
+                    // on load) so non-default playback modes, match types and disabled rules survive a save.
+                    var pmAttr = row.getAttribute('data-playback-mode');
+                    var playbackMode = pmAttr != null ? (parseInt(pmAttr, 10) || 0) : 0;
+                    var mtAttr = row.getAttribute('data-match-type');
+                    var enAttr = row.getAttribute('data-enabled');
+                    var enabled = enAttr != null ? enAttr === '1' : true;
+
+                    if (type === 'channel') {
+                        channelOverrides.push({
+                            ChannelId: match,
+                            PlaybackMode: playbackMode,
+                            TvHeadendProfileName: profile,
+                            Description: description
+                        });
+                    } else if (type === 'group') {
+                        channelGroupOverrides.push({
+                            ChannelGroup: match,
+                            PlaybackMode: playbackMode,
+                            TvHeadendProfileName: profile,
+                            Description: description
+                        });
+                    } else if (type === 'client' || type === 'device') {
+                        clientRules.push({
+                            Enabled: enabled,
+                            RuleName: description || match,
+                            Description: description,
+                            Priority: priority,
+                            MatchType: mtAttr != null ? (parseInt(mtAttr, 10) || 0) : (type === 'device' ? 2 : 0),
+                            MatchValue: match,
+                            PlaybackMode: playbackMode,
+                            TvHeadendProfileName: profile
+                        });
+                    } else if (type === 'user') {
+                        userRules.push({
+                            Enabled: enabled,
+                            RuleName: description || match,
+                            Description: description,
+                            Priority: priority,
+                            MatchType: mtAttr != null ? (parseInt(mtAttr, 10) || 0) : 4,
+                            MatchValue: match,
+                            PlaybackMode: playbackMode,
+                            TvHeadendProfileName: profile
+                        });
+                    }
+                });
+
+                return {
+                    defaultProfile: defaultProfile,
+                    channelOverrides: channelOverrides,
+                    channelGroupOverrides: channelGroupOverrides,
+                    clientRules: clientRules,
+                    userRules: userRules
+                };
+            }
+
+            // ── Add Rule button + dropdown ──
+            document.getElementById('AddRuleBtn').addEventListener('click', function (e) {
+                e.stopPropagation();
+                var menu = document.getElementById('AddRuleMenu');
+                menu.classList.toggle('tvh-open');
+            });
+
+            document.getElementById('AddRuleMenu').addEventListener('click', function (e) {
+                var btn = e.target.closest('[data-rule-type]');
+                if (!btn) return;
+                var type = btn.getAttribute('data-rule-type');
+                var newPri = getMaxPriority() + 10;
+                var tbody = document.getElementById('ProfileAssignmentsBody');
+                var defaultRow = tbody.querySelector('.tvh-row-default');
+                var newRow = buildTableRow(type, '', '', '', newPri);
+                if (defaultRow) {
+                    tbody.insertBefore(newRow, defaultRow);
+                } else {
+                    tbody.appendChild(newRow);
+                }
+                sortAssignmentRows();
+                document.getElementById('AddRuleMenu').classList.remove('tvh-open');
+                scheduleAutoSave();
+            });
+
+            // Close menu on click outside
+            document.addEventListener('click', function (e) {
+                var menu = document.getElementById('AddRuleMenu');
+                if (menu && !e.target.closest('.tvh-add-rule-wrap')) {
+                    menu.classList.remove('tvh-open');
+                }
+            });
+
+            // ── Test Resolution ──
+            document.getElementById('TestResolutionBtn').addEventListener('click', function () {
+                var resultEl = document.getElementById('TestResolutionResult');
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = '<em>Saving and testing…</em>';
+
+                saveCurrentFormToConfig().then(function () {
+                    var params = [];
+                    var chId = document.getElementById('TestChannelId').value.trim();
+                    var chGrp = document.getElementById('TestChannelGroup').value.trim();
+                    var client = document.getElementById('TestClientName').value.trim();
+                    var device = document.getElementById('TestDeviceName').value.trim();
+                    var uid = document.getElementById('TestUserId').value.trim();
+                    if (chId) params.push('channelId=' + encodeURIComponent(chId));
+                    if (chGrp) params.push('channelGroup=' + encodeURIComponent(chGrp));
+                    if (client) params.push('clientName=' + encodeURIComponent(client));
+                    if (device) params.push('deviceName=' + encodeURIComponent(device));
+                    if (uid) params.push('userId=' + encodeURIComponent(uid));
+                    var url = ApiClient.getUrl('TvHeadendApi/StreamingProfiles/Resolve') + (params.length ? '?' + params.join('&') : '');
+                    return ApiClient.ajax({ type: 'GET', url: url, dataType: 'json' });
+                }).then(function (r) {
+                    var modeNames = { 0: 'Auto', 1: 'Pass Through', 2: 'TVHeadend Transcode', 3: 'Jellyfin Transcode' };
+                    var html = '<div><span class="tvh-res-label">Profile:</span> <strong>' + esc(r.EffectiveTvHeadendProfile || '—') + '</strong></div>';
+                    html += '<div><span class="tvh-res-label">Mode:</span> ' + esc(modeNames[r.EffectivePlaybackMode] || String(r.EffectivePlaybackMode)) + '</div>';
+                    html += '<div><span class="tvh-res-label">Source:</span> ' + esc(r.Source || '—') + '</div>';
+                    if (r.MatchedRuleName) html += '<div><span class="tvh-res-label">Matched Rule:</span> ' + esc(r.MatchedRuleName) + '</div>';
+                    if (r.UsedFallback) html += '<div style="color:#f0ad4e;">Fallback was used</div>';
+                    if (r.Reasons && r.Reasons.length > 0) {
+                        html += '<details style="margin-top:0.4em;"><summary style="cursor:pointer; font-size:0.88em; opacity:0.7;">Debug reasons (' + r.Reasons.length + ')</summary><ul style="margin:0.3em 0 0 1.2em; font-size:0.88em; opacity:0.8;">';
+                        r.Reasons.forEach(function (reason) { html += '<li>' + esc(reason) + '</li>'; });
+                        html += '</ul></details>';
+                    }
+                    resultEl.innerHTML = html;
+                }).catch(function (err) {
+                    resultEl.innerHTML = '<span style="color:#ef9a9a;">Test failed: ' + esc(err.statusText || err.message || 'Unknown error') + '</span>';
+                });
+            });
+
+            // ── Validate Profiles ──
+            document.getElementById('ValidateProfilesBtn').addEventListener('click', function () {
+                var resultEl = document.getElementById('ValidateProfilesResult');
+                resultEl.innerHTML = '<em>Validating…</em>';
+
+                saveCurrentFormToConfig().then(function () {
+                    return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/StreamingProfiles/Validate'), dataType: 'json' });
+                }).then(function (warnings) {
+                    if (!warnings || warnings.length === 0) {
+                        resultEl.innerHTML = '<span class="tvh-validation-ok">All configured profile names are valid.</span>';
+                    } else {
+                        var html = '<span class="tvh-validation-warn">' + warnings.length + ' warning(s):</span><ul style="margin:0.3em 0 0 1.2em; font-size:0.88em;">';
+                        warnings.forEach(function (w) { html += '<li style="color:#f0ad4e;">' + esc(w) + '</li>'; });
+                        html += '</ul>';
+                        resultEl.innerHTML = html;
+                    }
+                }).catch(function (err) {
+                    resultEl.innerHTML = '<span style="color:#ef9a9a;">Validation failed: ' + esc(err.statusText || err.message || 'Unknown error') + '</span>';
+                });
+            });
+
+            // ── Auto-save with visual feedback ───────────────────
+            var saveToastTimer = null;
+
+            function showSaveToast(success) {
+                var toast = $('#TvhSaveToast');
+                toast.className = 'tvh-save-toast ' + (success ? 'tvh-save-toast-ok' : 'tvh-save-toast-err');
+                toast.textContent = success ? '✓ Saved' : '✗ Save failed';
+                toast.classList.add('tvh-show');
+                if (saveToastTimer) clearTimeout(saveToastTimer);
+                saveToastTimer = setTimeout(function () { toast.classList.remove('tvh-show'); }, 1500);
+            }
+
+            function flashField(el) {
+                if (!el) return;
+                var container = el.closest('.tvh-field') || el.closest('.tvh-checkbox');
+                if (container) {
+                    container.classList.remove('tvh-field-saved');
+                    void container.offsetWidth; // force reflow
+                    container.classList.add('tvh-field-saved');
+                }
+            }
+
+            var lastChangedField = null;
+
+            function scheduleAutoSave() {
+                if (autoSaveTimer) clearTimeout(autoSaveTimer);
+                lastChangedField = document.activeElement;
+                autoSaveTimer = setTimeout(function () {
+                    var field = lastChangedField;
+                    saveCurrentFormToConfig().then(function () {
+                        showSaveToast(true);
+                        flashField(field);
+
+                        // Auto-invalidate cache when the default streaming profile changes.
+                        var defaultRow = document.querySelector('#ProfileAssignmentsBody .tvh-row-default');
+                        var newProfile = '';
+                        if (defaultRow) {
+                            var profileEl = defaultRow.querySelector('[data-field="profile"]');
+                            if (profileEl) newProfile = profileEl.value.trim();
+                        }
+                        if (newProfile !== lastKnownDefaultProfile && lastKnownDefaultProfile !== '') {
+                            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('TvHeadendApi/InvalidateCache') }).then(function () {
+                                console.log('[TvHeadend] Cache invalidated — profile changed from "' + lastKnownDefaultProfile + '" to "' + newProfile + '"');
+                            }).catch(function (err) {
+                                console.warn('[TvHeadend] Cache invalidation failed:', err);
+                            });
+                            lastKnownDefaultProfile = newProfile;
+                        }
+
+                        loadDiagnose();
+                    }).catch(function (err) {
+                        showSaveToast(false);
+                        console.warn('[TvHeadend] Auto-save failed:', err);
+                    });
+                }, 800);
+            }
+
+            $('#TvHeadendApiConfigForm').addEventListener('change', scheduleAutoSave);
+            $('#TvHeadendApiConfigForm').addEventListener('input', scheduleAutoSave);
+        })();
     </script>
 </div>
 </body>

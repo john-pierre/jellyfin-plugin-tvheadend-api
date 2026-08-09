@@ -1,0 +1,2108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>TvHeadend Dashboard</title>
+</head>
+<body>
+<div id="TvHeadendDashboardPage" data-role="page" class="page type-interior" data-require="emby-button">
+    <!--suppress CssUnusedSymbol -- classes are applied dynamically via JavaScript -->
+    <style>
+        /* ── Layout ─────────────────────────────────────────── */
+        #TvHeadendDashboardPage { max-width: 1200px; margin: 0 auto; }
+
+        /* ── Header ─────────────────────────────────────────── */
+        .tvh-header { margin-bottom: 1.5em; }
+        .tvh-header h1 { margin: 0 0 0.15em 0; font-size: 1.6em; }
+        .tvh-header-sub { opacity: 0.65; font-size: 0.92em; margin-bottom: 0.8em; }
+        .tvh-toolbar { display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap; }
+        .tvh-toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 0.6em; }
+        .tvh-meta { font-size: 0.82em; opacity: 0.55; }
+
+        /* ── Summary row ────────────────────────────────────── */
+        .tvh-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8em; margin-bottom: 1.5em; }
+        .tvh-stat { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 0.8em 1em; text-align: center; }
+        .tvh-stat-value { font-size: 1.4em; font-weight: 700; line-height: 1.2; }
+        .tvh-stat-label { font-size: 0.78em; opacity: 0.6; margin-top: 0.2em; }
+
+        /* ── Cards & sections ───────────────────────────────── */
+        .tvh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; margin-bottom: 1.2em; }
+        .tvh-card { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 1em 1.2em; }
+        .tvh-card h3 { margin: 0 0 0.6em 0; font-size: 1em; font-weight: 600; opacity: 0.9; }
+        .tvh-full { grid-column: 1 / -1; }
+        .tvh-section { margin-bottom: 1.5em; }
+        .tvh-section-title { font-size: 1.1em; font-weight: 600; margin: 0 0 0.6em 0; padding-bottom: 0.3em; border-bottom: 1px solid #333; }
+
+        /* ── Key-value pairs ────────────────────────────────── */
+        .tvh-kv { display: grid; grid-template-columns: auto 1fr; gap: 0.2em 1em; font-size: 0.92em; line-height: 1.6; }
+        .tvh-kv dt { opacity: 0.6; white-space: nowrap; }
+        .tvh-kv dd { margin: 0; }
+
+        /* ── Badges ─────────────────────────────────────────── */
+        .tvh-badge { display: inline-block; padding: 0.15em 0.55em; border-radius: 4px; font-size: 0.82em; font-weight: 600; }
+        .tvh-badge-ok { background: #1b5e20; color: #a5d6a7; }
+        .tvh-badge-warn { background: #e65100; color: #ffe0b2; }
+        .tvh-badge-err { background: #b71c1c; color: #ef9a9a; }
+        .tvh-badge-idle { background: #37474f; color: #b0bec5; }
+        .tvh-badge-active { background: #0d47a1; color: #90caf9; }
+
+        /* ── Tables ─────────────────────────────────────────── */
+        .tvh-table-wrap { overflow-x: auto; overflow-y: auto; max-height: 500px; }
+        #TvHeadendDashboardPage table { width: 100%; border-collapse: collapse; font-size: 0.86em; }
+        #TvHeadendDashboardPage th { text-align: left; border-bottom: 2px solid #444; padding: 0.45em 0.6em; opacity: 0.7; font-weight: 600; white-space: nowrap; position: sticky; top: 0; background: #1c1c1e; z-index: 1; }
+        #TvHeadendDashboardPage td { padding: 0.45em 0.6em; border-bottom: 1px solid rgba(255,255,255,0.06); }
+
+        /* ── Signal bars ────────────────────────────────────── */
+        .tvh-signal-bar { display: inline-block; width: 56px; height: 8px; background: #333; border-radius: 3px; overflow: hidden; vertical-align: middle; }
+        .tvh-signal-fill { display: block; height: 100%; border-radius: 3px; transition: width 0.2s ease; }
+
+        /* ── Error / empty / loading ────────────────────────── */
+        .tvh-error-banner { background: rgba(183,28,28,0.12); border: 1px solid rgba(183,28,28,0.4); border-radius: 6px; padding: 0.7em 1em; margin-bottom: 1em; color: #ef9a9a; font-size: 0.92em; }
+        .tvh-empty { text-align: center; padding: 1.5em 1em; opacity: 0.5; font-size: 0.9em; font-style: italic; }
+        .tvh-section-error { font-style: italic; opacity: 0.55; padding: 0.6em 0; font-size: 0.9em; }
+        .tvh-loading { display: none; font-size: 0.82em; opacity: 0.6; }
+        .tvh-warnings-list { margin: 0; padding-left: 1.4em; font-size: 0.9em; line-height: 1.7; }
+        .tvh-warnings-list li { color: #f0ad4e; }
+
+        /* ── Charts ─────────────────────────────────────────── */
+        .tvh-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; margin-bottom: 1em; }
+        .tvh-chart-card { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 0.8em 1em; }
+        .tvh-chart-card h4 { margin: 0 0 0.4em 0; font-size: 0.9em; font-weight: 600; opacity: 0.8; }
+
+        /* ── KPI row for analytics ──────────────────────────── */
+        .tvh-kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.6em; margin-bottom: 1em; }
+        .tvh-kpi { background: rgba(255,255,255,0.03); border-radius: 6px; padding: 0.6em 0.8em; text-align: center; }
+        .tvh-kpi-value { font-size: 1.15em; font-weight: 700; }
+        .tvh-kpi-label { font-size: 0.75em; opacity: 0.55; }
+
+        /* ── Session table toolbar ──────────────────────────── */
+        .tvh-table-toolbar { display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; margin-bottom: 0.6em; }
+        .tvh-table-toolbar input[type="text"] { flex: 1 1 180px; min-width: 140px; padding: 0.35em 0.6em; border: 1px solid #555; border-radius: 4px; background: rgba(255,255,255,0.06); color: inherit; font-size: 0.88em; }
+        .tvh-table-toolbar select { padding: 0.35em 0.5em; border: 1px solid #555; border-radius: 4px; background: #1c1c1e; color: #e0e0e0; font-size: 0.88em; min-width: 100px; }
+        .tvh-table-toolbar select option { background: #1c1c1e; color: #e0e0e0; }
+        .tvh-table-toolbar .tvh-filter-count { font-size: 0.8em; opacity: 0.5; }
+
+        /* ── Sortable headers ──────────────────────────────── */
+        #TvHeadendDashboardPage th.tvh-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+        #TvHeadendDashboardPage th.tvh-sortable:hover { opacity: 1; }
+        #TvHeadendDashboardPage th .tvh-sort-arrow { font-size: 0.75em; margin-left: 0.3em; opacity: 0.4; }
+        #TvHeadendDashboardPage th.tvh-sort-asc .tvh-sort-arrow { opacity: 1; }
+        #TvHeadendDashboardPage th.tvh-sort-desc .tvh-sort-arrow { opacity: 1; }
+
+        /* ── Logs panel ─────────────────────────────────────── */
+        .tvh-logs-panel { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 1em 1.2em; font-family: 'Monaco', 'Courier New', monospace; font-size: 0.85em; }
+        .tvh-logs-list { list-style: none; margin: 0; padding: 0; max-height: 400px; overflow-y: auto; }
+        .tvh-logs-item { padding: 0.3em 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+        .tvh-logs-item:last-child { border-bottom: none; }
+        .tvh-logs-time { opacity: 0.5; margin-right: 0.6em; }
+        .tvh-logs-text { color: #e0e0e0; word-wrap: break-word; }
+        .tvh-logs-empty { text-align: center; padding: 1em; opacity: 0.5; font-style: italic; }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 800px) {
+            .tvh-grid, .tvh-chart-grid { grid-template-columns: 1fr; }
+            .tvh-summary { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+            .tvh-table-toolbar { flex-direction: column; align-items: stretch; }
+        }
+
+        /* ── Icon buttons ────────────────────────────────────── */
+        .tvh-icon-button { min-width: 40px; padding: 0.4em 0.6em !important; display: inline-flex; align-items: center; justify-content: center; }
+        .tvh-icon-button span { line-height: 1; margin: 0; }
+
+        /* ── Pagination ──────────────────────────────────────── */
+        .tvh-pagination { display: flex; gap: 0.3em; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 0.85em; }
+        .tvh-pagination button, .tvh-pagination span { display: inline-block; padding: 0.3em 0.5em; min-width: 1.8em; text-align: center; border: 1px solid #555; border-radius: 3px; cursor: pointer; user-select: none; }
+        .tvh-pagination button { background: rgba(255,255,255,0.06); color: #e0e0e0; }
+        .tvh-pagination button:hover { background: rgba(255,255,255,0.12); }
+        .tvh-pagination span { background: #333; opacity: 0.6; cursor: default; }
+        .tvh-pagination .tvh-page-active { background: #0d47a1; color: #90caf9; border-color: #0d47a1; font-weight: 600; }
+        .tvh-pagination .tvh-page-disabled { opacity: 0.3; cursor: not-allowed; }
+
+        /* ── Support banner ─────────────────────────────────── */
+        .tvh-support-banner {
+            margin-bottom: 1.2em;
+            padding: 1em 1.1em;
+            border-radius: 10px;
+            border: 1px solid rgba(0,164,220,0.45);
+            background: linear-gradient(135deg, rgba(0,164,220,0.14), rgba(46,204,113,0.1));
+        }
+        .tvh-support-banner h2 { margin: 0 0 0.35em 0; font-size: 1.1em; }
+        .tvh-support-banner p { margin: 0 0 0.75em 0; font-size: 0.9em; opacity: 0.9; }
+        .tvh-support-links { display: flex; flex-wrap: wrap; gap: 0.55em; }
+        .tvh-support-link {
+            display: inline-block;
+            text-decoration: none;
+            padding: 0.42em 0.72em;
+            border-radius: 5px;
+            border: 1px solid rgba(255,255,255,0.22);
+            background: rgba(255,255,255,0.08);
+            color: #e0f3ff;
+            font-size: 0.86em;
+            font-weight: 600;
+        }
+        .tvh-support-link:hover { background: rgba(255,255,255,0.16); }
+
+        /* ── Setup required banner ─────────────────────────── */
+        .tvh-setup-banner {
+            margin-bottom: 1.5em;
+            padding: 1.5em 1.5em;
+            border-radius: 10px;
+            border: 1px solid rgba(255,152,0,0.5);
+            background: linear-gradient(135deg, rgba(255,152,0,0.12), rgba(255,87,34,0.08));
+            text-align: center;
+        }
+        .tvh-setup-banner h2 { margin: 0 0 0.5em 0; font-size: 1.3em; }
+        .tvh-setup-banner p { margin: 0 0 1em 0; font-size: 0.95em; opacity: 0.9; line-height: 1.6; }
+        .tvh-setup-banner .tvh-setup-icon { font-size: 2.5em; margin-bottom: 0.3em; }
+
+        /* ── Status banner (TVHeadend connectivity) ─────────── */
+        .tvh-status-banner { display: flex; align-items: center; gap: 0.6em; padding: 0.7em 1em; border-radius: 6px; font-size: 0.92em; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); }
+        .tvh-status-banner.tvh-status-ok { border-color: rgba(76,175,80,0.45); background: rgba(27,94,32,0.16); }
+        .tvh-status-banner.tvh-status-warn { border-color: rgba(240,173,78,0.45); background: rgba(230,81,0,0.12); }
+        .tvh-status-banner.tvh-status-err { border-color: rgba(183,28,28,0.5); background: rgba(183,28,28,0.14); }
+        .tvh-status-banner.tvh-status-loading { opacity: 0.75; }
+    </style>
+    <div data-role="content">
+        <div class="content-primary">
+
+            <!-- ── Header ──────────────────────────────────── -->
+            <div class="tvh-header">
+                <h1>TvHeadend</h1>
+                <p class="tvh-header-sub">Live TV backend status, tuner monitoring, and viewing analytics.</p>
+                <div class="tvh-toolbar">
+                    <button id="tvhSettingsBtn" is="emby-button" type="button" class="raised emby-button">
+                        <span>Open Settings</span>
+                    </button>
+                    <button id="tvhRefreshBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" title="Refresh dashboard">
+                        <span style="font-size:1.3em;">⟳</span>
+                    </button>
+                    <label style="display:flex; align-items:center; gap:0.35em; font-size:0.88em;">
+                        <input id="tvhAutoRefresh" type="checkbox" checked /> Auto-refresh (2 s)
+                    </label>
+                    <div class="tvh-toolbar-right">
+                        <span id="tvhLoadingIndicator" class="tvh-loading">Loading…</span>
+                        <span id="tvhLastRefresh" class="tvh-meta"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tvh-support-banner" role="region" aria-label="Support and project links">
+                <h2>Support this plugin</h2>
+                <p>If this dashboard and plugin help your Jellyfin setup, you can support development or follow project updates here.</p>
+                <div class="tvh-support-links">
+                    <a class="tvh-support-link" href="https://github.com/sponsors/john-pierre" target="_blank" rel="noopener">GitHub Sponsors</a>
+                    <a class="tvh-support-link" href="https://ko-fi.com/johnpierre" target="_blank" rel="noopener">Ko-fi</a>
+                    <a class="tvh-support-link" href="https://buymeacoffee.com/johnpierre" target="_blank" rel="noopener">Buy Me a Coffee</a>
+                    <a class="tvh-support-link" href="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api" target="_blank" rel="noopener">TvHeadend API Repo</a>
+                    <a class="tvh-support-link" href="https://github.com/john-pierre/jellyfin-plugin-suite" target="_blank" rel="noopener">Proposed: jellyfin-plugin-suite</a>
+                </div>
+            </div>
+
+            <div id="tvhErrorBanner" class="tvh-error-banner" style="display:none;"></div>
+
+            <!-- ── Setup required banner (hidden by default) ── -->
+            <div id="tvhSetupBanner" class="tvh-setup-banner" style="display:none;">
+                <div class="tvh-setup-icon">⚙️</div>
+                <h2>TvHeadend Plugin — Setup Required</h2>
+                <p>
+                    The plugin has not been configured yet.<br/>
+                    Please open the settings page and enter your TVHeadend server host, port, and credentials.
+                </p>
+                <button id="tvhSetupSettingsBtn" is="emby-button" type="button" class="raised emby-button" style="font-size:1em; padding:0.6em 1.5em;">
+                    <span>Open Settings</span>
+                </button>
+            </div>
+
+            <!-- ── Main dashboard content (hidden when setup required) ── -->
+            <div id="tvhDashboardContent">
+
+            <!-- ── Summary cards ────────────────────────────── -->
+            <div id="tvhRelayBanner" class="tvh-status-banner tvh-status-loading" style="margin-bottom:1em;">
+                <span id="relayBannerIcon">⏳</span>
+                <span id="relayBannerText" style="opacity:0.7;">Checking relay service…</span>
+            </div>
+            <div class="tvh-summary" id="tvhSummaryRow">
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumConnection">—</div><div class="tvh-stat-label">Connection</div></div>
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumTuners">—</div><div class="tvh-stat-label">Active Tuners</div></div>
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumSubscriptions">—</div><div class="tvh-stat-label">Subscriptions</div></div>
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumConnections">—</div><div class="tvh-stat-label">Connections</div></div>
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumHealth">—</div><div class="tvh-stat-label">Health</div></div>
+                <div class="tvh-stat"><div class="tvh-stat-value" id="sumAlerts">—</div><div class="tvh-stat-label">Warnings</div></div>
+            </div>
+
+            <!-- ── A. Backend & Health ──────────────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Backend &amp; Health</h2>
+                <div class="tvh-grid">
+                    <div class="tvh-card" id="tvhConnectionCard">
+                        <h3>TVHeadend</h3>
+                        <dl class="tvh-kv" id="tvhConnectionKv"></dl>
+                    </div>
+                    <div class="tvh-card" id="tvhHealthCard">
+                        <h3>Plugin Health</h3>
+                        <dl class="tvh-kv" id="tvhHealthKv"></dl>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── B. Tuners / Inputs ───────────────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Tuners / Inputs</h2>
+                <div class="tvh-card tvh-full">
+                    <div id="tvhInputsContent"></div>
+                </div>
+            </div>
+
+            <!-- ── C. Active Subscriptions ──────────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Active Subscriptions</h2>
+                <div class="tvh-card tvh-full">
+                    <div id="tvhSubsContent"></div>
+                </div>
+            </div>
+
+            <!-- ── D. Active Connections ────────────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Active Connections</h2>
+                <div class="tvh-card tvh-full">
+                    <div id="tvhConnsContent"></div>
+                </div>
+            </div>
+
+            <!-- ── D2. Active Jellyfin Sessions ─────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Active Jellyfin Sessions</h2>
+                <div class="tvh-card tvh-full">
+                    <div id="tvhActiveSessionsContent"></div>
+                </div>
+            </div>
+
+            <!-- ── E. Live TV Summary ───────────────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Live TV Summary</h2>
+                <div class="tvh-grid">
+                    <div class="tvh-card">
+                        <h3>Channels &amp; EPG</h3>
+                        <dl class="tvh-kv" id="tvhChannelKv"></dl>
+                    </div>
+                    <div class="tvh-card">
+                        <h3>Warnings &amp; Recommendations</h3>
+                        <div id="tvhWarningsContent"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── F. Viewing Analytics ─────────────────────── -->
+            <div class="tvh-section">
+                <h2 class="tvh-section-title">Viewing Analytics</h2>
+
+                <div class="tvh-toolbar" style="margin-bottom:1em;">
+                    <label for="tvhStatsDays" style="font-size:0.9em;">Time range:</label>
+                    <select id="tvhStatsDays" style="width:auto; min-width:120px; padding:0.3em 0.5em; background:#1c1c1e; color:#e0e0e0; border:1px solid #555; border-radius:4px;">
+                        <option value="1">Last 24 hours</option>
+                        <option value="7" selected>Last 7 days</option>
+                        <option value="30">Last 30 days</option>
+                        <option value="0">All time</option>
+                    </select>
+                    <button id="tvhRefreshStatsBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" title="Refresh statistics">
+                        <span style="font-size:1.3em;">⟳</span>
+                    </button>
+                    <button id="tvhClearStatsBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" style="background:#c0392b; color:#fff;" title="Clear all statistics">
+                        <span style="font-size:1.3em;">🗑️</span>
+                    </button>
+                    <label style="display:flex; align-items:center; gap:0.35em; font-size:0.88em;">
+                        <input id="tvhStatsAutoRefresh" type="checkbox" checked /> Auto-refresh (60 s)
+                    </label>
+                    <div style="border-left:1px solid rgba(255,255,255,0.1); height:1.5em; margin:0 0.5em;"></div>
+                    <label style="display:flex; align-items:center; gap:0.5em; font-size:0.88em;">
+                        <span>Show times as:</span>
+                        <select id="tvhTimezoneMode" style="width:auto; min-width:100px; padding:0.3em 0.5em; background:#1c1c1e; color:#e0e0e0; border:1px solid #555; border-radius:4px;">
+                            <option value="utc">UTC</option>
+                            <option value="local" selected>Local Time</option>
+                        </select>
+                    </label>
+                    <div class="tvh-toolbar-right">
+                        <span id="tvhStatsStatus" class="tvh-meta"></span>
+                        <span id="tvhStatsLastRefresh" class="tvh-meta"></span>
+                    </div>
+                </div>
+
+                <!-- KPI row -->
+                <div class="tvh-kpi-row" id="tvhStatsKpi" style="display:none;">
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiSessions">—</div><div class="tvh-kpi-label">Total Sessions</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiActiveSessions">—</div><div class="tvh-kpi-label">Active Sessions</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiWatchTime">—</div><div class="tvh-kpi-label">Watch Time</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiUsers">—</div><div class="tvh-kpi-label">Unique Users</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiTopChannel">—</div><div class="tvh-kpi-label">Top Channel</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="kpiTopMethod">—</div><div class="tvh-kpi-label">Most Common Method</div></div>
+                </div>
+
+                <!-- Empty state -->
+                <div id="tvhStatsEmpty" class="tvh-empty" style="display:none;">
+                    No viewing sessions recorded yet. Statistics will appear after users watch live TV.
+                </div>
+
+                <!-- Charts -->
+                <div id="tvhStatsCharts" style="display:none;">
+                    <div class="tvh-chart-grid">
+                        <div class="tvh-chart-card">
+                            <h4>Viewing Hours per User</h4>
+                            <canvas id="ChartUserHours" height="200"></canvas>
+                        </div>
+                        <div class="tvh-chart-card">
+                            <h4>Play Method Distribution</h4>
+                            <canvas id="ChartPlayMethod" height="200"></canvas>
+                        </div>
+                    </div>
+                    <div class="tvh-chart-grid">
+                        <div class="tvh-chart-card">
+                            <h4>Sessions per Device</h4>
+                            <canvas id="ChartDevices" height="200"></canvas>
+                        </div>
+                        <div class="tvh-chart-card">
+                            <h4>Most Watched Channels</h4>
+                            <canvas id="ChartChannels" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sessions table -->
+                <div id="tvhStatsTable" style="display:none;">
+                    <h3 style="margin:0.8em 0 0.4em 0; font-size:0.95em; font-weight:600;">Recent Sessions</h3>
+                    <div class="tvh-table-toolbar">
+                        <label for="tvhSessionSearch" style="display:none;">Search sessions</label>
+                        <input id="tvhSessionSearch" type="text" placeholder="Search sessions…" />
+                        <label for="tvhFilterUser" style="display:none;">Filter by user</label>
+                        <select id="tvhFilterUser"><option value="">All Users</option></select>
+                        <label for="tvhFilterDevice" style="display:none;">Filter by device</label>
+                        <select id="tvhFilterDevice"><option value="">All Devices</option></select>
+                        <label for="tvhFilterClient" style="display:none;">Filter by client</label>
+                        <select id="tvhFilterClient"><option value="">All Clients</option></select>
+                        <label for="tvhFilterMethod" style="display:none;">Filter by play method</label>
+                        <select id="tvhFilterMethod"><option value="">All Methods</option></select>
+                        <span id="tvhFilterCount" class="tvh-filter-count"></span>
+                        <div style="margin-left:auto; display:flex; gap:0.5em; align-items:center; font-size:0.88em;">
+                            <label for="tvhSessionsPerPage">Per page:</label>
+                            <select id="tvhSessionsPerPage" style="width:auto; padding:0.3em 0.5em; background:#1c1c1e; color:#e0e0e0; border:1px solid #555; border-radius:4px;">
+                                <option value="100">100</option>
+                                <option value="250">250</option>
+                                <option value="500">500</option>
+                                <option value="all">All</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="tvhPaginationTop" class="tvh-pagination" style="margin-bottom:0.8em; display:none;"></div>
+                    <div class="tvh-table-wrap">
+                        <table id="tvhSessionsTable">
+                            <thead>
+                                <tr>
+                                    <th class="tvh-sortable" data-sort="UserName">User <span class="tvh-sort-arrow">▲▼</span></th>
+                                    <th class="tvh-sortable" data-sort="DeviceName">Device <span class="tvh-sort-arrow">▲▼</span></th>
+                                    <th class="tvh-sortable" data-sort="ClientName">Client <span class="tvh-sort-arrow">▲▼</span></th>
+                                    <th class="tvh-sortable" data-sort="ChannelName">Channel <span class="tvh-sort-arrow">▲▼</span></th>
+                                    <th class="tvh-sortable" data-sort="PlayMethod">Play Method <span class="tvh-sort-arrow">▲▼</span></th>
+                                    <th class="tvh-sortable tvh-sort-desc" data-sort="StartTimeUtc">Start <span class="tvh-sort-arrow">▼</span></th>
+                                    <th class="tvh-sortable" data-sort="DurationMinutes">Duration <span class="tvh-sort-arrow">▲▼</span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tvhStatsTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div id="tvhPaginationBottom" class="tvh-pagination" style="margin-top:0.8em; display:none;"></div>
+                </div>
+            </div>
+
+            <!-- ── F2. Relay Observability ───────────────────── -->
+            <div class="tvh-section" id="sec-relay">
+                <h2 class="tvh-section-title">Relay Performance</h2>
+                <p class="tvh-section-desc" style="opacity:0.6; font-size:0.88em; margin-bottom:0.8em;">
+                    Measures relay proxy behavior for TVHeadend images and streams.
+                    Startup latency = time from incoming request until first byte is written to the Jellyfin client.
+                    P95 = 95% of requests are at or below this value.
+                </p>
+                <div class="tvh-toolbar" style="margin-bottom:1em;">
+                    <label for="tvhRelayHours" style="font-size:0.9em;">Time range:</label>
+                    <select id="tvhRelayHours" style="width:auto; min-width:120px; padding:0.3em 0.5em; background:#1c1c1e; color:#e0e0e0; border:1px solid #555; border-radius:4px;">
+                        <option value="1">Last hour</option>
+                        <option value="24" selected>Last 24 hours</option>
+                        <option value="168">Last 7 days</option>
+                        <option value="720">Last 30 days</option>
+                        <option value="0">All time</option>
+                    </select>
+                    <button id="tvhRefreshRelayBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" title="Refresh relay metrics">
+                        <span style="font-size:1.3em;">⟳</span>
+                    </button>
+                    <button id="tvhClearRelayBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" style="background:#c0392b; color:#fff;" title="Clear all relay metrics">
+                        <span style="font-size:1.3em;">🗑️</span>
+                    </button>
+                </div>
+
+                <!-- Summary KPIs -->
+                <div class="tvh-kpi-row" id="tvhRelayKpi">
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiActive">—</div><div class="tvh-kpi-label">Active Streams</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiRequests">—</div><div class="tvh-kpi-label">Requests</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiSuccess">—</div><div class="tvh-kpi-label">Success Rate</div></div>
+                    <div class="tvh-kpi" title="Zapping target: below 2000 ms is green, below 3500 ms yellow, above red."><div class="tvh-kpi-value" id="rkpiStartup">—</div><div class="tvh-kpi-label">Avg Startup</div></div>
+                    <div class="tvh-kpi" title="Zapping target: below 2000 ms is green, below 3500 ms yellow, above red."><div class="tvh-kpi-value" id="rkpiP95">—</div><div class="tvh-kpi-label">P95 Startup</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiDirectPlay">—</div><div class="tvh-kpi-label">Direct Play (24h)</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiBytes">—</div><div class="tvh-kpi-label">Transferred</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiCache">—</div><div class="tvh-kpi-label">Image Cache Hit Rate</div></div>
+                    <div class="tvh-kpi"><div class="tvh-kpi-value" id="rkpiFailures">—</div><div class="tvh-kpi-label">Failures</div></div>
+                </div>
+
+                <!-- MediaInfo cache counters (since plugin start, fed by GET Dashboard) -->
+                <div class="tvh-card" style="margin-bottom:1em;">
+                    <h3>MediaInfo Cache (since start)</h3>
+                    <p class="tvh-hint" style="margin:0 0 .5em; opacity:0.7; font-size:0.85em;">Proactive probe-cache reconciliation outcomes — hits keep channel starts on the fast Direct Play path.</p>
+                    <div id="tvhMediaInfoCacheKv"><div class="tvh-empty">No cache activity recorded yet.</div></div>
+                </div>
+
+                <div id="tvhRelayEmpty" class="tvh-empty" style="display:none;">No relay metrics recorded yet.</div>
+
+                <div id="tvhRelayContent" style="display:none;">
+                    <!-- Charts row: Hourly Trend + Latency Breakdown -->
+                    <div class="tvh-grid">
+                        <div class="tvh-card" style="grid-column:1/-1;">
+                            <h3 id="tvhRelayTrendTitle">Request Trend (hourly)</h3>
+                            <div id="tvhRelayTrendChart" style="height:180px; position:relative;"></div>
+                        </div>
+                    </div>
+                    <div class="tvh-grid">
+                        <div class="tvh-card">
+                            <h3>Latency Breakdown</h3>
+                            <div id="tvhRelayLatencyChart" style="height:200px; position:relative;"></div>
+                        </div>
+                        <div class="tvh-card">
+                            <h3>Stream End Reasons</h3>
+                            <div id="tvhRelayEndReasonsChart" style="height:200px; position:relative;"></div>
+                        </div>
+                    </div>
+                    <div class="tvh-grid">
+                        <div class="tvh-card">
+                            <h3>Startup Latency: Warm vs Cold Cache</h3>
+                            <p class="tvh-hint" style="margin:0 0 .5em; opacity:0.7; font-size:0.85em;">Avg / P95 time-to-first-byte grouped by mediainfo cache outcome at stream setup. Green &lt; 2000 ms, yellow &lt; 3500 ms, red above.</p>
+                            <div id="tvhRelayWarmColdChart" style="min-height:120px; position:relative;"></div>
+                        </div>
+                        <div class="tvh-card">
+                            <h3>Startup Latency by Profile</h3>
+                            <p class="tvh-hint" style="margin:0 0 .5em; opacity:0.7; font-size:0.85em;">Avg / P95 time-to-first-byte grouped by effective TVHeadend profile.</p>
+                            <div id="tvhRelayProfileChart" style="min-height:120px; position:relative;"></div>
+                        </div>
+                    </div>
+                    <div class="tvh-grid">
+                        <div class="tvh-card">
+                            <h3>Image Cache</h3>
+                            <div id="tvhRelayCacheChart" style="height:180px; position:relative;"></div>
+                            <div id="tvhImageCacheStats" style="font-size:0.82em; opacity:0.8; margin-top:0.4em; text-align:center;"></div>
+                        </div>
+                        <div class="tvh-card">
+                            <h3>Errors</h3>
+                            <div id="tvhRelayErrorsContent"></div>
+                        </div>
+                    </div>
+
+                    <!-- Recent errors table -->
+                    <div class="tvh-card tvh-full" style="margin-top:1em;">
+                        <h3>Recent Errors</h3>
+                        <div class="tvh-table-wrap">
+                            <table id="tvhRelayErrorsTable">
+                                <thead><tr><th>Time</th><th>Type</th><th>Reason</th><th>Upstream</th><th>Duration</th></tr></thead>
+                                <tbody id="tvhRelayErrorsBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Problem channels table -->
+                    <div class="tvh-card tvh-full" style="margin-top:1em;">
+                        <h3>Problem Channels</h3>
+                        <p class="tvh-hint" style="margin:0 0 .5em; opacity:0.7; font-size:0.85em;">Channels whose stream relays failed in the selected range (excludes normal client stops). Empty = no channel-level stream problems.</p>
+                        <div id="tvhProblemChannels"></div>
+                    </div>
+
+                    <!-- Slowest-to-start table -->
+                    <div class="tvh-card tvh-full" style="margin-top:1em;">
+                        <h3>Slowest to Start</h3>
+                        <p class="tvh-hint" style="margin:0 0 .5em; opacity:0.7; font-size:0.85em;">Ranked by startup latency (time to first byte). For streams, "Watched" is the session length, not a slowness signal.</p>
+                        <div class="tvh-table-wrap">
+                            <table id="tvhRelaySlowestTable">
+                                <thead><tr><th>Time</th><th>Type</th><th>Startup</th><th>Watched</th><th>Bytes</th><th>Outcome</th></tr></thead>
+                                <tbody id="tvhRelaySlowestBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── G. Plugin & TVHeadend Logs ────────────────── -->
+            <div class="tvh-section" id="sec-logs">
+                <h2 class="tvh-section-title">Plugin &amp; TVHeadend Logs</h2>
+                <p class="tvh-section-desc">Combined log entries from the plugin and TVHeadend, newest first.</p>
+
+                <div class="tvh-card">
+                    <div class="tvh-table-toolbar">
+                        <input id="tvhLogSearch" type="text" placeholder="Search messages…" />
+                        <select id="tvhLogSourceFilter">
+                            <option value="">All Sources</option>
+                            <option value="plugin">Plugin</option>
+                            <option value="tvheadend">TVHeadend</option>
+                        </select>
+                        <select id="tvhLogLevelFilter">
+                            <option value="">All Levels</option>
+                            <option value="Trace">Trace</option>
+                            <option value="Debug">Debug</option>
+                            <option value="Information">Information</option>
+                            <option value="Warning">Warning</option>
+                            <option value="Error">Error</option>
+                            <option value="Critical">Critical</option>
+                        </select>
+                        <button id="tvhRefreshLogsBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" title="Refresh logs">
+                            <span style="font-size:1.3em;">⟳</span>
+                        </button>
+                        <button id="tvhClearLogsBtn" is="emby-button" type="button" class="raised emby-button tvh-icon-button" style="background:#c0392b; color:#fff;" title="Clear all logs">
+                            <span style="font-size:1.3em;">🗑️</span>
+                        </button>
+                        <label style="display:flex; align-items:center; gap:0.35em; font-size:0.88em;">
+                            <input id="tvhLogsAutoRefresh" type="checkbox" checked /> Auto-refresh (5 s)
+                        </label>
+                        <span id="tvhLogsStatus" class="tvh-meta">Loading…</span>
+                    </div>
+
+                    <div class="tvh-table-wrap">
+                        <table id="tvhLogsTable">
+                            <thead>
+                                <tr>
+                                    <th class="tvh-sortable" data-sort="created_at_utc">Date/Time <span class="tvh-sort-arrow">▾</span></th>
+                                    <th class="tvh-sortable" data-sort="source">Source <span class="tvh-sort-arrow">▾</span></th>
+                                    <th class="tvh-sortable" data-sort="level">Level <span class="tvh-sort-arrow">▾</span></th>
+                                    <th class="tvh-sortable" data-sort="category">Category <span class="tvh-sort-arrow">▾</span></th>
+                                    <th>Message</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tvhLogsBody"></tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top:0.6em; display:flex; justify-content:space-between; align-items:center; font-size:0.82em; opacity:0.6;">
+                        <span id="tvhLogsTotalCount"></span>
+                        <span id="tvhLogsLastUpdated"></span>
+                    </div>
+                </div>
+            </div>
+
+            </div> <!-- /tvhDashboardContent -->
+
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            'use strict';
+
+            // ── State: setup mode ────────────────────────────
+            var isSetupMode = false;
+
+            // ── State ──────────────────────────────────────────
+            var autoRefreshTimer = null;
+            var chartInstances = {};
+            var timezoneMode = localStorage.getItem('tvhTimezoneMode') || 'local'; // 'local' or 'utc'
+
+            // ── Helpers ────────────────────────────────────────
+            function esc(text) {
+                var d = document.createElement('div');
+                d.appendChild(document.createTextNode(text != null ? text : ''));
+                return d.innerHTML;
+            }
+
+            function val(v) {
+                if (v == null || v === '' || (typeof v === 'number' && isNaN(v))) return '—';
+                return esc(String(v));
+            }
+
+            function badge(cls, text) {
+                return '<span class="tvh-badge tvh-badge-' + cls + '">' + esc(text) + '</span>';
+            }
+
+            function kvHtml(pairs) {
+                var html = '';
+                for (var i = 0; i < pairs.length; i++) {
+                    html += '<dt>' + esc(pairs[i][0]) + '</dt><dd>' + pairs[i][1] + '</dd>';
+                }
+                return html;
+            }
+
+            function formatUnix(epoch) {
+                if (!epoch) return '—';
+                return new Date(epoch * 1000).toLocaleString();
+            }
+
+            function formatBps(bps) {
+                if (bps == null || isNaN(bps) || bps <= 0) return '—';
+                if (bps > 1000000) return (bps / 1000000).toFixed(1) + ' Mbps';
+                if (bps > 1000) return (bps / 1000).toFixed(1) + ' kbps';
+                return bps + ' bps';
+            }
+
+            function formatMinutes(mins) {
+                if (mins == null || isNaN(mins) || mins <= 0) return '—';
+                var h = Math.floor(mins / 60);
+                var m = Math.round(mins % 60);
+                return h > 0 ? h + ' h ' + m + ' min' : m + ' min';
+            }
+
+            function parseUtcDate(value) {
+                if (!value) return null;
+
+                // Ensure the string is treated as UTC
+                // If it doesn't end with 'Z', add it to force UTC interpretation
+                var utcString = typeof value === 'string' && !value.endsWith('Z') ? value + 'Z' : value;
+                var date = new Date(utcString);
+                return isNaN(date.getTime()) ? null : date;
+            }
+
+            function formatDateWithTimezone(utcDateString) {
+                if (!utcDateString) return '—';
+                var date = parseUtcDate(utcDateString);
+                if (!date) return '—';
+
+                if (timezoneMode === 'utc') {
+                    // Format in UTC
+                    return date.toLocaleString('en-US', { timeZone: 'UTC' });
+                } else {
+                    // Format in local timezone
+                    return date.toLocaleString();
+                }
+            }
+
+            function formatSessionDurationCell(session) {
+                if (session.DurationMinutes != null && !isNaN(session.DurationMinutes) && session.DurationMinutes > 0) {
+                    return formatMinutes(session.DurationMinutes);
+                }
+
+                var start = parseUtcDate(session.StartTimeUtc);
+                if (!start) {
+                    return '— ' + badge('ok', 'Live');
+                }
+
+                // Duration calculation is timezone-independent (it's always UTC based)
+                var minutes = Math.max(0, Math.floor((Date.now() - start.getTime()) / 60000));
+                return minutes + ' min ' + badge('ok', 'Live');
+            }
+
+            function signalBar(value, scale) {
+                var pct = 0, label = '';
+                if (scale === 1) {
+                    // Relative 0–65535
+                    pct = Math.min(100, Math.round(value / 655.35));
+                    label = pct + ' %';
+                } else if (scale === 2) {
+                    // dBm values from TvHeadend are in milli-units (1/1000)
+                    var db = value / 1000;
+                    label = db.toFixed(1) + ' dB';
+                    if (value < 0) {
+                        // Signal strength: typical DVB-S range -65 dBm (weak) to -20 dBm (strong)
+                        pct = Math.min(100, Math.max(0, Math.round(((db + 65) / 45) * 100)));
+                    } else {
+                        // SNR: 0 dB (bad) to 20 dB (excellent)
+                        pct = Math.min(100, Math.max(0, Math.round((db / 20) * 100)));
+                    }
+                } else if (value > 0) {
+                    pct = Math.min(100, Math.round(value / 655.35));
+                    label = String(value);
+                } else {
+                    return '<span class="tvh-meta">n/a</span>';
+                }
+                var color = pct > 70 ? '#4caf50' : pct > 40 ? '#f0ad4e' : '#e74c3c';
+                return '<span class="tvh-signal-bar"><span class="tvh-signal-fill" style="width:' + pct + '%;background:' + color + ';"></span></span> ' + esc(label);
+            }
+
+            function emptyRow(msg) { return '<div class="tvh-empty">' + esc(msg) + '</div>'; }
+            function errorRow(msg) { return '<div class="tvh-section-error">' + esc(msg) + '</div>'; }
+
+            function destroyChart(key) {
+                if (chartInstances[key]) { chartInstances[key].destroy(); delete chartInstances[key]; }
+            }
+
+            // ── Navigate to settings ───────────────────────────
+            document.getElementById('tvhSettingsBtn').addEventListener('click', function () {
+                Dashboard.navigate('configurationpage?name=TvHeadendApiConfig');
+            });
+            document.getElementById('tvhSetupSettingsBtn').addEventListener('click', function () {
+                Dashboard.navigate('configurationpage?name=TvHeadendApiConfig');
+            });
+
+            // ── Enter / exit setup mode ──────────────────────
+            function enterSetupMode() {
+                isSetupMode = true;
+                document.getElementById('tvhSetupBanner').style.display = '';
+                document.getElementById('tvhDashboardContent').style.display = 'none';
+                // Stop all auto-refresh timers
+                if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+                if (statsAutoRefreshTimer) { clearInterval(statsAutoRefreshTimer); statsAutoRefreshTimer = null; }
+                if (logsRefreshTimer) { clearInterval(logsRefreshTimer); logsRefreshTimer = null; }
+            }
+
+            function exitSetupMode() {
+                isSetupMode = false;
+                document.getElementById('tvhSetupBanner').style.display = 'none';
+                document.getElementById('tvhDashboardContent').style.display = '';
+            }
+
+            // ── Render dashboard data ──────────────────────────
+            function renderDashboard(d) {
+                // Check if setup is required — show banner and halt all processing
+                if (d.RequiresSetup) {
+                    enterSetupMode();
+                    return;
+                }
+
+                // Ensure dashboard content is visible (e.g. after config was saved)
+                if (isSetupMode) {
+                    exitSetupMode();
+                }
+
+                // Error banner
+                var banner = document.getElementById('tvhErrorBanner');
+                if (!d.IsReachable && d.ConnectionError) {
+                    banner.innerHTML = '<strong>TvHeadend unreachable:</strong> ' + esc(d.ConnectionError);
+                    banner.style.display = '';
+                } else {
+                    banner.style.display = 'none';
+                }
+
+                // Helper: read Activity fields (snake_case from TVHeadend passthrough)
+                var act = d.Activity || {};
+                var actSubs = act.subscription_count;
+                var actConns = act.connection_count;
+                var actNext = act.next_activity;
+
+                // Summary row
+                var connOk = d.IsReachable && d.IsAuthenticated;
+                document.getElementById('sumConnection').innerHTML = connOk ? badge('ok', 'OK') : (d.IsReachable ? badge('warn', 'Auth') : badge('err', 'Down'));
+                var activeTuners = d.Inputs ? d.Inputs.filter(function(i){ return i.subs > 0; }).length : 0;
+                var totalTuners = d.Inputs ? d.Inputs.length : 0;
+                document.getElementById('sumTuners').textContent = activeTuners + ' / ' + totalTuners;
+                document.getElementById('sumSubscriptions').textContent = actSubs != null ? String(actSubs) : '—';
+                document.getElementById('sumConnections').textContent = actConns != null ? String(actConns) : '—';
+                var healthBadge = d.DiagnosticStatus === 'OK' ? badge('ok', 'OK')
+                    : d.DiagnosticStatus === 'WARNING' ? badge('warn', 'Warning')
+                    : d.DiagnosticStatus === 'ERROR' ? badge('err', 'Error')
+                    : badge('idle', 'Unknown');
+                document.getElementById('sumHealth').innerHTML = healthBadge;
+                document.getElementById('sumAlerts').textContent = d.Warnings ? String(d.Warnings.length) : '0';
+
+                // TVHeadend card (merged Connection + Upstream Health)
+                var connStatus = d.IsReachable
+                    ? (d.IsAuthenticated ? badge('ok', 'Connected') : badge('warn', 'Auth Failed'))
+                    : badge('err', 'Unreachable');
+                var uh = d.UpstreamHealth || {};
+                var uhStatusMap = { Healthy: 'ok', Degraded: 'warn', Unreachable: 'err', AuthFailed: 'err', Timeout: 'warn', CircuitOpen: 'err', Recovering: 'warn', Unknown: 'idle' };
+                var uhStatusBadge = badge(uhStatusMap[uh.Status] || 'idle', uh.Status || 'Unknown');
+                var uhCircuitMap = { Closed: 'ok', Open: 'err', HalfOpen: 'warn' };
+                var uhCircuitBadge = badge(uhCircuitMap[uh.CircuitState] || 'idle', uh.CircuitState || 'Closed');
+                var uhDegraded = uh.IsDegradedModeActive ? badge('warn', 'Yes') : badge('ok', 'No');
+                document.getElementById('tvhConnectionKv').innerHTML = kvHtml([
+                    ['Status', connStatus],
+                    ['Base URL', val(d.BaseUrl)],
+                    ['Server Version', val(d.ServerVersion)],
+                    ['Latency', d.LatencyMs > 0 ? d.LatencyMs + ' ms' : '—'],
+                    ['Connections', actConns != null ? String(actConns) : '—'],
+                    ['Subscriptions', actSubs != null ? String(actSubs) : '—'],
+                    ['Next Activity', actNext ? formatUnix(actNext) : 'None'],
+                    ['Health Status', uhStatusBadge],
+                    ['Circuit Breaker', uhCircuitBadge],
+                    ['Degraded Mode', uhDegraded],
+                    ['Last Success', uh.LastSuccessUtc ? new Date(uh.LastSuccessUtc).toLocaleString() : '—'],
+                    ['Last Failure', uh.LastFailureUtc ? new Date(uh.LastFailureUtc).toLocaleString() : '—'],
+                    ['Last Failure Reason', uh.LastFailureReason && uh.LastFailureReason !== 'None' ? badge('warn', uh.LastFailureReason) : '—'],
+                    ['Consecutive Failures', String(uh.ConsecutiveFailures || 0)],
+                    ['Breaker Opens', String((uh.Breaker && uh.Breaker.TimesOpened) || 0) + (uh.Breaker && uh.Breaker.LastOpenReason && uh.Breaker.LastOpenReason !== 'None' ? ' (last: ' + uh.Breaker.LastOpenReason + ')' : '')],
+                    ['Rejected While Open', String((uh.Breaker && uh.Breaker.RejectedWhileOpen) || 0)],
+                    ['Half-Open Trials', ((uh.Breaker && uh.Breaker.HalfOpenTrials) || 0) + ' (' + ((uh.Breaker && uh.Breaker.HalfOpenTrialSuccesses) || 0) + ' ok / ' + ((uh.Breaker && uh.Breaker.HalfOpenTrialFailures) || 0) + ' failed)'],
+                    ['Last Response Time', uh.LastResponseTimeMs != null ? uh.LastResponseTimeMs + ' ms' : '—'],
+                    ['Next Retry', uh.NextRetryUtc ? new Date(uh.NextRetryUtc).toLocaleString() : '—']
+                ]);
+
+                // Plugin Health card (with database info)
+                var scoreColor = d.CompatibilityScore >= 80 ? '#4caf50' : d.CompatibilityScore >= 50 ? '#f0ad4e' : '#e74c3c';
+                var db = d.DatabaseHealth || {};
+                var dbStatusMap = { Healthy: 'ok', Degraded: 'warn', Unavailable: 'err', Unknown: 'idle' };
+                var dbStatusBadge = badge(dbStatusMap[db.Status] || 'idle', db.Status || 'Unknown');
+                function fmtBytes(b) {
+                    if (b == null) return '—';
+                    if (b < 1024) return b + ' B';
+                    if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+                    return (b / 1048576).toFixed(2) + ' MB';
+                }
+                var dbRows = [];
+                dbRows.push(['Database Status', dbStatusBadge]);
+                dbRows.push(['Database Size', fmtBytes(db.DatabaseSizeBytes)]);
+                // Always render the WAL row: after a SQLite checkpoint the WAL is legitimately
+                // 0 bytes — a truthiness check made this row flicker in and out on refresh.
+                dbRows.push(['WAL Size', fmtBytes(db.WalSizeBytes)]);
+                dbRows.push(['Schema Version', db.SchemaVersion != null ? String(db.SchemaVersion) : '—']);
+                if (db.TotalTables != null) dbRows.push(['Tables', String(db.TotalTables)]);
+                if (db.ViewingSessionCount != null) dbRows.push(['Viewing Sessions', String(db.ViewingSessionCount)]);
+                if (db.RelayTokenCount != null) {
+                    var expiredTokens = db.ExpiredRelayTokenCount || 0;
+                    var activeTokens = Math.max(0, db.RelayTokenCount - expiredTokens);
+                    var tokenInfo = activeTokens + ' active';
+                    if (expiredTokens > 0) tokenInfo += ' (' + expiredTokens + ' expired, pending cleanup)';
+                    dbRows.push(['Relay Tokens', tokenInfo]);
+                }
+                if (db.RelayRequestMetricCount != null) dbRows.push(['Relay Metrics', String(db.RelayRequestMetricCount)]);
+                if (db.PluginLogEntryCount != null) dbRows.push(['Plugin Log Entries', String(db.PluginLogEntryCount)]);
+                if (db.HealthTransitionCount != null) dbRows.push(['Health Transitions', String(db.HealthTransitionCount)]);
+                if (db.OldestLogEntryUtc) dbRows.push(['Oldest Log Entry', formatDateWithTimezone(db.OldestLogEntryUtc)]);
+                if (db.NewestLogEntryUtc) dbRows.push(['Newest Log Entry', formatDateWithTimezone(db.NewestLogEntryUtc)]);
+                if (db.WarningMessage) dbRows.push(['Warning', badge('warn', db.WarningMessage)]);
+                document.getElementById('tvhHealthKv').innerHTML = kvHtml([
+                    ['Diagnostic Status', healthBadge],
+                    ['Compatibility', '<span style="color:' + scoreColor + ';font-weight:700;">' + (d.CompatibilityScore != null ? d.CompatibilityScore + '/100' : '—') + '</span>'],
+                    ['Plugin Version', val(d.PluginVersion)],
+                    ['Timestamp', d.Timestamp ? new Date(d.Timestamp).toLocaleString() : '—']
+                ].concat(dbRows));
+
+                // Inputs
+                // MediaInfo cache KPI card (since-start counters from the Dashboard payload)
+                var micEl = document.getElementById('tvhMediaInfoCacheKv');
+                if (micEl) {
+                    var mic = d.MediaInfoCache;
+                    if (!mic) {
+                        micEl.innerHTML = '<div class="tvh-empty">No cache activity recorded yet.</div>';
+                    } else {
+                        micEl.innerHTML = kvHtml([
+                            ['Hits', '<span style="color:#4caf50;font-weight:600;">' + (mic.Hits || 0) + '</span>'],
+                            ['Misses', String(mic.Misses || 0)],
+                            ['Mismatches', mic.Mismatches > 0 ? '<span style="color:#f0ad4e;font-weight:600;">' + mic.Mismatches + '</span>' : '0'],
+                            ['Invalidations', String(mic.Invalidations || 0)]
+                        ]);
+                    }
+                }
+
+                var inputsEl = document.getElementById('tvhInputsContent');
+                if (d.InputsError) {
+                    inputsEl.innerHTML = errorRow(d.InputsError);
+                } else if (!d.Inputs || d.Inputs.length === 0) {
+                    inputsEl.innerHTML = emptyRow('No active tuners or inputs.');
+                } else {
+                    var html = '<div class="tvh-table-wrap"><table><thead><tr>'
+                        + '<th>Input</th><th>Stream / Mux</th><th>Subs</th><th>Signal</th><th>SNR</th>'
+                        + '<th>BER</th><th>Bitrate</th><th>TE</th><th>CC</th></tr></thead><tbody>';
+                    d.Inputs.forEach(function (inp) {
+                        var subsBadge = inp.subs > 0 ? badge('active', inp.subs + ' active') : badge('idle', 'Idle');
+                        html += '<tr>'
+                            + '<td>' + val(inp.input) + '</td>'
+                            + '<td>' + val(inp.stream) + '</td>'
+                            + '<td>' + subsBadge + '</td>'
+                            + '<td>' + signalBar(inp.signal, inp.signal_scale) + '</td>'
+                            + '<td>' + signalBar(inp.snr, inp.snr_scale) + '</td>'
+                            + '<td>' + val(inp.ber) + '</td>'
+                            + '<td>' + formatBps(inp.bps) + '</td>'
+                            + '<td>' + val(inp.te) + '</td>'
+                            + '<td>' + val(inp.cc) + '</td>'
+                            + '</tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    inputsEl.innerHTML = html;
+                }
+
+                // Subscriptions
+                var subsEl = document.getElementById('tvhSubsContent');
+                if (d.SubscriptionsError) {
+                    subsEl.innerHTML = errorRow(d.SubscriptionsError);
+                } else if (!d.Subscriptions || d.Subscriptions.length === 0) {
+                    subsEl.innerHTML = emptyRow('No active subscriptions.');
+                } else {
+                    var shtml = '<div class="tvh-table-wrap"><table><thead><tr>'
+                        + '<th>Channel</th><th>User</th><th>Client</th><th>State</th><th>Profile</th>'
+                        + '<th>In</th><th>Out</th><th>Errors</th><th>Start</th></tr></thead><tbody>';
+                    d.Subscriptions.forEach(function (sub) {
+                        var st = sub.state || '';
+                        var stateBadge = st === 'Running' ? badge('ok', st)
+                            : st === 'Bad' ? badge('err', st)
+                            : badge('idle', st || 'Unknown');
+                        shtml += '<tr>'
+                            + '<td>' + val(sub.channel) + '</td>'
+                            + '<td>' + val(sub.username) + '</td>'
+                            + '<td>' + val(sub.client) + '</td>'
+                            + '<td>' + stateBadge + '</td>'
+                            + '<td>' + val(sub.profile) + '</td>'
+                            + '<td>' + formatBps(sub['in'] != null ? sub['in'] * 8 : null) + '</td>'
+                            + '<td>' + formatBps(sub.out != null ? sub.out * 8 : null) + '</td>'
+                            + '<td>' + (sub.errors > 0 ? '<span style="color:#e74c3c;">' + sub.errors + '</span>' : '0') + '</td>'
+                            + '<td>' + formatUnix(sub.start) + '</td>'
+                            + '</tr>';
+                    });
+                    shtml += '</tbody></table></div>';
+                    subsEl.innerHTML = shtml;
+                }
+
+                // Connections
+                var connsEl = document.getElementById('tvhConnsContent');
+                if (d.ConnectionsError) {
+                    connsEl.innerHTML = errorRow(d.ConnectionsError);
+                } else if (!d.Connections || d.Connections.length === 0) {
+                    connsEl.innerHTML = emptyRow('No active connections.');
+                } else {
+                    var chtml = '<div class="tvh-table-wrap"><table><thead><tr>'
+                        + '<th>User</th><th>Peer</th><th>Type</th><th>Streaming</th><th>Started</th></tr></thead><tbody>';
+                    d.Connections.forEach(function (conn) {
+                        var streamBadge = conn.streaming > 0 ? badge('active', 'Yes') : badge('idle', 'No');
+                        chtml += '<tr>'
+                            + '<td>' + val(conn.user) + '</td>'
+                            + '<td>' + val(conn.peer) + (conn.peer_port != null ? ':' + conn.peer_port : '') + '</td>'
+                            + '<td>' + val(conn.type) + '</td>'
+                            + '<td>' + streamBadge + '</td>'
+                            + '<td>' + formatUnix(conn.started) + '</td>'
+                            + '</tr>';
+                    });
+                    chtml += '</tbody></table></div>';
+                    connsEl.innerHTML = chtml;
+                }
+
+                // Active Jellyfin Sessions (from statistics endpoint, rendered separately)
+                renderActiveSessions();
+
+                // Channel summary
+                document.getElementById('tvhChannelKv').innerHTML = kvHtml([
+                    ['Channels', d.ChannelCount != null ? String(d.ChannelCount) : '—'],
+                    ['DVR Entries', d.DvrEntryCount != null ? String(d.DvrEntryCount) : '—']
+                ]);
+
+                // Warnings
+                var warningsEl = document.getElementById('tvhWarningsContent');
+                if (d.Warnings && d.Warnings.length > 0) {
+                    var whtml = '<ul class="tvh-warnings-list">';
+                    d.Warnings.forEach(function (w) { whtml += '<li>' + esc(w) + '</li>'; });
+                    whtml += '</ul>';
+                    warningsEl.innerHTML = whtml;
+                } else {
+                    warningsEl.innerHTML = '<div class="tvh-empty" style="text-align:left;">No warnings.</div>';
+                }
+            }
+
+            // ── Refresh dashboard ──────────────────────────────
+            function refreshDashboard() {
+                var loadEl = document.getElementById('tvhLoadingIndicator');
+                loadEl.style.display = '';
+
+                // Keep the connectivity banner in sync with the rest of the page so it can
+                // never keep showing a stale "checking…" state next to healthy panels.
+                loadRelayBannerStatus();
+
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Dashboard'), dataType: 'json' })
+                    .then(function (data) {
+                        loadEl.style.display = 'none';
+                        document.getElementById('tvhLastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+                        renderDashboard(data);
+                    })
+                    .catch(function (err) {
+                        loadEl.style.display = 'none';
+                        var banner = document.getElementById('tvhErrorBanner');
+                        banner.innerHTML = '<strong>Dashboard request failed:</strong> ' + esc(err.statusText || err.message || 'Unknown error');
+                        banner.style.display = '';
+                    });
+            }
+
+            /// Performs the initial dashboard load that gates all other API calls.
+            /// Only called from pageshow — if setup is required, nothing else is loaded.
+            function initialDashboardLoad() {
+                var loadEl = document.getElementById('tvhLoadingIndicator');
+                loadEl.style.display = '';
+
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Dashboard'), dataType: 'json' })
+                    .then(function (data) {
+                        loadEl.style.display = 'none';
+                        document.getElementById('tvhLastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+                        renderDashboard(data);
+
+                        // Only load remaining sections when the plugin is fully configured
+                        if (!data.RequiresSetup) {
+                            loadStatistics();
+                            loadRelayMetrics();
+                            loadLogs();
+                            loadRelayBannerStatus();
+                            toggleAutoRefresh();
+                            toggleStatsAutoRefresh();
+                            toggleLogsAutoRefresh();
+                        }
+                    })
+                    .catch(function (err) {
+                        loadEl.style.display = 'none';
+                        var banner = document.getElementById('tvhErrorBanner');
+                        banner.innerHTML = '<strong>Dashboard request failed:</strong> ' + esc(err.statusText || err.message || 'Unknown error');
+                        banner.style.display = '';
+                    });
+            }
+
+            // ── Statistics ─────────────────────────────────────
+            var chartColors = ['#00a4dc','#4caf50','#f0ad4e','#e74c3c','#9b59b6','#3498db','#1abc9c','#e67e22','#2ecc71','#e91e63'];
+
+            // Chart.js ships inside the plugin assembly and is served by Jellyfin from the same
+            // ConfigurationPage endpoint as this page. It used to be fetched from a public CDN,
+            // which left the entire analytics section blank on air-gapped or egress-filtered
+            // servers — and re-requested on every 60s refresh. Memoized so a failure is not retried
+            // in a loop.
+            var chartJsPromise = null;
+            function loadChartJs() {
+                if (window.Chart) return Promise.resolve();
+                if (chartJsPromise) return chartJsPromise;
+                chartJsPromise = new Promise(function (resolve, reject) {
+                    var s = document.createElement('script');
+                    s.src = ApiClient.getUrl('web/ConfigurationPage', { name: 'TvHeadendChartJs' });
+                    s.onload = resolve;
+                    s.onerror = function () {
+                        chartJsPromise = null;
+                        reject(new Error('Chart.js could not be loaded from the plugin assembly.'));
+                    };
+                    document.head.appendChild(s);
+                });
+                return chartJsPromise;
+            }
+
+            function renderStats(data) {
+                var emptyEl = document.getElementById('tvhStatsEmpty');
+                var chartsEl = document.getElementById('tvhStatsCharts');
+                var tableEl = document.getElementById('tvhStatsTable');
+                var kpiEl = document.getElementById('tvhStatsKpi');
+                var sessions = data.Sessions || [];
+                var activeSessions = data.ActiveSessions || [];
+                var allSessions = sessions.concat(activeSessions);
+
+                if (allSessions.length === 0 && data.ActiveCount === 0) {
+                    emptyEl.style.display = '';
+                    chartsEl.style.display = 'none';
+                    tableEl.style.display = 'none';
+                    kpiEl.style.display = 'none';
+                    return;
+                }
+                emptyEl.style.display = 'none';
+                chartsEl.style.display = '';
+                tableEl.style.display = '';
+                kpiEl.style.display = '';
+
+                // Aggregate data
+                var totalMins = 0, users = {}, channelMins = {}, methods = {}, userHours = {}, devices = {};
+                sessions.forEach(function (s) {
+                    var mins = s.DurationMinutes || 0;
+                    totalMins += mins;
+                    users[s.UserName || 'Unknown'] = true;
+                    var ch = s.ChannelName || 'Unknown';
+                    channelMins[ch] = (channelMins[ch] || 0) + mins;
+                    var m = s.PlayMethod || 'Unknown';
+                    methods[m] = (methods[m] || 0) + 1;
+                    var u = s.UserName || 'Unknown';
+                    userHours[u] = (userHours[u] || 0) + mins / 60;
+                    var dev = s.DeviceName || 'Unknown';
+                    devices[dev] = (devices[dev] || 0) + 1;
+                });
+
+                // KPIs
+                document.getElementById('kpiSessions').textContent = String(data.TotalCount || allSessions.length);
+                document.getElementById('kpiWatchTime').textContent = formatMinutes(totalMins);
+                document.getElementById('kpiUsers').textContent = String(Object.keys(users).length);
+                var topCh = Object.keys(channelMins).sort(function (a, b) { return channelMins[b] - channelMins[a]; })[0];
+                document.getElementById('kpiTopChannel').textContent = topCh || '—';
+                var topMethod = Object.keys(methods).sort(function (a, b) { return methods[b] - methods[a]; })[0];
+                document.getElementById('kpiTopMethod').textContent = topMethod || '—';
+                document.getElementById('kpiActiveSessions').textContent = String(data.ActiveCount || 0);
+
+                // Chart: hours per user
+                destroyChart('userHours');
+                var userLabels = Object.keys(userHours);
+                chartInstances.userHours = new Chart(document.getElementById('ChartUserHours'), {
+                    type: 'bar',
+                    data: { labels: userLabels, datasets: [{ label: 'Hours', data: userLabels.map(function (u) { return +userHours[u].toFixed(1); }), backgroundColor: chartColors }] },
+                    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+                });
+
+                // Chart: play method
+                destroyChart('playMethod');
+                var methodLabels = Object.keys(methods);
+                var methodColors = { DirectPlay: '#4caf50', DirectStream: '#00a4dc', Transcode: '#e74c3c', Unknown: '#666' };
+                chartInstances.playMethod = new Chart(document.getElementById('ChartPlayMethod'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: methodLabels,
+                        datasets: [{
+                            data: methodLabels.map(function (m) { return methods[m]; }),
+                            backgroundColor: methodLabels.map(function (m) { return methodColors[m] || '#888'; }),
+                            borderWidth: 0,
+                            hoverBorderWidth: 0
+                        }]
+                    },
+                    options: { responsive: true }
+                });
+
+                // Chart: devices
+                destroyChart('devices');
+                var devLabels = Object.keys(devices).sort(function (a, b) { return devices[b] - devices[a]; });
+                chartInstances.devices = new Chart(document.getElementById('ChartDevices'), {
+                    type: 'bar',
+                    data: { labels: devLabels, datasets: [{ label: 'Sessions', data: devLabels.map(function (d) { return devices[d]; }), backgroundColor: chartColors.slice(2) }] },
+                    options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } } }
+                });
+
+                // Chart: top channels
+                destroyChart('channels');
+                var chLabels = Object.keys(channelMins).sort(function (a, b) { return channelMins[b] - channelMins[a]; }).slice(0, 10);
+                chartInstances.channels = new Chart(document.getElementById('ChartChannels'), {
+                    type: 'bar',
+                    data: { labels: chLabels, datasets: [{ label: 'Hours', data: chLabels.map(function (c) { return +(channelMins[c] / 60).toFixed(1); }), backgroundColor: chartColors.slice(1) }] },
+                    options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } } }
+                });
+
+                // Sessions table — store data, render with filters/sort
+                lastStatsSessions = allSessions;
+                sessionSortKey = 'StartTimeUtc';
+                sessionSortAsc = false;
+                populateSessionFilters(allSessions);
+                renderSessionsTable();
+            }
+
+            // ── Session table: state ────────────────────────────
+            var lastStatsSessions = [];
+            var sessionSortKey = 'StartTimeUtc';
+            var sessionSortAsc = false;
+            var sessionCurrentPage = 1;
+            var savedSessionsPerPage = localStorage.getItem('tvhSessionsPerPage');
+            var sessionItemsPerPage = savedSessionsPerPage === 'all'
+                ? 'all'
+                : (parseInt(savedSessionsPerPage, 10) || 100);
+
+            function populateSessionFilters(sessions) {
+                var fields = [
+                    { id: 'tvhFilterUser', key: 'UserName', label: 'All Users' },
+                    { id: 'tvhFilterDevice', key: 'DeviceName', label: 'All Devices' },
+                    { id: 'tvhFilterClient', key: 'ClientName', label: 'All Clients' },
+                    { id: 'tvhFilterMethod', key: 'PlayMethod', label: 'All Methods' }
+                ];
+                fields.forEach(function (f) {
+                    var sel = document.getElementById(f.id);
+                    var prev = sel.value;
+                    var vals = {};
+                    sessions.forEach(function (s) { var v = s[f.key]; if (v) vals[v] = true; });
+                    sel.innerHTML = '<option value="">' + esc(f.label) + '</option>';
+                    Object.keys(vals).sort().forEach(function (v) {
+                        var o = document.createElement('option');
+                        o.value = v; o.textContent = v;
+                        if (v === prev) o.selected = true;
+                        sel.appendChild(o);
+                    });
+                });
+            }
+
+            function getFilteredSessions() {
+                var search = (document.getElementById('tvhSessionSearch').value || '').toLowerCase();
+                var fUser = document.getElementById('tvhFilterUser').value;
+                var fDevice = document.getElementById('tvhFilterDevice').value;
+                var fClient = document.getElementById('tvhFilterClient').value;
+                var fMethod = document.getElementById('tvhFilterMethod').value;
+
+                return lastStatsSessions.filter(function (s) {
+                    if (fUser && s.UserName !== fUser) return false;
+                    if (fDevice && s.DeviceName !== fDevice) return false;
+                    if (fClient && s.ClientName !== fClient) return false;
+                    if (fMethod && s.PlayMethod !== fMethod) return false;
+                    if (search) {
+                        var hay = [s.UserName, s.DeviceName, s.ClientName, s.ChannelName, s.PlayMethod].join(' ').toLowerCase();
+                        if (hay.indexOf(search) === -1) return false;
+                    }
+                    return true;
+                });
+            }
+
+            function sortSessions(arr) {
+                var key = sessionSortKey;
+                var asc = sessionSortAsc;
+                return arr.slice().sort(function (a, b) {
+                    var va = a[key], vb = b[key];
+                    // nulls last (active sessions have null Duration)
+                    if (va == null && vb == null) return 0;
+                    if (va == null) return 1;
+                    if (vb == null) return -1;
+                    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
+                    if (va < vb) return asc ? -1 : 1;
+                    if (va > vb) return asc ? 1 : -1;
+                    return 0;
+                });
+            }
+
+            function updateSortHeaders() {
+                var ths = document.querySelectorAll('#tvhSessionsTable th.tvh-sortable');
+                for (var i = 0; i < ths.length; i++) {
+                    var th = ths[i];
+                    th.classList.remove('tvh-sort-asc', 'tvh-sort-desc');
+                    var arrow = th.querySelector('.tvh-sort-arrow');
+                    if (th.getAttribute('data-sort') === sessionSortKey) {
+                        th.classList.add(sessionSortAsc ? 'tvh-sort-asc' : 'tvh-sort-desc');
+                        arrow.textContent = sessionSortAsc ? '▲' : '▼';
+                    } else {
+                        arrow.textContent = '▲▼';
+                    }
+                }
+            }
+
+            function buildPageButton(page, label, isDisabled, isActive) {
+                var cssClass = isActive ? 'tvh-page-active' : (isDisabled ? 'tvh-page-disabled' : '');
+                var disabledAttr = isDisabled ? ' disabled' : '';
+                return '<button type="button" class="' + cssClass + '" data-page="' + page + '"' + disabledAttr + '>' + esc(label) + '</button>';
+            }
+
+            function getSessionPageCount(filteredCount) {
+                if (sessionItemsPerPage === 'all') {
+                    return 1;
+                }
+
+                return Math.max(1, Math.ceil(filteredCount / sessionItemsPerPage));
+            }
+
+            function renderPagination(filtered) {
+                var pageCount = getSessionPageCount(filtered.length);
+                if (pageCount <= 1) {
+                    document.getElementById('tvhPaginationTop').style.display = 'none';
+                    document.getElementById('tvhPaginationBottom').style.display = 'none';
+                    return;
+                }
+
+                var paginationHtml = buildPageButton(1, '« First', sessionCurrentPage <= 1, false);
+                paginationHtml += ' ' + buildPageButton(sessionCurrentPage - 1, '‹ Prev', sessionCurrentPage <= 1, false) + ' ';
+
+                // Show page numbers (max 10 pages shown)
+                var startPage = Math.max(1, sessionCurrentPage - 4);
+                var endPage = Math.min(pageCount, sessionCurrentPage + 4);
+                if (startPage > 1) paginationHtml += ' <span>…</span> ';
+                for (var p = startPage; p <= endPage; p++) {
+                    if (p === sessionCurrentPage) {
+                        paginationHtml += ' ' + buildPageButton(p, String(p), false, true) + ' ';
+                    } else {
+                        paginationHtml += ' ' + buildPageButton(p, String(p), false, false) + ' ';
+                    }
+                }
+                if (endPage < pageCount) paginationHtml += ' <span>…</span> ';
+
+                paginationHtml += ' ' + buildPageButton(sessionCurrentPage + 1, 'Next ›', sessionCurrentPage >= pageCount, false) + ' ';
+                paginationHtml += buildPageButton(pageCount, 'Last »', sessionCurrentPage >= pageCount, false);
+                paginationHtml += ' <span style="margin-left:0.5em;">Page ' + sessionCurrentPage + ' of ' + pageCount + '</span>';
+
+                document.getElementById('tvhPaginationTop').innerHTML = paginationHtml;
+                document.getElementById('tvhPaginationBottom').innerHTML = paginationHtml;
+                document.getElementById('tvhPaginationTop').style.display = '';
+                document.getElementById('tvhPaginationBottom').style.display = '';
+            }
+
+            function sessionPageClick(page) {
+                if (!page || page < 1) {
+                    return;
+                }
+
+                sessionCurrentPage = page;
+                renderSessionsTable();
+            }
+
+            function renderSessionsTable() {
+                var filtered = getFilteredSessions();
+                var sorted = sortSessions(filtered);
+                var countEl = document.getElementById('tvhFilterCount');
+                if (filtered.length !== lastStatsSessions.length) {
+                    countEl.textContent = filtered.length + ' / ' + lastStatsSessions.length;
+                } else {
+                    countEl.textContent = '';
+                }
+
+                var pageCount = getSessionPageCount(filtered.length);
+                if (sessionCurrentPage > pageCount) {
+                    sessionCurrentPage = pageCount;
+                }
+
+                updateSortHeaders();
+                renderPagination(filtered);
+
+                // Pagination: calculate start and end
+                var itemsPerPage = sessionItemsPerPage === 'all' ? filtered.length : sessionItemsPerPage;
+                var startIdx = (sessionCurrentPage - 1) * itemsPerPage;
+                var endIdx = Math.min(startIdx + itemsPerPage, filtered.length);
+                var pageItems = sorted.slice(startIdx, endIdx);
+
+                var tbody = document.getElementById('tvhStatsTableBody');
+                var html = '';
+                pageItems.forEach(function (s) {
+                    var dur = formatSessionDurationCell(s);
+                    var start = formatDateWithTimezone(s.StartTimeUtc);
+                    var methodBadge = s.PlayMethod === 'DirectPlay' ? badge('ok', 'Direct Play')
+                        : s.PlayMethod === 'Transcode' ? badge('err', 'Transcode')
+                        : s.PlayMethod === 'DirectStream' ? badge('active', 'Direct Stream')
+                        : badge('idle', s.PlayMethod || 'Unknown');
+                    html += '<tr>'
+                        + '<td>' + val(s.UserName) + '</td>'
+                        + '<td>' + val(s.DeviceName) + '</td>'
+                        + '<td>' + val(s.ClientName) + '</td>'
+                        + '<td>' + val(s.ChannelName) + '</td>'
+                        + '<td>' + methodBadge + '</td>'
+                        + '<td>' + start + '</td>'
+                        + '<td>' + dur + '</td>'
+                        + '</tr>';
+                });
+                tbody.innerHTML = html || '<tr><td colspan="7" style="text-align:center; opacity:0.5; padding:1em;">No matching sessions.</td></tr>';
+            }
+
+            // Session table event listeners
+            document.getElementById('tvhSessionSearch').addEventListener('input', renderSessionsTable);
+            document.getElementById('tvhFilterUser').addEventListener('change', renderSessionsTable);
+            document.getElementById('tvhFilterDevice').addEventListener('change', renderSessionsTable);
+            document.getElementById('tvhFilterClient').addEventListener('change', renderSessionsTable);
+            document.getElementById('tvhFilterMethod').addEventListener('change', renderSessionsTable);
+            document.getElementById('tvhSessionsPerPage').addEventListener('change', function(e) {
+                sessionItemsPerPage = e.target.value;
+                localStorage.setItem('tvhSessionsPerPage', sessionItemsPerPage);
+                sessionCurrentPage = 1; // Reset to first page
+                renderSessionsTable();
+            });
+
+            function onPaginationClick(e) {
+                var button = e.target.closest('button[data-page]');
+                if (!button || button.disabled) {
+                    return;
+                }
+
+                var page = parseInt(button.getAttribute('data-page'), 10);
+                if (!isNaN(page)) {
+                    sessionPageClick(page);
+                }
+            }
+
+            document.getElementById('tvhPaginationTop').addEventListener('click', onPaginationClick);
+            document.getElementById('tvhPaginationBottom').addEventListener('click', onPaginationClick);
+
+            document.getElementById('tvhSessionsTable').querySelector('thead').addEventListener('click', function (e) {
+                var th = e.target.closest('th.tvh-sortable');
+                if (!th) return;
+                var key = th.getAttribute('data-sort');
+                if (sessionSortKey === key) {
+                    sessionSortAsc = !sessionSortAsc;
+                } else {
+                    sessionSortKey = key;
+                    sessionSortAsc = (key !== 'StartTimeUtc' && key !== 'DurationMinutes');
+                }
+                sessionCurrentPage = 1; // Reset to first page when sorting changes
+                renderSessionsTable();
+            });
+
+            function loadStatistics() {
+                var days = document.getElementById('tvhStatsDays').value;
+                var msgEl = document.getElementById('tvhStatsStatus');
+                msgEl.textContent = 'Loading…';
+
+                loadChartJs().then(function () {
+                    return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Statistics?days=' + days), dataType: 'json' });
+                }).then(function (data) {
+                    msgEl.textContent = data.TotalCount + ' sessions' + (data.ActiveCount > 0 ? ' (' + data.ActiveCount + ' active)' : '');
+                    document.getElementById('tvhStatsLastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+                    renderStats(data);
+                }).catch(function (err) {
+                    msgEl.textContent = 'Failed to load statistics.';
+                    console.error('Statistics load error:', err);
+                });
+            }
+
+            // ── Active Jellyfin Sessions ────────────────────────
+            var lastActiveSessions = [];
+
+            function renderActiveSessions() {
+                var el = document.getElementById('tvhActiveSessionsContent');
+                var sessions = lastActiveSessions;
+
+                if (!sessions || sessions.length === 0) {
+                    el.innerHTML = emptyRow('No active Jellyfin Live TV sessions.');
+                    return;
+                }
+
+                var html = '<div class="tvh-table-wrap"><table><thead><tr>'
+                    + '<th>User</th><th>Device</th><th>Client</th><th>Channel</th>'
+                    + '<th>Play Method</th><th>Start</th><th>Duration</th></tr></thead><tbody>';
+                sessions.forEach(function (s) {
+                    var dur = formatSessionDurationCell(s);
+                    var start = formatDateWithTimezone(s.StartTimeUtc);
+                    var methodBadge = s.PlayMethod === 'DirectPlay' ? badge('ok', 'Direct Play')
+                        : s.PlayMethod === 'Transcode' ? badge('err', 'Transcode')
+                        : s.PlayMethod === 'DirectStream' ? badge('active', 'Direct Stream')
+                        : badge('idle', s.PlayMethod || 'Unknown');
+                    html += '<tr>'
+                        + '<td>' + val(s.UserName) + '</td>'
+                        + '<td>' + val(s.DeviceName) + '</td>'
+                        + '<td>' + val(s.ClientName) + '</td>'
+                        + '<td>' + val(s.ChannelName) + '</td>'
+                        + '<td>' + methodBadge + '</td>'
+                        + '<td>' + start + '</td>'
+                        + '<td>' + dur + '</td>'
+                        + '</tr>';
+                });
+                html += '</tbody></table></div>';
+                el.innerHTML = html;
+            }
+
+            function refreshActiveSessions() {
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/Statistics?days=1'), dataType: 'json' })
+                    .then(function (data) {
+                        lastActiveSessions = data.ActiveSessions || [];
+                        renderActiveSessions();
+                    })
+                    .catch(function () { /* silent */ });
+            }
+
+            // ── Auto-refresh ───────────────────────────────────
+            var statsAutoRefreshTimer = null;
+
+            function toggleAutoRefresh() {
+                if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+                if (document.getElementById('tvhAutoRefresh').checked) {
+                    autoRefreshTimer = setInterval(function () { refreshDashboard(); refreshActiveSessions(); }, 2000);
+                }
+            }
+
+            function toggleStatsAutoRefresh() {
+                if (statsAutoRefreshTimer) { clearInterval(statsAutoRefreshTimer); statsAutoRefreshTimer = null; }
+                if (document.getElementById('tvhStatsAutoRefresh').checked) {
+                    statsAutoRefreshTimer = setInterval(function () { loadStatistics(); }, 60000);
+                }
+            }
+
+            // ── Logs ────────────────────────────────────────────
+            var logsRefreshTimer = null;
+            var logsSortField = 'created_at_utc';
+            var logsSortDir = 'desc';
+
+            function formatTs(isoString) {
+                if (!isoString) return '—';
+                return formatDateWithTimezone(isoString);
+            }
+
+            function buildLogsUrl() {
+                var params = ['sortField=' + logsSortField, 'sortDirection=' + logsSortDir];
+                var src = document.getElementById('tvhLogSourceFilter').value;
+                var lvl = document.getElementById('tvhLogLevelFilter').value;
+                var search = (document.getElementById('tvhLogSearch').value || '').trim();
+                if (src) params.push('source=' + encodeURIComponent(src));
+                if (lvl) params.push('level=' + encodeURIComponent(lvl));
+                if (search) params.push('search=' + encodeURIComponent(search));
+                return 'TvHeadendApi/Dashboard/Logs?' + params.join('&');
+            }
+
+            function loadLogs() {
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(buildLogsUrl()), dataType: 'json' })
+                    .then(function (data) {
+                        renderLogsTable(data);
+                        document.getElementById('tvhLogsStatus').textContent = (data.Entries || []).length + ' of ' + (data.TotalCount || 0) + ' entries';
+                        document.getElementById('tvhLogsTotalCount').textContent = 'Total: ' + (data.TotalCount || 0);
+                        document.getElementById('tvhLogsLastUpdated').textContent = data.LastUpdatedUtc ? 'Last updated: ' + new Date(data.LastUpdatedUtc).toLocaleTimeString() : '';
+                    })
+                    .catch(function (err) {
+                        document.getElementById('tvhLogsStatus').textContent = 'Failed to load logs';
+                        console.error('Logs load error:', err);
+                    });
+            }
+
+            function renderLogsTable(data) {
+                var entries = data.Entries || [];
+                var tbody = document.getElementById('tvhLogsBody');
+
+                if (entries.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="tvh-empty">No log entries to display</td></tr>';
+                    return;
+                }
+
+                var html = '';
+                entries.forEach(function (e) {
+                    var time = formatTs(e.CreatedAtUtc);
+                    var levelBadge = logLevelBadge(e.Level);
+                    var srcBadge = e.Source === 'tvheadend' ? badge('active', 'TVH') : badge('idle', 'Plugin');
+                    var msgHtml = esc(e.Message || '');
+                    if (e.Exception) {
+                        msgHtml += ' <details style="display:inline"><summary style="cursor:pointer;font-size:0.8em;opacity:0.7;">[exception]</summary><pre style="white-space:pre-wrap;font-size:0.8em;opacity:0.8;margin:0.3em 0;">' + esc(e.Exception) + '</pre></details>';
+                    }
+                    html += '<tr>'
+                        + '<td style="white-space:nowrap;">' + esc(time) + '</td>'
+                        + '<td>' + srcBadge + '</td>'
+                        + '<td>' + levelBadge + '</td>'
+                        + '<td>' + esc(e.Category || '') + '</td>'
+                        + '<td style="word-break:break-word;max-width:500px;">' + msgHtml + '</td>'
+                        + '</tr>';
+                });
+                tbody.innerHTML = html;
+            }
+
+            function logLevelBadge(level) {
+                switch ((level || '').toLowerCase()) {
+                    case 'critical': return badge('err', 'CRIT');
+                    case 'error': return badge('err', 'ERR');
+                    case 'warning': return badge('warn', 'WARN');
+                    case 'information': return badge('ok', 'INFO');
+                    case 'debug': return badge('idle', 'DBG');
+                    case 'trace': return badge('idle', 'TRACE');
+                    default: return badge('idle', level || '?');
+                }
+            }
+
+            function toggleLogsAutoRefresh() {
+                if (logsRefreshTimer) { clearInterval(logsRefreshTimer); logsRefreshTimer = null; }
+                if (document.getElementById('tvhLogsAutoRefresh').checked) {
+                    logsRefreshTimer = setInterval(loadLogs, 5000);
+                }
+            }
+
+            // Logs sort click handler — keeps the header arrows in sync with the active sort.
+            function updateLogsSortArrows() {
+                document.querySelectorAll('#tvhLogsTable th.tvh-sortable').forEach(function (th) {
+                    var arrow = th.querySelector('.tvh-sort-arrow');
+                    if (!arrow) return;
+                    arrow.textContent = th.getAttribute('data-sort') === logsSortField
+                        ? (logsSortDir === 'asc' ? '▲' : '▼')
+                        : '▾';
+                });
+            }
+            document.querySelectorAll('#tvhLogsTable th.tvh-sortable').forEach(function (th) {
+                th.addEventListener('click', function () {
+                    var field = th.getAttribute('data-sort');
+                    if (logsSortField === field) {
+                        logsSortDir = logsSortDir === 'desc' ? 'asc' : 'desc';
+                    } else {
+                        logsSortField = field;
+                        logsSortDir = 'desc';
+                    }
+                    updateLogsSortArrows();
+                    loadLogs();
+                });
+            });
+
+            // ── Event listeners ────────────────────────────────
+            document.getElementById('tvhRefreshBtn').addEventListener('click', function () {
+                refreshDashboard();
+                loadStatistics();
+                loadLogs();
+            });
+            document.getElementById('tvhAutoRefresh').addEventListener('change', toggleAutoRefresh);
+            document.getElementById('tvhStatsAutoRefresh').addEventListener('change', toggleStatsAutoRefresh);
+            document.getElementById('tvhRefreshStatsBtn').addEventListener('click', loadStatistics);
+            document.getElementById('tvhStatsDays').addEventListener('change', loadStatistics);
+            document.getElementById('tvhTimezoneMode').addEventListener('change', function(e) {
+                timezoneMode = e.target.value;
+                localStorage.setItem('tvhTimezoneMode', timezoneMode);
+                renderSessionsTable();
+                renderActiveSessions();
+            });
+            document.getElementById('tvhClearStatsBtn').addEventListener('click', function () {
+                if (!confirm('Delete all viewing statistics?')) return;
+                ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('TvHeadendApi/Statistics') }).then(function () {
+                    document.getElementById('tvhStatsStatus').textContent = 'Statistics cleared.';
+                    loadStatistics();
+                });
+            });
+            document.getElementById('tvhLogSearch').addEventListener('input', function () {
+                if (logsRefreshTimer) { clearInterval(logsRefreshTimer); logsRefreshTimer = null; }
+                clearTimeout(window._logSearchDebounce);
+                window._logSearchDebounce = setTimeout(function () { loadLogs(); toggleLogsAutoRefresh(); }, 400);
+            });
+            document.getElementById('tvhLogSourceFilter').addEventListener('change', loadLogs);
+            document.getElementById('tvhLogLevelFilter').addEventListener('change', loadLogs);
+            document.getElementById('tvhLogsAutoRefresh').addEventListener('change', toggleLogsAutoRefresh);
+            document.getElementById('tvhRefreshLogsBtn').addEventListener('click', loadLogs);
+
+            // ── Relay Observability ──────────────────────────────
+            function formatBytes(bytes) {
+                if (bytes == null || bytes <= 0) return '0 B';
+                var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+                var i = Math.floor(Math.log(bytes) / Math.log(1024));
+                i = Math.min(i, units.length - 1);
+                return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+            }
+            function fmtMs(v) { return v != null ? v.toFixed(1) + ' ms' : '—'; }
+            function fmtPct(v) { return v != null ? v.toFixed(1) + ' %' : '—'; }
+
+            function loadRelayBannerStatus() {
+                var banner = document.getElementById('tvhRelayBanner');
+                var icon = document.getElementById('relayBannerIcon');
+                var text = document.getElementById('relayBannerText');
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('api/tvheadend/status'), dataType: 'json' }).then(function (r) {
+                    var status = (r.Status || '').toLowerCase();
+                    if (status === 'ok') {
+                        banner.className = 'tvh-status-banner tvh-status-ok';
+                        icon.textContent = '✅';
+                        var latency = r.LastResponseTimeMs ? ' (' + r.LastResponseTimeMs + ' ms)' : '';
+                        text.textContent = 'Relay connected to TVHeadend' + latency + ' — ' + (r.ActiveStreams || 0) + ' active stream(s), host: ' + (r.EffectiveHost || 'auto');
+                    } else if (status === 'degraded') {
+                        banner.className = 'tvh-status-banner tvh-status-warn';
+                        icon.textContent = '⚠️';
+                        text.textContent = 'TVHeadend degraded — ' + (r.Message || 'intermittent issues');
+                    } else if (status === 'disabled') {
+                        banner.className = 'tvh-status-banner tvh-status-warn';
+                        icon.textContent = 'ℹ️';
+                        text.textContent = r.Message || 'Relay service is disabled.';
+                    } else if (status === 'unknown') {
+                        // Neutral "not checked yet" state — never alarming next to healthy panels.
+                        banner.className = 'tvh-status-banner tvh-status-loading';
+                        icon.textContent = '⏳';
+                        text.textContent = 'Checking TVHeadend connectivity…';
+                    } else {
+                        banner.className = 'tvh-status-banner tvh-status-err';
+                        icon.textContent = '❌';
+                        var msg = r.Message || 'TVHeadend not reachable';
+                        if (r.ConsecutiveFailures > 0) {
+                            msg += ' (' + r.ConsecutiveFailures + ' failure' + (r.ConsecutiveFailures > 1 ? 's' : '') + ')';
+                        }
+                        text.textContent = msg;
+                    }
+                }).catch(function () {
+                    banner.className = 'tvh-status-banner tvh-status-err';
+                    icon.textContent = '❌';
+                    text.textContent = 'Relay service unreachable';
+                });
+            }
+
+            function loadRelayMetrics() {
+                var hours = document.getElementById('tvhRelayHours').value;
+                ApiClient.getJSON(ApiClient.getUrl('TvHeadendApi/RelayMetrics', { hours: hours })).then(function (m) {
+                    renderRelayMetrics(m);
+                }).catch(function () {
+                    document.getElementById('tvhRelayEmpty').style.display = '';
+                    document.getElementById('tvhRelayContent').style.display = 'none';
+                });
+            }
+
+            // Zapping target coloring: the plugin exists for 1–2s channel starts.
+            // Green below 2000 ms, yellow below 3500 ms, red above.
+            function startupLatencyColor(ms) {
+                if (ms == null) return '';
+                if (ms < 2000) return '#4caf50';
+                if (ms < 3500) return '#f0ad4e';
+                return '#e74c3c';
+            }
+
+            function setStartupKpi(id, ms) {
+                var el = document.getElementById(id);
+                if (!el) return;
+                el.textContent = ms != null ? fmtMs(ms) : '—';
+                el.style.color = startupLatencyColor(ms);
+            }
+
+            function renderRelayMetrics(m) {
+                if (!m || m.TotalRequests === 0) {
+                    document.getElementById('tvhRelayEmpty').style.display = '';
+                    document.getElementById('tvhRelayContent').style.display = 'none';
+                    setText('rkpiActive', m ? m.ActiveStreams : 0);
+                    setText('rkpiRequests', '0'); setText('rkpiSuccess', '—');
+                    setStartupKpi('rkpiStartup', null); setStartupKpi('rkpiP95', null);
+                    setText('rkpiDirectPlay', '—');
+                    setText('rkpiBytes', '0 B'); setText('rkpiCache', '—'); setText('rkpiFailures', '0');
+                    return;
+                }
+                document.getElementById('tvhRelayEmpty').style.display = 'none';
+                document.getElementById('tvhRelayContent').style.display = '';
+
+                // KPIs
+                setText('rkpiActive', m.ActiveStreams);
+                setText('rkpiRequests', m.TotalRequests);
+                setText('rkpiSuccess', fmtPct(m.SuccessRate));
+                setStartupKpi('rkpiStartup', m.StartupLatency ? m.StartupLatency.Avg : null);
+                setStartupKpi('rkpiP95', m.StartupLatency ? m.StartupLatency.P95 : null);
+                setText('rkpiDirectPlay', m.DirectPlayPercent24h != null ? fmtPct(m.DirectPlayPercent24h) : '—');
+                setText('rkpiBytes', formatBytes(m.TotalBytesTransferred));
+                setText('rkpiCache', fmtPct(m.CacheHitRatio));
+                setText('rkpiFailures', m.FailedRequests);
+
+                // ── Request Trend Line Chart (granularity adapts to the selected range) ──
+                renderTrendChart(m.HourlyTrend || [], m.TrendGranularity);
+                var trendTitle = document.getElementById('tvhRelayTrendTitle');
+                if (trendTitle) {
+                    trendTitle.textContent = (m.TrendGranularity === 'day') ? 'Request Trend (daily)' : 'Request Trend (hourly)';
+                }
+
+                // ── Latency Breakdown Bar Chart ──
+                renderLatencyChart(m);
+
+                // ── Zapping: startup latency warm vs cold cache / per profile ──
+                renderStartupGroupChart('tvhRelayWarmColdChart', m.StartupLatencyByCacheStatus || {}, {
+                    hit: 'Warm (cache hit)', restored: 'Warm (restored)', miss: 'Cold (cache miss)',
+                    mismatch: 'Cold (mismatch)', unknown: 'Unknown'
+                });
+                renderStartupGroupChart('tvhRelayProfileChart', m.StartupLatencyByProfile || {}, {});
+
+                // ── Stream End Reasons Horizontal Bar ──
+                renderEndReasonsChart(m.StreamEndedByDistribution || {});
+
+                // ── Image Cache Donut ──
+                renderCacheChart(m);
+
+                // ── Image Cache size + health ──
+                var icEl = document.getElementById('tvhImageCacheStats');
+                if (icEl) {
+                    if (m.ImageCacheEnabled === false) {
+                        icEl.innerHTML = '<span style="opacity:0.7;">Disk cache disabled</span>';
+                    } else {
+                        var icErr = m.ImageCacheErrors || 0;
+                        var health = icErr > 0
+                            ? '<span style="color:#e74c3c;">⚠ ' + icErr + ' error(s)</span>'
+                            : '<span style="color:#4caf50;">healthy</span>';
+                        icEl.innerHTML = (m.ImageCacheFileCount || 0) + ' files · ' + formatBytes(m.ImageCacheBytes || 0)
+                            + ' · retention ' + (m.ImageCacheRetentionDays || 0) + 'd · ' + health;
+                    }
+                }
+
+                // ── Problem Channels ──
+                var pcEl = document.getElementById('tvhProblemChannels');
+                if (pcEl) {
+                    var pc = m.ProblemChannels || [];
+                    if (pc.length === 0) {
+                        pcEl.innerHTML = '<div class="tvh-empty" style="color:#4caf50;">No channel stream failures in this range.</div>';
+                    } else {
+                        var pcHtml = '<div class="tvh-table-wrap"><table><thead><tr><th>Channel</th><th>Failed</th><th>Total</th><th>Last reason</th></tr></thead><tbody>';
+                        pc.forEach(function(c) {
+                            pcHtml += '<tr><td>' + esc(c.ChannelName) + '</td><td style="color:#e74c3c;font-weight:600;">' + c.FailedRequests + '</td><td>' + c.TotalRequests + '</td><td>' + esc(c.LastFailureReason || '') + '</td></tr>';
+                        });
+                        pcHtml += '</tbody></table></div>';
+                        pcEl.innerHTML = pcHtml;
+                    }
+                }
+
+                // Errors panel
+                var errDist = m.TopFailureReasons || {};
+                var errKeys = Object.keys(errDist);
+                if (errKeys.length > 0) {
+                    var errHtml = '<dl class="tvh-kv">';
+                    errKeys.forEach(function(k) { errHtml += '<dt>' + esc(k) + '</dt><dd>' + errDist[k] + '</dd>'; });
+                    errHtml += '</dl>';
+                    document.getElementById('tvhRelayErrorsContent').innerHTML = errHtml;
+                } else {
+                    document.getElementById('tvhRelayErrorsContent').innerHTML = '<div class="tvh-empty">No errors</div>';
+                }
+
+                // Recent errors table
+                var reBody = document.getElementById('tvhRelayErrorsBody');
+                var errors = m.RecentErrors || [];
+                if (errors.length === 0) {
+                    reBody.innerHTML = '<tr><td colspan="5" class="tvh-empty">No recent errors</td></tr>';
+                } else {
+                    reBody.innerHTML = errors.map(function(e) {
+                        return '<tr><td>' + formatDateWithTimezone(e.CreatedAtUtc) + '</td><td>' + esc(e.RelayType) +
+                            '</td><td>' + esc(e.FailureReason) + '</td><td>' + val(e.UpstreamStatusCode) +
+                            '</td><td>' + fmtMs(e.TotalDurationMs) + '</td></tr>';
+                    }).join('');
+                }
+
+                // Slowest requests table
+                var slBody = document.getElementById('tvhRelaySlowestBody');
+                var slowest = m.SlowestRequests || [];
+                if (slowest.length === 0) {
+                    slBody.innerHTML = '<tr><td colspan="6" class="tvh-empty">No data</td></tr>';
+                } else {
+                    slBody.innerHTML = slowest.map(function(s) {
+                        var outcomeColor = s.FinalOutcome === 'success' || s.FinalOutcome === 'cancelled' ? '#4caf50' : '#e74c3c';
+                        var startup = s.StartupLatencyMs != null ? fmtMs(s.StartupLatencyMs) : '—';
+                        return '<tr><td>' + formatDateWithTimezone(s.CreatedAtUtc) + '</td><td>' + esc(s.RelayType) +
+                            '</td><td>' + startup + '</td><td>' + fmtMs(s.TotalDurationMs) + '</td><td>' + formatBytes(s.BytesSent) +
+                            '</td><td><span style="color:' + outcomeColor + ';">' + esc(s.FinalOutcome) + '</span></td></tr>';
+                    }).join('');
+                }
+            }
+
+            // ── SVG Chart Helpers ──────────────────────────────────
+
+            function renderTrendChart(trend, granularity) {
+                var el = document.getElementById('tvhRelayTrendChart');
+                if (!trend || trend.length === 0) {
+                    el.innerHTML = '<div class="tvh-empty">No request data for the selected time range</div>';
+                    return;
+                }
+                var daily = (granularity === 'day');
+                var W = el.offsetWidth || 600, H = 160, pad = { t: 10, r: 10, b: 30, l: 45 };
+                var cW = W - pad.l - pad.r, cH = H - pad.t - pad.b;
+                var maxReq = Math.max.apply(null, trend.map(function(b) { return b.Requests; })) || 1;
+                var barW = Math.max(2, Math.floor(cW / trend.length) - 2);
+
+                var svg = '<svg width="' + W + '" height="' + H + '" style="display:block;">';
+                // Grid lines
+                for (var g = 0; g <= 4; g++) {
+                    var gy = pad.t + cH - (cH * g / 4);
+                    var gVal = Math.round(maxReq * g / 4);
+                    svg += '<line x1="' + pad.l + '" y1="' + gy + '" x2="' + (W - pad.r) + '" y2="' + gy + '" stroke="rgba(255,255,255,0.08)" />';
+                    svg += '<text x="' + (pad.l - 5) + '" y="' + (gy + 4) + '" fill="rgba(255,255,255,0.5)" font-size="10" text-anchor="end">' + gVal + '</text>';
+                }
+                // Bars
+                trend.forEach(function(b, i) {
+                    var x = pad.l + (cW / trend.length) * i + 1;
+                    var h = (b.Requests / maxReq) * cH;
+                    var y = pad.t + cH - h;
+                    var failH = b.Failures > 0 ? Math.max(2, (b.Failures / maxReq) * cH) : 0;
+                    svg += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + h + '" fill="#64b5f6" rx="1" opacity="0.8"><title>' + b.Requests + ' requests</title></rect>';
+                    if (failH > 0) {
+                        svg += '<rect x="' + x + '" y="' + (pad.t + cH - failH) + '" width="' + barW + '" height="' + failH + '" fill="#e74c3c" rx="1" opacity="0.9"><title>' + b.Failures + ' failures</title></rect>';
+                    }
+                    // X-axis labels (every few bars)
+                    if (trend.length <= 24 || i % Math.ceil(trend.length / 12) === 0) {
+                        var lbl = '';
+                        if (b.HourUtc) {
+                            var dt = new Date(b.HourUtc);
+                            lbl = daily
+                                ? ((dt.getMonth() + 1) + '-' + dt.getDate().toString().padStart(2, '0'))
+                                : (dt.getHours().toString().padStart(2, '0') + ':00');
+                        }
+                        svg += '<text x="' + (x + barW / 2) + '" y="' + (H - 5) + '" fill="rgba(255,255,255,0.5)" font-size="9" text-anchor="middle">' + lbl + '</text>';
+                    }
+                });
+                // Startup latency line overlay
+                var latPoints = [];
+                var maxLat = Math.max.apply(null, trend.map(function(b) { return b.AvgStartupLatencyMs || 0; })) || 1;
+                trend.forEach(function(b, i) {
+                    if (b.AvgStartupLatencyMs != null) {
+                        var x = pad.l + (cW / trend.length) * i + barW / 2;
+                        var y = pad.t + cH - ((b.AvgStartupLatencyMs / maxLat) * cH * 0.8);
+                        latPoints.push(x + ',' + y);
+                    }
+                });
+                if (latPoints.length > 1) {
+                    svg += '<polyline points="' + latPoints.join(' ') + '" fill="none" stroke="#f0ad4e" stroke-width="2" opacity="0.9" />';
+                    latPoints.forEach(function(p) {
+                        svg += '<circle cx="' + p.split(',')[0] + '" cy="' + p.split(',')[1] + '" r="2.5" fill="#f0ad4e" />';
+                    });
+                }
+                // Peak concurrent streams line overlay (green)
+                var maxStr = Math.max.apply(null, trend.map(function(b) { return b.PeakConcurrentStreams || 0; })) || 1;
+                var strPoints = trend.map(function(b, i) {
+                    var x = pad.l + (cW / trend.length) * i + barW / 2;
+                    var y = pad.t + cH - ((b.PeakConcurrentStreams || 0) / maxStr * cH * 0.8);
+                    return x + ',' + y;
+                });
+                if (strPoints.length > 1) {
+                    svg += '<polyline points="' + strPoints.join(' ') + '" fill="none" stroke="#4caf50" stroke-width="2" opacity="0.9" />';
+                }
+                // Legend
+                svg += '<rect x="' + (pad.l + 5) + '" y="2" width="8" height="8" fill="#64b5f6" rx="1" />';
+                svg += '<text x="' + (pad.l + 16) + '" y="10" fill="rgba(255,255,255,0.7)" font-size="9">Requests</text>';
+                svg += '<rect x="' + (pad.l + 75) + '" y="2" width="8" height="8" fill="#e74c3c" rx="1" />';
+                svg += '<text x="' + (pad.l + 86) + '" y="10" fill="rgba(255,255,255,0.7)" font-size="9">Failures</text>';
+                svg += '<line x1="' + (pad.l + 145) + '" y1="6" x2="' + (pad.l + 160) + '" y2="6" stroke="#f0ad4e" stroke-width="2" />';
+                svg += '<text x="' + (pad.l + 163) + '" y="10" fill="rgba(255,255,255,0.7)" font-size="9">Avg Startup (ms)</text>';
+                svg += '<line x1="' + (pad.l + 255) + '" y1="6" x2="' + (pad.l + 270) + '" y2="6" stroke="#4caf50" stroke-width="2" />';
+                svg += '<text x="' + (pad.l + 273) + '" y="10" fill="rgba(255,255,255,0.7)" font-size="9">Peak streams</text>';
+                svg += '</svg>';
+                el.innerHTML = svg;
+            }
+
+            function renderLatencyChart(m) {
+                var el = document.getElementById('tvhRelayLatencyChart');
+                var lat = m.TotalDuration || {};
+                var su = m.StartupLatency || {};
+                // Note: "Startup (first byte)" IS the time the first byte reached the client, so a
+                // separate "First Byte Client" row would just duplicate it — intentionally omitted.
+                var items = [
+                    { label: 'Avg Total',           ms: lat.Avg,    color: '#64b5f6' },
+                    { label: 'P95 Total',           ms: lat.P95,    color: '#42a5f5' },
+                    { label: 'Avg Startup (1st byte)', ms: su.Avg,  color: '#81c784' },
+                    { label: 'P95 Startup (1st byte)', ms: su.P95,  color: '#66bb6a' },
+                    { label: 'Upstream Headers',    ms: m.AvgUpstreamHeadersMs, color: '#ffb74d' },
+                    { label: 'First Byte from TVH', ms: m.AvgFirstByteFromUpstreamMs, color: '#ffa726' },
+                ].filter(function(x) { return x.ms != null && x.ms > 0; });
+
+                if (items.length === 0) { el.innerHTML = '<div class="tvh-empty">No latency data</div>'; return; }
+
+                var maxMs = Math.max.apply(null, items.map(function(x) { return x.ms; }));
+                var W = el.offsetWidth || 400, barH = 22, gap = 4, labelW = 110;
+                var H = items.length * (barH + gap) + 10;
+                var barMaxW = W - labelW - 80;
+
+                var svg = '<svg width="' + W + '" height="' + H + '" style="display:block;">';
+                items.forEach(function(item, i) {
+                    var y = i * (barH + gap) + 5;
+                    var w = Math.max(2, (item.ms / maxMs) * barMaxW);
+                    svg += '<text x="' + (labelW - 5) + '" y="' + (y + barH / 2 + 4) + '" fill="rgba(255,255,255,0.7)" font-size="11" text-anchor="end">' + esc(item.label) + '</text>';
+                    svg += '<rect x="' + labelW + '" y="' + y + '" width="' + w + '" height="' + barH + '" fill="' + item.color + '" rx="3" opacity="0.85" />';
+                    svg += '<text x="' + (labelW + w + 5) + '" y="' + (y + barH / 2 + 4) + '" fill="rgba(255,255,255,0.8)" font-size="11">' + fmtMs(item.ms) + '</text>';
+                });
+                svg += '</svg>';
+                el.innerHTML = svg;
+            }
+
+            // Grouped Avg/P95 startup latency bars (warm/cold cache, per profile). Bars are
+            // colored against the 2s zapping target via startupLatencyColor().
+            function renderStartupGroupChart(elementId, groups, labelMap) {
+                var el = document.getElementById(elementId);
+                if (!el) return;
+                var keys = Object.keys(groups);
+                if (keys.length === 0) { el.innerHTML = '<div class="tvh-empty">No stream startup data</div>'; return; }
+
+                var maxMs = 1;
+                keys.forEach(function(k) {
+                    var g = groups[k] || {};
+                    maxMs = Math.max(maxMs, g.Avg || 0, g.P95 || 0);
+                });
+
+                var W = el.offsetWidth || 400, rowH = 40, labelW = 150;
+                var H = keys.length * rowH + 10;
+                var barMaxW = Math.max(40, W - labelW - 80);
+
+                var svg = '<svg width="' + W + '" height="' + H + '" style="display:block;">';
+                keys.forEach(function(k, i) {
+                    var g = groups[k] || {};
+                    var y = i * rowH + 5;
+                    var label = labelMap[k] || k;
+                    svg += '<text x="' + (labelW - 5) + '" y="' + (y + rowH / 2) + '" fill="rgba(255,255,255,0.7)" font-size="11" text-anchor="end">' + esc(label) + '</text>';
+                    [{ v: g.Avg, name: 'Avg', off: 0 }, { v: g.P95, name: 'P95', off: 15 }].forEach(function(row) {
+                        if (row.v == null) return;
+                        var w = Math.max(2, (row.v / maxMs) * barMaxW);
+                        svg += '<rect x="' + labelW + '" y="' + (y + row.off) + '" width="' + w + '" height="11" fill="' + startupLatencyColor(row.v) + '" rx="2" opacity="0.85"><title>' + row.name + ': ' + fmtMs(row.v) + '</title></rect>';
+                        svg += '<text x="' + (labelW + w + 5) + '" y="' + (y + row.off + 9) + '" fill="rgba(255,255,255,0.8)" font-size="10">' + row.name + ' ' + fmtMs(row.v) + '</text>';
+                    });
+                });
+                // 2s target marker line.
+                if (maxMs > 2000) {
+                    var tx = labelW + (2000 / maxMs) * barMaxW;
+                    svg += '<line x1="' + tx + '" y1="0" x2="' + tx + '" y2="' + H + '" stroke="#4caf50" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"><title>2s zapping target</title></line>';
+                }
+                svg += '</svg>';
+                el.innerHTML = svg;
+            }
+
+            function renderEndReasonsChart(dist) {
+                var el = document.getElementById('tvhRelayEndReasonsChart');
+                var keys = Object.keys(dist);
+                if (keys.length === 0) { el.innerHTML = '<div class="tvh-empty">No stream data</div>'; return; }
+
+                var total = 0;
+                keys.forEach(function(k) { total += dist[k]; });
+                // Merged StreamEndedBy vocabulary plus the legacy names still present in
+                // rows persisted before the enum merge (Completed, ClientCancelled, ...).
+                var colorMap = {
+                    UpstreamEof: '#4caf50', Completed: '#4caf50', ClientCancelled: '#64b5f6',
+                    ClientDisconnectAfterFirstByte: '#64b5f6',
+                    StartupCancelledBeforeFirstByte: '#f0ad4e',
+                    DownstreamError: '#e74c3c', DownstreamWriteError: '#e74c3c',
+                    UpstreamTimeout: '#e74c3c', UpstreamHttpError: '#e74c3c', UnexpectedException: '#e74c3c'
+                };
+                // Live TV streams normally end because the client closes / switches channel — that is
+                // NOT a failure, so present it as "Closed by client" rather than "Cancelled".
+                var labelMap = {
+                    ClientCancelled: 'Closed by client', ClientDisconnectAfterFirstByte: 'Closed by client',
+                    Completed: 'Stream ended (EOF)', UpstreamEof: 'Stream ended (EOF)',
+                    StartupCancelledBeforeFirstByte: 'Cancelled before start',
+                    DownstreamError: 'Client write error', DownstreamWriteError: 'Client write error',
+                    UpstreamTimeout: 'Upstream timeout', UpstreamHttpError: 'Upstream error',
+                    UnexpectedException: 'Unexpected error', Unknown: 'Unknown'
+                };
+                var W = el.offsetWidth || 400, barH = 24, gap = 6, labelW = 180;
+                var H = keys.length * (barH + gap) + 10;
+                var barMaxW = W - labelW - 60;
+
+                var svg = '<svg width="' + W + '" height="' + H + '" style="display:block;">';
+                keys.forEach(function(k, i) {
+                    var y = i * (barH + gap) + 5;
+                    var w = Math.max(2, (dist[k] / total) * barMaxW);
+                    var color = colorMap[k] || '#9e9e9e';
+                    var pct = Math.round(dist[k] * 100 / total);
+                    var displayName = labelMap[k] || k.replace(/([A-Z])/g, ' $1').trim();
+                    svg += '<text x="' + (labelW - 5) + '" y="' + (y + barH / 2 + 4) + '" fill="rgba(255,255,255,0.7)" font-size="11" text-anchor="end">' + esc(displayName) + '</text>';
+                    svg += '<rect x="' + labelW + '" y="' + y + '" width="' + w + '" height="' + barH + '" fill="' + color + '" rx="3" opacity="0.8" />';
+                    svg += '<text x="' + (labelW + w + 5) + '" y="' + (y + barH / 2 + 4) + '" fill="rgba(255,255,255,0.8)" font-size="11">' + dist[k] + ' (' + pct + '%)</text>';
+                });
+                svg += '</svg>';
+                el.innerHTML = svg;
+            }
+
+            function renderCacheChart(m) {
+                var el = document.getElementById('tvhRelayCacheChart');
+                // Only outcomes the image cache actually produces: Hit, Miss, and upstream 304.
+                // (Revalidated/NegativeHit were removed — the cache does neither.)
+                var items = [
+                    { label: 'Hits', count: m.CacheHits || 0, color: '#4caf50' },
+                    { label: 'Misses', count: m.CacheMisses || 0, color: '#e74c3c' },
+                    { label: '304', count: m.NotModified304Count || 0, color: '#64b5f6' },
+                ];
+                var total = 0;
+                items.forEach(function(x) { total += x.count; });
+
+                if (total === 0) {
+                    el.innerHTML = '<div class="tvh-empty">No image cache data</div>';
+                    return;
+                }
+
+                // Donut chart
+                var W = el.offsetWidth || 400, H = 160;
+                var cx = 80, cy = 80, r = 60, r2 = 35;
+                var svg = '<svg width="' + W + '" height="' + H + '" style="display:block;">';
+                var angle = -Math.PI / 2;
+                items.forEach(function(item) {
+                    if (item.count === 0) return;
+                    var slice = (item.count / total) * Math.PI * 2;
+                    var x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
+                    var x2 = cx + r * Math.cos(angle + slice), y2 = cy + r * Math.sin(angle + slice);
+                    var x3 = cx + r2 * Math.cos(angle + slice), y3 = cy + r2 * Math.sin(angle + slice);
+                    var x4 = cx + r2 * Math.cos(angle), y4 = cy + r2 * Math.sin(angle);
+                    var large = slice > Math.PI ? 1 : 0;
+                    svg += '<path d="M' + x1 + ',' + y1 + ' A' + r + ',' + r + ' 0 ' + large + ',1 ' + x2 + ',' + y2 +
+                        ' L' + x3 + ',' + y3 + ' A' + r2 + ',' + r2 + ' 0 ' + large + ',0 ' + x4 + ',' + y4 + 'Z" fill="' + item.color + '" opacity="0.85"><title>' + item.label + ': ' + item.count + '</title></path>';
+                    angle += slice;
+                });
+                // Center text
+                svg += '<text x="' + cx + '" y="' + (cy - 5) + '" fill="#e0e0e0" font-size="18" font-weight="700" text-anchor="middle">' + fmtPct(m.CacheHitRatio) + '</text>';
+                svg += '<text x="' + cx + '" y="' + (cy + 12) + '" fill="rgba(255,255,255,0.5)" font-size="10" text-anchor="middle">Hit Rate</text>';
+                // Legend
+                var lx = 180, ly = 20;
+                items.forEach(function(item) {
+                    if (item.count === 0) return;
+                    svg += '<rect x="' + lx + '" y="' + ly + '" width="10" height="10" fill="' + item.color + '" rx="2" />';
+                    svg += '<text x="' + (lx + 15) + '" y="' + (ly + 9) + '" fill="rgba(255,255,255,0.7)" font-size="11">' + esc(item.label) + ': ' + item.count + '</text>';
+                    ly += 20;
+                });
+                svg += '</svg>';
+                el.innerHTML = svg;
+            }
+
+            function setText(id, text) {
+                var el = document.getElementById(id);
+                if (el) el.textContent = text != null ? String(text) : '—';
+            }
+
+            document.getElementById('tvhRefreshRelayBtn').addEventListener('click', loadRelayMetrics);
+            document.getElementById('tvhRelayHours').addEventListener('change', loadRelayMetrics);
+
+            document.getElementById('tvhClearRelayBtn').addEventListener('click', function () {
+                if (!confirm('Delete all relay metrics? This cannot be undone.')) return;
+                ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('TvHeadendApi/RelayMetrics') }).then(function () {
+                    loadRelayMetrics();
+                }).catch(function () { alert('Failed to clear relay metrics.'); });
+            });
+
+            document.getElementById('tvhClearLogsBtn').addEventListener('click', function () {
+                if (!confirm('Delete all log entries? This cannot be undone.')) return;
+                ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('TvHeadendApi/Dashboard/Logs') }).then(function () {
+                    loadLogs();
+                }).catch(function () { alert('Failed to clear logs.'); });
+            });
+
+            // ── Lifecycle ──────────────────────────────────────
+            document.getElementById('TvHeadendDashboardPage').addEventListener('pageshow', function () {
+                // Initialize timezone selector
+                var timezoneSelect = document.getElementById('tvhTimezoneMode');
+                if (timezoneSelect) {
+                    timezoneSelect.value = timezoneMode;
+                }
+
+                // Initialize pagination selector
+                var pageSelect = document.getElementById('tvhSessionsPerPage');
+                if (pageSelect) {
+                    pageSelect.value = sessionItemsPerPage;
+                }
+
+                // Load dashboard first — other API calls are gated by RequiresSetup
+                initialDashboardLoad();
+            });
+
+            document.getElementById('TvHeadendDashboardPage').addEventListener('pagehide', function () {
+                if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+                if (statsAutoRefreshTimer) { clearInterval(statsAutoRefreshTimer); statsAutoRefreshTimer = null; }
+                if (logsRefreshTimer) { clearInterval(logsRefreshTimer); logsRefreshTimer = null; }
+                Object.keys(chartInstances).forEach(destroyChart);
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>
+

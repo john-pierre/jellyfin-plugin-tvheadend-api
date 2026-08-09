@@ -1,0 +1,20 @@
+# Keep the Docker build context small and fast
+.docker/
+.git/
+.github/
+.idea/
+.vs/
+.vscode/
+docker/
+!docker/jellyfin/
+
+**/bin/
+**/obj/
+**/TestResults/
+
+*.md
+*.user
+*.suo
+LICENSE
+test.sh
+agent-results/

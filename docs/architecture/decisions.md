@@ -1,0 +1,188 @@
+# Architecture Decisions
+
+This document records significant architecture decisions for the plugin using lightweight ADR-style entries.
+
+---
+
+## ADR-001: HTTP/JSON API Only — No HTSP
+
+**Status:** Accepted (since v1.0.0)
+
+**Context:** TVHeadend provides two integration paths: HTSP (binary protocol) and HTTP/JSON API. The official Jellyfin plugin uses HTSP.
+
+**Decision:** This plugin uses HTTP/JSON API exclusively.
+
+**Rationale:**
+- Simpler implementation and debugging (standard HTTP tooling).
+- No binary protocol dependency.
+- Enables auth token–based direct play from clients to TVHeadend.
+- Stream URL can be forwarded directly to clients for Direct Play.
+
+**Consequences:**
+- Some HTSP-only features are not available.
+- Depends on TVHeadend HTTP API stability.
+
+---
+
+## ADR-002: Thin Orchestrator, Domain Services
+
+**Status:** Accepted
+
+**Context:** `ILiveTvService` has a large surface (~20 methods). Putting all logic in one class creates a god object.
+
+**Decision:** `OrchestratorService` is a pure delegator. Each domain concern (Guide, DVR, Stream, etc.) is a separate service.
+
+**Rationale:**
+- Each service is independently testable.
+- Clear responsibility boundaries.
+- Services can evolve independently.
+
+**Consequences:**
+- Slightly more DI registrations.
+- OrchestratorService must stay thin (no business logic).
+
+---
+
+## ADR-003: MediaInfo Cache Pre-Creation
+
+**Status:** Accepted
+
+**Context:** Jellyfin probes live streams with FFmpeg, adding 3+ seconds to first tune. The probe result is cached as `cache/mediainfo/<hash>.json`.
+
+**Decision:** The plugin pre-creates cache files based on the selected TVHeadend streaming profile, so Jellyfin finds probe data instantly.
+
+**Rationale:**
+- Reduces first-tune latency from 3+ seconds to near-zero.
+- Cache file format matches Jellyfin core's expected schema.
+- Profile metadata from TVHeadend is used to populate codec/container fields.
+
+**Consequences:**
+- Plugin must mirror Jellyfin's cache key hashing algorithm exactly.
+- Cache files become stale if the TVHeadend profile changes (mitigated by validation option).
+- Tight coupling to Jellyfin's internal cache format (not a public API).
+
+**Update (2026-07):** Cache management now lives in `MediaInfoCacheService` and was extended:
+- A per-(channel × profile) store under `cache/mediainfo/profiles/<channel>.<profileKey>.json` preserves the outgoing cache file before a profile switch replaces it and restores it when a rule switches the channel back, so expensive probed data survives profile ping-pong.
+- Cache warmup pre-seeds the store for every profile reachable via configured streaming-profile rules (client/user rules plus the channel's effective profile).
+- On every stream start the cached `Path` is refreshed with the current stream URL (fresh relay token, current delivery-mode URL shape) — Jellyfin hands that path verbatim to Direct Play clients.
+- Cache pre-creation is coupled to `SupportsProbing`; the former `EnableMediaInfoCacheWrite`/`EnableMediaInfoCacheValidation` toggles are deprecated (hidden in the UI, ignored by the stream path).
+
+---
+
+## ADR-004: Auth Token for Direct Play URLs
+
+**Status:** Accepted
+
+**Context:** Direct Play means the client opens a direct HTTP connection to TVHeadend. The client needs authentication.
+
+**Decision:** The plugin appends `?auth=<token>` to stream and image URLs.
+
+**Rationale:**
+- Avoids embedding username:password in URLs (visible in client logs).
+- TVHeadend supports persistent API tokens.
+- Token can be rotated independently.
+
+**Consequences:**
+- Token must be alphanumeric for FFmpeg URL safety.
+- Token generation requires TVHeadend admin access.
+
+---
+
+## ADR-005: Singleton Service Lifetimes
+
+**Status:** Accepted
+
+**Context:** Jellyfin plugins register services in the host DI container.
+
+**Decision:** All plugin services are registered as singletons.
+
+**Rationale:**
+- Matches Jellyfin's plugin lifecycle expectations.
+- `StatisticsService` maintains in-memory state and must be singleton.
+- No per-request state in any service.
+
+**Consequences:**
+- Services must be thread-safe.
+- `HttpClient` instances are managed by `IHttpClientFactory` with named clients (`TvHeadend`, `TvHeadendUnsafe`).
+
+---
+
+## ADR-006: Plugin Configuration via Jellyfin BasePluginConfiguration
+
+**Status:** Accepted
+
+**Context:** Jellyfin provides `BasePlugin<TConfiguration>` with XML-serialized configuration.
+
+**Decision:** Use `PluginConfiguration` extending `BasePluginConfiguration` with sensible defaults.
+
+**Rationale:**
+- Standard Jellyfin plugin pattern.
+- Configuration accessible via `Plugin.Instance.Configuration`.
+- Admin UI via embedded HTML page.
+
+**Consequences:**
+- Configuration changes require plugin page save + potential restart for some settings.
+- No configuration validation beyond what the admin UI enforces.
+
+---
+
+## ADR-007: No HTSP, No Recording File Access
+
+**Status:** Accepted
+
+**Context:** Recording file playback typically uses HTSP or direct file system access.
+
+**Decision:** This plugin focuses on live TV. Recording management (timers) is supported, but recording file playback is delegated to TVHeadend's HTTP streaming or external access.
+
+**Rationale:**
+- Keeps plugin scope focused.
+- Recording file access depends on deployment topology.
+
+**Consequences:**
+- Users may need additional setup for recording playback.
+
+---
+
+## ADR-008: Plugin.Instance Singleton Mitigation via Injected Providers
+
+**Status:** Accepted
+
+**Context:**
+`Plugin.Instance` is a static singleton provided by the Jellyfin `BasePlugin<T>` framework. Direct access couples services to the plugin lifecycle and makes unit testing harder because the singleton is `null` outside a running Jellyfin host.
+
+**Decision:**
+Introduce lightweight provider/wrapper types registered in DI, organized by concern:
+
+| Type | Location | Purpose |
+|---|---|---|
+| `ConfigurationProvider` | `Service/Configuration/` | Resolves current `PluginConfiguration` |
+| `CachePathProvider` | `Service/Storage/` | Resolves plugin cache path |
+| `DataFolderPathProvider` | `Service/Storage/` | Resolves plugin data folder path |
+| `ConfigurationSaver` | `Service/Configuration/` | Mutates and persists configuration |
+
+Services receive these via constructor injection instead of accessing `Plugin.Instance` directly. `PluginController.ResetToDefaults` retains direct `Plugin.Instance` access because `SaveConfiguration()` and `UpdateConfiguration()` are instance methods on `BasePlugin` that cannot be abstracted further.
+
+**Consequences:**
+- Services are fully testable without a live plugin instance.
+- The singleton bridge is isolated to `ServiceRegistrator` registrations.
+- `PluginController` remains the only direct `Plugin.Instance` consumer (documented as framework constraint).
+
+---
+
+## ADR-009: Managed "jellyfin" Transcode Profile with Self-Verification
+
+**Status:** Accepted
+
+**Context:** Deterministic output codecs are the prerequisite for pre-created mediainfo caches (ADR-003). TVHeadend's `profile-transcode` cannot mix a copied stream with a transcoded stream in one profile, and an encoder listed by `api/codec/list` can still be non-functional at stream time (e.g. VAAPI without a usable render device).
+
+**Decision:** The plugin creates and maintains a managed TVHeadend transcode profile named `jellyfin` (H.264 + AAC in MPEG-TS) via `DefaultProfileService`:
+
+- The H.264 encoder is auto-detected from the backend's actual capabilities; hardware encoders (VAAPI/QSV/NVENC/…) with a detected device are preferred, software libx264 is next.
+- Both video AND audio are always transcoded (never copy+transcode mixed).
+- After creation, the profile is **self-verified** by reading a short test stream from a mapped channel. If it delivers no data, the video codec profile is rebuilt on software libx264 and verified again.
+- The MPEG-TS muxer is configured with `sid=1` and `rewrite_nit=true` — with `sid == 0` TVHeadend's service-id rewriting can emit "Failed to write mpegts header" and 0 bytes.
+
+**Consequences:**
+- The profile works out of the box on unknown backends; failures surface as explicit warnings in the create-profile response instead of silent audio-only/empty streams.
+- Profile creation invalidates the profile snapshot and discovery caches so playback never resolves stale pre-change metadata.
+- Verification is skipped (treated as verified) when no channel is mapped yet or the user lacks streaming permission.

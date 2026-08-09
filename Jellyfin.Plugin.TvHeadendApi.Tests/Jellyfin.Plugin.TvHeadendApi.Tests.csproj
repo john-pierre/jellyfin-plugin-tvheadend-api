@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <VSTestResultsDirectory>$(MSBuildProjectDirectory)\..\TestResults</VSTestResultsDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AutoFixture" Version="4.18.1" />
+    <PackageReference Include="coverlet.collector" Version="8.0.1">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" Version="8.9.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.4" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="WireMock.Net" Version="1.6.9" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+
+    <!--
+      The plugin project sets ExcludeAssets=runtime on these so they are never copied into the
+      plugin package — the Jellyfin server provides them at runtime. The test host has no server
+      to borrow them from, so reference them explicitly here. Keep the version range identical to
+      the plugin project's.
+    -->
+    <PackageReference Include="Jellyfin.Controller" Version="[10.10.7,10.11.0)" />
+    <PackageReference Include="Jellyfin.Model" Version="[10.10.7,10.11.0)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Jellyfin.Plugin.TvHeadendApi\Jellyfin.Plugin.TvHeadendApi.csproj" />
+  </ItemGroup>
+</Project>
+

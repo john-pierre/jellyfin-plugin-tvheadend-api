@@ -15,6 +15,10 @@
         <Rule Id="SA1128" Action="None" />
         <!-- disable warning SA1130: Use lambda syntax -->
         <Rule Id="SA1130" Action="None" />
+        <!-- SA1402: File may only contain a single type — enforced; see docs/guides/naming-conventions.md -->
+        <Rule Id="SA1402" Action="Warning" />
+        <!-- SA1649: File name must match the first type name — enforced; see docs/guides/naming-conventions.md -->
+        <Rule Id="SA1649" Action="Warning" />
         <!-- disable warning SA1200: 'using' directive must appear within a namespace declaration -->
         <Rule Id="SA1200" Action="None" />
         <!-- disable warning SA1202: 'public' members must come before 'private' members -->
@@ -98,6 +102,12 @@
         <Rule Id="CA1303" Action="None" />
         <!-- disable warning CA1308: Normalize strings to uppercase -->
         <Rule Id="CA1308" Action="None" />
+        <!-- disable warning CA1002: Do not expose generic lists (configuration DTOs need settable collections for JSON serialization) -->
+        <Rule Id="CA1002" Action="None" />
+        <!-- disable warning CA1819: Properties should not return arrays (configuration DTOs need settable collections for JSON serialization) -->
+        <Rule Id="CA1819" Action="None" />
+        <!-- disable warning CA2227: Collection properties should be read only (configuration DTOs need settable collections for JSON deserialization) -->
+        <Rule Id="CA2227" Action="None" />
         <!-- disable warning CA1848: Use the LoggerMessage delegates -->
         <Rule Id="CA1848" Action="None" />
         <!-- disable warning CA2101: Specify marshaling for P/Invoke string arguments -->
