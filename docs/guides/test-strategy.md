@@ -85,6 +85,34 @@ The test stack consists of four containers:
 - **tvheadend-bootstrap** — Runs once after TVHeadend is healthy. Creates IPTV network, triggers mux scan, maps channels, configures EPG grabber, creates test user/profiles/DVR config, then exits.
 - **jellyfin** — Jellyfin instance with the plugin installed for full integration testing.
 
+#### Jellyfin version matrix
+
+The plugin is compiled against a single Jellyfin ABI (`Jellyfin.Controller 10.10.7`) but has to
+keep loading on newer servers, so compatibility is *verified*, not assumed. The Jellyfin base
+image is selected with the `JELLYFIN_IMAGE` build argument:
+
+```bash
+JELLYFIN_IMAGE=jellyfin/jellyfin:10.11.11 docker/run-e2e-tests.sh
+JELLYFIN_IMAGE=jellyfin/jellyfin:12.0-rc4 docker/run-e2e-tests.sh
+```
+
+CI runs the `integration` job as a matrix over every supported version with `fail-fast: false`:
+
+| Jellyfin | Blocking | Rationale |
+|---|---|---|
+| `10.10.7` | yes | The compiled-against ABI and the value of `TARGET_ABI` in the workflow |
+| `10.11.11` | yes | Latest stable of the 10.11 line |
+| `12.0-rc4` | no (`continue-on-error`) | Release candidate — early warning without blocking a release |
+
+Each matrix leg additionally greps the Jellyfin log for `TypeLoadException`,
+`MissingMethodException`, `ReflectionTypeLoadException` and `Failed to load assembly` before the
+functional tests run. An ABI break otherwise surfaces much later as a confusing functional
+failure rather than as the load error it actually is.
+
+`TARGET_ABI` (workflow-level env) must always equal the lowest version in this matrix — it is
+what `meta.json` and `manifest.json` advertise, and declaring a version lower than the one the
+plugin compiles against lets an older server install a plugin that then fails at runtime.
+
 #### Running E2E Tests
 
 **Option A: Automated script (recommended)**
@@ -318,7 +346,7 @@ Test class names: `{ClassUnderTest}Tests` (e.g., `MediaSourceServiceTests`, `Url
 Mirror the source folder structure:
 
 ```
-Tests/Service/Guide/GuideServiceTests.cs       → tests for Service/Guide/GuideService.cs
+Tests/Service/Guide/GuideServiceCoreTests.cs  → tests for Service/Guide/GuideService.cs
 Tests/Service/Stream/MediaSourceServiceTests.cs → tests for Service/Stream/MediaSourceService.cs
 Tests/Api/PluginControllerTests.cs              → tests for Api/PluginController.cs
 Tests/Model/ModelTests.cs                       → DTO serialization tests
@@ -352,16 +380,19 @@ Every service test suite should include:
 
 ## Coverage
 
-- **Baseline (2026-04-17):** 530 tests, 92.63% line coverage, 73.9% branch coverage.
+- **Baseline (2026-08-08):** 1449 tests, 86.94% line coverage, 72.74% branch coverage.
 - **Tooling:** Coverlet (Cobertura XML) → `irongut/CodeCoverageSummary` in CI.
 - **Thresholds (enforced in CI):**
-  - **90% minimum** — PR fails if line coverage drops below this (`fail_below_min: true`).
-  - **95% good** — coverage badge turns green at or above this level.
+  - **80% minimum** — PR fails if line coverage drops below this (`fail_below_min: true`).
+  - **90% good** — coverage badge turns green at or above this level.
 - **Policy:**
-  - The 90% floor is a hard quality gate. PRs that reduce coverage below this threshold are blocked.
-  - The 95% target is aspirational. New code should aim for ≥95% line coverage.
-  - Threshold values live in `.github/workflows/build-release.yaml` (`thresholds: '90 95'`).
+  - The 80% floor is a hard quality gate. PRs that reduce coverage below this threshold are blocked.
+  - The 90% target is aspirational. New code should aim for ≥90% line coverage.
+  - Threshold values live in `.github/workflows/build-release.yaml` (`thresholds: '80 90'`).
   - Coverage results are posted as a sticky comment on every PR.
+  - These numbers must stay in sync with the workflow. They previously documented a 90/95 gate
+    the pipeline never had — raising CI to match the docs would have failed every PR outright,
+    because real coverage sits below 90%.
 - **Gap:** No per-module coverage enforcement. Overall project-level gate only.
 
 ## Minimum Expectations for New Changes
@@ -371,3 +402,42 @@ Every service test suite should include:
 3. Mapping logic changes must include tests for the mapping transformation.
 4. Configuration changes must verify default values are preserved.
 
+## Common Setup Patterns
+
+```csharp
+// Configuration is read through a provider, never through Plugin.Instance.
+var config   = new PluginConfiguration { Host = "tvh.local", Port = 9981 };
+var provider = new ConfigurationProvider(() => config);
+
+// Loggers: never null, never a mock unless the test asserts on logging.
+var logger = NullLogger<GuideService>.Instance;
+
+// SQLite-backed services get their own temp data folder per test instance —
+// pointing DataFolderPathProvider at the bare temp root makes every test class
+// share one tvheadend_plugin.db and race on it.
+var tempDir = Path.Combine(Path.GetTempPath(), $"tvh-test-{Guid.NewGuid():N}");
+Directory.CreateDirectory(tempDir);
+var pathProvider = new DataFolderPathProvider(() => tempDir);
+```
+
+## Additional Test Frameworks
+
+| Package | Used for |
+|---|---|
+| `WireMock.Net` | Simulating TVHeadend HTTP responses without a live backend |
+| `Microsoft.EntityFrameworkCore.InMemory` | EF Core contexts where SQLite file semantics are irrelevant |
+
+## Flaky Test Prevention
+
+These have all caused real red CI runs in this repository:
+
+- **No fixed sleeps followed by exact-count assertions** on an async background writer. Poll with a
+  deadline, or inject the timing dependency.
+- **No filesystem-permission tricks** (`File.SetAttributes(ReadOnly)`) to simulate failure — they
+  are a no-op under root, which is how most CI containers run, and on Linux a failed SQLite write
+  can leave a read-only journal that blocks writes permanently. Inject a deterministic failure
+  instead, e.g. point the context at a directory that does not exist.
+- **No shared SQLite file across test classes** — give every test instance its own data folder.
+- **No wall-clock performance budgets** as pass/fail assertions on a shared CI runner.
+- A test that has never been observed failing proves nothing. Verify a regression test goes red
+  without the fix.

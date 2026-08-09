@@ -36,6 +36,54 @@ public class ProfileContainerResolverTests
     }
 
     [Fact]
+    public async Task ResolveContainerAsync_DoesNotPinAFallbackForTheFullSuccessTtl()
+    {
+        // A transient TVHeadend failure yields the guessed "mpegts" fallback. Caching that for
+        // the full success TTL pinned a wrong MediaSourceInfo.Container for minutes after the
+        // backend recovered, which pushes clients off Direct Play. The fallback must expire
+        // quickly so the next call re-resolves.
+        var apiClient = new FakeApiClient();
+        var profileResolver = new FakeProfileResolver { FailNextResolve = true };
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver)
+        {
+            FallbackCacheTtl = TimeSpan.FromMilliseconds(50),
+        };
+
+        var config = new PluginConfiguration { StreamingProfile = "jellyfin" };
+
+        var fallback = await sut.ResolveContainerAsync(config, CancellationToken.None);
+        Assert.Equal("mpegts", fallback);
+
+        // Past the short negative-cache window the backend answers normally again.
+        await Task.Delay(TimeSpan.FromMilliseconds(120));
+
+        var recovered = await sut.ResolveContainerAsync(config, CancellationToken.None);
+
+        Assert.Equal("mp4", recovered);
+        Assert.Equal(2, profileResolver.ResolveCalls);
+    }
+
+    [Fact]
+    public async Task ResolveContainerAsync_CachesSuccessfulResultForTheFullTtl()
+    {
+        // The negative-cache window must not shorten caching of real answers.
+        var apiClient = new FakeApiClient();
+        var profileResolver = new FakeProfileResolver();
+        var sut = new ProfileContainerResolver(NullLogger<ProfileContainerResolver>.Instance, apiClient, new UrlBuilder(), profileResolver)
+        {
+            FallbackCacheTtl = TimeSpan.FromMilliseconds(1),
+        };
+
+        var config = new PluginConfiguration { StreamingProfile = "jellyfin" };
+
+        Assert.Equal("mp4", await sut.ResolveContainerAsync(config, CancellationToken.None));
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
+        Assert.Equal("mp4", await sut.ResolveContainerAsync(config, CancellationToken.None));
+
+        Assert.Equal(1, profileResolver.ResolveCalls);
+    }
+
+    [Fact]
     public async Task ResolveContainerAsync_InvalidatesCacheWhenProfileChanges()
     {
         var apiClient = new FakeApiClient();
@@ -180,6 +228,12 @@ public class ProfileContainerResolverTests
     {
         public int ResolveCalls { get; private set; }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether the next resolve call simulates a backend
+        /// failure (the resolver then falls back to a guessed snapshot).
+        /// </summary>
+        public bool FailNextResolve { get; set; }
+
         public Task<IReadOnlyList<ProfileReference>> GetProfilesAsync(HttpClient httpClient, string baseUrl, string webRoot, CancellationToken cancellationToken)
         {
             return Task.FromResult<IReadOnlyList<ProfileReference>>(
@@ -208,6 +262,13 @@ public class ProfileContainerResolverTests
         public Task<ResolvedProfile?> ResolveProfileByNameAsync(HttpClient httpClient, string baseUrl, string webRoot, string profileName, CancellationToken cancellationToken)
         {
             ResolveCalls++;
+
+            if (FailNextResolve)
+            {
+                FailNextResolve = false;
+                throw new HttpRequestException("simulated TVHeadend outage");
+            }
+
             return Task.FromResult<ResolvedProfile?>(new ResolvedProfile(
                 "uuid-" + profileName,
                 profileName,

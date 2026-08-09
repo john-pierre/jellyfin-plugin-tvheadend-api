@@ -167,7 +167,10 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
             var profileMatches = string.Equals(profileSnapshot.ProfileName, cacheSnapshot.ProfileName, StringComparison.OrdinalIgnoreCase);
             var videoCodecMatches = passThroughLike || string.Equals(profileSnapshot.VideoCodec, cacheSnapshot.VideoCodec, StringComparison.OrdinalIgnoreCase);
             var audioCodecMatches = passThroughLike || string.Equals(profileSnapshot.AudioCodec, cacheSnapshot.AudioCodec, StringComparison.OrdinalIgnoreCase);
-            var containerMatches = string.Equals(profileSnapshot.Container, cacheSnapshot.Container, StringComparison.OrdinalIgnoreCase);
+            var containerMatches = string.Equals(
+                CanonicalizeContainerForComparison(profileSnapshot.Container),
+                CanonicalizeContainerForComparison(cacheSnapshot.Container),
+                StringComparison.Ordinal);
             var allMatch = profileMatches && videoCodecMatches && audioCodecMatches && containerMatches;
 
             _logger.LogInformation(
@@ -705,6 +708,39 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
         return string.IsNullOrWhiteSpace(container) ? "mpegts" : container;
     }
 
+    /// <summary>
+    /// Reduces a container name to a single canonical spelling so cache files written by
+    /// different producers still compare equal.
+    /// </summary>
+    /// <remarks>
+    /// Two writers populate the mediainfo cache with different spellings of the same container:
+    /// the proactive writer stores the TVHeadend name (<c>mpegts</c>) via
+    /// <see cref="NormalizeContainerForCache"/>, while the ffprobe warmup stores
+    /// <c>MediaInfo.Container</c>, which Jellyfin's probe normalizer has already rewritten
+    /// (<c>mpegts</c> becomes <c>ts</c>, <c>matroska</c> becomes <c>mkv</c>,
+    /// <c>mpegvideo</c> becomes <c>mpeg</c>). Comparing those raw strings marked every
+    /// probe-written cache file as a mismatch, which deleted it and forced Jellyfin into a
+    /// fresh multi-second probe on the next channel start — defeating the warm cache the
+    /// Direct Play path depends on.
+    /// </remarks>
+    /// <param name="container">The container name to canonicalize; may be null or empty.</param>
+    /// <returns>The canonical container name, or an empty string when none was supplied.</returns>
+    internal static string CanonicalizeContainerForComparison(string? container)
+    {
+        if (string.IsNullOrWhiteSpace(container))
+        {
+            return string.Empty;
+        }
+
+        return container.Trim().ToLowerInvariant() switch
+        {
+            "mpegts" or "ts" => "ts",
+            "matroska" or "mkv" => "mkv",
+            "mpegvideo" or "mpeg" => "mpeg",
+            var other => other,
+        };
+    }
+
     private static string BuildProfileStoreKey(string? profileName)
     {
         if (string.IsNullOrWhiteSpace(profileName))
@@ -1056,21 +1092,36 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
     }
 
     /// <inheritdoc />
-    public Task<int> InvalidateAllCachesAsync()
+    public async Task<int> InvalidateAllCachesAsync()
     {
         var cachePath = _cachePathResolver();
         if (string.IsNullOrWhiteSpace(cachePath))
         {
-            return Task.FromResult(0);
+            return 0;
         }
 
         var mediaInfoDir = Path.Combine(cachePath, "mediainfo");
         if (!Directory.Exists(mediaInfoDir))
         {
-            return Task.FromResult(0);
+            return 0;
         }
 
-        var files = Directory.GetFiles(mediaInfoDir, "*.json").ToList();
+        // cache/mediainfo is Jellyfin's SHARED probe cache — M3U, HDHomeRun and every other
+        // provider keep their entries in the same folder. Deleting *.json wholesale cost each of
+        // them a multi-second re-probe on their next tune, so only this plugin's own entries are
+        // removed: the file names derived from the TVHeadend channel list, plus the plugin-owned
+        // "profiles" sub-directory.
+        var files = new List<string>();
+
+        foreach (var fileName in await BuildOwnCacheFileNamesAsync().ConfigureAwait(false))
+        {
+            var candidate = Path.Combine(mediaInfoDir, fileName);
+            if (File.Exists(candidate))
+            {
+                files.Add(candidate);
+            }
+        }
+
         var profileStoreDir = Path.Combine(mediaInfoDir, "profiles");
         if (Directory.Exists(profileStoreDir))
         {
@@ -1091,10 +1142,49 @@ internal sealed class MediaInfoCacheService : IMediaInfoCacheService
             }
         }
 
-        _logger.LogInformation("Invalidated all mediainfo caches: {Deleted} files deleted.", deleted);
+        _logger.LogInformation("Invalidated this plugin's mediainfo caches: {Deleted} files deleted.", deleted);
         MetricService.CacheInvalidationCount.Add(deleted);
         Interlocked.Add(ref _cacheInvalidations, deleted);
-        return Task.FromResult(deleted);
+        return deleted;
+    }
+
+    /// <summary>
+    /// Resolves the mediainfo cache file names this plugin owns, one per TVHeadend channel.
+    /// </summary>
+    /// <returns>The owned file names, or an empty set when the channel list is unavailable.</returns>
+    private async Task<IReadOnlyCollection<string>> BuildOwnCacheFileNamesAsync()
+    {
+        if (_guideService == null)
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            var channels = await _guideService.GetChannelsAsync(CancellationToken.None).ConfigureAwait(false);
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var channel in channels)
+            {
+                if (string.IsNullOrWhiteSpace(channel.Id))
+                {
+                    continue;
+                }
+
+                // Jellyfin keys the cache by media-source id; the plugin writes both the
+                // channel-scoped and the source-less variant, so both must be cleared.
+                names.Add(BuildChannelCacheFileName(channel.Id, channel.Id));
+                names.Add(BuildChannelCacheFileName(channel.Id, null));
+            }
+
+            return names;
+        }
+        catch (Exception ex)
+        {
+            // Without the channel list the safe action is to clear nothing from the shared
+            // directory rather than risk deleting another provider's entries.
+            _logger.LogWarning(ex, "Could not resolve the TVHeadend channel list; skipping mediainfo cache invalidation.");
+            return Array.Empty<string>();
+        }
     }
 
     /// <inheritdoc />

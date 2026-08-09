@@ -79,6 +79,16 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 MenuSection = "Live TV",
                 MenuIcon = "live_tv",
             },
+
+            // Chart.js is served from the plugin assembly instead of a CDN so the dashboard's
+            // analytics section also renders on air-gapped or egress-filtered servers. Jellyfin
+            // derives the content type from the resource path extension, so the ".js" suffix is
+            // what makes this load as a script.
+            new PluginPageInfo
+            {
+                Name = "TvHeadendChartJs",
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Page.lib.chart.umd.min.js", ns),
+            },
         };
     }
 }

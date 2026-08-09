@@ -15,10 +15,24 @@ on:
     branches: [main]
     paths-ignore: ['manifest.json']
 
+env:
+  # The minimum Jellyfin server version this plugin is verified against. It must never be lower
+  # than the Jellyfin.Controller version the plugin compiles against: declaring 10.10.3.0 while
+  # building against 10.10.7 let servers install a plugin that could hit a MissingMethodException
+  # on any API added after 10.10.3. Verified by the integration matrix below.
+  TARGET_ABI: "10.10.7.0"
+
 permissions:
   contents: write
   pull-requests: write
   checks: write
+
+# Two pushes to main landing close together would otherwise run Release Please and the manifest
+# update concurrently and race each other. Never cancel in progress: an interrupted release job
+# can leave a tag without its assets.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 # ────────────────────────────────────────────────────────────────────
 jobs:
@@ -31,19 +45,31 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
 
       - name: Determine Version
         id: version
         shell: bash
-        run: echo "version=0.0.0.0" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          # Release Please keeps the version it is about to publish in its manifest, and the
+          # release PR lands that bump on main before the release job runs. Reading it here is
+          # what keeps the packaged zip name (tvheadend_api_<version>.zip) identical to the
+          # sourceUrl the release job writes into manifest.json — a hardcoded 0.0.0.0 produced
+          # a manifest pointing at an asset that was never uploaded.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            BASE_VERSION="$(jq -r '.["."]' .release-please-manifest.json)"
+            echo "version=${BASE_VERSION}.0" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0.0" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Restore Dependencies
         run: dotnet restore Jellyfin.Plugin.TvHeadendApi.sln
@@ -69,14 +95,14 @@ jobs:
 
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: 'TestResults/'
           if-no-files-found: ignore
 
       - name: Upload Build Output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-output
           path: Jellyfin.Plugin.TvHeadendApi/bin/Release/net8.0/
@@ -84,7 +110,7 @@ jobs:
 
       - name: Publish Test Summary
         if: always() && github.event_name == 'pull_request'
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: "Unit Tests"
           path: 'TestResults/test-results.trx'
@@ -104,7 +130,7 @@ jobs:
 
       - name: Post Coverage to PR
         if: always() && github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           recreate: true
           path: code-coverage-results.md
@@ -119,10 +145,10 @@ jobs:
       artifact_sha256: ${{ steps.checksums.outputs.artifact_sha256 }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download Build Output
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-output
           path: build-output/
@@ -140,11 +166,29 @@ jobs:
           find build-output -maxdepth 1 -type f \( -name '*.dll' -o -name '*.pdb' -o -name '*.xml' \) -exec cp {} "$PACKAGE_DIR"/ \;
 
           jq --arg timestamp "$TIMESTAMP" \
-             --arg targetAbi "10.10.3.0" \
+             --arg targetAbi "${TARGET_ABI}" \
              --arg version "$VERSION" \
              '.[0] | del(.versions) | . + {targetAbi: $targetAbi, timestamp: $timestamp, version: $version}' manifest.json > "$PACKAGE_DIR/meta.json"
 
-          zip -r "${PACKAGE_DIR}.zip" "$PACKAGE_DIR"
+          # Jellyfin installs a plugin with ZipFile.ExtractToDirectory straight into the plugin
+          # folder, so assemblies and meta.json must sit at the ARCHIVE ROOT. Archiving the
+          # directory itself (zip -r "$PACKAGE_DIR.zip" "$PACKAGE_DIR") nests everything one level
+          # deep and the plugin is never discovered. Archive the contents instead.
+          (cd "$PACKAGE_DIR" && zip -r "../${PACKAGE_DIR}.zip" .)
+
+          # Fail loudly rather than shipping an archive Jellyfin cannot install. -Z1 lists bare
+          # archive paths, so an exact whole-line match proves the entry is at the root and not
+          # nested under a directory.
+          if ! unzip -Z1 "${PACKAGE_DIR}.zip" | grep -qx 'Jellyfin\.Plugin\.TvHeadendApi\.dll'; then
+            echo "::error::Jellyfin.Plugin.TvHeadendApi.dll is not at the root of ${PACKAGE_DIR}.zip"
+            unzip -Z1 "${PACKAGE_DIR}.zip"
+            exit 1
+          fi
+          if ! unzip -Z1 "${PACKAGE_DIR}.zip" | grep -qx 'meta\.json'; then
+            echo "::error::meta.json is not at the root of ${PACKAGE_DIR}.zip"
+            unzip -Z1 "${PACKAGE_DIR}.zip"
+            exit 1
+          fi
 
       - name: Calculate Checksums
         id: checksums
@@ -158,7 +202,7 @@ jobs:
           echo "artifact_sha256=$(awk '{print $1}' "tvheadend_api_${VERSION}.sha256")" >> "$GITHUB_OUTPUT"
 
       - name: Upload Package Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tvheadend_api_${{ needs.build.outputs.version }}
           path: |
@@ -170,40 +214,52 @@ jobs:
   release:
     name: "🚀 Release"
     runs-on: ubuntu-24.04
-    needs: [build, package]
+    # Gate on the live stack too: without this a red integration run still cut a tag, uploaded
+    # assets and rewrote the public manifest.
+    needs: [build, package, integration]
     if: github.event_name == 'push'
+    timeout-minutes: 20
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Release Please
         id: release-please
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@v5
         with:
           config-file: .github/release-please-config.json
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine Release Version
+      - name: Verify Packaged Version Matches Release Tag
         if: steps.release-please.outputs.release_created == 'true'
-        id: version
         shell: bash
+        env:
+          TAG_NAME: ${{ steps.release-please.outputs.tag_name }}
+          BUILT_VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION_WITHOUT_V="${{ steps.release-please.outputs.tag_name }}"
-          VERSION_WITHOUT_V="${VERSION_WITHOUT_V#v}"
-          echo "version=${VERSION_WITHOUT_V}.0" >> "$GITHUB_OUTPUT"
+          # The build job derives its version from .release-please-manifest.json. If that ever
+          # drifts from the tag Release Please just created, the uploaded asset name and the
+          # sourceUrl in manifest.json would disagree and the plugin would 404 on install.
+          # Fail loudly here instead of shipping a broken manifest.
+          EXPECTED="${TAG_NAME#v}.0"
+          if [ "$BUILT_VERSION" != "$EXPECTED" ]; then
+            echo "::error::Packaged version '$BUILT_VERSION' does not match release tag version '$EXPECTED'."
+            exit 1
+          fi
+          echo "Packaged version $BUILT_VERSION matches release tag $TAG_NAME."
 
       - name: Download Package
         if: steps.release-please.outputs.release_created == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
-          name: tvheadend_api_${{ needs.build.outputs.version || '0.0.0.0' }}
+          name: tvheadend_api_${{ needs.build.outputs.version }}
 
       - name: Upload Release Assets
         if: steps.release-please.outputs.release_created == 'true'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release-please.outputs.tag_name }}
           files: |
@@ -216,11 +272,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ needs.build.outputs.version }}"
           TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           CHANGELOG="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/releases/tag/${{ steps.release-please.outputs.tag_name }}"
           SOURCE_URL="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/releases/download/${{ steps.release-please.outputs.tag_name }}/tvheadend_api_${VERSION}.zip"
-          TARGET_ABI="10.10.3.0"
+          TARGET_ABI="${TARGET_ABI}"
           REPOSITORY_NAME="jellyfin-plugin-tvheadend-api"
           REPOSITORY_URL="https://github.com/john-pierre/jellyfin-plugin-tvheadend-api"
 
@@ -245,25 +301,77 @@ jobs:
 
           mv updated_manifest.json manifest.json
 
-      - name: Commit manifest.json
+      # `main` is protected (enforce_admins, required review, linear history), so pushing the
+      # manifest straight to it is rejected — the previous git-auto-commit step could never
+      # succeed and the update had to be made by hand. Open a pull request instead, so the
+      # release always leaves a reviewable, mergeable change behind.
+      - name: Open manifest.json Update PR
         if: steps.release-please.outputs.release_created == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          branch: main
-          commit_message: "build(release): update manifest for ${{ steps.release-please.outputs.tag_name }} [skip ci]"
-          file_pattern: manifest.json
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- manifest.json; then
+            echo "manifest.json already up to date for ${TAG_NAME}; nothing to propose."
+            exit 0
+          fi
+
+          BRANCH="chore/manifest-${TAG_NAME}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add manifest.json
+          git commit -m "build(release): update manifest for ${TAG_NAME}"
+          git push --force origin "$BRANCH"
+
+          # A PR may already exist if the release job was re-run for the same tag.
+          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "build(release): update manifest for ${TAG_NAME}" \
+              --body "$(printf '%s\n\n%s\n' \
+                "Adds the ${TAG_NAME} release bundle to \`manifest.json\`." \
+                "Generated by the release job. The plugin repository manifest must list this release before Jellyfin clients can install or update to it.")"
+          fi
 
   # ── 4. Live integration tests ───────────────────────────────────
   integration:
-    name: "🧪 Integration Tests"
+    name: "🧪 Integration Tests (Jellyfin ${{ matrix.jellyfin.version }})"
     runs-on: ubuntu-24.04
+    # A hung container stack would otherwise burn the 6-hour job default.
+    timeout-minutes: 45
     needs: build
+    strategy:
+      # One server version failing must not hide the result for the others.
+      fail-fast: false
+      matrix:
+        jellyfin:
+          # The plugin compiles against a single Jellyfin ABI but has to keep loading on newer
+          # servers, so every supported version is exercised end to end rather than assumed
+          # compatible. TARGET_ABI must match the lowest version listed here.
+          - version: "10.10.7"
+            image: "jellyfin/jellyfin:10.10.7"
+            experimental: false
+          - version: "10.11.11"
+            image: "jellyfin/jellyfin:10.11.11"
+            experimental: false
+          # Release candidate: run for early warning, but a break here must not block a PR.
+          - version: "12.0-rc4"
+            image: "jellyfin/jellyfin:12.0-rc4"
+            experimental: true
+    continue-on-error: ${{ matrix.jellyfin.experimental }}
+    env:
+      JELLYFIN_IMAGE: ${{ matrix.jellyfin.image }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
 
@@ -273,16 +381,40 @@ jobs:
       - name: Start Test Stack (IPTV Simulator + TVHeadend + Jellyfin)
         run: docker compose -f docker/docker-compose.test.yaml up -d --build iptv-simulator tvheadend jellyfin
 
+      - name: Verify Server Version and Plugin Load
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:18096/System/Info/Public > /dev/null 2>&1; then break; fi
+            sleep 3
+          done
+          ACTUAL="$(curl -sf http://localhost:18096/System/Info/Public | jq -r '.Version')"
+          echo "Jellyfin server reports version ${ACTUAL}"
+
+          # An ABI break shows up as the plugin's types failing to load, which otherwise only
+          # surfaces later as confusing functional failures.
+          if docker compose -f docker/docker-compose.test.yaml logs jellyfin 2>&1 \
+               | grep -E 'TypeLoadException|MissingMethodException|ReflectionTypeLoadException|Failed to load assembly'; then
+            echo "::error::Plugin failed to load on Jellyfin ${ACTUAL} — assembly/ABI incompatibility."
+            exit 1
+          fi
+          echo "No assembly load errors on Jellyfin ${ACTUAL}."
+
       - name: Wait for TVHeadend Healthy
         run: |
           echo "Waiting for TVHeadend to become healthy..."
           for i in $(seq 1 60); do
             if curl -sf http://localhost:19981/api/serverinfo > /dev/null 2>&1; then
               echo "TVHeadend is ready."
-              break
+              exit 0
             fi
             sleep 3
           done
+          # Falling through used to report success, so a stack that never came up surfaced two
+          # steps later as an opaque bootstrap error with the wrong logs attached.
+          echo "TVHeadend did not become healthy in time."
+          docker compose -f docker/docker-compose.test.yaml logs tvheadend iptv-simulator
+          exit 1
 
       - name: Run Bootstrap
         run: |
@@ -327,15 +459,47 @@ jobs:
 
       - name: Upload Integration Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: integration-test-results
           path: 'TestResults/'
           if-no-files-found: ignore
 
+      # The Playwright suite holds the only automated coverage of the plugin's headline promise:
+      # that playback actually lands on Direct Play in a real browser, and that channel switching
+      # stays inside the zapping budget. No C# LiveIntegration test asserts either, so leaving it
+      # unwired meant regressions on exactly this subject area shipped undetected.
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install Playwright
+        working-directory: tests/playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E Tests
+        working-directory: tests/playwright
+        env:
+          JELLYFIN_URL: http://localhost:18096
+          TVHEADEND_URL: http://localhost:19981
+          TVH_USER: testuser
+          TVH_PASS: testpass
+        run: npm test
+
+      - name: Upload Playwright Report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: tests/playwright/playwright-report/
+          if-no-files-found: ignore
+
       - name: Publish Integration Test Summary
         if: always() && github.event_name == 'pull_request'
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: "Integration Tests"
           path: 'TestResults/integration-results.trx'

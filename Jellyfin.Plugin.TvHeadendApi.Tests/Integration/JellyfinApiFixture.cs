@@ -22,7 +22,7 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
     private HttpClient? _longClient;
 
     /// <summary>
-    /// Gets the authenticated HTTP client with <c>X-Emby-Token</c> header set.
+    /// Gets the authenticated HTTP client with the <c>Authorization</c> header set.
     /// </summary>
     public HttpClient Client => _authClient ?? throw new InvalidOperationException("Fixture not initialized.");
 
@@ -98,7 +98,7 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
                 BaseAddress = new Uri(BaseUrl),
                 Timeout = TimeSpan.FromSeconds(30),
             };
-            _authClient.DefaultRequestHeaders.Add("X-Emby-Token", AccessToken);
+            _authClient.DefaultRequestHeaders.Add("Authorization", BuildAuthorizationHeader(AccessToken));
 
             _anonClient = new HttpClient
             {
@@ -111,7 +111,7 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
                 BaseAddress = new Uri(BaseUrl),
                 Timeout = TimeSpan.FromMinutes(10),
             };
-            _longClient.DefaultRequestHeaders.Add("X-Emby-Token", AccessToken);
+            _longClient.DefaultRequestHeaders.Add("Authorization", BuildAuthorizationHeader(AccessToken));
 
             // ── Step 4: Configure the plugin ───────────────────────────────────
             await ConfigurePluginAsync(_authClient, tvhHost, tvhPort, tvhUser, tvhPass).ConfigureAwait(false);
@@ -148,6 +148,25 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
     // ═══════════════════════════════════════════════════════════════════════
     // Setup helpers
     // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Builds the Jellyfin authorization header.
+    /// </summary>
+    /// <remarks>
+    /// Jellyfin 12 removed both legacy credential headers: <c>X-Emby-Authorization</c> answers
+    /// HTTP 400 and <c>X-Emby-Token</c> answers 401. The standard <c>Authorization</c> header
+    /// carrying the token inside the MediaBrowser parameter list is accepted by every server
+    /// version in the supported matrix.
+    /// </remarks>
+    /// <param name="accessToken">The access token to embed, or null for an unauthenticated header.</param>
+    /// <returns>The header value.</returns>
+    private static string BuildAuthorizationHeader(string? accessToken)
+    {
+        const string Client = "MediaBrowser Client=\"TestRunner\", Device=\"E2E\", DeviceId=\"e2e-test\", Version=\"1.0\"";
+        return string.IsNullOrEmpty(accessToken)
+            ? Client
+            : $"{Client}, Token=\"{accessToken}\"";
+    }
 
     private static async Task CompleteFirstRunSetup(HttpClient client)
     {
@@ -222,9 +241,7 @@ public sealed class JellyfinApiFixture : IAsyncLifetime
             {
                 Content = new StringContent(authBody, Encoding.UTF8, "application/json"),
             };
-            request.Headers.Add(
-                "X-Emby-Authorization",
-                "MediaBrowser Client=\"TestRunner\", Device=\"E2E\", DeviceId=\"e2e-test\", Version=\"1.0\"");
+            request.Headers.Add("Authorization", BuildAuthorizationHeader(null));
 
             var response = await client.SendAsync(request).ConfigureAwait(false);
 

@@ -53,14 +53,21 @@ dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Test
 
 ---
 
-## AI Documentation (Shared)
+## Shared Documentation
 
-Tool-neutral AI documentation is available in:
+There is one home per topic. Domain and architecture facts live with the code in `docs/`; reusable
+task guidance lives under `.github/`.
 
-- `.docs/ai/` — Core reference docs (overview, architecture, coding/testing/performance/security standards, domain knowledge)
-- `.ai/prompts/` — Workflow prompts (refactor, bugfix, feature, test-generation, review, release)
-- `.ai/skills/` — Domain-specific skills (database, relay, tvheadend, dashboard, logging, token-security, streaming-profile)
-- `.ai/agents/` — Agent role definitions (architect, reviewer, performance, security, test-engineer, release-manager)
+- `docs/architecture/` — layer map, ADRs, per-module ownership
+- `docs/guides/` — test strategy, security, performance, observability, naming, onboarding,
+  client compatibility
+- `Jellyfin.Plugin.TvHeadendApi/Service/*/business-description.md` — what each service domain owns
+- `.github/skills/` — ci-cd, debugging, documentation, dotnet, implementation-cycle,
+  implementation-plan, pr-review, refactoring
+- `.github/instructions/` — C# conventions and the domain-language glossary
+- `.github/agents/`, `.github/prompts/` — role definitions and task prompts
+
+When guidance and code disagree, the code wins — and the guidance should be corrected.
 
 ---
 

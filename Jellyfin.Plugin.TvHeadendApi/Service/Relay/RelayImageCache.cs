@@ -254,21 +254,3 @@ internal sealed class RelayImageCache
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 }
-
-/// <summary>
-/// A cached image: the raw bytes plus the original content type (if known).
-/// </summary>
-/// <param name="Bytes">The image bytes.</param>
-/// <param name="ContentType">The original content type, or <c>null</c> if unknown.</param>
-internal sealed record CachedImage(byte[] Bytes, string? ContentType);
-
-/// <summary>
-/// A snapshot of relay image-cache size and health for the dashboard.
-/// </summary>
-/// <param name="Enabled">Whether image caching is currently enabled.</param>
-/// <param name="FileCount">Number of cached image files.</param>
-/// <param name="TotalBytes">Total size of the cache on disk, in bytes.</param>
-/// <param name="RetentionDays">Configured retention period in days.</param>
-/// <param name="WriteErrors">Count of cache-write errors since startup.</param>
-/// <param name="ReadErrors">Count of cache-read errors since startup.</param>
-internal sealed record RelayImageCacheStats(bool Enabled, long FileCount, long TotalBytes, int RetentionDays, long WriteErrors, long ReadErrors);

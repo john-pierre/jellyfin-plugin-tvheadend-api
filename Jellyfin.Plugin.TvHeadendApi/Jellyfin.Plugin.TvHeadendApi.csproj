@@ -8,10 +8,7 @@
     <Nullable>enable</Nullable>
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
     <CodeAnalysisRuleSet>./Jellyfin.ruleset</CodeAnalysisRuleSet>
-    <!-- Plugin version: pass via -p:AssemblyVersion=x.y.z.0 during CI builds -->
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>$(AssemblyVersion)</FileVersion>
-    <InformationalVersion>$(AssemblyVersion)</InformationalVersion>
+    <!-- Version properties live in ../Directory.Build.props; CI overrides them via -p:. -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,8 +18,20 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Jellyfin.Controller" Version="[10.10.7,)" />
-    <PackageReference Include="Jellyfin.Model" Version="[10.10.7,)" />
+    <!--
+      ExcludeAssets=runtime matches the official jellyfin-plugin-template: the server already
+      provides these assemblies, so they must never be copied into the plugin package where they
+      would shadow the host's own copies.
+      The upper bound is deliberate. An open-ended range ([10.10.7,)) silently resolves to
+      whatever is newest, so a future Jellyfin major could change the compiled-against ABI
+      without a single line of this repo changing.
+    -->
+    <PackageReference Include="Jellyfin.Controller" Version="[10.10.7,10.11.0)">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Jellyfin.Model" Version="[10.10.7,10.11.0)">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.4" />
   </ItemGroup>
@@ -38,6 +47,14 @@
     <EmbeddedResource Include="Configuration\ConfigPage.html" />
     <None Remove="Page\DashboardPage.html" />
     <EmbeddedResource Include="Page\DashboardPage.html" />
+    <!--
+      Chart.js is vendored rather than loaded from a CDN: the dashboard's analytics section is
+      admin-authenticated and must also work on air-gapped or egress-filtered servers, where the
+      CDN fetch silently left the whole section blank. MIT licensed (see Page/lib/chart.js-LICENSE.md),
+      which is compatible with this plugin's GPL-3.0.
+    -->
+    <None Remove="Page\lib\chart.umd.min.js" />
+    <EmbeddedResource Include="Page\lib\chart.umd.min.js" />
   </ItemGroup>
 
 </Project>

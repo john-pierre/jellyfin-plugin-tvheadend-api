@@ -110,7 +110,7 @@ To keep release changelog entries aligned with PR titles, maintainers should use
 6. Address any review feedback.
 
 7. Once approved and merged, [Release Please](https://github.com/googleapis/release-please) automatically determines if a new version should be released based on merged commit types (with squash merge: PR title).
-8. On a created release, the pipeline updates `manifest.json` with the new release artifact URL and checksum and commits it back to `main`.
+8. On a created release, the pipeline updates `manifest.json` with the new release artifact URL and checksum and opens a pull request with that change. `main` is protected, so the release job cannot push to it directly — the manifest PR has to be merged before Jellyfin clients can install the new version.
 
 ## Project Layout
 

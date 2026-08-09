@@ -1,5 +1,5 @@
 // Client-type compatibility matrix: each important Jellyfin client app is impersonated with
-// its real client name (X-Emby-Authorization Client="…") and a realistic DeviceProfile, then
+// its real client name (Authorization Client="…") and a realistic DeviceProfile, then
 // (a) the playback decision is asserted and (b) the resulting artifact is proven to deliver
 // real bytes (raw relay stream for direct players, HLS master+segment for transcode clients).
 // Mirrors the HTTP-level expectations of the .NET AppleAvPlayerCompatibilityTests and

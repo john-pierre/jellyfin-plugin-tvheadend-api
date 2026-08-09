@@ -404,6 +404,33 @@ public class DatabaseCleanupServiceTests : IDisposable
     }
 
     [Fact]
+    public void RunCleanup_KeepsTokensThatExpireLaterOnTheSameDay()
+    {
+        // Regression: the cutoff used to be rendered with the round-trip specifier "o"
+        // ("2026-08-08T06:34:12.1234567Z") and compared as TEXT against EF-written values
+        // ("2026-08-08 23:59:00.0000000"). Because ' ' sorts before 'T', every token sharing
+        // the cutoff's calendar date compared as older and was deleted — including tokens
+        // still valid for hours, which killed running streams mid-playback.
+        InsertToken("hash-valid-today", DateTime.UtcNow.AddHours(6));
+
+        var cleanup = new DatabaseCleanupService(
+            _healthService,
+            _connectionFactory,
+            _writeCoordinator,
+            NullLogger<DatabaseCleanupService>.Instance);
+
+        cleanup.RunCleanup();
+
+        using var conn = _connectionFactory.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT \"token_hash\" FROM \"relay_token\";";
+        using var reader = cmd.ExecuteReader();
+        Assert.True(reader.Read());
+        Assert.Equal("hash-valid-today", reader.GetString(0));
+        Assert.False(reader.Read());
+    }
+
+    [Fact]
     public void RunCleanup_RetainsExpiredTokensWithinGracePeriod()
     {
         // A token expired 5 minutes ago is inside the short retention grace; one expired
@@ -452,6 +479,14 @@ public class DatabaseCleanupServiceTests : IDisposable
         Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
     }
 
+    /// <summary>
+    /// Renders a timestamp in the TEXT format Microsoft.Data.Sqlite uses for DateTime columns.
+    /// </summary>
+    private static string ToStoredText(DateTime value)
+    {
+        return value.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private void InsertToken(string tokenHash, DateTime expiresAtUtc, DateTime? revokedAtUtc = null)
     {
         using var conn = _connectionFactory.CreateConnection();
@@ -460,14 +495,18 @@ public class DatabaseCleanupServiceTests : IDisposable
             INSERT INTO "relay_token" ("token_hash", "relay_type", "created_at_utc", "expires_at_utc", "revoked", "revoked_at_utc")
             VALUES (@hash, 'stream', @created, @expires, @revoked, @revokedAt);
             """;
+        // Write timestamps the way EF Core / Microsoft.Data.Sqlite actually persist them
+        // ("yyyy-MM-dd HH:mm:ss.FFFFFFF"). Writing ISO-"o" here instead would mirror the
+        // cleanup service's own formatting and let a broken cutoff compare correctly against
+        // equally-broken test data — the tests would pass while production deleted live tokens.
         cmd.Parameters.AddWithValue("@hash", tokenHash);
-        cmd.Parameters.AddWithValue("@created", DateTime.UtcNow.AddDays(-30).ToString("o", System.Globalization.CultureInfo.InvariantCulture));
-        cmd.Parameters.AddWithValue("@expires", expiresAtUtc.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("@created", ToStoredText(DateTime.UtcNow.AddDays(-30)));
+        cmd.Parameters.AddWithValue("@expires", ToStoredText(expiresAtUtc));
         cmd.Parameters.AddWithValue("@revoked", revokedAtUtc.HasValue ? 1 : 0);
         cmd.Parameters.AddWithValue(
             "@revokedAt",
             revokedAtUtc.HasValue
-                ? revokedAtUtc.Value.ToString("o", System.Globalization.CultureInfo.InvariantCulture)
+                ? ToStoredText(revokedAtUtc.Value)
                 : (object)DBNull.Value);
         cmd.ExecuteNonQuery();
     }

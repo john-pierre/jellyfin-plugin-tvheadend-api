@@ -3,6 +3,12 @@
 #
 # Linux/CI equivalent of run-e2e-tests.ps1.
 # Usage: docker/run-e2e-tests.sh
+#
+# Run against another Jellyfin server version (the plugin must keep loading on newer servers):
+#   JELLYFIN_IMAGE=jellyfin/jellyfin:10.11.11 docker/run-e2e-tests.sh
+#   JELLYFIN_IMAGE=jellyfin/jellyfin:12.0-rc4 docker/run-e2e-tests.sh
+# Defaults to the version the plugin is compiled against.
+#
 # Prerequisites: docker, docker compose, dotnet SDK 8.0+
 #
 # Exit code: propagates the `dotnet test` result so CI actually gates on E2E outcome.
@@ -15,6 +21,8 @@ PROJECT_NAME="tvh-test"
 # Bootstrap includes a fail-closed EPG wait of up to 300s (two XMLTV grab passes).
 MAX_BOOTSTRAP_WAIT="${MAX_BOOTSTRAP_WAIT:-720}"
 TEST_PROJECT="${PROJECT_ROOT}/Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj"
+# Consumed by docker/jellyfin/Dockerfile through compose build args.
+export JELLYFIN_IMAGE="${JELLYFIN_IMAGE:-jellyfin/jellyfin:10.10.7}"
 
 # Fail-closed: any early exit before tests run reports failure.
 TEST_EXIT_CODE=1

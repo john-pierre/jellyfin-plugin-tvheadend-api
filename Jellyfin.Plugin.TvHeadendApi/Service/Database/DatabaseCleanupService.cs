@@ -146,7 +146,7 @@ internal sealed class DatabaseCleanupService
             return 0;
         }
 
-        var cutoff = DateTime.UtcNow.AddDays(-retentionDays).ToString("o", CultureInfo.InvariantCulture);
+        var cutoff = SqliteDateTimeFormat.ToSqliteText(DateTime.UtcNow.AddDays(-retentionDays));
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = $"DELETE FROM \"{tableName}\" WHERE \"{timestampColumn}\" < @cutoff;";
@@ -172,7 +172,7 @@ internal sealed class DatabaseCleanupService
             return 0;
         }
 
-        var cutoff = (DateTime.UtcNow - RelayTokenRetentionGrace).ToString("o", CultureInfo.InvariantCulture);
+        var cutoff = SqliteDateTimeFormat.ToSqliteText(DateTime.UtcNow - RelayTokenRetentionGrace);
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """

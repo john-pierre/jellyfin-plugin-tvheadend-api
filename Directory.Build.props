@@ -1,0 +1,19 @@
+<Project>
+
+  <!--
+    Single source for the assembly version across every project in the repository, matching the
+    layout of the official jellyfin-plugin-template.
+
+    CI overrides all three at build time:
+      dotnet build ... -p:AssemblyVersion=x.y.z.0 -p:FileVersion=x.y.z.0 -p:InformationalVersion=x.y.z.0
+    Command-line properties are global and win over the values below, so the release pipeline
+    stamps the real Release Please version while local builds stay at the placeholder.
+  -->
+  <PropertyGroup>
+    <Version>1.0.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>$(AssemblyVersion)</FileVersion>
+    <InformationalVersion>$(AssemblyVersion)</InformationalVersion>
+  </PropertyGroup>
+
+</Project>

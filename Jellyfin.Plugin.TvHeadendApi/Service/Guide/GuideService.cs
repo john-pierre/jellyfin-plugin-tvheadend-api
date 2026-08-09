@@ -501,6 +501,21 @@ internal sealed class GuideService : IGuideService
             return raw;
         }
 
+        // RelayEnabled is a hard kill-switch: the relay image endpoint answers 503 while it is
+        // off, so every channel logo would break. Fall back to a direct TVHeadend image URL when
+        // credentials allow it, rather than emitting a URL that can only fail.
+        if (!config.RelayEnabled)
+        {
+            if (config.AllowAnonymousAccess || !string.IsNullOrWhiteSpace(config.AuthToken))
+            {
+                return _tvheadendUrlBuilder.BuildResourceUrl(config, normalized);
+            }
+
+            _logger.LogWarning(
+                "Relay is disabled and no TVHeadend auth token is configured, so image '{ImagePath}' cannot be served.",
+                normalized);
+        }
+
         // All TVHeadend-relative image paths are routed through the token-secured relay endpoint
         // so that TVHeadend credentials stay server-side and Jellyfin's ProviderManager can
         // fetch the image without Jellyfin auth headers (the token provides authorization).

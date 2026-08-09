@@ -19,18 +19,25 @@ public class RelayTokenRepositoryTests : IDisposable
     private readonly DbContextOptions<RelayTokenDbContext> _options;
     private readonly RelayTokenRepository _repo;
     private readonly DatabaseWriteCoordinator _writeCoordinator;
+    private readonly string _tempDir;
 
     public RelayTokenRepositoryTests()
     {
-        var dbPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"relay-test-{Guid.NewGuid():N}.db");
+        // Own data folder per test instance. Pointing this at the bare system temp root made
+        // every instance of this class — and every other class doing the same — initialize and
+        // migrate the very same tvheadend_plugin.db concurrently, which could mark the database
+        // unhealthy and silently turn query results into empty collections.
+        _tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"tvh-relaytoken-{Guid.NewGuid():N}");
+        System.IO.Directory.CreateDirectory(_tempDir);
+
+        var dbPath = System.IO.Path.Combine(_tempDir, "relay-test.db");
         var fileOptions = new DbContextOptionsBuilder<RelayTokenDbContext>()
             .UseSqlite($"DataSource={dbPath}")
             .Options;
         _options = fileOptions;
 
         // Create a real DatabaseHealthService so tokens can persist
-        var dir = System.IO.Path.GetDirectoryName(dbPath)!;
-        var pathProvider = new DataFolderPathProvider(() => System.IO.Path.GetDirectoryName(dbPath));
+        var pathProvider = new DataFolderPathProvider(() => _tempDir);
         var provider = new DatabaseProvider(pathProvider);
         var factory = new DatabaseConnectionFactory(provider);
         var migration = new DatabaseMigrationService(factory, NullLogger<DatabaseMigrationService>.Instance);
@@ -57,6 +64,19 @@ public class RelayTokenRepositoryTests : IDisposable
     {
         _repo.Dispose();
         _writeCoordinator.Dispose();
+
+        try
+        {
+            System.IO.Directory.Delete(_tempDir, recursive: true);
+        }
+        catch (System.IO.IOException)
+        {
+            // Best effort: a still-open SQLite handle must not fail the test run.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Best effort.
+        }
     }
 
     private static RelayTokenRecord CreateStreamRecord(string hash = "abc123", string channelId = "ch-1", int ttlMinutes = 30)

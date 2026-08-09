@@ -243,7 +243,7 @@ internal sealed class DatabaseHealthService
                 tvheadendLogEntryCount = SafeCount(conn, "tvheadend_log_entry");
                 relayRequestMetricCount = SafeCount(conn, "relay_request_metric");
                 relayTokenCount = SafeCount(conn, "relay_token");
-                expiredRelayTokenCount = SafeCountWhere(conn, "relay_token", "\"expires_at_utc\" < @cutoff", ("@cutoff", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)));
+                expiredRelayTokenCount = SafeCountWhere(conn, "relay_token", "\"expires_at_utc\" < @cutoff", ("@cutoff", SqliteDateTimeFormat.ToSqliteText(DateTime.UtcNow)));
                 healthTransitionCount = SafeCount(conn, "health_transition");
                 oldestLogEntry = SafeMinDate(conn, "plugin_log_entry", "created_at_utc");
                 newestLogEntry = SafeMaxDate(conn, "plugin_log_entry", "created_at_utc");

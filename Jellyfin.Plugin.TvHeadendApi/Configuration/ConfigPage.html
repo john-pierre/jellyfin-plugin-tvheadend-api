@@ -943,6 +943,35 @@
                 $('#GenerateAuthTokenBtn span').textContent = has ? 'Regenerate Auth Token' : 'Generate Auth Token';
             }
 
+            // Selects a profile in the Default row. The profile dropdown is built from a
+            // discovery snapshot taken when the page loaded, so a profile that was created
+            // afterwards ("Create jellyfin Profile" / "Optimal Setup") has no <option> yet —
+            // assigning select.value would silently leave it as "" and the save that follows
+            // would wipe the configured profile. Append the option first when it is missing.
+            function setDefaultRowProfile(profileName) {
+                var defaultRow = document.querySelector('#ProfileAssignmentsBody .tvh-row-default');
+                if (!defaultRow) { return; }
+
+                var profileEl = defaultRow.querySelector('[data-field="profile"]');
+                if (!profileEl) { return; }
+
+                if (profileEl.tagName === 'SELECT') {
+                    var exists = Array.prototype.some.call(profileEl.options, function (o) { return o.value === profileName; });
+                    if (!exists) {
+                        var option = document.createElement('option');
+                        option.value = profileName;
+                        option.textContent = profileName;
+                        profileEl.appendChild(option);
+                    }
+                }
+
+                profileEl.value = profileName;
+
+                if (profileEl.value !== profileName) {
+                    console.warn('[TvHeadend] Could not select profile "' + profileName + '" in the Default row.');
+                }
+            }
+
             // ── Plugin info ─────────────────────────────────────
             function loadPluginInfo() {
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('TvHeadendApi/PluginInfo'), dataType: 'json' }).then(function (info) {
@@ -1300,11 +1329,7 @@
                     }
                 }).then(function () {
                     // Step 3: Set optimal config values — update Default row profile
-                    var defaultRow = document.querySelector('#ProfileAssignmentsBody .tvh-row-default');
-                    if (defaultRow) {
-                        var profileEl = defaultRow.querySelector('[data-field="profile"]');
-                        if (profileEl) profileEl.value = 'jellyfin';
-                    }
+                    setDefaultRowProfile('jellyfin');
                     $('#IsInfiniteStream').checked = true;
                     $('#SupportsDirectPlay').checked = true;
                     $('#SupportsDirectStream').checked = true;
@@ -1312,7 +1337,10 @@
                     $('#SupportsProbing').checked = true;
                     $('#EnableMediaInfoCacheWrite').checked = true;
                     $('#EnableMediaInfoCacheValidation').checked = true;
-                    $('#IgnoreDts').checked = false;
+                    // IgnoreDts is deliberately left untouched: it ships enabled, the field
+                    // description documents it as enabled, and it is unrelated to Direct Play.
+                    // Silently turning it off here re-introduced MPEG-TS playback glitches for
+                    // anyone who relied on the shipped default.
 
                     // Step 4: Save and re-diagnose
                     return saveCurrentFormToConfig();
@@ -1369,11 +1397,7 @@
                 }).then(function (r) {
                     if (!r.Success) { msg.style.color = '#ef9a9a'; msg.textContent = r.Message; return; }
                     // Update the Default row profile in the table
-                    var defaultRow = document.querySelector('#ProfileAssignmentsBody .tvh-row-default');
-                    if (defaultRow) {
-                        var profileEl = defaultRow.querySelector('[data-field="profile"]');
-                        if (profileEl) profileEl.value = 'jellyfin';
-                    }
+                    setDefaultRowProfile('jellyfin');
                     msg.style.color = '#a5d6a7'; msg.textContent = r.Message;
                     loadDiagnose();
                 }).catch(function (err) {

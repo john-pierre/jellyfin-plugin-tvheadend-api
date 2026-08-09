@@ -23,6 +23,15 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+
+    <!--
+      The plugin project sets ExcludeAssets=runtime on these so they are never copied into the
+      plugin package — the Jellyfin server provides them at runtime. The test host has no server
+      to borrow them from, so reference them explicitly here. Keep the version range identical to
+      the plugin project's.
+    -->
+    <PackageReference Include="Jellyfin.Controller" Version="[10.10.7,10.11.0)" />
+    <PackageReference Include="Jellyfin.Model" Version="[10.10.7,10.11.0)" />
   </ItemGroup>
 
   <ItemGroup>

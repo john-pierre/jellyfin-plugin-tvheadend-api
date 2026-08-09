@@ -71,6 +71,10 @@ services:
     build:
       context: ../
       dockerfile: docker/jellyfin/Dockerfile
+      args:
+        # Override to run the stack against another server version, e.g.
+        #   JELLYFIN_IMAGE=jellyfin/jellyfin:12.0-rc4 docker compose ... up --build
+        JELLYFIN_IMAGE: ${JELLYFIN_IMAGE:-jellyfin/jellyfin:10.10.7}
     container_name: jellyfin-test
     environment:
       - TZ=Europe/Berlin

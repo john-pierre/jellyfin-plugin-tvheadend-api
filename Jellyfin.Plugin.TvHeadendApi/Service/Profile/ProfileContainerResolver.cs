@@ -45,6 +45,15 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
     }
 
     /// <summary>
+    /// Gets or sets how long a guessed fallback snapshot stays cached. Kept short on purpose:
+    /// the resilience circuit breaker opens for 30 seconds after 5 failures, so a brief
+    /// TVHeadend outage would otherwise pin the "mpegts" fallback container for the full profile
+    /// cache TTL (5 minutes by default) and hand clients a wrong container long after the
+    /// backend recovered. Internal for tests.
+    /// </summary>
+    internal TimeSpan FallbackCacheTtl { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
     /// Releases resources used by this resolver.
     /// </summary>
     public void Dispose()
@@ -77,7 +86,7 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
         var cacheTtl = TimeSpan.FromMinutes(config.ProfileCacheTtlMinutes > 0 ? config.ProfileCacheTtlMinutes : 5);
 
         if (_profileCache.TryGetValue(profileName, out var cached)
-            && DateTime.UtcNow - cached.Timestamp < cacheTtl)
+            && DateTime.UtcNow - cached.Timestamp < EffectiveTtl(cached, cacheTtl))
         {
             return cached.Snapshot;
         }
@@ -86,13 +95,13 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
         try
         {
             if (_profileCache.TryGetValue(profileName, out var cached2)
-                && DateTime.UtcNow - cached2.Timestamp < cacheTtl)
+                && DateTime.UtcNow - cached2.Timestamp < EffectiveTtl(cached2, cacheTtl))
             {
                 return cached2.Snapshot;
             }
 
-            var snapshot = await DetectProfileSnapshotAsync(config, profileName, cancellationToken).ConfigureAwait(false);
-            _profileCache[profileName] = new ProfileCacheEntry(DateTime.UtcNow, profileName, snapshot);
+            var (snapshot, isFallback) = await DetectProfileSnapshotAsync(config, profileName, cancellationToken).ConfigureAwait(false);
+            _profileCache[profileName] = new ProfileCacheEntry(DateTime.UtcNow, profileName, snapshot, isFallback);
             return snapshot;
         }
         finally
@@ -107,14 +116,20 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
         _profileCache.Clear();
     }
 
-    private async Task<ProfileSnapshot> DetectProfileSnapshotAsync(PluginConfiguration config, string profileName, CancellationToken cancellationToken)
+    /// <summary>
+    /// Detects the snapshot for a profile, reporting whether the result is a real TVHeadend
+    /// answer or a guessed fallback. Fallbacks must not be cached for the full success TTL:
+    /// a brief outage would otherwise pin a wrong container — and therefore a wrong
+    /// <c>MediaSourceInfo.Container</c> — for minutes and push clients off Direct Play.
+    /// </summary>
+    private async Task<(ProfileSnapshot Snapshot, bool IsFallback)> DetectProfileSnapshotAsync(PluginConfiguration config, string profileName, CancellationToken cancellationToken)
     {
         const string fallbackContainer = "mpegts";
 
         if (string.IsNullOrWhiteSpace(profileName))
         {
             _logger.LogWarning("No streaming profile configured. Defaulting container to '{Container}'.", fallbackContainer);
-            return BuildFallbackSnapshot(profileName, fallbackContainer);
+            return (BuildFallbackSnapshot(profileName, fallbackContainer), true);
         }
 
         try
@@ -132,7 +147,7 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
                     "Streaming profile '{ProfileName}' not found in TVHeadend. Defaulting container to '{Container}'.",
                     profileName,
                     fallbackContainer);
-                return BuildFallbackSnapshot(profileName, fallbackContainer);
+                return (BuildFallbackSnapshot(profileName, fallbackContainer), true);
             }
 
             if (resolved.ProfileClass.Contains("transcode", StringComparison.OrdinalIgnoreCase))
@@ -144,7 +159,7 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
                         profileName,
                         resolved.RawContainer,
                         fallbackContainer);
-                    return BuildSnapshot(resolved, fallbackContainer);
+                    return (BuildSnapshot(resolved, fallbackContainer), false);
                 }
 
                 _logger.LogInformation(
@@ -152,7 +167,7 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
                     profileName,
                     resolved.ProfileClass,
                     resolved.Container);
-                return BuildSnapshot(resolved, resolved.Container);
+                return (BuildSnapshot(resolved, resolved.Container), false);
             }
 
             _logger.LogInformation(
@@ -160,7 +175,7 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
                 profileName,
                 resolved.ProfileClass,
                 resolved.Container);
-            return BuildSnapshot(resolved, resolved.Container);
+            return (BuildSnapshot(resolved, resolved.Container), false);
         }
         catch (Exception ex)
         {
@@ -169,7 +184,7 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
                 "Failed to detect container for streaming profile '{ProfileName}'. Defaulting to '{Container}'.",
                 profileName,
                 fallbackContainer);
-            return BuildFallbackSnapshot(profileName, fallbackContainer);
+            return (BuildFallbackSnapshot(profileName, fallbackContainer), true);
         }
     }
 
@@ -187,6 +202,16 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
             resolved.ProfileDeinterlace ?? resolved.VideoCodecDeinterlace);
     }
 
+    /// <summary>
+    /// Returns how long a cache entry stays valid. Guessed fallbacks expire quickly so the next
+    /// successful lookup replaces them, instead of a 30-second backend blip pinning a wrong
+    /// container for the whole profile cache TTL.
+    /// </summary>
+    private TimeSpan EffectiveTtl(ProfileCacheEntry entry, TimeSpan successTtl)
+    {
+        return entry.IsFallback ? FallbackCacheTtl : successTtl;
+    }
+
     private static ProfileSnapshot BuildFallbackSnapshot(string? profileName, string fallbackContainer)
     {
         return new ProfileSnapshot(
@@ -201,5 +226,5 @@ internal sealed class ProfileContainerResolver : IProfileContainerResolver, IDis
             null);
     }
 
-    private sealed record ProfileCacheEntry(DateTime Timestamp, string ProfileName, ProfileSnapshot Snapshot);
+    private sealed record ProfileCacheEntry(DateTime Timestamp, string ProfileName, ProfileSnapshot Snapshot, bool IsFallback);
 }

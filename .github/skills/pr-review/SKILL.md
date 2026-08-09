@@ -88,3 +88,22 @@ Every review **must** evaluate 7 mandatory categories and produce findings struc
 | 6 | Standards | ✅/⚠️/❌ | |
 | 7 | Optimization | ✅/⚠️/❌ | |
 
+---
+
+## Database (additional checks)
+
+- No service-locator pattern — dependencies are constructor-injected, never resolved from a
+  container at call time.
+- SQLite identifiers use `lowercase_with_underscore`.
+- No raw SQL without parameterization. Raw SQL is acceptable where an EF Core API is not stable
+  across the supported Jellyfin versions — see `EfCoreApiCompatibilityTests`.
+- Every write goes through `DatabaseWriteCoordinator`.
+
+## Additional review checks
+
+- Constructors with more than 5 parameters — a sign the type owns too much.
+- Methods longer than ~30 lines.
+- No test-only code paths in production code.
+
+Report each finding with a severity of **error** (must fix), **warning** (should fix) or
+**note** (consider).

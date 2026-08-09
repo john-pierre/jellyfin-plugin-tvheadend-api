@@ -21,7 +21,7 @@ dotnet restore Jellyfin.Plugin.TvHeadendApi.sln
 dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release --no-restore
 
 # Test
-dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj -c Release --no-build
+dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj -c Release --no-build --filter "Category!=LiveIntegration"
 
 # Optional: start dev Jellyfin (runs tests, bumps version, builds image, recreates container)
 .\docker\build.ps1
@@ -145,7 +145,7 @@ A second embedded page, `Page/DashboardPage.html`, renders the Live-TV admin das
 7. **Build and test:**
    ```bash
    dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release
-   dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj -c Release --no-build
+   dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj -c Release --no-build --filter "Category!=LiveIntegration"
    ```
 
 ## Key Conventions
@@ -155,7 +155,7 @@ A second embedded page, `Page/DashboardPage.html`, renders the Live-TV admin das
 | File naming | File name == primary type name (`GuideService.cs` → `class GuideService`) |
 | Folder structure | `Service/{Domain}/` for domain services, `Service/Backend/` for HTTP infrastructure |
 | Test naming | `{MethodName}_{Scenario}_{Expected}` (e.g., `GetChannelsAsync_ReturnsEmpty_WhenNoChannels`) |
-| Test location | Mirror source structure: `Tests/Service/Guide/GuideServiceTests.cs` |
+| Test location | Mirror source structure: `Tests/Service/Guide/GuideServiceCoreTests.cs` |
 | Logging | Use `ILogger<T>` with semantic templates: `_logger.LogDebug("Fetching channels from {Url}.", url)` |
 | Null safety | `Nullable` is enabled. Use `ArgumentNullException.ThrowIfNull()` in constructors. |
 
@@ -178,7 +178,7 @@ A second embedded page, `Page/DashboardPage.html`, renders the Live-TV admin das
 | Task | Command / Location |
 |---|---|
 | Build | `dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release` |
-| Test | `dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj -c Release --no-build` |
+| Test | `dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj -c Release --no-build --filter "Category!=LiveIntegration"` |
 | Run dev Jellyfin | `.\docker\build.ps1` → `http://localhost:8096` |
 | Add a service | Create in `Service/{Domain}/`, register in `ServiceRegistrator.cs` |
 | Add a test | Create in `Tests/Service/{Domain}/`, follow `{Method}_{Scenario}_{Expected}` naming |

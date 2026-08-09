@@ -29,10 +29,15 @@ This document defines the naming standards for the Jellyfin TVHeadend API Plugin
 ## File and Class Naming
 
 ### Core Rule
-- **Each code file should contain one primary type and the file name MUST exactly match that type**
+- **Each code file contains exactly one top-level type and the file name MUST exactly match it**
 - Example: `TokenValidator.cs` contains the `TokenValidator` class
-- Supporting DTOs, providers, and value objects belong in their own files when they are reused or publicly exposed.
+- Supporting DTOs, providers and value objects belong in their own files.
 - Exception: None. This rule is absolute.
+- **Enforced by the build**, not just documented: `SA1402` (file may only contain a single type)
+  and `SA1649` (file name must match the first type name) are active in `Jellyfin.ruleset`, and
+  `TreatWarningsAsErrors` turns a violation into a build failure.
+  `Jellyfin.Plugin.TvHeadendApi.Tests/FileNamingConventionTests.cs` is the backstop.
+- Types **nested inside** another type are not affected — the rule is about top-level declarations.
 
 ### Class Naming Style
 - Use **PascalCase** for all class names
@@ -192,7 +197,7 @@ using Microsoft.Extensions.Logging;
 
 ### ✓ Correct: `DigestAuthHandler`
 - **Why**: HTTP middleware handler for digest authentication
-- **Location**: `Service/Backend/DigestAuthHandler.cs`
+- **Location**: `Service/Auth/DigestAuthHandler.cs`
 - **Namespace**: `Jellyfin.Plugin.TvHeadendApi.Service.Backend`
 - **Usage**: Registered in `DelegatingHandler` chain for HTTP client
 
@@ -223,3 +228,11 @@ When adding or moving files and folders:
 - See `docs/architecture/module-responsibilities.md` for module boundaries
 - See `README.md` for project overview
 
+## SQL Schema Naming
+
+SQLite tables and columns use `lowercase_with_underscore`, not PascalCase — e.g. `relay_token`,
+`expires_at_utc`, `plugin_log_entry`. EF Core entity properties stay PascalCase and are mapped.
+
+Raw-SQL comparisons against `DateTime` columns must format the value with
+`Service/Database/SqliteDateTimeFormat.cs`; the round-trip specifier `"o"` produces a different
+separator than the TEXT EF Core writes and silently mis-compares.

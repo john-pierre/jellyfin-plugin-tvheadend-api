@@ -98,6 +98,21 @@ Full reference: `docs/guides/test-strategy.md`
 - **Naming:** `{MethodName}_{Scenario}_{ExpectedResult}`
 - **Class naming:** `{ClassUnderTest}Tests`
 - **Location:** Mirror source folder structure under `Tests/`
-- **Coverage:** 90% minimum (CI-enforced), 95% target
+- **Coverage:** 80% minimum (CI-enforced), 90% target
 - **Rules:** No network calls, no filesystem access, no Thread.Sleep, no test ordering
 
+## Naming and Visibility
+
+- **Never abbreviate `tvheadend` to `tvh`** in type names, namespaces or file names. The only
+  accepted short form is inside test-local variables and docker/service names.
+- Prefer **internal classes behind public interfaces**: the plugin's public surface should be the
+  interfaces Jellyfin and the tests consume, not the implementations.
+- XML doc comments are required on all public members (`GenerateDocumentationFile` is on and the
+  build treats warnings as errors).
+
+## Async
+
+- No blocking I/O in async paths — no `.Result`, `.Wait()`, `.GetAwaiter().GetResult()`.
+- `ConfigureAwait(false)` on awaited calls in library code.
+- Forward `CancellationToken` through the whole chain.
+- Do not wrap a pass-through method in `async`/`await` — return the `Task` directly.

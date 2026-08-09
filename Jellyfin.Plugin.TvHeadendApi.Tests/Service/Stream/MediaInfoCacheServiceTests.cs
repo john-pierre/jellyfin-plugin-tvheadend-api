@@ -245,19 +245,51 @@ public class MediaInfoCacheServiceTests
     public async Task InvalidateAllCachesAsync_AlsoClearsProfileStore()
     {
         using var cacheDir = new TempDirectory();
-        var sut = CreateWarmupService(cacheDir.Path, Array.Empty<ChannelInfo>(), probeResult: null);
+        var sut = CreateWarmupService(
+            cacheDir.Path,
+            new[] { new ChannelInfo { Id = "ch-1", Name = "One" } },
+            probeResult: null);
 
         var mediaInfoDir = Path.Combine(cacheDir.Path, "mediainfo");
         var storeDir = Path.Combine(mediaInfoDir, "profiles");
         Directory.CreateDirectory(storeDir);
-        await File.WriteAllTextAsync(Path.Combine(mediaInfoDir, "a.json"), "{}");
+
+        var ownFile = Path.Combine(mediaInfoDir, sut.BuildChannelCacheFileName("ch-1", "ch-1"));
+        await File.WriteAllTextAsync(ownFile, "{}");
         await File.WriteAllTextAsync(Path.Combine(storeDir, "a.pass.json"), "{}");
 
         var deleted = await sut.InvalidateAllCachesAsync();
 
         Assert.Equal(2, deleted);
-        Assert.Empty(Directory.GetFiles(mediaInfoDir, "*.json"));
+        Assert.False(File.Exists(ownFile));
         Assert.Empty(Directory.GetFiles(storeDir, "*.json"));
+    }
+
+    [Fact]
+    public async Task InvalidateAllCachesAsync_LeavesOtherProvidersCacheFilesAlone()
+    {
+        // cache/mediainfo is Jellyfin's shared probe cache. Wiping *.json used to delete the
+        // entries written by M3U/HDHomeRun and every other provider, costing each of them a
+        // multi-second re-probe on their next tune.
+        using var cacheDir = new TempDirectory();
+        var sut = CreateWarmupService(
+            cacheDir.Path,
+            new[] { new ChannelInfo { Id = "ch-1", Name = "One" } },
+            probeResult: null);
+
+        var mediaInfoDir = Path.Combine(cacheDir.Path, "mediainfo");
+        Directory.CreateDirectory(mediaInfoDir);
+
+        var ownFile = Path.Combine(mediaInfoDir, sut.BuildChannelCacheFileName("ch-1", "ch-1"));
+        var foreignFile = Path.Combine(mediaInfoDir, "some-other-provider-cache.json");
+        await File.WriteAllTextAsync(ownFile, "{}");
+        await File.WriteAllTextAsync(foreignFile, "{}");
+
+        var deleted = await sut.InvalidateAllCachesAsync();
+
+        Assert.Equal(1, deleted);
+        Assert.False(File.Exists(ownFile));
+        Assert.True(File.Exists(foreignFile));
     }
 
     [Fact]

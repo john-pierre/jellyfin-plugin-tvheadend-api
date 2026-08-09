@@ -68,9 +68,17 @@ The plugin exposes admin-only REST endpoints under `/TvHeadendApi/` via multiple
 | `StreamingProfileController` | Discovery, resolution, validation, channels, groups |
 | `LogsController` | Logs, disk space |
 | `DashboardLogsController` | Filtered log queries |
+| `MetricsController` | Live and historical streaming telemetry (`/TvHeadendApi/Metrics`) |
 | `RelayController` | Stream/image proxy, token security, status |
 
-All endpoints require Jellyfin admin elevation (except `RelayController`, which uses anonymous + token-secured access and is routed under `/api/tvheadend/` instead of `/TvHeadendApi/`).
+The admin controllers are routed under `/TvHeadendApi/` and require Jellyfin admin elevation.
+
+`RelayController` is routed under `/api/tvheadend/` and is **not** wholly anonymous: it carries a
+class-level `[Authorize(Policy = Policies.LiveTvAccess)]`. Four actions opt out with
+`[AllowAnonymous]` and rely on a scoped, time-limited relay token instead — `status`,
+`stream/{channelId}`, `relay/stream/{channelId}` and `relay/images/{**path}` — because media
+players and Jellyfin's image fetcher cannot send Jellyfin auth headers. Everything else on that
+controller still requires Live TV access.
 
 ## Module Responsibilities
 

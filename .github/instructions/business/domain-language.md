@@ -24,9 +24,9 @@
 | Term | Class / Package | Description |
 |------|----------------|-------------|
 | **Channel Grid** | `Model.Guide.ChannelGridResponse` | Paginated list of TV channels from `/api/channel/grid`. |
-| **EPG Event** | `Model.Guide.EpgEvent` | A single electronic program guide entry with start/stop/title/description. |
-| **Content Type** | `Model.Guide.EpgContentType` | DVB content descriptor (genre) mapped to Jellyfin `ProgramAudio`/genre. |
-| **Channel Tag** | `Model.Guide.ChannelTag` | TVHeadend grouping label for channels. |
+| **EPG Event** | `Model.Guide.EpgEventsGridEntry` | A single electronic program guide entry with start/stop/title/description. |
+| **Content Type** | `Model.Guide.EpgContentTypeListEntry` | DVB content descriptor (genre) mapped to Jellyfin `ProgramAudio`/genre. |
+| **Channel Tag** | `Model.Guide.ChannelTagEntry` | TVHeadend grouping label for channels. |
 
 ---
 
@@ -34,9 +34,9 @@
 
 | Term | Class / Package | Description |
 |------|----------------|-------------|
-| **Timer** | `Model.Dvr.DvrEntry` | A single scheduled or completed recording (maps to Jellyfin `TimerInfo`). |
-| **Series Timer** | `Model.Dvr.DvrAutoRecEntry` | An automatic recording rule (maps to Jellyfin `SeriesTimerInfo`). |
-| **Recording Profile** | `Model.Dvr.DvrConfig` | TVHeadend DVR configuration determining storage path and file format. |
+| **Timer** | `Model.Dvr.DvrEntryGridEntry` | A single scheduled or completed recording (maps to Jellyfin `TimerInfo`). |
+| **Series Timer** | `Model.Dvr.DvrAutoRecGridEntry` | An automatic recording rule (maps to Jellyfin `SeriesTimerInfo`). |
+| **Recording Profile** | `Model.Dvr.DvrConfigGridEntry` | TVHeadend DVR configuration determining storage path and file format. |
 
 ---
 
@@ -49,7 +49,7 @@
 | **Transcoding** | _(playback mode)_ | Jellyfin re-encodes the stream. Requires FFmpeg and `jellyfin` profile in TVHeadend. |
 | **MediaSourceInfo** | `MediaBrowser.Model.MediaInfo` | Jellyfin's stream descriptor containing URL, container, codec hints. |
 | **MediaInfo Cache** | `Service.Stream.MediaSourceService` | Pre-created `cache/mediainfo/*.json` files matching Jellyfin's internal hash to skip FFmpeg probing. |
-| **Streaming Profile** | `Model.Profile.ProfileEntry` | TVHeadend profile (e.g., `pass`, `matroska`, `jellyfin`) determining codec/container output. |
+| **Streaming Profile** | `Model.Profile.ProfileListEntry` | TVHeadend profile (e.g., `pass`, `matroska`, `jellyfin`) determining codec/container output. |
 
 ---
 
@@ -142,7 +142,7 @@
 | Term | Class / Package | Description |
 |------|----------------|-------------|
 | **HealthService** | `Service.Health.HealthService` | Aggregates health signals from various services into an overall plugin health state. |
-| **HealthState** | `Service.Health.HealthState` | Represents the current aggregated health status of the plugin. |
+| **HealthSnapshot** | `Service.Health.HealthSnapshot` | Immutable snapshot of the aggregated TVHeadend upstream health (declared in `Service/Health/HealthState.cs` alongside `HealthStatus`, `CircuitState` and `CircuitBreakerMetrics`). |
 
 ---
 
@@ -153,7 +153,8 @@
 | **PluginLogService** | `Service.Logging.PluginLogService` | Queries and filters plugin-relevant log entries from Jellyfin's log output. |
 | **LogParser** | `Service.Logging.LogParser` | Parses structured log entries from Jellyfin's log format. |
 | **LogSanitizer** | `Service.Logging.LogSanitizer` | Sanitizes sensitive data (credentials, tokens) from log output. |
-| **PluginLoggerFactory** | `Service.Logging.PluginLoggerFactory` | Custom logger factory for plugin-specific logging configuration. |
+| **PluginPersistingLogger** | `Service.Logging.PluginPersistingLogger` | Transparent `ILogger<>` decorator that forwards to the host logger and additionally persists plugin-namespace entries for the dashboard log view. |
+| **PluginLogLevelPolicy** | `Service.Logging.PluginLogLevelPolicy` | Applies the plugin-specific log level override from `PluginConfiguration.PluginLogLevel`. |
 
 ---
 

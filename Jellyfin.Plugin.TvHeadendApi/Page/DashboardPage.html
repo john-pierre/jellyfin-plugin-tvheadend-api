@@ -1037,15 +1037,26 @@
             // ── Statistics ─────────────────────────────────────
             var chartColors = ['#00a4dc','#4caf50','#f0ad4e','#e74c3c','#9b59b6','#3498db','#1abc9c','#e67e22','#2ecc71','#e91e63'];
 
+            // Chart.js ships inside the plugin assembly and is served by Jellyfin from the same
+            // ConfigurationPage endpoint as this page. It used to be fetched from a public CDN,
+            // which left the entire analytics section blank on air-gapped or egress-filtered
+            // servers — and re-requested on every 60s refresh. Memoized so a failure is not retried
+            // in a loop.
+            var chartJsPromise = null;
             function loadChartJs() {
                 if (window.Chart) return Promise.resolve();
-                return new Promise(function (resolve, reject) {
+                if (chartJsPromise) return chartJsPromise;
+                chartJsPromise = new Promise(function (resolve, reject) {
                     var s = document.createElement('script');
-                    s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js';
+                    s.src = ApiClient.getUrl('web/ConfigurationPage', { name: 'TvHeadendChartJs' });
                     s.onload = resolve;
-                    s.onerror = function () { console.warn('Chart.js CDN failed'); reject(); };
+                    s.onerror = function () {
+                        chartJsPromise = null;
+                        reject(new Error('Chart.js could not be loaded from the plugin assembly.'));
+                    };
                     document.head.appendChild(s);
                 });
+                return chartJsPromise;
             }
 
             function renderStats(data) {

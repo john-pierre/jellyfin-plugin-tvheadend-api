@@ -502,6 +502,37 @@ public class MediaSourceServiceTests
         Assert.Equal(expected, MediaInfoCacheService.NormalizeContainerForCache(input));
     }
 
+    [Theory]
+    [InlineData(null, "")]
+    [InlineData("", "")]
+    [InlineData("   ", "")]
+    [InlineData("mpegts", "ts")]
+    [InlineData("ts", "ts")]
+    [InlineData("MPEGTS", "ts")]
+    [InlineData("matroska", "mkv")]
+    [InlineData("mkv", "mkv")]
+    [InlineData("mpegvideo", "mpeg")]
+    [InlineData("mpeg", "mpeg")]
+    [InlineData("mp4", "mp4")]
+    public void CanonicalizeContainerForComparison_ReturnsExpected(string? input, string expected)
+    {
+        Assert.Equal(expected, MediaInfoCacheService.CanonicalizeContainerForComparison(input));
+    }
+
+    [Fact]
+    public void CanonicalizeContainerForComparison_TreatsProbeAndProfileSpellingsAsEqual()
+    {
+        // The proactive writer stores the TVHeadend spelling, the ffprobe warmup stores the
+        // probe-normalized one. Both describe the same stream, so cache validation must not
+        // treat them as a mismatch and destroy the warm cache.
+        var fromProfile = MediaInfoCacheService.NormalizeContainerForCache(null);
+        var fromProbe = "ts";
+
+        Assert.Equal(
+            MediaInfoCacheService.CanonicalizeContainerForComparison(fromProfile),
+            MediaInfoCacheService.CanonicalizeContainerForComparison(fromProbe));
+    }
+
     [Fact]
     public void TryParseCacheSnapshot_WithMalformedJson_ReturnsFalse()
     {
@@ -604,6 +635,44 @@ public class MediaSourceServiceTests
         var streams = (Dictionary<string, object?>[])content["MediaStreams"]!;
         Assert.Equal("h264", streams[0]["Codec"]);
         Assert.Equal("aac", streams[1]["Codec"]);
+    }
+
+    [Fact]
+    public async Task GetChannelStreamAsync_WithRelayDisabled_UsesDirectTvheadendUrl()
+    {
+        // RelayEnabled is a kill-switch — every relay endpoint answers 503 while it is off.
+        // Combined with the DEFAULT delivery mode (Relay), the plugin used to hand out relay
+        // URLs anyway, so unchecking "Enable Relay Service" broke every single stream.
+        var config = new PluginConfiguration
+        {
+            Host = "tvh.local",
+            Port = 9981,
+            StreamingProfile = "pass",
+            StreamDeliveryMode = StreamDeliveryMode.Relay,
+            RelayEnabled = false,
+            AllowAnonymousAccess = true,
+        };
+
+        var resolver = new Mock<IProfileContainerResolver>();
+        var api = new Mock<IApiClient>();
+        api.Setup(x => x.GetCurrentConfiguration()).Returns(config);
+        resolver.Setup(x => x.ResolveContainerAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync("mpegts");
+        resolver.Setup(x => x.ResolveProfileSnapshotAsync(config, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProfileSnapshot("pass", "uuid", "profile-mpegts", "mpegts", string.Empty, string.Empty, "h264", "aac", null));
+
+        var relay = new Mock<IRelayUrlBuilder>();
+        var cacheService = new Mock<IMediaInfoCacheService>();
+        cacheService.Setup(x => x.BuildChannelCacheFileName(It.IsAny<string>(), It.IsAny<string?>())).Returns("cache-file.json");
+
+        var sut = new MediaSourceService(NullLogger<MediaSourceService>.Instance, resolver.Object, StubProfileResolver(config), StubPlaybackContext(), api.Object, new UrlBuilder(), relay.Object, cacheService.Object);
+
+        var stream = await sut.GetChannelStreamAsync("ch-1", CancellationToken.None);
+
+        Assert.Contains("tvh.local", stream.Path, StringComparison.Ordinal);
+        Assert.DoesNotContain("/relay/", stream.Path, StringComparison.OrdinalIgnoreCase);
+        relay.Verify(
+            x => x.BuildTokenizedStreamRelayUrlDetailedAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     // ── Stream build reuse across Jellyfin's enumerate→open playback start ──

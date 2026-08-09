@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A Jellyfin Live TV plugin (`C# / .NET 8.0`) that integrates TVHeadend **exclusively over its HTTP/JSON API — no HTSP**. The plugin implements Jellyfin's `ILiveTvService` and exposes admin-only REST endpoints plus two embedded admin pages. Targets Jellyfin `10.10.3+` and TVHeadend `4.3+`.
+A Jellyfin Live TV plugin (`C# / .NET 8.0`) that integrates TVHeadend **exclusively over its HTTP/JSON API — no HTSP**. The plugin implements Jellyfin's `ILiveTvService` and exposes admin-only REST endpoints plus two embedded admin pages. Targets Jellyfin `10.10.7+` and TVHeadend `4.3+`; the E2E suite runs against `10.10.7`, `10.11.11` and `12.0-rc4`.
 
 ## Commands
 
@@ -19,8 +19,8 @@ dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Test
 
 # Run a single test class or method
 dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Tests.csproj \
-  -c Release --filter "FullyQualifiedName~GuideServiceTests"
-dotnet test ... --filter "FullyQualifiedName~GuideServiceTests.GetChannels_ReturnsActiveOnly"
+  -c Release --filter "FullyQualifiedName~GuideServiceCoreTests"
+dotnet test ... --filter "FullyQualifiedName~GuideServiceCoreTests.GetChannelsAsync_WhenEntriesEmpty_ReturnsEmpty"
 ```
 
 Tests carry a `[Trait("Category", ...)]` of `Unit`, `JellyfinIntegration`, or `LiveIntegration`. `LiveIntegration` tests require a running backend (provisioned via `docker/docker-compose.test.yaml`) and are excluded from the normal build verification filter — always run with `Category!=LiveIntegration` unless explicitly testing against live backends.
@@ -45,7 +45,7 @@ The dependency flow is strictly one-directional: **Controller → Service → Ba
 - **`Service/Resilience/`** — `ResilienceHandler` is a custom `DelegatingHandler` with exponential back-off (3 attempts) + circuit breaker (5 failures → 30s open).
 - **`Service/Database/`** — central SQLite infrastructure (EF Core + raw connections). `DatabaseProvider`/`DatabaseConnectionFactory` own the file and connection PRAGMAs; `DatabaseWriteCoordinator` serializes all writes; `DatabaseMigrationService` owns schema/versioning. **DB initialization is deferred** (not done at service registration) because `Plugin.Instance`/`DataFolderPath` is not yet available then — it happens the first time a service resolves `DatabaseHealthService`. SQLite persists viewing statistics, plugin logs, relay tokens, and streaming telemetry.
 - **`Model/{domain}/`** — passive DTOs only. No logic, no service dependencies.
-- **`Api/`** — REST controllers under `/TvHeadendApi/`, all delegate to services. All endpoints require Jellyfin admin elevation **except `RelayController`**, which is anonymous + token-secured (it proxies streams/images for clients).
+- **`Api/`** — REST controllers, all delegate to services. The admin controllers live under `/TvHeadendApi/` and require Jellyfin admin elevation. **`RelayController` is different**: it is routed under `/api/tvheadend/` and carries a class-level `[Authorize(Policy = Policies.LiveTvAccess)]`, so it is *authenticated by default*. Exactly four of its actions opt out via `[AllowAnonymous]` and are secured by a scoped, time-limited relay token instead — `status`, `stream/{channelId}`, `relay/stream/{channelId}` and `relay/images/{**path}` — because players and image fetchers cannot send Jellyfin auth headers.
 
 Background work runs via `IHostedService` registrations (statistics, comet log buffering, DB cleanup, relay metrics, relay token cleanup).
 

@@ -19,11 +19,11 @@ All agents follow the behavioral principles in `.github/AGENTS.md`.
 | Test strategy | `docs/guides/test-strategy.md` |
 | Observability | `docs/guides/observability.md` |
 | Domain language | `.github/instructions/business/domain-language.md` |
-| Coding standards | `.docs/ai/coding-standards.md` |
-| Testing standards | `.docs/ai/testing-standards.md` |
-| Performance rules | `.docs/ai/performance-rules.md` |
-| Security rules | `.docs/ai/security-rules.md` |
-| Plugin domain knowledge | `.docs/ai/plugin-domain.md` |
+| Coding standards | `.github/instructions/code-conventions/dev-team-dotnet.instructions.md` |
+| Testing standards | `docs/guides/test-strategy.md` |
+| Performance rules | `docs/guides/performance.md` |
+| Security rules | `docs/guides/security.md` |
+| Plugin domain knowledge | `.github/instructions/business/domain-language.md` |
 | Roadmap | `docs/ROADMAP.md` |
 
 ---
@@ -59,8 +59,12 @@ dotnet test Jellyfin.Plugin.TvHeadendApi.Tests/Jellyfin.Plugin.TvHeadendApi.Test
 
 ## Skills and Prompts
 
-Reusable skill docs and prompts are available in:
+Reusable skills and prompts live under `.github/`:
 
-- `.ai/skills/` — Domain-specific knowledge (database, relay, tvheadend, dashboard, logging, token-security, streaming-profile)
-- `.ai/prompts/` — Workflow prompts (refactor, bugfix, feature, test-generation, review, release)
-- `.ai/agents/` — Agent role definitions (architect, reviewer, performance, security, test-engineer, release-manager)
+- `.github/skills/` — ci-cd, debugging, documentation, dotnet, implementation-cycle,
+  implementation-plan, pr-review, refactoring
+- `.github/agents/` — agent role definitions
+- `.github/prompts/` — task prompts
+
+Domain knowledge lives with the code: `docs/architecture/**`, `docs/guides/**`, and the per-module
+`business-description.md` next to each service.

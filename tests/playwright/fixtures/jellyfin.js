@@ -4,7 +4,10 @@ const crypto = require('crypto');
 const { expect } = require('@playwright/test');
 
 const CONFIG = {
-  baseURL: process.env.JELLYFIN_URL || 'http://localhost:8096',
+  // Defaults point at the E2E test stack (docker/docker-compose.test.yaml), consistent with the
+  // TVHEADEND_URL default below. Defaulting to 8096 pointed this suite at the *dev* stack while
+  // its TVHeadend calls went to the test stack, so a bare `npm test` mixed two backends.
+  baseURL: process.env.JELLYFIN_URL || 'http://localhost:18096',
   user: process.env.JF_USER || 'admin',
   pass: process.env.JF_PASS || 'admin123',
   // Channel to use for playback tests. Empty = first channel returned by the server.
@@ -28,7 +31,9 @@ const TVH = {
 const DEVICE_ID = `tvh-e2e-playwright-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
 const CLIENT = `MediaBrowser Client="tvh-e2e", Device="playwright", DeviceId="${DEVICE_ID}", Version="1.0.0"`;
 const authHeaders = (token) => ({
-  'X-Emby-Authorization': token ? `${CLIENT}, Token="${token}"` : CLIENT,
+  // Jellyfin 12 removed the legacy X-Emby-Authorization header (it answers HTTP 400).
+  // The standard Authorization header is accepted by every supported server version.
+  Authorization: token ? `${CLIENT}, Token="${token}"` : CLIENT,
   'Content-Type': 'application/json',
 });
 
@@ -385,7 +390,7 @@ async function fetchHlsArtifact(request, token, transcodingUrl, headers, { minSe
 
 function clientAuthHeaders(clientName, deviceId, token, deviceName) {
   const c = `MediaBrowser Client="${clientName}", Device="${deviceName || `e2e-${deviceId}`}", DeviceId="${deviceId}", Version="1.0.0"`;
-  return { 'X-Emby-Authorization': token ? `${c}, Token="${token}"` : c, 'Content-Type': 'application/json' };
+  return { Authorization: token ? `${c}, Token="${token}"` : c, 'Content-Type': 'application/json' };
 }
 
 // Authenticates a fresh session under the given client name (Jellyfin binds sessions to the

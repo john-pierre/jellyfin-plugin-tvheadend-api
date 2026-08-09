@@ -126,9 +126,9 @@ Quick reference for what each module owns and its boundaries.
 - **Boundary:** Combines health signals from various services into an overall `HealthState`.
 - **Does not:** Perform health checks itself — delegates to specialized services.
 
-### Service/Logging (`PluginLogService`, `LogParser`, `LogSanitizer`, `PluginLoggerFactory`)
+### Service/Logging (`PluginLogService`, `PluginPersistingLogger`, `PluginLogLevelPolicy`, `LogParser`, `LogSanitizer`)
 
-- **Owns:** Plugin log querying, log parsing, credential sanitization, custom logger factory.
+- **Owns:** Plugin log persistence and querying, log parsing, credential sanitization, and the `ILogger<>` decorator that captures plugin-namespace entries.
 - **Boundary:** Reads and filters Jellyfin log output relevant to the plugin.
 - **Does not:** Modify Jellyfin's logging pipeline configuration.
 
@@ -158,7 +158,7 @@ Quick reference for what each module owns and its boundaries.
 
 ### Api
 
-- **Owns:** REST endpoints for admin UI, split across multiple controllers: `PluginController` (config, diagnostics, profiles, auth), `StatisticsController` (viewing statistics), `MonitoringController` (status, connections, inputs, subscriptions, health), `DashboardController` (aggregated dashboard data, relay metrics), `StreamingProfileController` (discovery, resolution, validation, channels, groups), `LogsController` (logs, disk space), `DashboardLogsController` (filtered log queries), `RelayController` (stream/image proxy, token security, status).
+- **Owns:** REST endpoints for admin UI, split across multiple controllers: `PluginController` (config, diagnostics, profiles, auth), `StatisticsController` (viewing statistics), `MonitoringController` (status, connections, inputs, subscriptions, health), `DashboardController` (aggregated dashboard data, relay metrics), `StreamingProfileController` (discovery, resolution, validation, channels, groups), `LogsController` (logs, disk space), `DashboardLogsController` (filtered log queries), `MetricsController` (live and historical streaming telemetry), `RelayController` (stream/image proxy, token security, status).
 - **Rule:** Thin controllers — delegate to services. No business logic.
 
 ### Plugin.cs / ServiceRegistrator.cs

@@ -144,7 +144,9 @@ test.describe('A) Play-method matrix × TVHeadend default profile', () => {
 });
 
 test.describe('B) Delivery-mode matrix (Relay vs DirectToTvheadend)', () => {
-  const TVH_URL = process.env.TVH_URL || 'http://localhost:19981';
+  // TVHEADEND_URL is the name the shared fixture and both runner scripts use; TVH_URL was a
+  // one-off here, so pointing the suite at another backend silently missed this spec.
+  const TVH_URL = process.env.TVHEADEND_URL || process.env.TVH_URL || 'http://localhost:19981';
   let api, token, userId, pluginId, channels;
   let rot = 1;
   const nextChannel = () => channels[rot++ % channels.length];

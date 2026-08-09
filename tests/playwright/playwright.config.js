@@ -14,7 +14,7 @@ module.exports = defineConfig({
   expect: { timeout: 15_000 },
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: process.env.JELLYFIN_URL || 'http://localhost:8096',
+    baseURL: process.env.JELLYFIN_URL || 'http://localhost:18096',
     ignoreHTTPSErrors: true,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',

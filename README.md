@@ -1,20 +1,12 @@
 # Jellyfin Plugin: TVHeadend API Integration
 
 [![Release Version](https://img.shields.io/github/v/release/john-pierre/jellyfin-plugin-tvheadend-api)](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/releases)
-[![Minimum Jellyfin Version](https://img.shields.io/badge/Jellyfin-10.10.3%2B-blue)](https://jellyfin.org)
+[![Minimum Jellyfin Version](https://img.shields.io/badge/Jellyfin-10.10.7%2B-blue)](https://jellyfin.org)
 [![Minimum TVHeadend Version](https://img.shields.io/badge/TVHeadend-4.3%2B-green)](https://tvheadend.org)
 [![License](https://img.shields.io/github/license/john-pierre/jellyfin-plugin-tvheadend-api)](LICENSE)
 [![Issues](https://img.shields.io/github/issues/john-pierre/jellyfin-plugin-tvheadend-api)](https://github.com/john-pierre/jellyfin-plugin-tvheadend-api/issues)
 [![Target Framework](https://img.shields.io/badge/.NET-8.0-purple)](https://dotnet.microsoft.com/en-us/)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org)
-
-## Support & Project Links
-
-If this plugin helps you, please consider supporting development:
-
-[![GitHub Sponsors](https://img.shields.io/badge/Support-GitHub%20Sponsors-ff69b4?logo=githubsponsors)](https://github.com/sponsors/john-pierre)
-[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-29abe0?logo=kofi&logoColor=white)](https://ko-fi.com/johnpierre)
-[![Buy Me a Coffee](https://img.shields.io/badge/Support-Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/johnpierre)
 
 A Jellyfin Live TV plugin for TVHeadend that works entirely through HTTP/JSON APIs.
 
@@ -55,13 +47,15 @@ With the recommended setup (`jellyfin` profile, direct play allowed, probing ena
 
 Fast channel switching depends primarily on one condition: **Direct Play must be used**.
 
-When Direct Play is active, the generated TVHeadend stream URL is passed through to the client and the client opens a direct connection to TVHeadend. This bypasses Jellyfin's stream processing path for the actual media flow.
+When Direct Play is active, the stream URL is handed to the client unchanged and Jellyfin's stream processing path is bypassed for the actual media flow — nothing is re-encoded or remuxed.
+
+Which URL that is depends on `Stream Delivery Mode` (see [How Playback Modes Work](#how-playback-modes-work)): in the default `Relay` mode the client plays a token-secured plugin URL and Jellyfin proxies the bytes; in `Direct to TVHeadend` mode the client connects straight to TVHeadend. Both are Direct Play — the relay adds a proxy hop, not a transcode.
 
 For non-Direct-Play paths (Direct Stream or Transcoding), Jellyfin core introduces hard-coded live TV analysis/wait behavior. In practice this means channel switches are typically **not below about 6 seconds**, and can be higher depending on FFmpeg startup overhead.
 
 ## Table of Contents
 
-- [Comparison at a Glance](#comparison-at-a-glance)
+- [What Makes This Plugin Different?](#what-makes-this-plugin-different)
 - [Quick Start (10 Minutes)](#quick-start-10-minutes)
 - [Requirements](#requirements)
 - [Compatibility Matrix](#compatibility-matrix)
@@ -74,6 +68,7 @@ For non-Direct-Play paths (Direct Stream or Transcoding), Jellyfin core introduc
 - [Troubleshooting](#troubleshooting)
 - [FAQ](#faq)
 - [For Copilot and AI Agents](#for-copilot-and-ai-agents)
+- [Support This Plugin](#support-this-plugin)
 - [Developer Notes](#developer-notes)
 - [License](#license)
 
@@ -96,7 +91,8 @@ For non-Direct-Play paths (Direct Stream or Transcoding), Jellyfin core introduc
    H.264 encoder (hardware preferred), verifies the profile by reading a short test stream, and
    automatically falls back to software libx264 if the chosen encoder delivers no data.
 
-5. Set `Streaming Profile` to `jellyfin`.
+5. On the `Streaming` tab, set the **Default** row of the `Profile Assignments` table to `jellyfin`.
+   (Per-channel, per-group, per-client, per-device and per-user rules can be added there too — first match wins.)
 
 6. Enable:
    - `Supports Direct Play`
@@ -111,7 +107,7 @@ For non-Direct-Play paths (Direct Stream or Transcoding), Jellyfin core introduc
 
 ## Requirements
 
-- Jellyfin `10.10.3+`
+- Jellyfin `10.10.7+`
 - TVHeadend `4.3+`
 - A TVHeadend user with permissions for:
   - API access
@@ -119,16 +115,33 @@ For non-Direct-Play paths (Direct Stream or Transcoding), Jellyfin core introduc
   - Stream access
   - DVR access (optional)
 
+### Verified Jellyfin versions
+
+The plugin is compiled against the Jellyfin `10.10.7` API and its end-to-end suite runs against
+each server version below on every pull request:
+
+| Jellyfin | Status | Live suite |
+|---|---|---|
+| `10.10.7` | Supported — the compiled-against ABI and the declared `targetAbi` | 142/142 |
+| `10.11.11` | Supported — verified end to end | 142/142 |
+| `12.0-rc4` | Best effort — exercised for early warning; a failure there does not block a release | 142/142 |
+
+A release candidate is deliberately non-blocking: it can still change before it ships, and this
+plugin's release must not depend on somebody else's preview build.
+
+Servers older than `10.10.7` are not supported: the plugin is built against APIs that release
+introduced, so an older server could load it and then fail at runtime.
+
 ## Compatibility Matrix
 
 The matrix below summarizes the deployment patterns currently targeted by this plugin.
 
 | Scenario | Status | Notes |
 |---|---|---|
-| Jellyfin `10.10.x` + TVHeadend `4.3+` + `jellyfin` streaming profile | **Recommended** | Primary optimization path for direct play, cache pre-creation, and predictable startup behavior |
-| Jellyfin `10.10.x` + TVHeadend `4.3+` + `pass` streaming profile | **Supported** | Works, but stream/container behavior can vary more by channel and source |
-| Clients can reach TVHeadend directly | **Recommended** | Best path for direct play and lowest channel-switch time |
-| Clients reach Jellyfin but not TVHeadend directly | **Conditional** | Playback can still work, but remux/transcode paths are more likely and startup is usually slower |
+| Jellyfin `10.10.7+` + TVHeadend `4.3+` + `jellyfin` streaming profile | **Recommended** | Primary optimization path for direct play, cache pre-creation, and predictable startup behavior |
+| Jellyfin `10.10.7+` + TVHeadend `4.3+` + `pass` streaming profile | **Supported** | Works, but stream/container behavior can vary more by channel and source |
+| Clients reach Jellyfin only (default `Relay` delivery mode) | **Recommended** | Works out of the box; Direct Play still applies — the relay adds a proxy hop, not a transcode |
+| Clients can reach TVHeadend directly (`Direct to TVHeadend` mode) | **Supported** | Lowest possible channel-switch time, but exposes the TVHeadend host and auth token to clients |
 | Reverse proxy or TVHeadend sub-path (`Webroot`) | **Supported** | Requires correct `Webroot`, reachable stream/image URLs, and working auth token propagation |
 | HTTPS with trusted certificates | **Supported** | Recommended for production deployments |
 | HTTPS with self-signed certificates | **Conditional** | Supported when `Ignore Certificate Errors` is enabled, but not recommended for production |
@@ -230,7 +243,7 @@ Important token format in this plugin:
 
 | Setting | Recommended value | Why |
 |---|---|---|
-| `Streaming Profile` | `jellyfin` | Predictable output |
+| `Profile Assignments` → Default row | `jellyfin` | The effective profile when no rule matches; predictable output |
 | `Supports Direct Play` | On | Fastest path |
 | `Supports Direct Stream` | On | Useful fallback |
 | `Supports Transcoding` | On or Off by your policy | Compatibility fallback |
@@ -314,7 +327,7 @@ This plugin is production-oriented, but some behaviors still depend on Jellyfin 
 
 Check:
 
-1. Is `Streaming Profile` set to `jellyfin`?
+1. Is the **Default** row of `Profile Assignments` (Streaming tab) set to `jellyfin`?
 2. Is direct play allowed by client policy?
 3. Is probing enabled (this also controls mediainfo cache pre-creation)?
 4. Is the selected client forcing transcoding?
@@ -369,6 +382,7 @@ If you are an AI coding assistant working in this repository:
 
 - Read `.github/AGENTS.md` first (behavioral principles).
 - Then read the instructions for your tool:
+  - **Claude Code:** `CLAUDE.md`
   - **GitHub Copilot:** `.github/copilot-instructions.md`
   - **OpenCode:** `.opencode/instructions.md`
 - Keep docs and comments in English.
@@ -378,14 +392,19 @@ If you are an AI coding assistant working in this repository:
 
 ### AI Documentation Structure
 
-| Location | Content |
-|----------|---------|
-| `.docs/ai/` | Core reference docs (overview, architecture, coding/testing/performance/security standards, domain knowledge) |
-| `.ai/prompts/` | Workflow prompts (refactor, bugfix, feature, test-generation, review, release) |
-| `.ai/skills/` | Domain-specific skills (database, relay, tvheadend, dashboard, logging, token-security, streaming-profile) |
-| `.ai/agents/` | Agent role definitions (architect, reviewer, performance, security, test-engineer, release-manager) |
-| `.github/copilot-instructions.md` | GitHub Copilot specific instructions |
-| `.opencode/instructions.md` | OpenCode specific instructions |
+| Location | Content | Loaded by |
+|---|---|---|
+| `CLAUDE.md` | Architecture rules, commands, conventions | Claude Code |
+| `.github/copilot-instructions.md` | Routing layer into the docs below | GitHub Copilot |
+| `.opencode/instructions.md` | Routing layer into the docs below | OpenCode |
+| `.github/AGENTS.md` | Behavioural principles shared by all agents | referenced by the three above |
+| `.github/instructions/`, `.github/skills/`, `.github/agents/`, `.github/prompts/` | Coding conventions, domain language, task-specific skills and agent roles | referenced on demand |
+| `docs/architecture/`, `docs/guides/` | Architecture map, ADRs, test strategy, security, performance, observability | referenced on demand |
+| `Jellyfin.Plugin.TvHeadendApi/Service/*/business-description.md` | What each service domain owns | referenced on demand |
+
+The authoritative source for architecture and behaviour is always the code plus `docs/`; the trees
+above are guidance layers on top of it. When they disagree, the code wins — and the guidance
+should be corrected.
 
 Primary architecture files:
 
@@ -402,13 +421,13 @@ Architecture documentation:
 - `docs/guides/test-strategy.md` — test types, naming, coverage expectations
 - `docs/ROADMAP.md` — milestones and progress tracking
 
-## 💖 Support This Plugin
+## Support This Plugin
 
 If this plugin is useful to you, consider supporting its development:
 
-- [GitHub Sponsors](https://github.com/sponsors/john-pierre)
-- [Ko-fi](https://ko-fi.com/johnpierre)
-- [Buy Me a Coffee](https://buymeacoffee.com/johnpierre)
+[![GitHub Sponsors](https://img.shields.io/badge/Support-GitHub%20Sponsors-ff69b4?logo=githubsponsors)](https://github.com/sponsors/john-pierre)
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-29abe0?logo=kofi&logoColor=white)](https://ko-fi.com/johnpierre)
+[![Buy Me a Coffee](https://img.shields.io/badge/Support-Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/johnpierre)
 
 Every contribution helps keep this project maintained and improved. Thank you!
 

@@ -244,10 +244,14 @@ internal sealed class MediaSourceService : IMediaSourceService
         PluginConfiguration config,
         CancellationToken cancellationToken)
     {
-        var canUseDirect = config.StreamDeliveryMode == StreamDeliveryMode.DirectToTvheadend
-            && (config.AllowAnonymousAccess || !string.IsNullOrWhiteSpace(config.AuthToken));
+        // RelayEnabled is a hard kill-switch: every relay endpoint answers 503 while it is off.
+        // Handing out a relay URL in that state produced a stream URL that could only ever fail,
+        // so a disabled relay forces the direct path exactly like DirectToTvheadend does.
+        var relayUnavailable = !config.RelayEnabled;
+        var directRequested = config.StreamDeliveryMode == StreamDeliveryMode.DirectToTvheadend || relayUnavailable;
+        var haveTvheadendCredentials = config.AllowAnonymousAccess || !string.IsNullOrWhiteSpace(config.AuthToken);
 
-        if (canUseDirect)
+        if (directRequested && haveTvheadendCredentials)
         {
             var endpoint = string.IsNullOrWhiteSpace(effectiveProfile)
                 ? $"stream/channel/{Uri.EscapeDataString(channelId)}"
@@ -255,7 +259,13 @@ internal sealed class MediaSourceService : IMediaSourceService
             return (_tvheadendUrlBuilder.BuildResourceUrl(config, endpoint), null);
         }
 
-        if (config.StreamDeliveryMode == StreamDeliveryMode.DirectToTvheadend)
+        if (relayUnavailable)
+        {
+            _logger.LogError(
+                "Relay is disabled and no TVHeadend auth token is configured (anonymous access is off), so channel {ChannelId} has no usable stream URL. Enable the relay service, or set an auth token / allow anonymous access to stream directly from TVHeadend.",
+                channelId);
+        }
+        else if (config.StreamDeliveryMode == StreamDeliveryMode.DirectToTvheadend)
         {
             _logger.LogWarning(
                 "Direct-to-TVHeadend delivery requested for channel {ChannelId} but no auth token is configured and anonymous access is off. Falling back to relay.",

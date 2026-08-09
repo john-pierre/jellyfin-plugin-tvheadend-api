@@ -143,17 +143,3 @@ public class StreamingProfileController : ControllerBase
         return Ok(options);
     }
 }
-
-/// <summary>
-/// Represents a channel option for configuration dropdowns.
-/// </summary>
-/// <param name="Id">TVHeadend channel UUID.</param>
-/// <param name="Name">Channel display name.</param>
-public sealed record ChannelOption(string Id, string Name);
-
-/// <summary>
-/// Represents a channel group/tag option for configuration dropdowns.
-/// </summary>
-/// <param name="Id">TVHeadend tag UUID.</param>
-/// <param name="Name">Tag display name.</param>
-public sealed record ChannelGroupOption(string Id, string Name);

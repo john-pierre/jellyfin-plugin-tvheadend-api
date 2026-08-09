@@ -113,15 +113,24 @@ internal sealed class RelayTokenRepository : IRelayTokenRepository, IDisposable
 
         // Single conditional UPDATE: the max-uses check and the increment are atomic,
         // so concurrent validations of the same token cannot exceed the limit.
-        var affected = await db.RelayTokens
-            .Where(t => t.Id == id && (t.MaxUses == null || t.MaxUses <= 0 || t.UseCount < t.MaxUses))
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(t => t.UseCount, t => t.UseCount + 1)
-                    .SetProperty(t => t.LastUsedAtUtc, now)
-                    .SetProperty(t => t.FirstUsedAtUtc, t => t.FirstUsedAtUtc ?? now),
-                cancellationToken)
-            .ConfigureAwait(false);
+        //
+        // Deliberately raw SQL rather than ExecuteUpdateAsync. The plugin is loaded into whichever
+        // Jellyfin server the user runs, and the EF Core assembly comes from that server: the
+        // Expression-based ExecuteUpdateAsync overload compiled against EF Core 8 no longer exists
+        // in the EF Core shipped with Jellyfin 10.11+, so every call threw MissingMethodException
+        // at runtime, token use-accounting failed, and relay stream requests answered 500.
+        // Database.ExecuteSqlRawAsync is stable across all EF Core versions in play.
+        var affected = await db.Database.ExecuteSqlRawAsync(
+            """
+            UPDATE "relay_token"
+            SET "use_count" = "use_count" + 1,
+                "last_used_at_utc" = {0},
+                "first_used_at_utc" = COALESCE("first_used_at_utc", {0})
+            WHERE "id" = {1}
+              AND ("max_uses" IS NULL OR "max_uses" <= 0 OR "use_count" < "max_uses");
+            """,
+            new object[] { now, id },
+            cancellationToken).ConfigureAwait(false);
 
         return affected > 0;
     }
@@ -184,15 +193,26 @@ internal sealed class RelayTokenRepository : IRelayTokenRepository, IDisposable
 
         using var writeLock = await _writeCoordinator.AcquireWriteAsync(cancellationToken).ConfigureAwait(false);
         using var db = CreateContext();
-        await db.RelayTokens
-            .Where(t => t.TokenHash == tokenHash)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(t => t.ResolutionSource, resolutionSource)
-                    .SetProperty(t => t.MediaInfoCacheStatus, mediaInfoCacheStatus)
-                    .SetProperty(t => t.StreamSetupMs, streamSetupMs),
-                cancellationToken)
-            .ConfigureAwait(false);
+        // Raw SQL for the same reason as TryConsumeUseAsync: the Expression-based
+        // ExecuteUpdateAsync overload does not exist in the EF Core that Jellyfin 10.11+ loads.
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            UPDATE "relay_token"
+            SET "resolution_source" = {0},
+                "mediainfo_cache_status" = {1},
+                "stream_setup_ms" = {2}
+            WHERE "token_hash" = {3};
+            """,
+            new object[]
+            {
+                // ExecuteSqlRawAsync takes non-nullable parameters; a null must be passed as
+                // DBNull so the column is written as SQL NULL rather than rejected.
+                (object?)resolutionSource ?? DBNull.Value,
+                (object?)mediaInfoCacheStatus ?? DBNull.Value,
+                (object?)streamSetupMs ?? DBNull.Value,
+                tokenHash,
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

@@ -1,3 +1,10 @@
+# Overridable so the E2E stack can run against several Jellyfin server versions:
+#   JELLYFIN_IMAGE=jellyfin/jellyfin:10.11.11 docker compose -f docker/docker-compose.test.yaml ...
+# The plugin is compiled against one Jellyfin ABI but must keep loading on newer servers, so the
+# supported versions are exercised as a matrix rather than assumed compatible.
+# Declared before the first FROM: only globally-scoped ARGs may be used in a FROM instruction.
+ARG JELLYFIN_IMAGE=jellyfin/jellyfin:10.10.7
+
 # ── Stage 1: Build the plugin ───────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 
@@ -33,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /v
        manifest.json > /plugin/meta.json
 
 # ── Stage 2: Jellyfin runtime with plugin installed ─────────────────
-FROM jellyfin/jellyfin:10.10.7
+FROM ${JELLYFIN_IMAGE}
 
 ENV TZ=Europe/Berlin
 

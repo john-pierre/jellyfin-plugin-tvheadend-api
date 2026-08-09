@@ -47,7 +47,7 @@ dotnet build Jellyfin.Plugin.TvHeadendApi.sln -c Release && dotnet test Jellyfin
 
 - Build must succeed with **zero warnings and zero errors**.
 - StyleCop + Roslyn analyzers enforce style automatically via `Jellyfin.ruleset`.
-- Coverage: 90% minimum (CI-enforced), 95% target.
+- Coverage: 80% minimum (CI-enforced), 90% target.
 
 ---
 

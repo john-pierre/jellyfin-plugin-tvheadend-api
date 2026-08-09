@@ -1,8 +1,36 @@
 # Roadmap
 
 This document tracks the structured refactor and quality improvement of the Jellyfin TVHeadend API plugin.
+Milestones below are a historical log, appended over time — the current state is summarised here so it
+does not have to be reconstructed from 650 lines of history.
 
-**Baseline (2026-04-16):** Build 0 warnings / 0 errors, 230 tests passing.
+> Historical entries name files as they were called **at the time**. The documentation was later
+> reorganised into `docs/architecture/` and `docs/guides/`, so paths such as
+> `docs/architecture-overview.md` or `docs/test-strategy.md` in older milestones no longer resolve.
+> They are left as written rather than rewritten, so the log stays an accurate record. Where an
+> artefact still exists but moved, the entry says where it is now.
+
+## Current State (2026-08-08)
+
+| | |
+|---|---|
+| Build | 0 warnings / 0 errors (`TreatWarningsAsErrors`) |
+| Unit tests | 1450 passing |
+| Live integration tests | 142 passing on Jellyfin 10.10.7, 10.11.11 and 12.0-rc4 |
+| Coverage | 86.94% line / 72.74% branch (CI gate `80 90`) |
+| Supported Jellyfin | 10.10.7+ (`TARGET_ABI` in the workflow) |
+
+**Still open** — see [Milestone 24e](#24e--known-open-items) for detail:
+
+- The required status check `build-and-release` matches no job in the workflow, so PRs cannot merge
+  until the branch-protection context is corrected (repo setting, not code).
+- Dashboard analytics is gated behind an external Chart.js CDN fetch.
+- The config page auto-saves and runs a full TVHeadend diagnostic on every keystroke.
+- Thirteen `PluginConfiguration` properties are not surfaced in the UI.
+- `SkipIfUnavailable()` calls `Assert.Fail` instead of skipping.
+- Config schema versioning (Milestone 15) and plugin API versioning (Milestone 17) are unstarted.
+- `build.yaml` (JPRM manifest) is absent — the plugin cannot be built by the official Jellyfin
+  toolchain or submitted to the official plugin repository.
 
 ---
 
@@ -316,9 +344,13 @@ Purpose: validate plugin behavior against real TVHeadend and Jellyfin instances.
 #### 20d — CI Quality Gate
 
 - [x] `WireMock.Net` installed as test dependency
-- [x] Raise coverage threshold to `90 95` after completing 20a
-- [ ] Raise coverage threshold to `95 99` after all unit-test gaps closed
-- [ ] Verify final: ≥ 99% line coverage, ≥ 80% branch coverage, 0 errors
+- [x] Raise coverage threshold to `90 95` after completing 20a — **reverted**: the workflow
+  actually enforces `80 90`. Measured coverage is 86.94% line / 72.74% branch (2026-08-08), so a
+  90% floor would fail every PR. Docs were corrected to match the pipeline rather than the other
+  way around.
+- [ ] Raise the coverage floor toward `85 90` — needs the branch-coverage gap closed first
+- [ ] Verify final: ≥ 90% line coverage, ≥ 80% branch coverage, 0 errors
+  (targets restated: the previous ≥99%/≥80% goal was never achievable at this suite size)
 
 ---
 
@@ -344,7 +376,7 @@ An IPTV simulator container that provides deterministic test channels and EPG da
 
 Automated first-run configuration of TVHeadend so it has channels, EPG, users, and profiles ready for testing.
 
-- [x] Create `docker/tvheadend-bootstrap.sh` — runs against TVHeadend API after startup
+- [x] Create the TVHeadend bootstrap — runs against the TVHeadend API after startup. **Now at** `docker/tvheadend-bootstrap/bootstrap.py` (rewritten in Python and containerised; the original `docker/tvheadend-bootstrap.sh` no longer exists).
 - [x] Bootstrap: create IPTV automatic network pointing at `http://iptv-simulator/playlist.m3u` (`/api/mpegts/network/create`)
 - [x] Bootstrap: trigger initial mux scan and wait for completion (`/api/mpegts/network/mux_scanner`)
 - [x] Bootstrap: map all discovered services to channels (`/api/channel/grid`)
@@ -412,14 +444,14 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 
 #### 21j — Live Integration Tests: Statistics & Lifecycle
 
-- [ ] `StatisticsService_TrackPlayback` — simulate PlaybackStart/Stop events → statistics reflect session count
+- [x] `StatisticsService_TrackPlayback` — implemented as `EndToEndIntegrationTests.StatisticsService_TrackPlayback_ReflectsSessionCount`
 - [ ] `LifecycleService_ResetAsync` — call reset → verify caches cleared and services re-initialized
-- [ ] `OrchestratorService_ResetTuner` — reset tuner via orchestrator → no errors
+- [x] `OrchestratorService_ResetTuner` — implemented as `EndToEndIntegrationTests.OrchestratorService_ResetTuner_NoErrors`
 
 #### 21k — Test Orchestration & Documentation
 
-- [x] Create `scripts/run-e2e-tests.ps1` — brings up stack, waits for bootstrap, runs tests, tears down
-- [x] Create `scripts/run-e2e-tests.sh` — Linux/CI equivalent
+- [x] Create the E2E runner for Windows — brings up the stack, waits for bootstrap, runs tests, tears down. **Now at** `docker/run-e2e-tests.ps1` (moved out of `scripts/`).
+- [x] Create the E2E runner for Linux/CI — **now at** `docker/run-e2e-tests.sh` (moved out of `scripts/`).
 - [x] Add retry/wait logic for TVHeadend mux scan completion (poll `/api/mpegts/mux/grid` until all muxes are `IDLE`)
 - [x] Add timeout safety (max 120s for full bootstrap)
 - [x] Document full E2E test procedure in `docs/guides/test-strategy.md` — prerequisites, setup, run, teardown, troubleshooting
@@ -500,3 +532,148 @@ Automated first-run configuration of TVHeadend so it has channels, EPG, users, a
 
 
 
+### Milestone 24 — Pipeline Repair and Runtime Bug Fixes
+
+**Baseline (2026-08-08):** Build 0 warnings / 0 errors, 1449 unit tests, 142 live integration
+tests, 86.94% line / 72.74% branch coverage.
+
+#### 24a — CI/CD Blockers
+
+- [x] **Release version hardcoded to `0.0.0.0`** — commit `9da001d` moved Release Please into its
+  own job, leaving the `build` job without a version. Every release would have shipped a
+  `tvheadend_api_0.0.0.0.zip` plus a `manifest.json` pointing at a differently-named asset (404 on
+  install) and a DLL stamped `0.0.0.0`. The version now comes from `.release-please-manifest.json`,
+  with a guard step that fails the release if it disagrees with the tag.
+- [x] **Plugin zip nested one directory deep** — commit `4bb93e2` changed `zip -j` to
+  `zip -r "$PACKAGE_DIR.zip" "$PACKAGE_DIR"`. Jellyfin extracts the archive straight into the
+  plugin folder (`ZipFile.ExtractToDirectory`), so the assemblies landed in a subdirectory and the
+  plugin was never discovered. Archives the directory *contents* now, with a guard asserting the
+  DLL and `meta.json` sit at the archive root.
+- [x] **Manifest auto-commit could never succeed** — `main` is protected (enforce_admins,
+  required review, linear history), so pushing directly was always rejected. The release job now
+  opens a pull request instead.
+- [x] **Release published even when live E2E failed** — `release` now depends on `integration`.
+- [x] **Nineteen action refs still on Node 20** — bumped to the current Node 24 majors
+  (verified against the GitHub API, not guessed). `irongut/CodeCoverageSummary` is Docker-based
+  and unaffected; `thehanimo/pr-title-checker` has no Node 24 release yet and is left pinned.
+- [x] **`Wait for TVHeadend Healthy` reported success after timing out** — now fails with logs.
+- [x] Added a `concurrency` group and job timeouts.
+
+#### 24b — Runtime Bugs
+
+- [x] **Retention cleanup deleted still-valid relay tokens** — cutoffs were formatted with the
+  round-trip specifier `"o"` (`T` separator) and compared as TEXT against EF-written values
+  (space separator). Because `' '` sorts before `'T'`, every row sharing the cutoff's calendar
+  date compared as older and was deleted, killing live stream tokens mid-playback and shortening
+  all other retention windows by up to a day. All cutoffs now go through `SqliteDateTimeFormat`.
+- [x] **Mediainfo cache could never validate as a hit** — the proactive writer stores `mpegts`
+  while the ffprobe warmup stores the probe-normalized `ts`, and validation compared them with
+  exact equality. Every probed channel took the mismatch branch forever, deleting the warm cache
+  and forcing a multi-second probe on each channel start. Containers are now canonicalized before
+  comparison.
+- [x] **`RelayEnabled=false` broke every stream and logo** — the relay is a hard kill-switch
+  (503), but no URL producer honoured it, so unchecking it with the default `Relay` delivery mode
+  produced URLs that could only fail. Both the stream and image builders now fall back to a direct
+  TVHeadend URL when credentials allow it.
+- [x] **`InvalidateAllCachesAsync` wiped other providers' probe caches** — it deleted every
+  `*.json` in Jellyfin's *shared* `cache/mediainfo`. It now removes only this plugin's own
+  channel-derived entries plus its own profile store.
+- [x] **Failed profile resolutions cached for the full success TTL** — a 30-second backend blip
+  pinned the guessed `mpegts` container for 5 minutes. Fallbacks now use a short negative TTL.
+- [x] **Guided setup silently cleared the profile it had just created** — both "Create jellyfin
+  Profile" and "Optimal Setup" assigned `select.value = 'jellyfin'` against a dropdown built
+  before the profile existed, so the value read back as `""` and the following save wiped it.
+- [x] **"Optimal Setup" disabled `IgnoreDts` against its own documented default** — left untouched.
+
+#### 24c — Test and Repository Hygiene
+
+- [x] **Linux-only CI test failure** — `FlushBatch_AfterTransientFailure_ResumesAfterRetryDelay`
+  injected failure with `File.SetAttributes(ReadOnly)`, which is a no-op for root and, for
+  non-root, leaves a read-only SQLite rollback journal that blocks writes permanently. Replaced
+  with a deterministic, platform-independent injection.
+- [x] **Two test classes shared one SQLite file in the temp root** — both pointed
+  `DataFolderPathProvider` at the bare system temp directory, so parallel classes raced on the
+  same `tvheadend_plugin.db`. Each test instance now gets its own data folder.
+- [x] **`.gitignore` was entirely inert** — every rule carried a trailing comment, which Git
+  treats as part of the pattern. `.idea/` and `TestResults/` were tracked as a result; both were
+  untracked and the file rewritten.
+- [x] **Line endings** — added `.gitattributes` (`* text=auto eol=lf`) and renormalized, removing
+  a recurring 339-file / 92k-line whitespace diff.
+- [x] **Playwright suite was orphaned** — 16 specs holding the only automated coverage of Direct
+  Play and the zapping budget ran in no workflow. Wired into the `integration` job.
+- [x] **Documentation corrected** — coverage thresholds (docs claimed a 90/95 gate CI never had),
+  onboarding test commands (missing `--filter`, so newcomers saw 142 backend failures).
+
+#### 24d — Plugin-Template Alignment and Jellyfin Version Matrix
+
+Checked against the official `jellyfin/jellyfin-plugin-template`. `Plugin.cs`
+(`BasePlugin<PluginConfiguration>, IHasWebPages`, `Name`, `Id`, `GetPages`), the csproj analyzer
+set and the embedded-resource wiring already matched; the gaps below did not.
+
+- [x] **`ExcludeAssets=runtime` missing on `Jellyfin.Controller` / `Jellyfin.Model`** — the server
+  provides these at runtime and the template excludes them so they can never be packaged. Nothing
+  leaked in practice (libraries do not copy package assemblies by default), but the CI packaging
+  step globs `*.dll` from the build output, so a single `CopyLocalLockFileAssemblies` or
+  `dotnet publish` would have shipped assemblies that shadow the host's. Adding it moved the
+  assemblies out of the test project's reach too, so the test project now references them
+  explicitly — the package stays clean and the suite still runs.
+- [x] **Open-ended package range `[10.10.7,)`** — a future Jellyfin major would have been pulled in
+  silently. Now `[10.10.7,10.11.0)`.
+- [x] **`.editorconfig`** adopted from the template (it also pins `end_of_line = lf`, matching the
+  `.gitattributes` added in 24c).
+- [x] **`Directory.Build.props`** added as the single source of the version properties, matching
+  the template layout. CI's `-p:` overrides still win.
+- [x] **Dependency automation** — `.github/dependabot.yml` covering GitHub Actions, NuGet, npm and
+  Docker. The template ships `renovate.json`, but Renovate is inert until its GitHub App is
+  installed, whereas Dependabot works immediately — and this is exactly the gap that let nineteen
+  action refs sit on the deprecated Node 20 runtime unnoticed. `Jellyfin.Controller`/`Jellyfin.Model`
+  are explicitly ignored: bumping them changes which servers can load the plugin.
+- [x] **`targetAbi` was inconsistent** — the pipeline hardcoded `10.10.3.0` in two places while the
+  plugin compiled against `10.10.7`, so servers on 10.10.3–10.10.6 could install a plugin built
+  against APIs they do not have. Now a single workflow-level `TARGET_ABI: "10.10.7.0"`.
+- [x] **Jellyfin version matrix** — the base image is selectable via `JELLYFIN_IMAGE`, and the
+  `integration` job runs as a `fail-fast: false` matrix over `10.10.7`, `10.11.11` and `12.0-rc4`
+  (the RC is `continue-on-error`). Each leg asserts the reported server version and greps the log
+  for assembly-load failures before functional tests run.
+- [x] **EF Core API bound to a version the plugin does not control** — found by the new matrix on
+  Jellyfin 10.11.11, 495 occurrences in one run. `RelayTokenRepository` called the EF Core 8
+  overload of `ExecuteUpdateAsync`; the plugin resolves EF Core from the *server*, and that
+  overload no longer exists in the EF Core shipped with Jellyfin 10.11+. Every relay token
+  validation threw `MissingMethodException`, so token use-accounting failed and relay stream
+  requests answered HTTP 500 — breaking the DEFAULT delivery mode on 10.11+ while every unit test
+  stayed green (they run against the plugin's own EF Core package). Both call sites now use
+  `Database.ExecuteSqlRawAsync`, which keeps the conditional UPDATE atomic and is stable across
+  EF Core versions. `EfCoreApiCompatibilityTests` reads the compiled assembly's metadata and
+  fails the build if any of `ExecuteUpdate`/`ExecuteUpdateAsync`/`ExecuteDelete`/`ExecuteDeleteAsync`
+  is referenced again — verified to fail when the API is reintroduced, not merely to pass today.
+- [x] **E2E harness could not provision Jellyfin 10.11+** — surfaced as 78 of 142 live tests failing
+  to authenticate, which looked like an ABI problem but was not. Two independent causes:
+  10.11 writes `IsStartupWizardCompleted=true` into a fresh config, and `FirstTimeSetupHandler`
+  only authorizes `/Startup/*` while the wizard is incomplete, so every provisioning call returned
+  401 and no admin user was ever created; and `/health` reports ready roughly 12 s before the API
+  accepts requests, so the wizard fired against 503s. The start script now seeds the flag, waits
+  for the API surface rather than `/health`, retries the wizard as a unit, and verifies
+  authentication with a loud error instead of swallowing each failure.
+- [x] **Jellyfin 12 removed both legacy credential headers** — found by the matrix on `12.0-rc4`.
+  `X-Emby-Authorization` now answers HTTP 400 and `X-Emby-Token` answers 401; only the standard
+  `Authorization: MediaBrowser …, Token="…"` form is accepted. This affected harness code only
+  (`docker/jellyfin/start-jellyfin.sh`, `JellyfinApiFixture`, the Playwright fixture) — the plugin
+  itself never calls Jellyfin's authentication API. All three now send the standard header, which
+  every version in the matrix accepts.
+- [ ] **`build.yaml` (JPRM manifest) still absent** — the repo uses its own `manifest.json` plus a
+  custom release pipeline instead. Without `build.yaml` the plugin cannot be built by the official
+  Jellyfin toolchain or submitted to the official plugin repository. Adding one would duplicate
+  metadata that can drift, so this is a deliberate open decision rather than an oversight.
+
+#### 24e — Known Open Items
+
+- [ ] Required status check `build-and-release` matches no job in the workflow — PRs cannot merge
+  until the branch-protection context is renamed to the four actual job names (repo setting).
+- [ ] Dashboard analytics is gated behind an external Chart.js CDN fetch — breaks on air-gapped
+  servers and re-requests every 60 s.
+- [ ] Config page auto-saves and runs a full TVHeadend diagnostic on every keystroke.
+- [ ] Thirteen `PluginConfiguration` properties are not surfaced in the UI.
+- [ ] `SkipIfUnavailable()` calls `Assert.Fail` instead of skipping, so LiveIntegration tests go
+  red rather than skipped when no backend is present.
+- [ ] Config schema versioning / migration (Milestone 15) and plugin API versioning (Milestone 17)
+  remain genuinely unstarted.

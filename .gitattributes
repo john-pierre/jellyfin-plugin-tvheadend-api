@@ -1,0 +1,25 @@
+# Line-ending policy: LF everywhere in the repository AND in the working tree.
+#
+# Without this file, checkouts on Windows and Linux disagree about line endings, which
+# produced a 339-file / 92k-line whitespace-only diff that buried every real change.
+# `text=auto` lets Git detect text vs. binary; `eol=lf` pins the checked-out form so the
+# working tree matches the index on every platform.
+* text=auto eol=lf
+
+# Shell scripts must be LF or they fail to execute inside the Linux containers.
+*.sh text eol=lf
+
+# Windows batch files are the one exception — the interpreter requires CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets: never touch, never diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.dll binary
+*.exe binary
